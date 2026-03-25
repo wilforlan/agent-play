@@ -1,0 +1,13 @@
+{
+  "name": "agent-play-preview-ui",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "vite build",
+    "dev": "vite"
+  },
+  "devDependencies": {
+    "typescript": "~5.9.3",
+    "vite": "^6.3.5"
+  }
+}
