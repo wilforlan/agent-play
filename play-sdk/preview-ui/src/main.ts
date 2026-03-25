@@ -1,19 +1,37 @@
+import { Container, Graphics, Text } from "pixi.js";
+import { nextAvatarMotion } from "./avatar-anim.js";
+import { buildCrowdLayer } from "./crowd-draw.js";
+import { layoutCrowdClusters } from "./crowd-layout.js";
+import { drawPlatformHero } from "./hero-puppet.js";
 import {
-  startMultiverse,
+  cssColorToPixi,
+  mergeMultiversePalette,
   structureFill,
   type MultiversePalette,
 } from "./multiverse-engine.js";
+import {
+  appendChatLogLine,
+  resetChatLogFromSnapshot,
+} from "./preview-chat-log.js";
+import {
+  createPreviewChatPanel,
+  ensurePreviewChatStyles,
+} from "./preview-chat-panel.js";
+import { createPixiPreview } from "./pixi-multiverse.js";
+import { ENABLE_CROWD_LAYER, getActiveSceneTheme } from "./scene-theme.js";
+import { drawHomeStructure, drawToolPad } from "./structure-art.js";
+import type { AvatarFacing } from "./avatar-anim.js";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "") || "";
 const VIEW_W = 720;
 const VIEW_H = 520;
 const CELL = 48;
 const ORIGIN_X = 24;
-const ORIGIN_Y = 24;
+const WORLD_BOTTOM_MARGIN = 14;
 const WORLD_INTERACTION_SSE = "world:interaction";
-const CALLOUT_MAX_LINES = 5;
-const CALLOUT_CHARS_PER_LINE = 40;
-const CALLOUT_LINE_SKIP = 12;
+const HOME_STAND_EPS = 0.26;
+const HOME_FRONT_OFFSET_WX = 0.16;
+const HOME_FRONT_OFFSET_WY = 0.22;
 
 type Structure = {
   id: string;
@@ -22,6 +40,7 @@ type Structure = {
   kind: string;
   label?: string;
   toolName?: string;
+  playerId?: string;
 };
 
 type PathStep = {
@@ -64,7 +83,16 @@ type Snapshot = {
   worldMap?: WorldMapJson;
 };
 
-type CalloutRow = { role: string; text: string };
+type AgentVisual = {
+  root: Container;
+  hero: Graphics;
+  nameTag: Text;
+};
+
+type StructureVisual = {
+  box: Graphics;
+  caption: Text;
+};
 
 function getSid(): string | null {
   return new URLSearchParams(location.search).get("sid");
@@ -72,8 +100,13 @@ function getSid(): string | null {
 
 let mapMinX = 0;
 let mapMinY = 0;
+let mapMaxX = 0;
+let mapMaxY = 0;
 let cellScale = CELL;
+let worldOriginScreenY = VIEW_H - WORLD_BOTTOM_MARGIN - 8 * CELL;
 let gridBounds: WorldMapJson["bounds"] | null = null;
+
+let palette: MultiversePalette = mergeMultiversePalette({});
 
 function applyBounds(bounds: WorldMapJson["bounds"]): void {
   gridBounds = bounds;
@@ -81,42 +114,91 @@ function applyBounds(bounds: WorldMapJson["bounds"]): void {
   const w = Math.max(1, bounds.maxX - bounds.minX + 2 * pad);
   const h = Math.max(1, bounds.maxY - bounds.minY + 2 * pad);
   const maxW = VIEW_W - ORIGIN_X * 2;
-  const maxH = VIEW_H - ORIGIN_Y * 2;
-  cellScale = Math.min(maxW / w, maxH / h, 64);
+  const theme = getActiveSceneTheme();
+  const grassTop = VIEW_H * theme.grassBandTopRatio;
+  const minGridTop = grassTop + 12;
+  const maxBottom = VIEW_H - WORLD_BOTTOM_MARGIN;
+  const maxHSpace = Math.max(40, maxBottom - minGridTop);
+  cellScale = Math.min(maxW / w, maxHSpace / h, 64);
   mapMinX = bounds.minX - pad;
   mapMinY = bounds.minY - pad;
+  mapMaxX = bounds.maxX + pad;
+  mapMaxY = bounds.maxY + pad;
+  worldOriginScreenY = maxBottom - h * cellScale;
 }
 
 function worldToScreen(wx: number, wy: number): { x: number; y: number } {
   return {
     x: ORIGIN_X + (wx - mapMinX) * cellScale,
-    y: ORIGIN_Y + (wy - mapMinY) * cellScale,
+    y: worldOriginScreenY + (mapMaxY - wy) * cellScale,
   };
 }
 
 const playerWorldPos = new Map<string, { x: number; y: number }>();
 const waypointQueues = new Map<string, Array<{ x: number; y: number }>>();
-const calloutLinesByPlayer = new Map<string, CalloutRow[]>();
+const lastTickWorldPos = new Map<string, { x: number; y: number }>();
+const walkPhaseByPlayer = new Map<string, number>();
+const facingByPlayer = new Map<string, AvatarFacing>();
+const movingByPlayer = new Map<string, boolean>();
+
 let snapshot: Snapshot | null = null;
 
-function pushCalloutLine(playerId: string, role: string, text: string): void {
-  const excerpt = text.trim().slice(0, 200);
-  if (excerpt.length === 0) return;
-  const rows = calloutLinesByPlayer.get(playerId) ?? [];
-  const next = [...rows, { role, text: excerpt }];
-  while (next.length > CALLOUT_MAX_LINES) next.shift();
-  calloutLinesByPlayer.set(playerId, next);
+let appStage: Container | null = null;
+const structureLayer = new Container();
+const gridGraphics = new Graphics();
+const agentsLayer = new Container();
+const worldLayer = new Container();
+
+const structureNodes = new Map<string, StructureVisual>();
+const agentNodes = new Map<string, AgentVisual>();
+
+let refreshPreviewChat: () => void = () => {};
+
+function playerDisplayName(playerId: string): string {
+  return (
+    snapshot?.players.find((p) => p.playerId === playerId)?.name ?? playerId
+  );
+}
+
+function pushInteractionToChat(
+  playerId: string,
+  role: string,
+  text: string,
+  seq?: number
+): void {
+  appendChatLogLine({
+    playerId,
+    playerName: playerDisplayName(playerId),
+    role,
+    text,
+    seq,
+  });
+  refreshPreviewChat();
+}
+
+function hydrateChatFromSnapshot(s: Snapshot): void {
+  resetChatLogFromSnapshot(s);
+  refreshPreviewChat();
 }
 
 function collectStructuresForRender(s: Snapshot): Structure[] {
   const byId = new Map<string, Structure>();
   for (const pl of s.players) {
     for (const st of pl.structures) {
-      byId.set(st.id, st);
+      byId.set(st.id, { ...st, playerId: pl.playerId });
     }
   }
   for (const st of s.worldMap?.structures ?? []) {
-    byId.set(st.id, st);
+    const prev = byId.get(st.id);
+    if (prev !== undefined) {
+      byId.set(st.id, {
+        ...prev,
+        ...st,
+        playerId: st.playerId ?? prev.playerId,
+      });
+    } else {
+      byId.set(st.id, { ...st });
+    }
   }
   const list = [...byId.values()];
   list.sort((a, b) => {
@@ -129,19 +211,17 @@ function collectStructuresForRender(s: Snapshot): Structure[] {
   return list;
 }
 
-function seedCalloutsFromSnapshot(players: PlayerRow[]): void {
-  for (const p of players) {
-    const ri = p.recentInteractions;
-    if (ri === undefined || ri.length === 0) continue;
-    const tail = ri.slice(-CALLOUT_MAX_LINES);
-    calloutLinesByPlayer.set(
-      p.playerId,
-      tail.map((e) => ({
-        role: e.role,
-        text: e.text.slice(0, 200),
-      }))
-    );
+function getPlayerHomeCell(
+  playerId: string,
+  s: Snapshot | null
+): { x: number; y: number } | null {
+  if (s === null) return null;
+  for (const st of collectStructuresForRender(s)) {
+    if (st.kind === "home" && st.playerId === playerId) {
+      return { x: st.x, y: st.y };
+    }
   }
+  return null;
 }
 
 function setWaypoints(playerId: string, path: PathStep[]): void {
@@ -167,14 +247,24 @@ async function loadSnapshot(sid: string): Promise<void> {
   else {
     mapMinX = 0;
     mapMinY = 0;
+    mapMaxX = 0;
+    mapMaxY = 0;
     cellScale = CELL;
     gridBounds = null;
+    const theme = getActiveSceneTheme();
+    const grassTop = VIEW_H * theme.grassBandTopRatio;
+    const placeholderRows = 8;
+    let y0 = VIEW_H - WORLD_BOTTOM_MARGIN - placeholderRows * cellScale;
+    const minY0 = grassTop + 16;
+    worldOriginScreenY = y0 < minY0 ? minY0 : y0;
   }
   for (const p of snapshot.players) {
-    playerWorldPos.set(p.playerId, { x: 0, y: 0 });
+    if (!playerWorldPos.has(p.playerId)) {
+      playerWorldPos.set(p.playerId, { x: 0, y: 0 });
+    }
     if (p.lastUpdate) applyJourneyUpdate(p.lastUpdate);
   }
-  seedCalloutsFromSnapshot(snapshot.players);
+  hydrateChatFromSnapshot(snapshot);
 }
 
 function connectSse(sid: string): void {
@@ -196,8 +286,9 @@ function connectSse(sid: string): void {
       playerId: string;
       role: string;
       text: string;
+      seq?: number;
     };
-    pushCalloutLine(data.playerId, data.role, data.text);
+    pushInteractionToChat(data.playerId, data.role, data.text, data.seq);
   });
 }
 
@@ -218,145 +309,255 @@ function moveToward(
   };
 }
 
-function drawLabel(
-  ctx: CanvasRenderingContext2D,
-  palette: MultiversePalette,
-  x: number,
-  y: number,
-  label: string,
-  muted: boolean
-): void {
-  ctx.font = "600 11px ui-monospace, monospace";
-  ctx.fillStyle = muted ? palette.textMuted : palette.text;
-  ctx.textAlign = "left";
-  ctx.textBaseline = "top";
-  ctx.fillText(label, x, y);
-}
-
-function fillRoundRect(
-  ctx: CanvasRenderingContext2D,
-  x: number,
-  y: number,
-  w: number,
-  h: number,
-  r: number
-): void {
-  const radius = Math.min(r, w / 2, h / 2);
-  ctx.beginPath();
-  ctx.moveTo(x + radius, y);
-  ctx.lineTo(x + w - radius, y);
-  ctx.quadraticCurveTo(x + w, y, x + w, y + radius);
-  ctx.lineTo(x + w, y + h - radius);
-  ctx.quadraticCurveTo(x + w, y + h, x + w - radius, y + h);
-  ctx.lineTo(x + radius, y + h);
-  ctx.quadraticCurveTo(x, y + h, x, y + h - radius);
-  ctx.lineTo(x, y + radius);
-  ctx.quadraticCurveTo(x, y, x + radius, y);
-  ctx.closePath();
-  ctx.fill();
-}
-
-startMultiverse({
-  width: VIEW_W,
-  height: VIEW_H,
-  loop: {
-    init: function init() {
-      const sid = getSid();
-      if (!sid) return;
-      void loadSnapshot(sid).then(() => connectSse(sid));
+function makeAgentVisual(): AgentVisual {
+  const root = new Container();
+  const hero = new Graphics({ roundPixels: true });
+  const nameTag = new Text({
+    text: "",
+    style: {
+      fontFamily: "ui-monospace, monospace",
+      fontSize: 11,
+      fontWeight: "600",
+      fill: cssColorToPixi(palette.textMuted),
     },
-    update: function update(dt: number) {
-      const speed = 2.2;
-      for (const [id, pos] of playerWorldPos) {
-        const queue = waypointQueues.get(id);
-        if (!queue || queue.length === 0) continue;
-        const target = queue[0];
-        if (!target) continue;
-        const next = moveToward(pos, target, speed, dt);
+  });
+  root.addChild(hero);
+  root.addChild(nameTag);
+  return { root, hero, nameTag };
+}
+
+function syncStructureNodes(structs: Structure[]): void {
+  const theme = getActiveSceneTheme();
+  const alive = new Set(structs.map((s) => s.id));
+  for (const id of structureNodes.keys()) {
+    if (!alive.has(id)) {
+      const n = structureNodes.get(id);
+      if (n !== undefined) {
+        structureLayer.removeChild(n.box);
+        structureLayer.removeChild(n.caption);
+        n.box.destroy();
+        n.caption.destroy();
+      }
+      structureNodes.delete(id);
+    }
+  }
+  const box = Math.max(16, Math.min(40, cellScale * 0.85));
+  for (const st of structs) {
+    let n = structureNodes.get(st.id);
+    if (n === undefined) {
+      const boxG = new Graphics({ roundPixels: true });
+      const cap = new Text({
+        text: "",
+        style: {
+          fontFamily: "ui-monospace, monospace",
+          fontSize: 11,
+          fontWeight: "600",
+          fill: cssColorToPixi(palette.text),
+          wordWrap: true,
+          wordWrapWidth: 140,
+        },
+      });
+      n = { box: boxG, caption: cap };
+      structureNodes.set(st.id, n);
+      structureLayer.addChild(boxG);
+      structureLayer.addChild(cap);
+    }
+    const { x: sx, y: sy } = worldToScreen(st.x, st.y);
+    const strokeCol = cssColorToPixi(palette.stroke);
+    if (st.kind === "home") {
+      drawHomeStructure(n.box, box, theme.house);
+      n.box.position.set(sx, sy);
+      n.caption.text = (st.label ?? "Home").slice(0, 24);
+      n.caption.position.set(sx - n.caption.width / 2, sy - box * 1.15);
+    } else {
+      const fillCol = cssColorToPixi(structureFill(st.kind, palette));
+      drawToolPad(n.box, box, fillCol, strokeCol);
+      const bx = sx - box * 0.2;
+      const by = sy - box * 0.2;
+      n.box.position.set(bx, by);
+      const capText =
+        st.toolName !== undefined && st.toolName.length > 0
+          ? st.toolName
+          : (st.label ?? st.id).slice(0, 28);
+      n.caption.text = capText.slice(0, 28);
+      n.caption.position.set(sx - 4, sy - 20);
+    }
+  }
+}
+
+function syncAgentNodes(): void {
+  const rows = snapshot?.players ?? [];
+  const alive = new Set(rows.map((r) => r.playerId));
+  for (const id of agentNodes.keys()) {
+    if (!alive.has(id)) {
+      const v = agentNodes.get(id);
+      if (v !== undefined) {
+        agentsLayer.removeChild(v.root);
+        v.root.destroy({ children: true });
+      }
+      agentNodes.delete(id);
+      playerWorldPos.delete(id);
+      waypointQueues.delete(id);
+      walkPhaseByPlayer.delete(id);
+      facingByPlayer.delete(id);
+      movingByPlayer.delete(id);
+      lastTickWorldPos.delete(id);
+    }
+  }
+  for (const p of rows) {
+    if (!agentNodes.has(p.playerId)) {
+      const v = makeAgentVisual();
+      agentNodes.set(p.playerId, v);
+      agentsLayer.addChild(v.root);
+    }
+  }
+}
+
+function paintGrid(): void {
+  const theme = getActiveSceneTheme();
+  gridGraphics.clear();
+  if (gridBounds === null) return;
+  const pad = 1;
+  const cols = Math.max(
+    1,
+    Math.ceil(gridBounds.maxX - gridBounds.minX + 2 * pad)
+  );
+  const rows = Math.max(
+    1,
+    Math.ceil(gridBounds.maxY - gridBounds.minY + 2 * pad)
+  );
+  const gs = theme.gridStroke;
+  const gy0 = worldOriginScreenY;
+  for (let c = 0; c <= cols; c += 1) {
+    const gx = ORIGIN_X + c * cellScale;
+    gridGraphics
+      .moveTo(gx, gy0)
+      .lineTo(gx, gy0 + rows * cellScale)
+      .stroke({ width: 1, color: gs.color, alpha: gs.alpha });
+  }
+  for (let r = 0; r <= rows; r += 1) {
+    const gy = gy0 + r * cellScale;
+    gridGraphics
+      .moveTo(ORIGIN_X, gy)
+      .lineTo(ORIGIN_X + cols * cellScale, gy)
+      .stroke({ width: 1, color: gs.color, alpha: gs.alpha });
+  }
+}
+
+function onTick(dt: number): void {
+  const speed = 2.2;
+  for (const [id, pos] of playerWorldPos) {
+    const prev = { ...pos };
+    let next = { ...pos };
+    const queue = waypointQueues.get(id);
+    if (queue && queue.length > 0) {
+      const target = queue[0];
+      if (target) {
+        next = moveToward(pos, target, speed, dt);
         playerWorldPos.set(id, next);
         if (Math.hypot(target.x - next.x, target.y - next.y) < 0.08) {
           queue.shift();
         }
       }
-    },
-    render: function render(ctx, board) {
-      const p = board.palette;
-      if (gridBounds !== null) {
-        const pad = 1;
-        const cols = Math.max(
-          1,
-          Math.ceil(gridBounds.maxX - gridBounds.minX + 2 * pad)
-        );
-        const rows = Math.max(
-          1,
-          Math.ceil(gridBounds.maxY - gridBounds.minY + 2 * pad)
-        );
-        ctx.strokeStyle = p.grid;
-        ctx.lineWidth = 1;
-        for (let c = 0; c <= cols; c += 1) {
-          const gx = ORIGIN_X + c * cellScale;
-          ctx.beginPath();
-          ctx.moveTo(gx, ORIGIN_Y);
-          ctx.lineTo(gx, ORIGIN_Y + rows * cellScale);
-          ctx.stroke();
-        }
-        for (let r = 0; r <= rows; r += 1) {
-          const gy = ORIGIN_Y + r * cellScale;
-          ctx.beginPath();
-          ctx.moveTo(ORIGIN_X, gy);
-          ctx.lineTo(ORIGIN_X + cols * cellScale, gy);
-          ctx.stroke();
-        }
-      }
+    }
+    const motion = nextAvatarMotion({
+      prevWorld: prev,
+      nextWorld: next,
+      prevFacing: facingByPlayer.get(id) ?? "right",
+      prevWalkPhase: walkPhaseByPlayer.get(id) ?? 0,
+      dt,
+      stepsPerSecondWhileWalking: 7,
+    });
+    facingByPlayer.set(id, motion.facing);
+    walkPhaseByPlayer.set(id, motion.walkPhase);
+    movingByPlayer.set(id, motion.isMoving);
+    lastTickWorldPos.set(id, { ...next });
+  }
+}
 
-      const structs = snapshot !== null ? collectStructuresForRender(snapshot) : [];
-      const box = Math.max(16, Math.min(40, cellScale * 0.85));
-      for (const st of structs) {
-        const { x: sx, y: sy } = worldToScreen(st.x, st.y);
-        const fill = structureFill(st.kind, p);
-        const bx = sx - box * 0.2;
-        const by = sy - box * 0.2;
-        ctx.fillStyle = fill;
-        ctx.fillRect(bx, by, box, box);
-        ctx.strokeStyle = p.stroke;
-        ctx.lineWidth = 1;
-        ctx.strokeRect(bx, by, box, box);
-        const cap = 28;
-        const text =
-          st.toolName !== undefined && st.toolName.length > 0
-            ? st.toolName
-            : (st.label ?? st.id).slice(0, cap);
-        drawLabel(ctx, p, sx - 4, sy - 20, text.slice(0, cap), false);
-      }
-      for (const [id, wpos] of playerWorldPos) {
-        const { x: sx, y: sy } = worldToScreen(wpos.x, wpos.y);
-        const r = Math.max(6, cellScale * 0.22);
-        const cx = sx + box * 0.3;
-        const cy = sy + box * 0.3;
-        ctx.fillStyle = p.agent;
-        ctx.strokeStyle = p.stroke;
-        ctx.lineWidth = 1;
-        ctx.beginPath();
-        ctx.arc(cx, cy, r, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.stroke();
-        const lines = calloutLinesByPlayer.get(id) ?? [];
-        let ty = cy - r - 10;
-        for (let li = lines.length - 1; li >= 0; li -= 1) {
-          const row = lines[li];
-          if (row === undefined) continue;
-          const line = `${row.role}: ${row.text}`.slice(0, CALLOUT_CHARS_PER_LINE);
-          ctx.font = "600 11px ui-monospace, monospace";
-          const tw = Math.min(280, 8 + ctx.measureText(line).width);
-          ctx.fillStyle = p.calloutBg;
-          fillRoundRect(ctx, cx - tw / 2, ty - 2, tw, CALLOUT_LINE_SKIP + 2, 4);
-          drawLabel(ctx, p, cx - tw / 2 + 4, ty, line, false);
-          ty -= CALLOUT_LINE_SKIP + 4;
-        }
-        const label =
-          snapshot?.players.find((pl) => pl.playerId === id)?.name ?? id;
-        drawLabel(ctx, p, sx, sy + box * 0.55, label.slice(0, 14), true);
-      }
-    },
-  },
-});
+function onFrame(): void {
+  if (appStage === null) return;
+  paintGrid();
+  const structs =
+    snapshot !== null ? collectStructuresForRender(snapshot) : [];
+  syncStructureNodes(structs);
+  syncAgentNodes();
+  const box = Math.max(16, Math.min(40, cellScale * 0.85));
+  for (const [id, wpos] of playerWorldPos) {
+    const v = agentNodes.get(id);
+    if (v === undefined) continue;
+    const home = getPlayerHomeCell(id, snapshot);
+    let wx = wpos.x;
+    let wy = wpos.y;
+    if (
+      home !== null &&
+      Math.hypot(wpos.x - home.x, wpos.y - home.y) < HOME_STAND_EPS
+    ) {
+      wx += HOME_FRONT_OFFSET_WX;
+      wy += HOME_FRONT_OFFSET_WY;
+    }
+    const { x: sx, y: sy } = worldToScreen(wx, wy);
+    const scale = Math.max(0.35, Math.min(0.85, cellScale / 48));
+    const cx = sx + box * 0.3;
+    const cy = sy + box * 0.55;
+    v.root.position.set(cx, cy);
+    drawPlatformHero(v.hero, {
+      scale,
+      facing: facingByPlayer.get(id) ?? "right",
+      walkPhase: walkPhaseByPlayer.get(id) ?? 0,
+      isMoving: movingByPlayer.get(id) ?? false,
+    });
+    const displayName =
+      snapshot?.players.find((pl) => pl.playerId === id)?.name ?? id;
+    v.nameTag.text = displayName.slice(0, 14);
+    v.nameTag.position.set(-v.nameTag.width / 2, box * 0.45);
+  }
+}
+
+function bootstrap(): void {
+  const sid = getSid();
+  if (!sid) return;
+  const theme = getActiveSceneTheme();
+  palette = mergeMultiversePalette(theme.palettePartial);
+  void (async () => {
+    ensurePreviewChatStyles();
+    const shell = document.createElement("div");
+    shell.style.cssText =
+      "display:flex;flex-direction:column;align-items:center;min-height:100vh;";
+    document.body.appendChild(shell);
+    const chatPanel = createPreviewChatPanel({ widthPx: VIEW_W });
+    refreshPreviewChat = chatPanel.refresh;
+
+    const sceneRoot = theme.buildScene(VIEW_W, VIEW_H, 0x5cafe);
+    worldLayer.addChild(gridGraphics);
+    worldLayer.addChild(structureLayer);
+    const handle = await createPixiPreview({
+      width: VIEW_W,
+      height: VIEW_H,
+      parent: shell,
+      backgroundColor: theme.appBackgroundColor,
+      onTick,
+      onFrame,
+    });
+    appStage = handle.app.stage;
+    shell.appendChild(chatPanel.element);
+    handle.app.stage.addChild(sceneRoot);
+    if (ENABLE_CROWD_LAYER) {
+      const groundTop = VIEW_H * theme.grassBandTopRatio;
+      const crowdClusters = layoutCrowdClusters({
+        width: VIEW_W,
+        height: VIEW_H,
+        seed: 0x5cafe + theme.crowdSeedSalt,
+        groundTop,
+        groundBottom: VIEW_H - 20,
+        clusterCountRange: [4, 8],
+      });
+      handle.app.stage.addChild(buildCrowdLayer(crowdClusters));
+    }
+    handle.app.stage.addChild(worldLayer);
+    handle.app.stage.addChild(agentsLayer);
+    void loadSnapshot(sid).then(() => connectSse(sid));
+  })();
+}
+
+bootstrap();

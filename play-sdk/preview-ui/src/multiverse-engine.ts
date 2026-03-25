@@ -22,27 +22,7 @@ export const defaultMultiversePalette: MultiversePalette = {
   stroke: "#334155",
 };
 
-export type MultiverseBoard = {
-  width: number;
-  height: number;
-  palette: MultiversePalette;
-};
-
-export type MultiverseLoop = {
-  init: () => void | Promise<void>;
-  update: (dtSeconds: number) => void;
-  render: (ctx: CanvasRenderingContext2D, board: MultiverseBoard) => void;
-};
-
-export type StartMultiverseOptions = {
-  width: number;
-  height: number;
-  parent?: HTMLElement;
-  palette?: Partial<MultiversePalette>;
-  loop: MultiverseLoop;
-};
-
-function mergePalette(
+export function mergeMultiversePalette(
   partial?: Partial<MultiversePalette>
 ): MultiversePalette {
   return { ...defaultMultiversePalette, ...partial };
@@ -52,40 +32,12 @@ export function structureFill(kind: string, palette: MultiversePalette): string 
   return kind === "home" ? palette.structureHome : palette.structureTool;
 }
 
-export function startMultiverse(options: StartMultiverseOptions): void {
-  const { width, height, parent = document.body, loop } = options;
-  const palette = mergePalette(options.palette);
-
-  const canvas = document.createElement("canvas");
-  canvas.width = width;
-  canvas.height = height;
-  canvas.tabIndex = 0;
-  canvas.setAttribute("role", "img");
-  canvas.setAttribute("aria-label", "agent-play multiverse preview");
-  canvas.style.cssText =
-    "display:block;margin:0 auto;touch-action:none;image-rendering:pixelated;image-rendering:crisp-edges;";
-  parent.appendChild(canvas);
-
-  const ctx = canvas.getContext("2d");
-  if (ctx === null) {
-    throw new Error("Multiverse engine: could not acquire 2d context");
-  }
-  ctx.imageSmoothingEnabled = false;
-
-  const board: MultiverseBoard = { width, height, palette };
-  let last = performance.now();
-
-  const frame = (now: number) => {
-    const dt = Math.min(0.05, (now - last) / 1000);
-    last = now;
-    loop.update(dt);
-    ctx.fillStyle = palette.background;
-    ctx.fillRect(0, 0, width, height);
-    loop.render(ctx, board);
-    requestAnimationFrame(frame);
-  };
-
-  void Promise.resolve(loop.init()).then(() => {
-    requestAnimationFrame(frame);
-  });
+export function cssColorToPixi(css: string): number {
+  const t = css.trim();
+  if (!t.startsWith("#")) return 0xffffff;
+  const h = t.slice(1);
+  const full =
+    h.length === 3 ? [...h].map((c) => c + c).join("") : h;
+  const n = Number.parseInt(full, 16);
+  return Number.isFinite(n) ? n : 0xffffff;
 }
