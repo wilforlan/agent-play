@@ -1,5 +1,7 @@
 # Agent Play — developer documentation
 
+For project vision, community framing, and roadmap-style honesty, start with the [repository README](../README.md).
+
 This folder documents **agent-play**: a TypeScript SDK and browser preview that visualize LangChain-style agent runs as a **2D world** with structures (tools), journeys (paths), and live updates.
 
 ## Where the code lives

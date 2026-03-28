@@ -1,22 +1,30 @@
 /**
  * Example 03 — Two LangChain agents as two “players”
  *
- * PlayWorld is session-scoped. Each `addPlayer` call registers a distinct `player.id` and its own
- * structure layout (from that agent’s tool set). When you attach invoke for each agent, journeys are
- * tagged with the correct `playerId`, so a multi-agent canvas can render two sprites with
- * independent paths (Multi-Agent Interactions foundation).
+ * PlayWorld is session-scoped. Each `addPlayer` registers a distinct `playerId` and its own
+ * structure layout (from that agent’s tool set). `attachLangChainInvoke` per agent tags journeys
+ * with the correct `playerId`, so the canvas shows two agents with independent paths.
  *
- * Run: `tsx -r dotenv/config examples/03-two-agents-two-players.ts`
+ * Uses the same Express + `mountExpressPreview` pattern as example 06: static preview, SSE, and
+ * `snapshot.json` under `/agent-play`. Open the printed URL after `npm run build:preview`.
+ *
+ * Run: `npm run build:preview && npm run example:03`
+ * Env: `OPENAI_API_KEY`, optional `PORT` (default 3333)
  */
 
+import express from "express";
 import {
   PlayWorld,
   attachLangChainInvoke,
   langchainRegistration,
+  mountExpressPreview,
 } from "../src/index.js";
 import { createAgent, tool } from "langchain";
 import { ChatOpenAI } from "@langchain/openai";
 import { z } from "zod";
+
+const PORT = Number(process.env.PORT ?? 3333);
+const PREVIEW_BASE = "/agent-play";
 
 const model = new ChatOpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -55,34 +63,43 @@ const agentBeta = createAgent({
   systemPrompt: "Use beta_op when asked.",
 });
 
-async function main() {
-  const world = new PlayWorld({});
-  await world.start();
+const app = express();
+const world = new PlayWorld({
+  previewBaseUrl: `http://127.0.0.1:${PORT}${PREVIEW_BASE}/watch`,
+});
 
-  const playerA = await world.addPlayer({
-    name: "alpha",
-    type: "langchain",
-    agent: langchainRegistration(agentAlpha),
-  });
-  const playerB = await world.addPlayer({
-    name: "beta",
-    type: "langchain",
-    agent: langchainRegistration(agentBeta),
-  });
+await world.start();
 
-  attachLangChainInvoke(agentAlpha, world, playerA.id);
-  attachLangChainInvoke(agentBeta, world, playerB.id);
+const playerA = await world.addPlayer({
+  name: "alpha",
+  type: "langchain",
+  agent: langchainRegistration(agentAlpha),
+});
+const playerB = await world.addPlayer({
+  name: "beta",
+  type: "langchain",
+  agent: langchainRegistration(agentBeta),
+});
 
-  world.onWorldJourney((u) => {
-    console.log(`Journey for ${u.playerId}:`, u.journey.steps.map((s) => s.type));
-  });
+attachLangChainInvoke(agentAlpha, world, playerA.id);
+attachLangChainInvoke(agentBeta, world, playerB.id);
 
+mountExpressPreview(app, world, { basePath: PREVIEW_BASE });
+
+world.onWorldJourney((u) => {
+  console.log(`[world:journey] ${u.playerId}:`, u.journey.steps.map((s) => s.type));
+});
+
+app.listen(PORT, "127.0.0.1", async () => {
+  console.log("Preview (both players share one session):", playerA.previewUrl);
+  console.log(
+    `Snapshot: http://127.0.0.1:${PORT}${PREVIEW_BASE}/snapshot.json?sid=${world.getSessionId()}`
+  );
   await agentAlpha.invoke({
     messages: [{ role: "user", content: "Run alpha operation." }],
   });
   await agentBeta.invoke({
     messages: [{ role: "user", content: "Run beta operation." }],
   });
-}
-
-await main();
+  console.log("Done. Server still running — open the preview URL or Ctrl+C to exit.");
+});

@@ -41,11 +41,13 @@ npm run build:preview
 
 This runs `npm run build` inside `preview-ui/` and produces `preview-ui/dist/`.
 
-## Step 4: Run the SSE bridge example
+## Step 4: Run an Express + preview example
+
+After `build:preview`, any of these serve the static UI and open a real watch link:
 
 ```bash
 npm run example:sse
-# or: tsx -r dotenv/config examples/05-express-sse-bridge.ts
+# or: npm run example:02 | example:03 | example:04 | example:advisor
 ```
 
 Open the printed **preview URL** (includes `sid=`). The page loads `snapshot.json`, subscribes to SSE, and animates the world.

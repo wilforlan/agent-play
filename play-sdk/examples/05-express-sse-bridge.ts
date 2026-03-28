@@ -9,7 +9,8 @@
  * Set `PlayWorld` `previewBaseUrl` to the **watch URL including `/agent-play/watch`** so `player.previewUrl`
  * matches where the canvas loads. The page reads `?sid=` from the query string.
  *
- * Run: `npm run build:preview && tsx -r dotenv/config examples/05-express-sse-bridge.ts`
+ * Run: `npm run build:preview && npm run example:sse`
+ * Env: `OPENAI_API_KEY`, optional `PORT` (default 3333)
  */
 
 import express from "express";
@@ -66,7 +67,7 @@ mountExpressPreview(app, world, { basePath: PREVIEW_BASE });
 app.listen(PORT, "127.0.0.1", async () => {
   console.log("Open in browser:", player.previewUrl);
   console.log(
-    `API: snapshot http://127.0.0.1:${PORT}${PREVIEW_BASE}/snapshot.json?sid=<sid>`
+    `Snapshot: http://127.0.0.1:${PORT}${PREVIEW_BASE}/snapshot.json?sid=${world.getSessionId()}`
   );
   await agent.invoke({
     messages: [{ role: "user", content: "ping the tool" }],

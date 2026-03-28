@@ -3,22 +3,30 @@
  *
  * When the model issues multiple tool calls in one turn, the journey extractor produces one
  * `structure` step per tool, in order. Each step gets coordinates from `layoutStructuresFromTools`
- * (stable grid by sorted tool name), so the admin UI can interpolate motion: Home → Tool A → Tool B → Home.
+ * (stable grid by sorted tool name), so the preview can interpolate motion: Home → Tool A → Tool B → Home.
  *
- * This matches the message flow documented in ../about.md: HumanMessage → AIMessage with
- * tool_calls → ToolMessages → final AIMessage with natural-language content.
+ * This follows the typical flow: HumanMessage → AIMessage with tool_calls → ToolMessages → final AIMessage.
  *
- * Run: `tsx -r dotenv/config examples/02-multi-tool-path.ts`
+ * Express + `mountExpressPreview` matches examples 03–06: build the preview UI first, then open the
+ * printed watch URL.
+ *
+ * Run: `npm run build:preview && npm run example:02`
+ * Env: `OPENAI_API_KEY`, optional `PORT` (default 3333)
  */
 
+import express from "express";
 import {
   PlayWorld,
   attachLangChainInvoke,
   langchainRegistration,
+  mountExpressPreview,
 } from "../src/index.js";
 import { createAgent, tool } from "langchain";
 import { ChatOpenAI } from "@langchain/openai";
 import { z } from "zod";
+
+const PORT = Number(process.env.PORT ?? 3333);
+const PREVIEW_BASE = "/agent-play";
 
 const model = new ChatOpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -55,22 +63,32 @@ const agent = createAgent({
     "You are a helpful assistant that can search and calculate. Use tools when needed.",
 });
 
-async function main() {
-  const world = new PlayWorld({});
-  await world.start();
+const app = express();
+const world = new PlayWorld({
+  previewBaseUrl: `http://127.0.0.1:${PORT}${PREVIEW_BASE}/watch`,
+});
 
-  const player = await world.addPlayer({
-    name: "langchain-agent",
-    type: "langchain",
-    agent: langchainRegistration(agent),
-  });
+await world.start();
 
-  attachLangChainInvoke(agent, world, player.id);
+const player = await world.addPlayer({
+  name: "langchain-agent",
+  type: "langchain",
+  agent: langchainRegistration(agent),
+});
 
-  world.onWorldJourney((u) => {
-    console.log("Ordered path for the 2D map:", u.path);
-  });
+attachLangChainInvoke(agent, world, player.id);
 
+mountExpressPreview(app, world, { basePath: PREVIEW_BASE });
+
+world.onWorldJourney((u) => {
+  console.log("Ordered path for the 2D map:", u.path);
+});
+
+app.listen(PORT, "127.0.0.1", async () => {
+  console.log("Open in browser:", player.previewUrl);
+  console.log(
+    `Snapshot: http://127.0.0.1:${PORT}${PREVIEW_BASE}/snapshot.json?sid=${world.getSessionId()}`
+  );
   await agent.invoke({
     messages: [
       {
@@ -80,6 +98,5 @@ async function main() {
       },
     ],
   });
-}
-
-await main();
+  console.log("Done. Server still running — open the preview URL or Ctrl+C to exit.");
+});
