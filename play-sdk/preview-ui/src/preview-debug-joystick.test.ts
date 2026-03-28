@@ -32,46 +32,32 @@ describe("shouldClampWorldPositionWhenJoystickDriving", () => {
   const primary = "p1";
   const other = "p2";
 
-  it("clamps when joystick is not active", () => {
+  it("clamps when joystick mode is not active", () => {
     expect(
       shouldClampWorldPositionWhenJoystickDriving({
         playerId: primary,
         primaryPlayerId: primary,
         joystickActive: false,
-        joyVectorLength: 1,
       })
     ).toBe(true);
   });
 
-  it("clamps when stick is centered", () => {
+  it("does not clamp primary while joystick mode is active", () => {
     expect(
       shouldClampWorldPositionWhenJoystickDriving({
         playerId: primary,
         primaryPlayerId: primary,
         joystickActive: true,
-        joyVectorLength: 0.01,
-      })
-    ).toBe(true);
-  });
-
-  it("does not clamp primary while driving with deflection", () => {
-    expect(
-      shouldClampWorldPositionWhenJoystickDriving({
-        playerId: primary,
-        primaryPlayerId: primary,
-        joystickActive: true,
-        joyVectorLength: 0.5,
       })
     ).toBe(false);
   });
 
-  it("still clamps non-primary players", () => {
+  it("still clamps non-primary players when joystick mode is active", () => {
     expect(
       shouldClampWorldPositionWhenJoystickDriving({
         playerId: other,
         primaryPlayerId: primary,
         joystickActive: true,
-        joyVectorLength: 0.5,
       })
     ).toBe(true);
   });
@@ -82,7 +68,6 @@ describe("shouldClampWorldPositionWhenJoystickDriving", () => {
         playerId: primary,
         primaryPlayerId: null,
         joystickActive: true,
-        joyVectorLength: 0.5,
       })
     ).toBe(true);
   });

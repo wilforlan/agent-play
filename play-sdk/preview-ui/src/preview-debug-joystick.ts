@@ -24,14 +24,11 @@ export function shouldClampWorldPositionWhenJoystickDriving(options: {
   playerId: string;
   primaryPlayerId: string | null;
   joystickActive: boolean;
-  joyVectorLength: number;
 }): boolean {
-  const { playerId, primaryPlayerId, joystickActive, joyVectorLength } =
-    options;
+  const { playerId, primaryPlayerId, joystickActive } = options;
   if (primaryPlayerId === null) return true;
   if (playerId !== primaryPlayerId) return true;
   if (!joystickActive) return true;
-  if (joyVectorLength <= JOYSTICK_DEFLECT_EPS) return true;
   return false;
 }
 

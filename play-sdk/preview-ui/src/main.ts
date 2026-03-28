@@ -172,6 +172,10 @@ const movingByPlayer = new Map<string, boolean>();
 
 let snapshot: Snapshot | null = null;
 
+function getPrimaryPlayerId(): string | null {
+  return snapshot?.players[0]?.playerId ?? null;
+}
+
 let appStage: Container | null = null;
 const structureLayer = new Container();
 const gridGraphics = new Graphics();
@@ -300,6 +304,13 @@ function setWaypoints(playerId: string, path: PathStep[]): void {
 }
 
 function applyJourneyUpdate(u: JourneyUpdate): void {
+  const v = getPreviewViewSettings();
+  if (v.debugMode && v.joystickEnabled) {
+    const primary = getPrimaryPlayerId();
+    if (primary !== null && u.playerId === primary) {
+      return;
+    }
+  }
   setWaypoints(u.playerId, u.path);
 }
 
@@ -572,10 +583,6 @@ function applyDebugVisibility(): void {
   }
 }
 
-function getPrimaryPlayerId(): string | null {
-  return snapshot?.players[0]?.playerId ?? null;
-}
-
 function applyJoystickVisibility(): void {
   const v = getPreviewViewSettings();
   const show = v.debugMode && v.joystickEnabled;
@@ -668,7 +675,6 @@ function onTick(dt: number): void {
       playerId: id,
       primaryPlayerId: primaryId,
       joystickActive,
-      joyVectorLength: joyLen,
     });
     if (wb !== null && shouldClamp) {
       next = clampWorldPosition(next, wb);
