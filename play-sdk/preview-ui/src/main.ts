@@ -31,7 +31,10 @@ import {
 import {
   createPreviewDebugJoystick,
   getJoystickVector,
+  JOYSTICK_DEFLECT_EPS,
   setJoystickVectorZero,
+  shouldClampWorldPositionWhenJoystickDriving,
+  shouldClearPrimaryWaypointsWhileJoystickIdle,
 } from "./preview-debug-joystick.js";
 import { createPreviewDebugPanel } from "./preview-debug-panel.js";
 import { createPixiPreview, type PixiPreviewHandle } from "./pixi-multiverse.js";
@@ -625,11 +628,23 @@ function onTick(dt: number): void {
   const jv = joystickActive ? getJoystickVector() : { x: 0, y: 0 };
   const joyLen = Math.hypot(jv.x, jv.y);
 
+  if (
+    shouldClearPrimaryWaypointsWhileJoystickIdle({
+      joystickActive,
+      joyVectorLength: joyLen,
+    }) &&
+    primaryId !== null
+  ) {
+    waypointQueues.delete(primaryId);
+  }
+
   for (const [id, pos] of playerWorldPos) {
     const prev = { ...pos };
     let next = { ...pos };
     const useJoy =
-      joystickActive && joyLen > 0.02 && id === primaryId;
+      joystickActive &&
+      joyLen > JOYSTICK_DEFLECT_EPS &&
+      id === primaryId;
 
     if (useJoy) {
       waypointQueues.delete(id);
@@ -649,7 +664,13 @@ function onTick(dt: number): void {
         }
       }
     }
-    if (wb !== null) {
+    const shouldClamp = shouldClampWorldPositionWhenJoystickDriving({
+      playerId: id,
+      primaryPlayerId: primaryId,
+      joystickActive,
+      joyVectorLength: joyLen,
+    });
+    if (wb !== null && shouldClamp) {
       next = clampWorldPosition(next, wb);
     }
     playerWorldPos.set(id, next);
@@ -732,6 +753,9 @@ function bootstrap(): void {
     const worldRow = document.createElement("div");
     worldRow.className = "preview-world-row";
 
+    const debugSide = document.createElement("div");
+    debugSide.className = "preview-debug-side";
+
     const debugMount = document.createElement("div");
     debugMount.className = "preview-debug-mount";
     debugMountEl = debugMount;
@@ -740,11 +764,12 @@ function bootstrap(): void {
     });
     debugPanelUpdate = debug.update;
     debugMount.appendChild(debug.element);
+    debugSide.appendChild(debugMount);
 
     const canvasHost = document.createElement("div");
     canvasHost.style.cssText = `display:block;position:relative;width:${VIEW_W}px;max-width:100%;height:${VIEW_H}px;margin:0 auto;overflow:hidden;`;
 
-    worldRow.append(debugMount, canvasHost);
+    worldRow.append(debugSide, canvasHost);
     shell.appendChild(worldRow);
 
     agentChatOverlays = createPreviewAgentChatOverlays();
@@ -784,7 +809,7 @@ function bootstrap(): void {
 
     canvasHost.appendChild(agentChatOverlays.root);
 
-    joystickHandle = createPreviewDebugJoystick({ parent: canvasHost });
+    joystickHandle = createPreviewDebugJoystick({ parent: debugSide });
 
     const chatPanel = createPreviewChatSettingsPanel({
       embeddedInToolbar: true,

@@ -31,6 +31,13 @@ function ensurePreviewSettingsToolbarStyles(): void {
   justify-content: center;
   flex-wrap: wrap;
 }
+.preview-debug-side {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+}
 .preview-debug-mount {
   flex: 0 0 auto;
   width: min(320px, 92vw);

@@ -18,7 +18,7 @@ export function setJoystickVectorZero(): void {
   vector = { x: 0, y: 0 };
 }
 
-const JOYSTICK_DEFLECT_EPS = 0.02;
+export const JOYSTICK_DEFLECT_EPS = 0.02;
 
 export function shouldClampWorldPositionWhenJoystickDriving(options: {
   playerId: string;
@@ -35,6 +35,14 @@ export function shouldClampWorldPositionWhenJoystickDriving(options: {
   return false;
 }
 
+export function shouldClearPrimaryWaypointsWhileJoystickIdle(options: {
+  joystickActive: boolean;
+  joyVectorLength: number;
+}): boolean {
+  if (!options.joystickActive) return false;
+  return options.joyVectorLength <= JOYSTICK_DEFLECT_EPS;
+}
+
 export function screenDeltaToWorldJoystick(
   offsetXPx: number,
   offsetYPx: number,
@@ -43,7 +51,7 @@ export function screenDeltaToWorldJoystick(
   const nx = offsetXPx / maxOffsetPx;
   const ny = offsetYPx / maxOffsetPx;
   const m = Math.hypot(nx, ny);
-  if (m < 0.02) {
+  if (m < JOYSTICK_DEFLECT_EPS) {
     return { x: 0, y: 0 };
   }
   const scale = m > 1 ? 1 / m : 1;
@@ -59,9 +67,8 @@ function ensureJoystickStyles(): void {
   s.id = STYLE_ID;
   s.textContent = `
 .preview-debug-joystick {
-  position: absolute;
-  left: 16px;
-  bottom: 16px;
+  position: relative;
+  flex-shrink: 0;
   width: ${BASE_RADIUS_PX * 2}px;
   height: ${BASE_RADIUS_PX * 2}px;
   z-index: 2;
