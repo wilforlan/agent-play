@@ -60,11 +60,11 @@ const themes: Record<SceneThemeId, SceneTheme> = {
   },
   new_york: {
     id: "new_york",
-    appBackgroundColor: 0x6b7c8c,
+    appBackgroundColor: 0x5c6f82,
     buildScene: buildNewYorkScene,
     crowdSeedSalt: 0x22,
-    grassBandTopRatio: 0.52,
-    gridStroke: { color: 0xfde047, alpha: 0.22 },
+    grassBandTopRatio: 0.58,
+    gridStroke: { color: 0xfacc15, alpha: 0.26 },
     palettePartial: {
       text: "#f8fafc",
       textMuted: "#cbd5e1",
@@ -82,11 +82,11 @@ const themes: Record<SceneThemeId, SceneTheme> = {
   },
   tokyo: {
     id: "tokyo",
-    appBackgroundColor: 0x2d1b3d,
+    appBackgroundColor: 0x1a2332,
     buildScene: buildTokyoScene,
     crowdSeedSalt: 0x33,
-    grassBandTopRatio: 0.55,
-    gridStroke: { color: 0xf472b6, alpha: 0.25 },
+    grassBandTopRatio: 0.58,
+    gridStroke: { color: 0x94a3b8, alpha: 0.32 },
     palettePartial: {
       text: "#fce4ec",
       textMuted: "#f48fb1",

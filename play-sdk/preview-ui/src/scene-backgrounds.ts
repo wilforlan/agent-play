@@ -51,6 +51,8 @@ export function buildParkScene(
   return root;
 }
 
+const GROUND_TOP_RATIO = 0.58;
+
 export function buildNewYorkScene(
   width: number,
   height: number,
@@ -59,33 +61,54 @@ export function buildNewYorkScene(
   const root = new Container();
   const rng = mulberry32(seed);
   const g = new Graphics();
-  g.rect(0, 0, width, height * 0.42).fill({ color: 0x8899aa });
-  g.rect(0, height * 0.42, width, height * 0.58).fill({ color: 0x546e7a });
+  const groundTop = height * GROUND_TOP_RATIO;
 
-  const roadY = height * 0.72;
-  g.rect(0, roadY, width, height - roadY).fill({ color: 0x37474f });
-  g.rect(0, roadY + 8, width, 3).fill({ color: 0xfde047, alpha: 0.85 });
+  const skyBottom = groundTop * 0.92;
+  g.rect(0, 0, width, skyBottom * 0.38).fill({ color: 0x7c8fa3 });
+  g.rect(0, skyBottom * 0.38, width, skyBottom * 0.32).fill({ color: 0x94a8bc });
+  g.rect(0, skyBottom * 0.7, width, skyBottom * 0.3).fill({ color: 0xa8bad0 });
+  g.rect(0, groundTop - 36, width, 36).fill({ color: 0xb8c9d8, alpha: 0.45 });
 
-  const buildingCount = 8 + Math.floor(rng() * 5);
-  for (let i = 0; i < buildingCount; i += 1) {
-    const bx = (i / buildingCount) * width + rng() * 8;
-    const bw = width / buildingCount + 4;
-    const bh = height * (0.25 + rng() * 0.35);
-    const by = roadY - bh + 20;
-    g.rect(bx, by, bw, bh).fill({ color: 0x455a6e });
-    for (let row = 0; row < 4; row += 1) {
+  const skylineBase = groundTop - 6;
+  const columns = 11 + Math.floor(rng() * 4);
+  for (let i = 0; i < columns; i += 1) {
+    const bx = (i / columns) * width + (rng() - 0.5) * 10;
+    const bw = width / columns + 3 + rng() * 4;
+    const bh = height * (0.2 + rng() * 0.34);
+    const by = skylineBase - bh;
+    const stone = rng() > 0.45 ? 0x4a5f6f : 0x5d6f7f;
+    g.rect(bx, by, bw, bh).fill({ color: stone });
+    const winColor = rng() > 0.55 ? 0xfff8e1 : 0xffecb3;
+    for (let row = 0; row < 6; row += 1) {
       for (let col = 0; col < 3; col += 1) {
-        if (rng() > 0.35) {
+        if (rng() > 0.18) {
           g.rect(
-            bx + 6 + col * (bw / 3.5),
-            by + 12 + row * 18,
-            8,
-            10
-          ).fill({ color: 0xffe082, alpha: 0.7 });
+            bx + 5 + col * (bw / 3.2),
+            by + 10 + row * 16,
+            7,
+            9
+          ).fill({ color: winColor, alpha: rng() * 0.45 + 0.35 });
         }
       }
     }
+    if (rng() > 0.65) {
+      g.rect(bx + bw * 0.35, by + 4, bw * 0.3, 5).fill({
+        color: 0x263238,
+        alpha: 0.85,
+      });
+    }
   }
+
+  g.rect(0, groundTop, width, height - groundTop).fill({ color: 0x3e4a52 });
+  g.rect(0, groundTop, width, 8).fill({ color: 0x5c6b76, alpha: 0.55 });
+  const laneY = groundTop + (height - groundTop) * 0.42;
+  for (let x = 0; x < width; x += 22) {
+    g.rect(x, laneY, 12, 2).fill({ color: 0xfacc15, alpha: 0.88 });
+  }
+  for (let x = 40; x < width; x += 180) {
+    g.rect(x, groundTop + 12, 28, 3).fill({ color: 0xe2e8f0, alpha: 0.35 });
+  }
+
   root.addChild(g);
   return root;
 }
@@ -98,39 +121,65 @@ export function buildTokyoScene(
   const root = new Container();
   const rng = mulberry32(seed);
   const g = new Graphics();
-  g.rect(0, 0, width, height * 0.45).fill({ color: 0x4a148c });
-  g.rect(0, height * 0.45, width, height * 0.55).fill({ color: 0x1a1a2e });
+  const groundTop = height * GROUND_TOP_RATIO;
 
-  const horizon = height * 0.48;
-  for (let i = 0; i < 12; i += 1) {
-    const bx = (i / 12) * width;
-    const bw = width / 12 + 6;
-    const bh = height * (0.15 + seededNoise(rng) * 0.4);
-    const by = horizon - bh * 0.2;
-    g.rect(bx + 2, by, bw - 4, bh).fill({
-      color: i % 3 === 0 ? 0x6a1b9a : 0x4527a0,
-    });
-    const neon = i % 4 === 0 ? 0xff4081 : 0x00e5ff;
-    g.rect(bx + bw * 0.35, by + bh * 0.4, bw * 0.2, 4).fill({
-      color: neon,
-      alpha: 0.9,
-    });
+  const skyH = groundTop * 0.94;
+  g.rect(0, 0, width, skyH * 0.42).fill({ color: 0x0f172a });
+  g.rect(0, skyH * 0.42, width, skyH * 0.33).fill({ color: 0x1e293b });
+  g.rect(0, skyH * 0.75, width, skyH * 0.25).fill({ color: 0x1e1b4b });
+
+  for (let s = 0; s < 52; s += 1) {
+    const sx = rng() * width;
+    const sy = rng() * groundTop * 0.52;
+    const a = rng() * 0.45 + 0.25;
+    g.circle(sx, sy, rng() > 0.88 ? 1.8 : 1).fill({ color: 0xe2e8f0, alpha: a });
   }
 
-  g.rect(0, horizon + 40, width, height - horizon - 40).fill({
-    color: 0x263238,
-  });
-  for (let x = 30; x < width; x += 80) {
-    const lx = x + rng() * 40;
-    g.rect(lx, horizon + 55, 3, height).fill({ color: 0xf06292, alpha: 0.15 });
+  const skylineBase = groundTop - 4;
+  const columns = 14;
+  for (let i = 0; i < columns; i += 1) {
+    const bx = (i / columns) * width + (rng() - 0.5) * 6;
+    const bw = width / columns + rng() * 3;
+    const bh = height * (0.14 + rng() * 0.26);
+    const by = skylineBase - bh;
+    const fac =
+      i % 4 === 0 ? 0x312e81 : i % 4 === 1 ? 0x3730a3 : 0x1e1b4b;
+    g.rect(bx, by, bw, bh).fill({ color: fac });
+    if (rng() > 0.4) {
+      const ny = by + bh * (0.22 + rng() * 0.45);
+      g.rect(bx + bw * 0.15, ny, bw * 0.7, 3).fill({
+        color: rng() > 0.5 ? 0xf472b6 : 0x22d3ee,
+        alpha: 0.88,
+      });
+    }
+    for (let wy = by + 8; wy < skylineBase - 12; wy += 13) {
+      for (let wx = bx + 4; wx < bx + bw - 10; wx += 8) {
+        if (rng() > 0.42) {
+          g.rect(wx, wy, 5, 7).fill({
+            color: 0xfef3c7,
+            alpha: rng() * 0.35 + 0.25,
+          });
+        }
+      }
+    }
+  }
+
+  g.rect(0, groundTop, width, height - groundTop).fill({ color: 0x0f172a });
+  g.rect(0, groundTop, width, 5).fill({ color: 0x334155, alpha: 0.95 });
+  for (let rx = 0; rx < width; rx += 100) {
+    g.rect(rx + 15, groundTop + 24, 50, 3).fill({
+      color: 0x6366f1,
+      alpha: 0.07,
+    });
+  }
+  for (let lx = 70; lx < width; lx += 220) {
+    const ly = groundTop + 22;
+    g.circle(lx, ly, 7).fill({ color: 0xf59e0b, alpha: 0.35 });
+    g.circle(lx, ly, 3.5).fill({ color: 0xfef9c3, alpha: 0.9 });
   }
 
   root.addChild(g);
   return root;
-}
-
-function seededNoise(rng: () => number): number {
-  return rng();
 }
 
 function makeBench(bx: number, by: number, rng: () => number): Graphics {
