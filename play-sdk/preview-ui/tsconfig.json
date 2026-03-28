@@ -9,7 +9,11 @@
     "noEmit": true,
     "verbatimModuleSyntax": true,
     "isolatedModules": true,
-    "types": ["vite/client"]
+    "types": ["vite/client"],
+    "baseUrl": ".",
+    "paths": {
+      "@play-sdk/lib/*": ["../src/lib/*"]
+    }
   },
   "include": ["src/**/*.ts", "vite.config.ts"]
 }

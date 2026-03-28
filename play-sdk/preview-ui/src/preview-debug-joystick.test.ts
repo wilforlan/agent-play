@@ -1,0 +1,87 @@
+import { describe, expect, it } from "vitest";
+import {
+  screenDeltaToWorldJoystick,
+  shouldClampWorldPositionWhenJoystickDriving,
+} from "./preview-debug-joystick.js";
+
+describe("screenDeltaToWorldJoystick", () => {
+  it("maps right to positive x and up on screen to positive world y", () => {
+    const max = 56;
+    const v = screenDeltaToWorldJoystick(max, -max, max);
+    expect(v.x).toBeCloseTo(1, 5);
+    expect(v.y).toBeCloseTo(1, 5);
+  });
+
+  it("returns zero for tiny offsets", () => {
+    const v = screenDeltaToWorldJoystick(0.5, 0.5, 56);
+    expect(v.x).toBe(0);
+    expect(v.y).toBe(0);
+  });
+
+  it("normalizes vectors longer than maxOffsetPx", () => {
+    const max = 56;
+    const v = screenDeltaToWorldJoystick(max * 2, 0, max);
+    expect(v.x).toBeCloseTo(1, 5);
+    expect(v.y).toBe(0);
+  });
+});
+
+describe("shouldClampWorldPositionWhenJoystickDriving", () => {
+  const primary = "p1";
+  const other = "p2";
+
+  it("clamps when joystick is not active", () => {
+    expect(
+      shouldClampWorldPositionWhenJoystickDriving({
+        playerId: primary,
+        primaryPlayerId: primary,
+        joystickActive: false,
+        joyVectorLength: 1,
+      })
+    ).toBe(true);
+  });
+
+  it("clamps when stick is centered", () => {
+    expect(
+      shouldClampWorldPositionWhenJoystickDriving({
+        playerId: primary,
+        primaryPlayerId: primary,
+        joystickActive: true,
+        joyVectorLength: 0.01,
+      })
+    ).toBe(true);
+  });
+
+  it("does not clamp primary while driving with deflection", () => {
+    expect(
+      shouldClampWorldPositionWhenJoystickDriving({
+        playerId: primary,
+        primaryPlayerId: primary,
+        joystickActive: true,
+        joyVectorLength: 0.5,
+      })
+    ).toBe(false);
+  });
+
+  it("still clamps non-primary players", () => {
+    expect(
+      shouldClampWorldPositionWhenJoystickDriving({
+        playerId: other,
+        primaryPlayerId: primary,
+        joystickActive: true,
+        joyVectorLength: 0.5,
+      })
+    ).toBe(true);
+  });
+
+  it("clamps everyone when there is no primary id", () => {
+    expect(
+      shouldClampWorldPositionWhenJoystickDriving({
+        playerId: primary,
+        primaryPlayerId: null,
+        joystickActive: true,
+        joyVectorLength: 0.5,
+      })
+    ).toBe(true);
+  });
+});

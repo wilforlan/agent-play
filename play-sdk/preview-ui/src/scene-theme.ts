@@ -9,6 +9,7 @@ import {
   ACTIVE_SCENE_THEME,
   type SceneThemeId,
 } from "./scene-registry.js";
+import { getPreviewViewSettings } from "./preview-view-settings.js";
 
 export type { SceneThemeId } from "./scene-registry.js";
 export {
@@ -104,5 +105,6 @@ const themes: Record<SceneThemeId, SceneTheme> = {
 };
 
 export function getActiveSceneTheme(): SceneTheme {
-  return themes[ACTIVE_SCENE_THEME];
+  const id = getPreviewViewSettings().themeId;
+  return themes[id] ?? themes.park;
 }

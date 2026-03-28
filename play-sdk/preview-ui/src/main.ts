@@ -1,4 +1,4 @@
-import { Container, Graphics, Text } from "pixi.js";
+import { Color, Container, Graphics, Text } from "pixi.js";
 import { nextAvatarMotion } from "./avatar-anim.js";
 import { buildCrowdLayer } from "./crowd-draw.js";
 import { layoutCrowdClusters } from "./crowd-layout.js";
@@ -10,14 +10,33 @@ import {
   type MultiversePalette,
 } from "./multiverse-engine.js";
 import {
+  agentChatHorizontalNudgePx,
+  computeAgentChatPanelPosition,
+} from "./agent-chat-panel-position.js";
+import {
+  clampWorldPosition,
+  type WorldBounds,
+} from "@play-sdk/lib/world-bounds.js";
+import {
   appendChatLogLine,
   resetChatLogFromSnapshot,
 } from "./preview-chat-log.js";
+import { createPreviewAgentChatOverlays } from "./preview-agent-chat-overlays.js";
+import { ensurePreviewChatStyles } from "./preview-chat-panel.js";
+import { createPreviewChatSettingsPanel } from "./preview-chat-settings-panel.js";
 import {
-  createPreviewChatPanel,
-  ensurePreviewChatStyles,
-} from "./preview-chat-panel.js";
-import { createPixiPreview } from "./pixi-multiverse.js";
+  getAgentChatDisplaySettings,
+  layoutHeightFromScrollMax,
+} from "./preview-chat-settings.js";
+import {
+  createPreviewDebugJoystick,
+  getJoystickVector,
+  setJoystickVectorZero,
+} from "./preview-debug-joystick.js";
+import { createPreviewDebugPanel } from "./preview-debug-panel.js";
+import { createPixiPreview, type PixiPreviewHandle } from "./pixi-multiverse.js";
+import { createPreviewSettingsToolbar } from "./preview-settings-toolbar.js";
+import { getPreviewViewSettings } from "./preview-view-settings.js";
 import { ENABLE_CROWD_LAYER, getActiveSceneTheme } from "./scene-theme.js";
 import { drawHomeStructure, drawToolPad } from "./structure-art.js";
 import type { AvatarFacing } from "./avatar-anim.js";
@@ -32,6 +51,8 @@ const WORLD_INTERACTION_SSE = "world:interaction";
 const HOME_STAND_EPS = 0.26;
 const HOME_FRONT_OFFSET_WX = 0.16;
 const HOME_FRONT_OFFSET_WY = 0.22;
+const PREVIEW_AGENT_CHAT_MARGIN_PX = 6;
+const PREVIEW_AGENT_CHAT_GAP_PX = 8;
 
 type Structure = {
   id: string;
@@ -134,6 +155,11 @@ function worldToScreen(wx: number, wy: number): { x: number; y: number } {
   };
 }
 
+function getWorldBoundsForClamp(): WorldBounds | null {
+  if (gridBounds === null) return null;
+  return { minX: mapMinX, minY: mapMinY, maxX: mapMaxX, maxY: mapMaxY };
+}
+
 const playerWorldPos = new Map<string, { x: number; y: number }>();
 const waypointQueues = new Map<string, Array<{ x: number; y: number }>>();
 const lastTickWorldPos = new Map<string, { x: number; y: number }>();
@@ -153,6 +179,16 @@ const structureNodes = new Map<string, StructureVisual>();
 const agentNodes = new Map<string, AgentVisual>();
 
 let refreshPreviewChat: () => void = () => {};
+
+let agentChatOverlays: ReturnType<typeof createPreviewAgentChatOverlays> | null =
+  null;
+
+let pixiHandle: PixiPreviewHandle | null = null;
+let sceneRootContainer: Container | null = null;
+let crowdLayerContainer: Container | null = null;
+let debugPanelUpdate: (() => void) | null = null;
+let debugMountEl: HTMLElement | null = null;
+let joystickHandle: ReturnType<typeof createPreviewDebugJoystick> | null = null;
 
 function playerDisplayName(playerId: string): string {
   return (
@@ -178,6 +214,7 @@ function pushInteractionToChat(
 
 function hydrateChatFromSnapshot(s: Snapshot): void {
   resetChatLogFromSnapshot(s);
+  agentChatOverlays?.syncPlayerIds(s.players.map((p) => p.playerId));
   refreshPreviewChat();
 }
 
@@ -224,6 +261,25 @@ function getPlayerHomeCell(
   return null;
 }
 
+function getAgentHeroAnchorScreen(
+  playerId: string,
+  wpos: { x: number; y: number },
+  box: number
+): { cx: number; cy: number } {
+  const home = getPlayerHomeCell(playerId, snapshot);
+  let wx = wpos.x;
+  let wy = wpos.y;
+  if (
+    home !== null &&
+    Math.hypot(wpos.x - home.x, wpos.y - home.y) < HOME_STAND_EPS
+  ) {
+    wx += HOME_FRONT_OFFSET_WX;
+    wy += HOME_FRONT_OFFSET_WY;
+  }
+  const { x: sx, y: sy } = worldToScreen(wx, wy);
+  return { cx: sx + box * 0.3, cy: sy + box * 0.55 };
+}
+
 function setWaypoints(playerId: string, path: PathStep[]): void {
   const pts: Array<{ x: number; y: number }> = [];
   for (const step of path) {
@@ -231,7 +287,13 @@ function setWaypoints(playerId: string, path: PathStep[]): void {
       pts.push({ x: step.x, y: step.y });
     }
   }
-  if (pts.length > 0) waypointQueues.set(playerId, pts);
+  if (pts.length === 0) return;
+  const wb = getWorldBoundsForClamp();
+  const resolved =
+    wb !== null
+      ? pts.map((p) => clampWorldPosition(p, wb))
+      : pts;
+  waypointQueues.set(playerId, resolved);
 }
 
 function applyJourneyUpdate(u: JourneyUpdate): void {
@@ -258,9 +320,16 @@ async function loadSnapshot(sid: string): Promise<void> {
     const minY0 = grassTop + 16;
     worldOriginScreenY = y0 < minY0 ? minY0 : y0;
   }
+  const wbSpawn = getWorldBoundsForClamp();
   for (const p of snapshot.players) {
     if (!playerWorldPos.has(p.playerId)) {
-      playerWorldPos.set(p.playerId, { x: 0, y: 0 });
+      const home = getPlayerHomeCell(p.playerId, snapshot);
+      const spawn =
+        home !== null ? { x: home.x, y: home.y } : { x: 0, y: 0 };
+      playerWorldPos.set(
+        p.playerId,
+        wbSpawn !== null ? clampWorldPosition(spawn, wbSpawn) : spawn
+      );
     }
     if (p.lastUpdate) applyJourneyUpdate(p.lastUpdate);
   }
@@ -444,22 +513,146 @@ function paintGrid(): void {
   }
 }
 
+function getDebugSnapshot(): {
+  agents: readonly {
+    playerId: string;
+    name: string;
+    worldX: number;
+    worldY: number;
+  }[];
+  structures: readonly {
+    id: string;
+    kind: string;
+    x: number;
+    y: number;
+    toolName?: string;
+    playerId?: string;
+  }[];
+} {
+  if (snapshot === null) {
+    return { agents: [], structures: [] };
+  }
+  const agents = snapshot.players.map((p) => {
+    const pos = playerWorldPos.get(p.playerId);
+    return {
+      playerId: p.playerId,
+      name: p.name,
+      worldX: pos?.x ?? 0,
+      worldY: pos?.y ?? 0,
+    };
+  });
+  const structures = collectStructuresForRender(snapshot).map((s) => ({
+    id: s.id,
+    kind: s.kind,
+    x: s.x,
+    y: s.y,
+    toolName: s.toolName,
+    playerId: s.playerId,
+  }));
+  return { agents, structures };
+}
+
+function applyChatVisibility(): void {
+  const show = getPreviewViewSettings().showChatUi;
+  if (agentChatOverlays !== null) {
+    agentChatOverlays.root.style.visibility = show ? "visible" : "hidden";
+    agentChatOverlays.root.style.pointerEvents = show ? "auto" : "none";
+  }
+}
+
+function applyDebugVisibility(): void {
+  if (debugMountEl === null) return;
+  const on = getPreviewViewSettings().debugMode;
+  debugMountEl.classList.toggle("preview-debug-mount--visible", on);
+  if (on) {
+    debugPanelUpdate?.();
+  }
+}
+
+function getPrimaryPlayerId(): string | null {
+  return snapshot?.players[0]?.playerId ?? null;
+}
+
+function applyJoystickVisibility(): void {
+  const v = getPreviewViewSettings();
+  const show = v.debugMode && v.joystickEnabled;
+  joystickHandle?.setVisible(show);
+  if (!show) {
+    setJoystickVectorZero();
+  }
+}
+
+function rebuildSceneForTheme(): void {
+  if (appStage === null || pixiHandle === null) return;
+  const theme = getActiveSceneTheme();
+  palette = mergeMultiversePalette(theme.palettePartial);
+  pixiHandle.app.renderer.background.color = new Color(theme.appBackgroundColor);
+  if (sceneRootContainer !== null) {
+    appStage.removeChild(sceneRootContainer);
+    sceneRootContainer.destroy({ children: true });
+    sceneRootContainer = null;
+  }
+  if (crowdLayerContainer !== null) {
+    appStage.removeChild(crowdLayerContainer);
+    crowdLayerContainer.destroy({ children: true });
+    crowdLayerContainer = null;
+  }
+  sceneRootContainer = theme.buildScene(VIEW_W, VIEW_H, 0x5cafe);
+  appStage.addChildAt(sceneRootContainer, 0);
+  if (ENABLE_CROWD_LAYER) {
+    const groundTop = VIEW_H * theme.grassBandTopRatio;
+    const crowdClusters = layoutCrowdClusters({
+      width: VIEW_W,
+      height: VIEW_H,
+      seed: 0x5cafe + theme.crowdSeedSalt,
+      groundTop,
+      groundBottom: VIEW_H - 20,
+      clusterCountRange: [4, 8],
+    });
+    crowdLayerContainer = buildCrowdLayer(crowdClusters);
+    appStage.addChildAt(crowdLayerContainer, 1);
+  }
+}
+
 function onTick(dt: number): void {
   const speed = 2.2;
+  const joySpeed = 3.5;
+  const wb = getWorldBoundsForClamp();
+  const settings = getPreviewViewSettings();
+  const primaryId = getPrimaryPlayerId();
+  const joystickActive =
+    settings.debugMode && settings.joystickEnabled && primaryId !== null;
+  const jv = joystickActive ? getJoystickVector() : { x: 0, y: 0 };
+  const joyLen = Math.hypot(jv.x, jv.y);
+
   for (const [id, pos] of playerWorldPos) {
     const prev = { ...pos };
     let next = { ...pos };
-    const queue = waypointQueues.get(id);
-    if (queue && queue.length > 0) {
-      const target = queue[0];
-      if (target) {
-        next = moveToward(pos, target, speed, dt);
-        playerWorldPos.set(id, next);
-        if (Math.hypot(target.x - next.x, target.y - next.y) < 0.08) {
-          queue.shift();
+    const useJoy =
+      joystickActive && joyLen > 0.02 && id === primaryId;
+
+    if (useJoy) {
+      waypointQueues.delete(id);
+      next = {
+        x: pos.x + jv.x * joySpeed * dt,
+        y: pos.y + jv.y * joySpeed * dt,
+      };
+    } else {
+      const queue = waypointQueues.get(id);
+      if (queue && queue.length > 0) {
+        const target = queue[0];
+        if (target) {
+          next = moveToward(pos, target, speed, dt);
+          if (Math.hypot(target.x - next.x, target.y - next.y) < 0.08) {
+            queue.shift();
+          }
         }
       }
     }
+    if (wb !== null) {
+      next = clampWorldPosition(next, wb);
+    }
+    playerWorldPos.set(id, next);
     const motion = nextAvatarMotion({
       prevWorld: prev,
       nextWorld: next,
@@ -482,24 +675,14 @@ function onFrame(): void {
     snapshot !== null ? collectStructuresForRender(snapshot) : [];
   syncStructureNodes(structs);
   syncAgentNodes();
+  const aliveIds = snapshot?.players.map((p) => p.playerId) ?? [];
+  agentChatOverlays?.syncPlayerIds(aliveIds);
   const box = Math.max(16, Math.min(40, cellScale * 0.85));
   for (const [id, wpos] of playerWorldPos) {
     const v = agentNodes.get(id);
     if (v === undefined) continue;
-    const home = getPlayerHomeCell(id, snapshot);
-    let wx = wpos.x;
-    let wy = wpos.y;
-    if (
-      home !== null &&
-      Math.hypot(wpos.x - home.x, wpos.y - home.y) < HOME_STAND_EPS
-    ) {
-      wx += HOME_FRONT_OFFSET_WX;
-      wy += HOME_FRONT_OFFSET_WY;
-    }
-    const { x: sx, y: sy } = worldToScreen(wx, wy);
+    const { cx, cy } = getAgentHeroAnchorScreen(id, wpos, box);
     const scale = Math.max(0.35, Math.min(0.85, cellScale / 48));
-    const cx = sx + box * 0.3;
-    const cy = sy + box * 0.55;
     v.root.position.set(cx, cy);
     drawPlatformHero(v.hero, {
       scale,
@@ -511,6 +694,26 @@ function onFrame(): void {
       snapshot?.players.find((pl) => pl.playerId === id)?.name ?? id;
     v.nameTag.text = displayName.slice(0, 14);
     v.nameTag.position.set(-v.nameTag.width / 2, box * 0.45);
+    if (getPreviewViewSettings().showChatUi) {
+      const chatDisplay = getAgentChatDisplaySettings();
+      const layout = computeAgentChatPanelPosition({
+        anchorScreenX: cx,
+        anchorScreenY: cy,
+        panelWidth: chatDisplay.panelWidthPx,
+        panelLayoutHeightPx: layoutHeightFromScrollMax(
+          chatDisplay.scrollMaxHeightPx
+        ),
+        viewportWidth: VIEW_W,
+        viewportHeight: VIEW_H,
+        marginPx: PREVIEW_AGENT_CHAT_MARGIN_PX,
+        gapAboveAgentPx: PREVIEW_AGENT_CHAT_GAP_PX,
+        horizontalNudgePx: agentChatHorizontalNudgePx(id),
+      });
+      agentChatOverlays?.setLayout(id, layout.left, layout.top);
+    }
+  }
+  if (getPreviewViewSettings().debugMode) {
+    debugPanelUpdate?.();
   }
 }
 
@@ -525,23 +728,44 @@ function bootstrap(): void {
     shell.style.cssText =
       "display:flex;flex-direction:column;align-items:center;min-height:100vh;";
     document.body.appendChild(shell);
-    const chatPanel = createPreviewChatPanel({ widthPx: VIEW_W });
-    refreshPreviewChat = chatPanel.refresh;
 
-    const sceneRoot = theme.buildScene(VIEW_W, VIEW_H, 0x5cafe);
+    const worldRow = document.createElement("div");
+    worldRow.className = "preview-world-row";
+
+    const debugMount = document.createElement("div");
+    debugMount.className = "preview-debug-mount";
+    debugMountEl = debugMount;
+    const debug = createPreviewDebugPanel({
+      getSnapshot: getDebugSnapshot,
+    });
+    debugPanelUpdate = debug.update;
+    debugMount.appendChild(debug.element);
+
+    const canvasHost = document.createElement("div");
+    canvasHost.style.cssText = `display:block;position:relative;width:${VIEW_W}px;max-width:100%;height:${VIEW_H}px;margin:0 auto;overflow:hidden;`;
+
+    worldRow.append(debugMount, canvasHost);
+    shell.appendChild(worldRow);
+
+    agentChatOverlays = createPreviewAgentChatOverlays();
+    refreshPreviewChat = () => {
+      agentChatOverlays?.refreshAll();
+    };
+
     worldLayer.addChild(gridGraphics);
     worldLayer.addChild(structureLayer);
     const handle = await createPixiPreview({
       width: VIEW_W,
       height: VIEW_H,
-      parent: shell,
+      parent: canvasHost,
       backgroundColor: theme.appBackgroundColor,
       onTick,
       onFrame,
     });
+    pixiHandle = handle;
     appStage = handle.app.stage;
-    shell.appendChild(chatPanel.element);
-    handle.app.stage.addChild(sceneRoot);
+    sceneRootContainer = theme.buildScene(VIEW_W, VIEW_H, 0x5cafe);
+    handle.app.stage.addChild(sceneRootContainer);
     if (ENABLE_CROWD_LAYER) {
       const groundTop = VIEW_H * theme.grassBandTopRatio;
       const crowdClusters = layoutCrowdClusters({
@@ -552,10 +776,40 @@ function bootstrap(): void {
         groundBottom: VIEW_H - 20,
         clusterCountRange: [4, 8],
       });
-      handle.app.stage.addChild(buildCrowdLayer(crowdClusters));
+      crowdLayerContainer = buildCrowdLayer(crowdClusters);
+      handle.app.stage.addChild(crowdLayerContainer);
     }
     handle.app.stage.addChild(worldLayer);
     handle.app.stage.addChild(agentsLayer);
+
+    canvasHost.appendChild(agentChatOverlays.root);
+
+    joystickHandle = createPreviewDebugJoystick({ parent: canvasHost });
+
+    const chatPanel = createPreviewChatSettingsPanel({
+      embeddedInToolbar: true,
+      onSettingsApplied: () => {
+        agentChatOverlays?.applyDisplaySettings();
+      },
+    });
+    shell.appendChild(
+      createPreviewSettingsToolbar({
+        chatPanel,
+        onThemeApplied: () => {
+          rebuildSceneForTheme();
+        },
+        onAgentSettingsChanged: () => {
+          applyChatVisibility();
+          applyDebugVisibility();
+          applyJoystickVisibility();
+        },
+      })
+    );
+
+    applyChatVisibility();
+    applyDebugVisibility();
+    applyJoystickVisibility();
+
     void loadSnapshot(sid).then(() => connectSse(sid));
   })();
 }

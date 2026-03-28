@@ -1,6 +1,11 @@
 import { randomUUID } from "node:crypto";
 import type { PlayAgentInformation, PlatformAgentInformation } from "../@types/agent.js";
-import type { Journey, WorldJourneyUpdate, WorldStructure } from "../@types/world.js";
+import type {
+  Journey,
+  PositionedStep,
+  WorldJourneyUpdate,
+  WorldStructure,
+} from "../@types/world.js";
 import { configureAgentPlayDebug, agentPlayDebug } from "./agent-play-debug.js";
 import { isToolMessage } from "@langchain/core/messages";
 import { extractJourney } from "./journey-from-messages.js";
@@ -21,6 +26,20 @@ import type {
 import type { PreviewSnapshotJson } from "./preview-serialize.js";
 import { serializeWorldJourneyUpdate } from "./preview-serialize.js";
 import { buildWorldMapFromPlayers } from "./world-map.js";
+import { clampWorldPosition, type WorldBounds } from "./world-bounds.js";
+
+function clampPathToBounds(
+  path: PositionedStep[],
+  bounds: WorldBounds
+): PositionedStep[] {
+  return path.map((step) => {
+    if (typeof step.x === "number" && typeof step.y === "number") {
+      const c = clampWorldPosition({ x: step.x, y: step.y }, bounds);
+      return { ...step, x: c.x, y: c.y };
+    }
+    return step;
+  });
+}
 
 export type LangChainAgentRegistration = {
   type: "langchain";
@@ -204,7 +223,11 @@ export class PlayWorld {
     this.structuresByPlayer.set(playerId, structures);
     const prev = this.lastUpdateByPlayer.get(playerId);
     if (prev !== undefined) {
-      const path = enrichJourneyPath(prev.journey, structures);
+      const pathRaw = enrichJourneyPath(prev.journey, structures);
+      const worldMap = buildWorldMapFromPlayers([
+        { playerId, structures },
+      ]);
+      const path = clampPathToBounds(pathRaw, worldMap.bounds);
       this.lastUpdateByPlayer.set(playerId, {
         ...prev,
         structures,
@@ -269,7 +292,11 @@ export class PlayWorld {
 
   recordJourney(playerId: string, journey: Journey): void {
     const structures = this.structuresByPlayer.get(playerId) ?? [];
-    const path = enrichJourneyPath(journey, structures);
+    const pathRaw = enrichJourneyPath(journey, structures);
+    const worldMap = buildWorldMapFromPlayers([
+      { playerId, structures },
+    ]);
+    const path = clampPathToBounds(pathRaw, worldMap.bounds);
     const payload: WorldJourneyUpdate = {
       playerId,
       journey,

@@ -1,5 +1,6 @@
 import { renderChatMarkdown } from "./chat-markdown.js";
 import { interactionRoleToBubbleClass } from "./chat-role.js";
+import type { ChatLine } from "./preview-chat-log.js";
 import { getChatLogLines } from "./preview-chat-log.js";
 
 const PANEL_MAX_HEIGHT_PX = 100;
@@ -143,6 +144,19 @@ export function ensurePreviewChatStyles(): void {
   document.head.append(s);
 }
 
+export function createChatBubbleElement(line: ChatLine): HTMLElement {
+  const row = document.createElement("article");
+  row.className = `preview-chat-bubble ${interactionRoleToBubbleClass(line.role)}`;
+  const meta = document.createElement("div");
+  meta.className = "preview-chat-meta";
+  meta.textContent = `${line.playerName} · ${line.role}`;
+  const body = document.createElement("div");
+  body.className = "preview-chat-body";
+  body.innerHTML = renderChatMarkdown(line.text);
+  row.append(meta, body);
+  return row;
+}
+
 export function createPreviewChatPanel(options: {
   widthPx: number;
 }): {
@@ -165,16 +179,7 @@ export function createPreviewChatPanel(options: {
   const refresh = (): void => {
     scroll.replaceChildren();
     for (const line of getChatLogLines()) {
-      const row = document.createElement("article");
-      row.className = `preview-chat-bubble ${interactionRoleToBubbleClass(line.role)}`;
-      const meta = document.createElement("div");
-      meta.className = "preview-chat-meta";
-      meta.textContent = `${line.playerName} · ${line.role}`;
-      const body = document.createElement("div");
-      body.className = "preview-chat-body";
-      body.innerHTML = renderChatMarkdown(line.text);
-      row.append(meta, body);
-      scroll.append(row);
+      scroll.append(createChatBubbleElement(line));
     }
     scroll.scrollTop = scroll.scrollHeight;
   };

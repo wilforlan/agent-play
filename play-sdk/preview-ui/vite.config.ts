@@ -1,4 +1,8 @@
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { defineConfig } from "vite";
+
+const previewUiDir = path.dirname(fileURLToPath(import.meta.url));
 
 export default defineConfig({
   base: "/agent-play/",
@@ -6,4 +10,9 @@ export default defineConfig({
     outDir: "dist",
   },
   root: ".",
+  resolve: {
+    alias: {
+      "@play-sdk/lib": path.resolve(previewUiDir, "../src/lib"),
+    },
+  },
 });

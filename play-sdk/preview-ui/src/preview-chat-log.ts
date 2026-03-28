@@ -72,6 +72,10 @@ export function getChatLogLines(): readonly ChatLine[] {
   return lines;
 }
 
+export function getChatLogLinesForPlayer(playerId: string): readonly ChatLine[] {
+  return lines.filter((l) => l.playerId === playerId);
+}
+
 export function clearChatLog(): void {
   lines = [];
   localSeq = 0;
