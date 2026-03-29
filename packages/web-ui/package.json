@@ -1,0 +1,35 @@
+{
+  "name": "@agent-play/web-ui",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "predev": "node ./scripts/copy-sources.mjs",
+    "prebuild": "node ./scripts/copy-sources.mjs",
+    "dev": "tsx server.ts",
+    "build": "next build",
+    "start": "NODE_ENV=production tsx server.ts",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@langchain/core": "^1.1.35",
+    "dompurify": "^3.3.3",
+    "ioredis": "^5.6.0",
+    "marked": "^17.0.5",
+    "next": "^15.1.0",
+    "pixi.js": "^8.17.1",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/dompurify": "^3.0.5",
+    "@types/node": "^22.10.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@types/ws": "^8.5.13",
+    "tsx": "^4.21.0",
+    "typescript": "~5.9.3",
+    "vitest": "^3.0.9"
+  }
+}

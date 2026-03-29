@@ -19,11 +19,11 @@ import { createInterface } from "node:readline/promises";
 import { AIMessage, type BaseMessage, HumanMessage } from "@langchain/core/messages";
 import express from "express";
 import {
-  PlayWorld,
   attachLangChainInvoke,
   langchainRegistration,
-  mountExpressPreview,
 } from "../src/index.js";
+import { PlayWorld } from "../../web-ui/src/server/agent-play/play-world.js";
+import { mountExpressPreview } from "../../web-ui/src/server/agent-play/preview/mount-express-preview.js";
 import { createFinancialAdvisorTools } from "./lib/financial-advisor-tools.js";
 import { createAgent } from "langchain";
 import { ChatOpenAI } from "@langchain/openai";
@@ -69,7 +69,7 @@ const player = await world.addPlayer({
   type: "langchain",
   agent: langchainRegistration(agent),
 });
-attachLangChainInvoke(agent, world, player.id);
+await attachLangChainInvoke(agent, world, player.id);
 
 mountExpressPreview(app, world, { basePath: PREVIEW_BASE });
 

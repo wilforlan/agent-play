@@ -1,35 +1,160 @@
 #!/usr/bin/env node
+import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
-import {
-  InMemoryAgentRepository,
-  createRedisAgentRepository,
-  type AgentRepository,
-} from "@agent-play/sdk";
 
-async function openRepository(): Promise<{
-  repo: AgentRepository;
-  close: () => Promise<void>;
-}> {
-  const redisUrl = process.env.REDIS_URL;
-  if (typeof redisUrl === "string" && redisUrl.length > 0) {
-    const repo = createRedisAgentRepository({
-      redisUrl,
-      hostId: process.env.AGENT_PLAY_HOST_ID ?? "default",
-    });
-    return {
-      repo,
-      close: () => repo.close(),
-    };
+type Credentials = {
+  serverUrl: string;
+  token: string;
+};
+
+function credentialsPath(): string {
+  return join(homedir(), ".agent-play", "credentials.json");
+}
+
+async function loadCredentials(): Promise<Credentials | null> {
+  try {
+    const raw = await readFile(credentialsPath(), "utf8");
+    const json: unknown = JSON.parse(raw) as unknown;
+    if (typeof json !== "object" || json === null) return null;
+    const o = json as { serverUrl?: unknown; token?: unknown };
+    if (typeof o.serverUrl !== "string" || typeof o.token !== "string") {
+      return null;
+    }
+    return { serverUrl: o.serverUrl.replace(/\/$/, ""), token: o.token };
+  } catch {
+    return null;
   }
-  const repo = new InMemoryAgentRepository();
-  return {
-    repo,
-    close: async () => undefined,
-  };
+}
+
+async function saveCredentials(c: Credentials): Promise<void> {
+  const dir = join(homedir(), ".agent-play");
+  await mkdir(dir, { recursive: true });
+  await writeFile(
+    credentialsPath(),
+    JSON.stringify({ serverUrl: c.serverUrl, token: c.token }, null, 2),
+    "utf8"
+  );
+}
+
+function defaultServerUrl(): string {
+  return process.env.AGENT_PLAY_SERVER_URL ?? "http://127.0.0.1:3000";
+}
+
+async function cmdLogin(): Promise<void> {
+  const rl = createInterface({ input, output });
+  const serverUrl = (
+    (await rl.question(
+      `Server URL [${defaultServerUrl()}]: `
+    )).trim() || defaultServerUrl()
+  ).replace(/\/$/, "");
+  const email = (await rl.question("Email: ")).trim();
+  if (email.length === 0) {
+    rl.close();
+    console.error("Email is required.");
+    process.exitCode = 1;
+    return;
+  }
+  const lookupRes = await fetch(`${serverUrl}/api/auth/lookup`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ email }),
+  });
+  const lookupText = await lookupRes.text();
+  if (!lookupRes.ok) {
+    rl.close();
+    console.error(`Lookup failed (${lookupRes.status}): ${lookupText}`);
+    process.exitCode = 1;
+    return;
+  }
+  let lookupJson: unknown;
+  try {
+    lookupJson = JSON.parse(lookupText) as unknown;
+  } catch {
+    rl.close();
+    console.error("Invalid JSON from server.");
+    process.exitCode = 1;
+    return;
+  }
+  const exists =
+    typeof lookupJson === "object" &&
+    lookupJson !== null &&
+    (lookupJson as { exists?: unknown }).exists === true;
+
+  let token: string | undefined;
+  if (exists) {
+    const password = (await rl.question("Password: ")).trim();
+    rl.close();
+    const loginRes = await fetch(`${serverUrl}/api/auth/login`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ email, password }),
+    });
+    const loginText = await loginRes.text();
+    if (!loginRes.ok) {
+      console.error(`Login failed (${loginRes.status}): ${loginText}`);
+      process.exitCode = 1;
+      return;
+    }
+    const loginJson = JSON.parse(loginText) as { token?: unknown };
+    if (typeof loginJson.token !== "string") {
+      console.error("Missing token in response.");
+      process.exitCode = 1;
+      return;
+    }
+    token = loginJson.token;
+  } else {
+    const name = (await rl.question("Your name: ")).trim() || "User";
+    const password = (await rl.question("Choose a password (min 8 chars): ")).trim();
+    if (password.length < 8) {
+      rl.close();
+      console.error("Password must be at least 8 characters.");
+      process.exitCode = 1;
+      return;
+    }
+    rl.close();
+    const regRes = await fetch(`${serverUrl}/api/auth/register`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ email, name, password }),
+    });
+    const regText = await regRes.text();
+    if (!regRes.ok) {
+      console.error(`Sign up failed (${regRes.status}): ${regText}`);
+      process.exitCode = 1;
+      return;
+    }
+    const regJson = JSON.parse(regText) as { token?: unknown };
+    if (typeof regJson.token !== "string") {
+      console.error("Missing token in response.");
+      process.exitCode = 1;
+      return;
+    }
+    token = regJson.token;
+  }
+
+  await saveCredentials({ serverUrl, token });
+  console.log(`Signed in. Credentials saved to ${credentialsPath()}`);
+}
+
+async function cmdLogout(): Promise<void> {
+  try {
+    await unlink(credentialsPath());
+    console.log("Logged out.");
+  } catch {
+    console.log("No saved session.");
+  }
 }
 
 async function cmdCreate(): Promise<void> {
+  const cred = await loadCredentials();
+  if (cred === null) {
+    console.error("Run `agent-play login` first.");
+    process.exitCode = 1;
+    return;
+  }
   const rl = createInterface({ input, output });
   const name = (await rl.question("Agent name: ")).trim() || "agent";
   const toolsRaw = (
@@ -48,50 +173,111 @@ async function cmdCreate(): Promise<void> {
     ? toolNames
     : ["chat_tool", ...toolNames];
   rl.close();
-  const { repo, close } = await openRepository();
-  try {
-    const { agentId, plainApiKey } = await repo.createAgent({
-      name,
-      toolNames: withChat,
-    });
-    console.log("");
-    console.log(`Created agent id: ${agentId}`);
-    console.log("API key (store securely; shown once):");
-    console.log(plainApiKey);
-    console.log("");
-  } finally {
-    await close();
+
+  const res = await fetch(`${cred.serverUrl}/api/agents`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      authorization: `Bearer ${cred.token}`,
+    },
+    body: JSON.stringify({ name, toolNames: withChat }),
+  });
+  const text = await res.text();
+  if (!res.ok) {
+    console.error(`Create failed (${res.status}): ${text}`);
+    process.exitCode = 1;
+    return;
   }
+  const json = JSON.parse(text) as {
+    agentId?: unknown;
+    plainApiKey?: unknown;
+  };
+  if (typeof json.agentId !== "string" || typeof json.plainApiKey !== "string") {
+    console.error("Invalid response from server.");
+    process.exitCode = 1;
+    return;
+  }
+  console.log("");
+  console.log(`Created agent id: ${json.agentId}`);
+  console.log("API key (store securely; shown once):");
+  console.log(json.plainApiKey);
+  console.log("");
 }
 
 async function cmdDelete(): Promise<void> {
-  const { repo, close } = await openRepository();
-  try {
-    const list = await repo.listAgents();
-    if (list.length === 0) {
-      console.log("No agents.");
-      return;
-    }
-    list.forEach((a, i) => {
-      console.log(`${i + 1}. ${a.agentId} (${a.name})`);
-    });
-    const rl = createInterface({ input, output });
-    const pick = (await rl.question("Agent id to delete (empty = cancel): "))
-      .trim();
-    rl.close();
-    if (pick.length === 0) {
-      console.log("Cancelled.");
-      return;
-    }
-    const ok = await repo.deleteAgent(pick);
-    console.log(ok ? "Deleted." : "Not found.");
-  } finally {
-    await close();
+  const cred = await loadCredentials();
+  if (cred === null) {
+    console.error("Run `agent-play login` first.");
+    process.exitCode = 1;
+    return;
   }
+  const listRes = await fetch(`${cred.serverUrl}/api/agents`, {
+    headers: { authorization: `Bearer ${cred.token}` },
+  });
+  const listText = await listRes.text();
+  if (!listRes.ok) {
+    console.error(`List failed (${listRes.status}): ${listText}`);
+    process.exitCode = 1;
+    return;
+  }
+  const listJson = JSON.parse(listText) as { agents?: unknown };
+  const agentsRaw = listJson.agents;
+  if (!Array.isArray(agentsRaw)) {
+    console.error("Invalid list response.");
+    process.exitCode = 1;
+    return;
+  }
+  type Row = { agentId: string; name: string };
+  const agents: Row[] = [];
+  for (const a of agentsRaw) {
+    if (typeof a !== "object" || a === null) continue;
+    const o = a as { agentId?: unknown; name?: unknown };
+    if (typeof o.agentId === "string" && typeof o.name === "string") {
+      agents.push({ agentId: o.agentId, name: o.name });
+    }
+  }
+  if (agents.length === 0) {
+    console.log("No agents.");
+    return;
+  }
+  agents.forEach((a, i) => {
+    console.log(`${i + 1}. ${a.agentId} (${a.name})`);
+  });
+  const rl = createInterface({ input, output });
+  const pick = (await rl.question("Agent id to delete (empty = cancel): "))
+    .trim();
+  rl.close();
+  if (pick.length === 0) {
+    console.log("Cancelled.");
+    return;
+  }
+  const delRes = await fetch(
+    `${cred.serverUrl}/api/agents?id=${encodeURIComponent(pick)}`,
+    {
+      method: "DELETE",
+      headers: { authorization: `Bearer ${cred.token}` },
+    }
+  );
+  const delText = await delRes.text();
+  if (!delRes.ok) {
+    console.error(`Delete failed (${delRes.status}): ${delText}`);
+    process.exitCode = 1;
+    return;
+  }
+  const delJson = JSON.parse(delText) as { ok?: unknown };
+  console.log(delJson.ok === true ? "Deleted." : "Not found.");
 }
 
 async function main(): Promise<void> {
   const cmd = process.argv[2];
+  if (cmd === "login") {
+    await cmdLogin();
+    return;
+  }
+  if (cmd === "logout") {
+    await cmdLogout();
+    return;
+  }
   if (cmd === "create") {
     await cmdCreate();
     return;
@@ -100,7 +286,7 @@ async function main(): Promise<void> {
     await cmdDelete();
     return;
   }
-  console.error("Usage: agent-play create | delete");
+  console.error("Usage: agent-play login | logout | create | delete");
   process.exitCode = 1;
 }
 

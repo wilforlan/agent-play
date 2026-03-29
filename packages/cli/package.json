@@ -7,12 +7,11 @@
     "agent-play": "./dist/cli.js"
   },
   "scripts": {
-    "build": "tsup src/cli.ts --format esm --platform node --target node20 --out-dir dist --clean --external @agent-play/sdk"
+    "build": "tsup src/cli.ts --format esm --platform node --target node20 --out-dir dist --clean"
   },
-  "dependencies": {
-    "@agent-play/sdk": "workspace:*"
-  },
+  "dependencies": {},
   "devDependencies": {
+    "@types/node": "^22.10.0",
     "tsup": "^8.5.1",
     "typescript": "~5.9.3"
   }

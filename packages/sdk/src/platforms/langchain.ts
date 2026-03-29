@@ -1,10 +1,19 @@
 import { AIMessage, HumanMessage } from "@langchain/core/messages";
 import { agentPlayDebug } from "../lib/agent-play-debug.js";
-import type { PlayWorld } from "../lib/play-world.js";
+import type { RecordInteractionInput } from "../public-types.js";
 
 export type LangChainAgentLike = {
   invoke: (...args: unknown[]) => Promise<unknown>;
   tools?: readonly { name: string }[];
+};
+
+export type PlayWorldLike = {
+  syncPlayerStructuresFromTools(
+    playerId: string,
+    toolNames: string[]
+  ): void | Promise<void>;
+  recordInteraction(input: RecordInteractionInput): void | Promise<void>;
+  ingestInvokeResult(playerId: string, invokeResult: unknown): void | Promise<void>;
 };
 
 function requireInvoke(agent: unknown): asserts agent is { invoke: (...a: unknown[]) => Promise<unknown> } {
@@ -41,11 +50,11 @@ function normalizeMessageContent(content: unknown): string {
   return String(content);
 }
 
-function recordLastUserFromInvokeArgs(
-  world: PlayWorld,
+async function recordLastUserFromInvokeArgs(
+  world: PlayWorldLike,
   playerId: string,
   args: unknown[]
-): void {
+): Promise<void> {
   const first = args[0];
   if (typeof first !== "object" || first === null || !("messages" in first)) {
     return;
@@ -57,7 +66,9 @@ function recordLastUserFromInvokeArgs(
     if (HumanMessage.isInstance(m)) {
       const t = normalizeMessageContent(m.content).trim();
       if (t.length > 0) {
-        world.recordInteraction({ playerId, role: "user", text: t });
+        await Promise.resolve(
+          world.recordInteraction({ playerId, role: "user", text: t })
+        );
       }
       return;
     }
@@ -66,7 +77,9 @@ function recordLastUserFromInvokeArgs(
       if (o.role === "user" || o.type === "human") {
         const t = normalizeMessageContent(o.content).trim();
         if (t.length > 0) {
-          world.recordInteraction({ playerId, role: "user", text: t });
+          await Promise.resolve(
+            world.recordInteraction({ playerId, role: "user", text: t })
+          );
         }
         return;
       }
@@ -74,11 +87,11 @@ function recordLastUserFromInvokeArgs(
   }
 }
 
-function recordLastAssistantFromInvokeResult(
-  world: PlayWorld,
+async function recordLastAssistantFromInvokeResult(
+  world: PlayWorldLike,
   playerId: string,
   result: unknown
-): void {
+): Promise<void> {
   if (typeof result !== "object" || result === null || !("messages" in result)) {
     return;
   }
@@ -92,7 +105,9 @@ function recordLastAssistantFromInvokeResult(
       if (hasTools) continue;
       const t = normalizeMessageContent(m.content).trim();
       if (t.length > 0) {
-        world.recordInteraction({ playerId, role: "assistant", text: t });
+        await Promise.resolve(
+          world.recordInteraction({ playerId, role: "assistant", text: t })
+        );
       }
       return;
     }
@@ -104,7 +119,9 @@ function recordLastAssistantFromInvokeResult(
         if (hasTools) continue;
         const t = normalizeMessageContent(o.content).trim();
         if (t.length > 0) {
-          world.recordInteraction({ playerId, role: "assistant", text: t });
+          await Promise.resolve(
+            world.recordInteraction({ playerId, role: "assistant", text: t })
+          );
         }
         return;
       }
@@ -131,14 +148,16 @@ export function langchainRegistration(agent: unknown): {
   };
 }
 
-export function attachLangChainInvoke(
+export async function attachLangChainInvoke(
   agent: unknown,
-  world: PlayWorld,
+  world: PlayWorldLike,
   playerId: string
-): void {
+): Promise<void> {
   requireInvoke(agent);
   const reg = langchainRegistration(agent);
-  world.syncPlayerStructuresFromTools(playerId, reg.toolNames);
+  await Promise.resolve(
+    world.syncPlayerStructuresFromTools(playerId, reg.toolNames)
+  );
   agentPlayDebug("langchain", "attachLangChainInvoke", {
     playerId,
     toolNames: reg.toolNames,
@@ -148,19 +167,19 @@ export function attachLangChainInvoke(
   };
   const originalInvoke = target.invoke.bind(agent);
   target.invoke = async (...args: unknown[]) => {
-    recordLastUserFromInvokeArgs(world, playerId, args);
+    await recordLastUserFromInvokeArgs(world, playerId, args);
     const result = await originalInvoke(...args);
-    world.ingestInvokeResult(playerId, result);
-    recordLastAssistantFromInvokeResult(world, playerId, result);
+    await Promise.resolve(world.ingestInvokeResult(playerId, result));
+    await recordLastAssistantFromInvokeResult(world, playerId, result);
     return result;
   };
 }
 
-export function langchainAgent(
+export async function langchainAgent(
   agent: unknown,
-  world: PlayWorld,
+  world: PlayWorldLike,
   playerId: string
-): { type: "langchain"; toolNames: string[] } {
-  attachLangChainInvoke(agent, world, playerId);
+): Promise<{ type: "langchain"; toolNames: string[] }> {
+  await attachLangChainInvoke(agent, world, playerId);
   return langchainRegistration(agent);
 }

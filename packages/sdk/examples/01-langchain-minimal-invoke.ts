@@ -1,20 +1,19 @@
 /**
- * Example 01 — Minimal LangChain + PlayWorld
+ * Example 01 — Minimal LangChain + RemotePlayWorld (web-ui server)
+ *
+ * Start the Next.js app first: `npm run dev -w @agent-play/web-ui` (with Redis/admin if you use API keys).
  *
  * What this shows
- * - One LangChain agent, one PlayWorld session, one player registration.
- * - `langchainRegistration(agent)` builds the `{ type: "langchain", toolNames }` payload that
- *   `addPlayer` needs before the canvas knows which “structures” (tool nodes) exist.
- * - `attachLangChainInvoke` replaces `agent.invoke` in place: after the real model run completes,
- *   the SDK reads `result.messages`, extracts a journey (origin → tools → destination), and
- *   emits `world:journey` on the in-memory bus so a watcher (or SSE bridge) can animate movement.
+ * - One LangChain agent, one session on the server, one player registration over HTTP.
+ * - `langchainRegistration(agent)` builds the `{ type: "langchain", toolNames }` payload for `addPlayer`.
+ * - `attachLangChainInvoke` wraps `invoke`; writes go to the server via RPC, journeys stream on WebSocket.
  *
  * Run: `tsx -r dotenv/config examples/01-langchain-minimal-invoke.ts`
- * Env: `OPENAI_API_KEY` (optional if your model is mocked; required for real calls)
+ * Env: `AGENT_PLAY_WEB_UI_URL` (default http://127.0.0.1:3000), `OPENAI_API_KEY` for real model calls
  */
 
 import {
-  PlayWorld,
+  RemotePlayWorld,
   attachLangChainInvoke,
   langchainRegistration,
 } from "../src/index.js";
@@ -44,7 +43,8 @@ const agent = createAgent({
 });
 
 async function main() {
-  const world = new PlayWorld({});
+  const base = process.env.AGENT_PLAY_WEB_UI_URL ?? "http://127.0.0.1:3000";
+  const world = new RemotePlayWorld({ baseUrl: base });
   await world.start();
 
   const player = await world.addPlayer({
@@ -53,7 +53,7 @@ async function main() {
     agent: langchainRegistration(agent),
   });
 
-  attachLangChainInvoke(agent, world, player.id);
+  await attachLangChainInvoke(agent, world, player.id);
 
   world.onWorldJourney((update) => {
     console.log("[world:journey]", {
@@ -78,7 +78,8 @@ async function main() {
 
   console.log("Result:", result);
 
-  console.log("Preview link for a hosted watch UI:", player.previewUrl);
+  console.log("Preview link:", player.previewUrl);
+  await world.close();
 }
 
 await main();

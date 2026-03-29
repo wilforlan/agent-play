@@ -9,12 +9,12 @@
     "packages/*"
   ],
   "scripts": {
-    "build": "npm run build:sdk && npm run build:play-ui && npm run build:cli",
+    "build": "npm run build:sdk && npm run build:cli && npm run build:web-ui",
     "build:sdk": "npm run build -w @agent-play/sdk",
-    "build:play-ui": "npm run build -w @agent-play/play-ui",
+    "build:web-ui": "npm run build -w @agent-play/web-ui",
     "build:cli": "npm run build -w @agent-play/cli",
-    "start": "npm run build && npx tsx packages/sdk/examples/production-server.ts",
-    "dev": "npx concurrently -k -n api,ui -c blue,magenta \"npm run example:sse -w @agent-play/sdk\" \"npx cross-env VITE_PLAY_API_BASE=http://127.0.0.1:3333/agent-play npm run dev -w @agent-play/play-ui\"",
+    "start": "npm run dev -w @agent-play/web-ui",
+    "dev": "npm run dev -w @agent-play/web-ui",
     "test": "npm run test --workspaces --if-present",
     "example": "npm run example -w @agent-play/sdk",
     "example:02": "npm run example:02 -w @agent-play/sdk",

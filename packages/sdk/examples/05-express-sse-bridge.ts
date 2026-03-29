@@ -15,11 +15,11 @@
 
 import express from "express";
 import {
-  PlayWorld,
   attachLangChainInvoke,
   langchainRegistration,
-  mountExpressPreview,
 } from "../src/index.js";
+import { PlayWorld } from "../../web-ui/src/server/agent-play/play-world.js";
+import { mountExpressPreview } from "../../web-ui/src/server/agent-play/preview/mount-express-preview.js";
 import { createAgent, tool } from "langchain";
 import { ChatOpenAI } from "@langchain/openai";
 import { z } from "zod";
@@ -60,7 +60,7 @@ const player = await world.addPlayer({
   type: "langchain",
   agent: langchainRegistration(agent),
 });
-attachLangChainInvoke(agent, world, player.id);
+await attachLangChainInvoke(agent, world, player.id);
 
 mountExpressPreview(app, world, { basePath: PREVIEW_BASE });
 

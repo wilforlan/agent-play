@@ -3,7 +3,7 @@
  * Prefer the numbered examples in this folder (see README.md).
  */
 import {
-  PlayWorld,
+  RemotePlayWorld,
   attachLangChainInvoke,
   langchainRegistration,
 } from "../src/index.js";
@@ -32,11 +32,8 @@ const agent = createAgent({
   systemPrompt: "You are a demo agent.",
 });
 
-const worldOptions =
-  process.env.PLAY_PREVIEW_BASE_URL !== undefined
-    ? { previewBaseUrl: process.env.PLAY_PREVIEW_BASE_URL }
-    : {};
-const world = new PlayWorld(worldOptions);
+const base = process.env.AGENT_PLAY_WEB_UI_URL ?? "http://127.0.0.1:3000";
+const world = new RemotePlayWorld({ baseUrl: base });
 await world.start();
 
 const player = await world.addPlayer({
@@ -45,7 +42,7 @@ const player = await world.addPlayer({
   agent: langchainRegistration(agent),
 });
 
-attachLangChainInvoke(agent, world, player.id);
+await attachLangChainInvoke(agent, world, player.id);
 
 world.onWorldJourney((update) => {
   console.log(
@@ -57,3 +54,5 @@ world.onWorldJourney((update) => {
 await agent.invoke({
   messages: [{ role: "user", content: "call demo with q=test" }],
 });
+
+await world.close();

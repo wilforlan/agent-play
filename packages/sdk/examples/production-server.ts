@@ -1,46 +1,13 @@
-import express from "express";
-import {
-  PlayWorld,
-  createRedisAgentRepository,
-  mountExpressPreview,
-} from "../src/index.js";
+/**
+ * Interactive preview, Redis-backed agents, and HTTP/WebSocket APIs are implemented by
+ * `@agent-play/web-ui` (Next.js). Run it with `npm run dev -w @agent-play/web-ui`.
+ *
+ * Point SDK clients at the same origin with `AGENT_PLAY_WEB_UI_URL` and use `RemotePlayWorld`
+ * (see `01-langchain-minimal-invoke.ts`). The CLI talks to `/api/admin/agents` using
+ * `AGENT_PLAY_SERVER_URL` and `AGENT_PLAY_ADMIN_KEY`.
+ */
 
-const PORT = Number(process.env.PORT ?? 3333);
-const PREVIEW_BASE = "/agent-play";
-const redisUrl = process.env.REDIS_URL;
-
-const repository =
-  typeof redisUrl === "string" && redisUrl.length > 0
-    ? createRedisAgentRepository({
-        redisUrl,
-        hostId: process.env.AGENT_PLAY_HOST_ID ?? "default",
-      })
-    : null;
-
-const world = new PlayWorld({
-  previewBaseUrl: `http://127.0.0.1:${PORT}${PREVIEW_BASE}/watch`,
-  repository: repository ?? undefined,
-});
-
-await world.start();
-
-const app = express();
-mountExpressPreview(app, world, { basePath: PREVIEW_BASE });
-
-app.listen(PORT, "127.0.0.1", () => {
-  const sid = world.getSessionId();
-  console.log(
-    `Preview: http://127.0.0.1:${PORT}${PREVIEW_BASE}/watch?sid=${sid}`
-  );
-  console.log(
-    `Snapshot: http://127.0.0.1:${PORT}${PREVIEW_BASE}/snapshot.json?sid=${sid}`
-  );
-});
-
-process.on("SIGINT", () => {
-  void Promise.resolve()
-    .then(() => repository?.close())
-    .finally(() => {
-      process.exit(0);
-    });
-});
+console.log(
+  "Use packages/web-ui for the server, and RemotePlayWorld in the SDK examples."
+);
+process.exit(0);
