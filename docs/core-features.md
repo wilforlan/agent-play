@@ -10,8 +10,8 @@ This document lists **product-level capabilities** of agent-play as implemented 
 
 ## LangChain integration
 
-- **Registration** — `langchainRegistration(agent)` exposes tool names so the world can render **structure nodes** before or after runs.
-- **Invoke hook** — `attachLangChainInvoke` wraps `invoke`, records user/assistant lines where possible, and feeds invoke results into journey extraction.
+- **Registration** — `langchainRegistration(agent)` exposes tool names (requires **`chat_tool`**) and indexes **`assist_*`** tools for assist UI; the world renders **structure nodes** from tool names.
+- **Journey ingestion** — Call **`ingestInvokeResult`** from your own code when you want post-invoke journeys and tool lines recorded.
 - **Journey extraction** — Turns post-run **messages** into an ordered journey: origin → tool steps → destination, with tool names and call metadata.
 
 ## World model
@@ -22,7 +22,7 @@ This document lists **product-level capabilities** of agent-play as implemented 
 
 ## Real-time preview transport
 
-- **In-memory events** — `PlayWorld` uses an event bus for same-process subscribers (`onWorldJourney`, etc.).
+- **In-memory events** — `PlayWorld` uses an event bus for same-process subscribers (journey, interaction, structures, etc.).
 - **Optional HTTP forwarding** — `playApiBase` can POST events to a remote service for multi-process setups.
 - **Express mount** — `mountExpressPreview` serves static UI, `snapshot.json`, and **SSE** (`world:journey`, `world:player_added`, `world:structures`, `world:interaction`).
 

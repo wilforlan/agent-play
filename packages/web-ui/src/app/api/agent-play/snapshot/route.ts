@@ -1,8 +1,11 @@
 import { NextRequest } from "next/server";
 import { agentPlayVerbose } from "@/server/agent-play/agent-play-debug";
 import { logAgentPlayApi } from "@/server/agent-play/log-agent-play-api";
+import { resolveSnapshotForResponse } from "@/server/agent-play/resolve-snapshot-for-response";
 import { getPlayWorld, getRedisSessionStore } from "@/server/get-world";
 import { validateAgentPlaySession } from "@/server/agent-play/session-validation";
+
+export const dynamic = "force-dynamic";
 
 export async function GET(req: NextRequest) {
   logAgentPlayApi("GET snapshot", req);
@@ -17,13 +20,21 @@ export async function GET(req: NextRequest) {
     return Response.json({ error: "invalid sid" }, { status: 403 });
   }
   const world = await getPlayWorld();
-  const snap = world.getSnapshotJson();
+  const live = world.getSnapshotJson();
   const store = getRedisSessionStore();
+  let snap = live;
   if (store !== null) {
+    const cached = await store.getSnapshotJson();
+    snap = resolveSnapshotForResponse({ sid, live, cached });
     void store.persistSnapshot(snap);
   }
   agentPlayVerbose("api", "snapshot ok", {
     playerCount: snap.players.length,
   });
-  return Response.json(snap);
+  return Response.json(snap, {
+    headers: {
+      "Cache-Control": "no-store, no-cache, must-revalidate",
+      Pragma: "no-cache",
+    },
+  });
 }

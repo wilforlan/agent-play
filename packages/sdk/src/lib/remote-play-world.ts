@@ -1,34 +1,30 @@
-import { EventEmitter } from "node:events";
-import WebSocket from "ws";
 import type {
   AddPlayerInput,
   Journey,
   RecordInteractionInput,
   RegisteredPlayer,
-  WorldJourneyUpdate,
   WorldStructure,
   WorldStructureKind,
 } from "../public-types.js";
-import { WORLD_JOURNEY_EVENT } from "../world-events.js";
 
 export type RemotePlayWorldOptions = {
   baseUrl: string;
-  wsPath?: string;
-  connectWebSocket?: boolean;
+  apiKey: string;
   authToken?: string;
 };
 
-function normalizeBaseUrl(url: string): string {
-  return url.replace(/\/$/, "");
+function formatMissingApiKeyError(): string {
+  return [
+    'RemotePlayWorld: options.apiKey is required.',
+    "",
+    "  Register an agent with `agent-play create` (after `agent-play login`) and use the printed API key.",
+    "  Pass it here so addPlayer can authenticate against the server repository when Redis is enabled.",
+    "  If the server has no agent repository (local dev), still pass a non-empty placeholder string.",
+  ].join("\n");
 }
 
-function toWebSocketUrl(httpBase: string, wsPath: string): string {
-  const u = new URL(httpBase.includes("://") ? httpBase : `http://${httpBase}`);
-  u.protocol = u.protocol === "https:" ? "wss:" : "ws:";
-  u.pathname = wsPath;
-  u.search = "";
-  u.hash = "";
-  return u.toString();
+function normalizeBaseUrl(url: string): string {
+  return url.replace(/\/$/, "");
 }
 
 function isRecord(v: unknown): v is Record<string, unknown> {
@@ -73,20 +69,54 @@ function parseStructures(v: unknown): WorldStructure[] {
   return out;
 }
 
-export class RemotePlayWorld extends EventEmitter {
+function formatInvalidHoldSecondsError(): string {
+  return [
+    "RemotePlayWorld.hold().for(seconds): seconds must be a finite number.",
+    "",
+    "  Example: await world.hold().for(3600)",
+  ].join("\n");
+}
+
+export type RemotePlayWorldHold = {
+  for: (seconds: number) => Promise<void>;
+};
+
+export class RemotePlayWorld {
   private readonly apiBase: string;
-  private readonly wsPath: string;
-  private readonly connectWebSocket: boolean;
+  private readonly apiKey: string;
   private readonly authToken: string | undefined;
   private sid: string | null = null;
-  private ws: WebSocket | null = null;
+  private closed = false;
+  private readonly closeListeners = new Set<() => void>();
 
   constructor(options: RemotePlayWorldOptions) {
-    super();
+    if (typeof options.apiKey !== "string" || options.apiKey.trim().length === 0) {
+      throw new Error(formatMissingApiKeyError());
+    }
     this.apiBase = normalizeBaseUrl(options.baseUrl);
-    this.wsPath = options.wsPath ?? "/ws/agent-play";
-    this.connectWebSocket = options.connectWebSocket !== false;
+    this.apiKey = options.apiKey.trim();
     this.authToken = options.authToken;
+  }
+
+  onClose(handler: () => void): () => void {
+    this.closeListeners.add(handler);
+    return () => {
+      this.closeListeners.delete(handler);
+    };
+  }
+
+  hold(): RemotePlayWorldHold {
+    return {
+      for: async (seconds: number) => {
+        if (typeof seconds !== "number" || !Number.isFinite(seconds)) {
+          throw new Error(formatInvalidHoldSecondsError());
+        }
+        const ms = Math.max(0, seconds) * 1000;
+        await new Promise<void>((resolve) => {
+          setTimeout(resolve, ms);
+        });
+      },
+    };
   }
 
   private authHeaders(): Record<string, string> {
@@ -113,40 +143,19 @@ export class RemotePlayWorld extends EventEmitter {
       throw new Error("session: invalid response");
     }
     this.sid = json.sid;
-    if (this.connectWebSocket) {
-      this.connectWs();
-    }
-  }
-
-  private connectWs(): void {
-    const url = toWebSocketUrl(this.apiBase, this.wsPath);
-    const ws =
-      this.authToken !== undefined
-        ? new WebSocket(url, {
-            headers: { Authorization: `Bearer ${this.authToken}` },
-          })
-        : new WebSocket(url);
-    this.ws = ws;
-    ws.on("message", (data: WebSocket.RawData) => {
-      const text = typeof data === "string" ? data : data.toString();
-      let parsed: unknown;
-      try {
-        parsed = JSON.parse(text) as unknown;
-      } catch {
-        return;
-      }
-      if (!isRecord(parsed) || typeof parsed.event !== "string") return;
-      this.emit(parsed.event, parsed.payload);
-    });
-    ws.on("close", () => {
-      this.ws = null;
-    });
   }
 
   async close(): Promise<void> {
-    if (this.ws !== null) {
-      this.ws.close();
-      this.ws = null;
+    if (this.closed) {
+      return;
+    }
+    this.closed = true;
+    for (const handler of [...this.closeListeners]) {
+      try {
+        handler();
+      } catch {
+        // ignore listener errors
+      }
     }
   }
 
@@ -173,7 +182,8 @@ export class RemotePlayWorld extends EventEmitter {
         name: input.name,
         type: input.type,
         agent: input.agent,
-        apiKey: input.apiKey,
+        apiKey: this.apiKey,
+        agentId: input.agentId,
       }),
     });
     const bodyText = await res.text();
@@ -273,9 +283,5 @@ export class RemotePlayWorld extends EventEmitter {
       const t = await res.text();
       throw new Error(`rpc ${op}: ${res.status} ${t}`);
     }
-  }
-
-  onWorldJourney(listener: (update: WorldJourneyUpdate) => void): void {
-    this.on(WORLD_JOURNEY_EVENT, listener);
   }
 }

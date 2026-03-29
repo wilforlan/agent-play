@@ -1,11 +1,14 @@
 export type {
   AddPlayerInput,
+  AssistToolSpec,
   LangChainAgentRegistration,
   PlayAgentInformation,
   PlatformAgentInformation,
   RecordInteractionInput,
   RegisteredPlayer,
   WorldInteractionRole,
+  YieldEventInfo,
+  ZoneEventInfo,
 } from "./public-types.js";
 export type {
   DestinationJourneyStep,
@@ -34,14 +37,9 @@ export {
   isAgentPlayDebugEnabled,
   resetAgentPlayDebug,
 } from "./lib/agent-play-debug.js";
-export {
-  attachLangChainInvoke,
-  langchainAgent,
-  langchainRegistration,
-  type LangChainAgentLike,
-  type PlayWorldLike,
-} from "./platforms/langchain.js";
+export { langchainRegistration } from "./platforms/langchain.js";
 export {
   RemotePlayWorld,
+  type RemotePlayWorldHold,
   type RemotePlayWorldOptions,
 } from "./lib/remote-play-world.js";

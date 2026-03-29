@@ -1,12 +1,12 @@
 # Agent Play SDK (Node.js)
 
-The SDK centers on `PlayWorld`. After `await world.start()`, the world has a session id used in preview URLs and API authentication. Call `addPlayer` with a name, agent type, and registration payload (for example LangChain tool names). The world lays out structures on the map and exposes `getSnapshotJson()` for HTTP snapshots.
+The SDK exposes **`RemotePlayWorld`** for HTTP access to a running **web-ui** server, with **`hold().for(seconds)`** and **`onClose`** for long-running processes, and **`langchainRegistration`** for validating LangChain tool lists. Construct **`RemotePlayWorld`** with **`baseUrl`** and a non-empty **`apiKey`** (see [API keys](api-keys.md)). Call **`addPlayer`** with a name, agent type, and `agent` from `langchainRegistration`. Your agent must define a **`chat_tool`** tool; tools named **`assist_*`** are indexed for assist buttons on the watch UI. If the server uses a **registered-agent repository** (typically with Redis), run **`agent-play create-key`** then **`agent-play create`** (up to two agents per account) and pass **`agentId`** on **`addPlayer`** — the **`apiKey`** on **`RemotePlayWorld`** is the **account** API key.
 
 Use `mountExpressPreview(app, world, options)` to attach routes: `GET snapshot.json`, `GET events` (Server-Sent Events including `world:agent_signal`, players, structures, and chat lines), `POST proximity-action` for proximity gestures, `GET watch` plus static assets for the bundled UI. The `basePath` option defaults to `/agent-play` so you can nest under an existing app.
 
 Optional **`repository`** on `PlayWorld` enables API key verification and Redis-backed aggregates; see [Redis / repository](redis-world.md) and [API keys](api-keys.md).
 
-`recordInteraction` and `recordJourney` are the main write APIs when your agent pipeline produces user, assistant, or tool messages and path steps. Journey updates emit **`world:agent_signal`** for metadata (not NPC locomotion). `ingestInvokeResult` adapts LangChain invoke output into journeys and tool lines automatically when you wire `attachLangChainInvoke`.
+`recordInteraction` and `recordJourney` are the main write APIs when your agent pipeline produces user, assistant, or tool messages and path steps. Journey updates emit **`world:agent_signal`** for metadata (not NPC locomotion). **`ingestInvokeResult`** can still adapt LangChain invoke output when you call it from your own integration code.
 
 For remote bridges, set `playApiBase` on `PlayWorld` so the same events can be POSTed to another HTTP service you control.
 

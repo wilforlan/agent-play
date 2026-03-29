@@ -20,7 +20,7 @@
 
 1. `PlayWorld.start()` → session id.
 2. `addPlayer` → structures laid out from tool names, `world:player_added` (and optional HTTP forward).
-3. `attachLangChainInvoke` wraps `agent.invoke`: after the real call, `ingestInvokeResult` extracts a journey and calls `recordJourney`.
+3. Your integration can call **`ingestInvokeResult`** after an `invoke` (or equivalent) so `recordJourney` runs from extracted messages.
 4. `recordJourney` enriches path coordinates, clamps to bounds, stores last update, emits `world:journey`.
 5. Preview loads `snapshot.json?sid=` then subscribes to `events?sid=` (SSE) for live events.
 

@@ -1,7 +1,9 @@
 import type {
   AgentRepository,
+  ApiKeyMetadata,
   CreateAgentRecordInput,
   CreateAgentRecordResult,
+  CreateApiKeyResult,
   StoredAgentRecord,
 } from "./agent-repository.js";
 import {
@@ -12,6 +14,10 @@ import {
 } from "./api-key-crypto.js";
 import { randomUUID } from "node:crypto";
 import Redis from "ioredis";
+import {
+  MAX_AGENTS_PER_ACCOUNT,
+  MAX_API_KEYS_PER_ACCOUNT,
+} from "./account-limits.js";
 
 const ZONE_FLAG_THRESHOLD = 100;
 
@@ -27,12 +33,15 @@ function userAgentsKey(hostId: string, userId: string): string {
   return `agent-play:${hostId}:user:${userId}:agents`;
 }
 
+function userAccountApiKeyKey(hostId: string, userId: string): string {
+  return `agent-play:${hostId}:account:${userId}:apiKey`;
+}
+
 function recordToHash(rec: StoredAgentRecord): Record<string, string> {
   const o: Record<string, string> = {
     agentId: rec.agentId,
     userId: rec.userId,
     name: rec.name,
-    apiKeyHash: rec.apiKeyHash,
     toolNames: JSON.stringify(rec.toolNames),
     zoneCount: String(rec.zoneCount),
     yieldCount: String(rec.yieldCount),
@@ -40,7 +49,12 @@ function recordToHash(rec: StoredAgentRecord): Record<string, string> {
     createdAt: rec.createdAt,
     updatedAt: rec.updatedAt,
   };
-  if (rec.lookupIndex !== undefined) o.lookupIndex = rec.lookupIndex;
+  if (rec.apiKeyHash !== undefined && rec.apiKeyHash.length > 0) {
+    o.apiKeyHash = rec.apiKeyHash;
+  }
+  if (rec.lookupIndex !== undefined && rec.lookupIndex.length > 0) {
+    o.lookupIndex = rec.lookupIndex;
+  }
   return o;
 }
 
@@ -48,14 +62,12 @@ function hashToRecord(h: Record<string, string>): StoredAgentRecord | null {
   const agentId = h.agentId;
   const userId = h.userId;
   const name = h.name;
-  const apiKeyHash = h.apiKeyHash;
   const toolNamesRaw = h.toolNames;
   if (
     agentId === undefined ||
     userId === undefined ||
     userId.length === 0 ||
     name === undefined ||
-    apiKeyHash === undefined ||
     toolNamesRaw === undefined
   ) {
     return null;
@@ -69,19 +81,38 @@ function hashToRecord(h: Record<string, string>): StoredAgentRecord | null {
   } catch {
     return null;
   }
+  const apiKeyHash =
+    typeof h.apiKeyHash === "string" && h.apiKeyHash.length > 0
+      ? h.apiKeyHash
+      : undefined;
+  const lookupIndex =
+    typeof h.lookupIndex === "string" && h.lookupIndex.length > 0
+      ? h.lookupIndex
+      : undefined;
   return {
     agentId,
     userId,
     name,
-    apiKeyHash,
     toolNames,
+    apiKeyHash,
+    lookupIndex,
     zoneCount: Number(h.zoneCount ?? 0),
     yieldCount: Number(h.yieldCount ?? 0),
     flagged: h.flagged === "1",
     createdAt: h.createdAt ?? new Date(0).toISOString(),
     updatedAt: h.updatedAt ?? new Date(0).toISOString(),
-    lookupIndex: h.lookupIndex,
   };
+}
+
+function userKeyPrefix(userId: string): string {
+  return `u:${userId}`;
+}
+
+function parseUserIdFromLookupValue(raw: string): string | null {
+  if (raw.startsWith("u:")) {
+    return raw.slice(2);
+  }
+  return null;
 }
 
 export type RedisAgentRepositoryOptions = {
@@ -102,49 +133,105 @@ export class RedisAgentRepository implements AgentRepository {
     await this.redis.quit();
   }
 
-  async createAgent(
-    input: CreateAgentRecordInput
-  ): Promise<CreateAgentRecordResult> {
+  async createApiKey(userId: string): Promise<CreateApiKeyResult> {
+    const accKey = userAccountApiKeyKey(this.hostId, userId);
+    const exists = await this.redis.exists(accKey);
+    if (exists === 1) {
+      throw new Error(
+        "createApiKey: an API key already exists for this account; delete it or use key rotation when supported"
+      );
+    }
+    if (MAX_API_KEYS_PER_ACCOUNT < 1) {
+      throw new Error("createApiKey: API keys are disabled for this deployment");
+    }
     const plainApiKey = generatePlainApiKey();
     const apiKeyHash = await hashApiKey(plainApiKey);
     const lookupIndex = lookupIndexFromPlainKey(plainApiKey);
+    const createdAt = new Date().toISOString();
+    const pipe = this.redis.multi();
+    pipe.hset(accKey, "apiKeyHash", apiKeyHash);
+    pipe.hset(accKey, "lookupIndex", lookupIndex);
+    pipe.hset(accKey, "createdAt", createdAt);
+    pipe.set(lookupKey(this.hostId, lookupIndex), userKeyPrefix(userId));
+    await pipe.exec();
+    return { plainApiKey };
+  }
+
+  async getApiKeyMetadata(userId: string): Promise<ApiKeyMetadata> {
+    const accKey = userAccountApiKeyKey(this.hostId, userId);
+    const raw = await this.redis.hgetall(accKey);
+    if (Object.keys(raw).length === 0) {
+      return { hasKey: false };
+    }
+    const createdAt =
+      typeof raw.createdAt === "string" ? raw.createdAt : undefined;
+    return { hasKey: true, createdAt };
+  }
+
+  async createAgent(
+    input: CreateAgentRecordInput
+  ): Promise<CreateAgentRecordResult> {
+    const ids = await this.redis.smembers(
+      userAgentsKey(this.hostId, input.userId)
+    );
+    if (ids.length >= MAX_AGENTS_PER_ACCOUNT) {
+      throw new Error(
+        `createAgent: account agent limit reached (max ${String(MAX_AGENTS_PER_ACCOUNT)})`
+      );
+    }
     const agentId = randomUUID();
     const now = new Date().toISOString();
     const rec: StoredAgentRecord = {
       agentId,
       userId: input.userId,
       name: input.name,
-      apiKeyHash,
       toolNames: [...input.toolNames],
       zoneCount: 0,
       yieldCount: 0,
       flagged: false,
       createdAt: now,
       updatedAt: now,
-      lookupIndex,
     };
     const key = agentKey(this.hostId, agentId);
-    const idx = lookupIndexFromPlainKey(plainApiKey);
     const pipe = this.redis.multi();
     pipe.hset(key, recordToHash(rec));
-    pipe.set(lookupKey(this.hostId, idx), agentId);
     pipe.sadd(userAgentsKey(this.hostId, input.userId), agentId);
     await pipe.exec();
-    return { agentId, plainApiKey };
+    return { agentId };
   }
 
-  async verifyApiKeyAndGetAgentId(
+  async verifyApiKeyForUser(
     plainApiKey: string
   ): Promise<string | null> {
     const idx = lookupIndexFromPlainKey(plainApiKey);
-    const agentId = await this.redis.get(lookupKey(this.hostId, idx));
-    if (agentId === null || agentId.length === 0) return null;
-    const raw = await this.redis.hgetall(agentKey(this.hostId, agentId));
-    if (Object.keys(raw).length === 0) return null;
-    const rec = hashToRecord(raw);
+    const raw = await this.redis.get(lookupKey(this.hostId, idx));
+    if (raw === null || raw.length === 0) return null;
+    const userIdFromPrefix = parseUserIdFromLookupValue(raw);
+    if (userIdFromPrefix !== null) {
+      const acc = await this.redis.hgetall(
+        userAccountApiKeyKey(this.hostId, userIdFromPrefix)
+      );
+      if (Object.keys(acc).length === 0) return null;
+      const h = acc.apiKeyHash;
+      if (typeof h !== "string" || !(await verifyApiKeyHash(plainApiKey, h))) {
+        return null;
+      }
+      return userIdFromPrefix;
+    }
+    const agentId = raw;
+    const agentRaw = await this.redis.hgetall(agentKey(this.hostId, agentId));
+    if (Object.keys(agentRaw).length === 0) return null;
+    const rec = hashToRecord(agentRaw);
     if (rec === null) return null;
+    if (
+      rec.apiKeyHash === undefined ||
+      rec.apiKeyHash.length === 0 ||
+      rec.lookupIndex === undefined
+    ) {
+      return null;
+    }
     if (!(await verifyApiKeyHash(plainApiKey, rec.apiKeyHash))) return null;
-    return agentId;
+    return rec.userId;
   }
 
   async getAgent(agentId: string): Promise<StoredAgentRecord | null> {
@@ -173,7 +260,7 @@ export class RedisAgentRepository implements AgentRepository {
     const pipe = this.redis.multi();
     pipe.del(agentKey(this.hostId, agentId));
     pipe.srem(userAgentsKey(this.hostId, rec.userId), agentId);
-    if (rec.lookupIndex !== undefined) {
+    if (rec.lookupIndex !== undefined && rec.lookupIndex.length > 0) {
       pipe.del(lookupKey(this.hostId, rec.lookupIndex));
     }
     await pipe.exec();

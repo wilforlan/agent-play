@@ -27,7 +27,7 @@ export function getRedisSessionStore(): RedisSessionStore | null {
 }
 
 export function getSharedRedisClient(): Redis | null {
-  return sharedRedis;
+  return sharedRedis ?? getSharedRedis();
 }
 
 function buildRepository(
@@ -45,7 +45,7 @@ export async function getPlayWorld(): Promise<PlayWorld> {
       const hostId = process.env.AGENT_PLAY_HOST_ID ?? "default";
       const previewBaseUrl =
         process.env.PLAY_PREVIEW_BASE_URL ??
-        `http://127.0.0.1:${port}/agent-play/watch`;
+        `https://agent-play.vercel.app`;
       const redis = getSharedRedis();
       let repository: AgentRepository | undefined;
       if (redis !== null) {

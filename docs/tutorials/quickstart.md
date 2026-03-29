@@ -1,61 +1,49 @@
 # Tutorial: Quickstart
 
-This tutorial summarizes the shortest path from zero to a **working preview** with the SDK. Full detail lives in [`play-sdk/examples/README.md`](../../play-sdk/examples/README.md).
+This tutorial summarizes the shortest path from zero to a **working preview** with the SDK. Full detail lives in [`packages/sdk/examples/README.md`](../../packages/sdk/examples/README.md).
 
 ## Prerequisites
 
 - **Node.js 20+** recommended (`fetch`, `crypto.randomUUID`).
-- Clone the repo and install dependencies under **`play-sdk/`**:
+- Clone the repo and install dependencies from the **repository root**:
 
 ```bash
-cd play-sdk
 npm install
-cd preview-ui && npm install && cd ..
 ```
 
-- For examples that call OpenAI: create a `.env` in `play-sdk` with `OPENAI_API_KEY=...`.
+- For examples that call OpenAI: a `.env` (or environment) with `OPENAI_API_KEY=...`.
 
 ## Step 1: Understand the three pieces
 
-1. **`PlayWorld`** — Session, players, journeys, snapshot.
-2. **LangChain adapter** — `langchainRegistration` + `attachLangChainInvoke` connect your agent’s `invoke` to the world.
-3. **Preview** — Static Vite build + Express routes (`mountExpressPreview`) or your own hosting of `dist/` with matching `sid` URLs.
+1. **`RemotePlayWorld`** — HTTP client: `start()` → session, `addPlayer`, RPC for interactions and tool sync.
+2. **LangChain adapter** — `langchainRegistration(agent)` validates **`chat_tool`** and indexes **`assist_*`** tools for the watch UI; pair it with **`RemotePlayWorld`** (requires **`apiKey`** on construction).
+3. **Watch UI** — Served by **`@agent-play/web-ui`** at `/agent-play/watch`; resolves session via `/api/agent-play/session` and streams updates (SSE, etc.).
 
-## Step 2: Run the minimal example
-
-From `play-sdk`:
+## Step 2: Run the web app
 
 ```bash
-npx tsx -r dotenv/config examples/01-langchain-minimal-invoke.ts
+npm run dev
 ```
 
-Watch the console for `[world:journey]` logs. This confirms journey extraction without a browser.
+This starts **`@agent-play/web-ui`** (often `http://127.0.0.1:3000`).
 
-## Step 3: Build the preview assets
+## Step 3: Run the minimal SDK example
 
-The canvas UI must be built before Express can serve it:
+In a **second** terminal, from the repository root:
 
 ```bash
-npm run build:preview
+npx tsx -r dotenv/config packages/sdk/examples/01-remote-web-ui-langchain.ts
 ```
 
-This runs `npm run build` inside `preview-ui/` and produces `preview-ui/dist/`.
+Or: `npm run example`
 
-## Step 4: Run an Express + preview example
+Open the printed **preview URL** in a browser to see the canvas.
 
-After `build:preview`, any of these serve the static UI and open a real watch link:
+## Step 4: Two players
 
 ```bash
-npm run example:sse
-# or: npm run example:02 | example:03 | example:04 | example:advisor
+npm run example:02
 ```
-
-Open the printed **preview URL** (includes `sid=`). The page loads `snapshot.json`, subscribes to SSE, and animates the world.
-
-## Step 5: Point URLs at your server
-
-- Set `PLAY_PREVIEW_BASE_URL` to the **watch** URL base (including path), e.g. `http://localhost:3333/agent-play/watch`, so `getPreviewUrl()` opens the correct page.
-- Optional `PLAY_API_BASE` for HTTP event forwarding (advanced).
 
 ## Next steps
 

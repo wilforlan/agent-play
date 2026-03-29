@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import type { WorldJourneyUpdate } from "../@types/world.js";
 import { agentPlayDebug, agentPlayVerbose } from "../agent-play-debug.js";
 import { serializeWorldJourneyUpdate } from "../preview-serialize.js";
+import { resolveSnapshotForResponse } from "../resolve-snapshot-for-response.js";
 import type { RedisSessionStore } from "../redis-session-store.js";
 import type { PlayWorld } from "../play-world.js";
 import {
@@ -91,8 +92,18 @@ export function mountExpressPreview(
   app.get(`${base}/snapshot.json`, async (req, res) => {
     try {
       agentPlayDebug("mount-preview", "GET snapshot.json");
-      if ((await requireValidSid(world, sessionStore, req, res)) === null) return;
-      res.json(world.getSnapshotJson());
+      const sid = await requireValidSid(world, sessionStore, req, res);
+      if (sid === null) return;
+      const live = world.getSnapshotJson();
+      let snap = live;
+      if (sessionStore !== null) {
+        const cached = await sessionStore.getSnapshotJson();
+        snap = resolveSnapshotForResponse({ sid, live, cached });
+        void sessionStore.persistSnapshot(snap);
+      }
+      res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
+      res.setHeader("Pragma", "no-cache");
+      res.json(snap);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       res.status(500).json({ error: msg });

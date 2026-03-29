@@ -4,6 +4,10 @@ import {
   applyAgentChatDisplayToLayer,
   getAgentChatDisplaySettings,
 } from "./preview-chat-settings.js";
+import {
+  mountAssistPanel,
+  type AssistToolDef,
+} from "./preview-assist-ui.js";
 
 const AGENT_STYLE_ID = "agent-play-preview-agent-chat-overlay-styles";
 
@@ -102,13 +106,25 @@ type CardEntry = {
   scroll: HTMLElement;
 };
 
-export function createPreviewAgentChatOverlays(): {
+export type AgentChatOverlaySnapshot = {
+  players: ReadonlyArray<{
+    playerId: string;
+    assistTools?: readonly AssistToolDef[];
+  }>;
+};
+
+export function createPreviewAgentChatOverlays(options: {
+  getSid: () => string | null;
+  apiBase: string;
+  reloadSnapshot: () => void | Promise<void>;
+}): {
   root: HTMLElement;
   syncPlayerIds: (ids: readonly string[]) => void;
   refreshPlayer: (playerId: string) => void;
   refreshAll: () => void;
   setLayout: (playerId: string, left: number, top: number) => void;
   applyDisplaySettings: () => void;
+  setAssistSnapshot: (snapshot: AgentChatOverlaySnapshot) => void;
 } {
   ensurePreviewChatStyles();
   ensureAgentChatOverlayStyles();
@@ -118,6 +134,23 @@ export function createPreviewAgentChatOverlays(): {
   applyAgentChatDisplayToLayer(layer, getAgentChatDisplaySettings());
 
   const byId = new Map<string, CardEntry>();
+  const assistById = new Map<
+    string,
+    ReturnType<typeof mountAssistPanel>
+  >();
+  const assistCountById = new Map<string, number>();
+
+  const setAssistSnapshot = (snapshot: AgentChatOverlaySnapshot): void => {
+    assistCountById.clear();
+    for (const p of snapshot.players) {
+      const n = p.assistTools?.length ?? 0;
+      assistCountById.set(p.playerId, n);
+      const h = assistById.get(p.playerId);
+      if (h !== undefined) {
+        h.setTools(p.assistTools ?? []);
+      }
+    }
+  };
 
   const syncPlayerIds = (ids: readonly string[]): void => {
     const want = new Set(ids);
@@ -128,6 +161,9 @@ export function createPreviewAgentChatOverlays(): {
           layer.removeChild(entry.card);
         }
         byId.delete(id);
+        assistById.get(id)?.destroy();
+        assistById.delete(id);
+        assistCountById.delete(id);
       }
     }
     for (const id of ids) {
@@ -140,6 +176,15 @@ export function createPreviewAgentChatOverlays(): {
       card.appendChild(scroll);
       layer.appendChild(card);
       byId.set(id, { card, scroll });
+      const assist = mountAssistPanel({
+        card,
+        playerId: id,
+        getSid: options.getSid,
+        apiBase: options.apiBase,
+        reloadSnapshot: options.reloadSnapshot,
+      });
+      assistById.set(id, assist);
+      assist.setTools([]);
     }
   };
 
@@ -147,7 +192,8 @@ export function createPreviewAgentChatOverlays(): {
     const entry = byId.get(playerId);
     if (entry === undefined) return;
     const rows = getChatLogLinesForPlayer(playerId);
-    if (rows.length === 0) {
+    const assistN = assistCountById.get(playerId) ?? 0;
+    if (rows.length === 0 && assistN === 0) {
       entry.scroll.replaceChildren();
       entry.card.style.visibility = "hidden";
       return;
@@ -189,5 +235,6 @@ export function createPreviewAgentChatOverlays(): {
     refreshAll,
     setLayout,
     applyDisplaySettings,
+    setAssistSnapshot,
   };
 }

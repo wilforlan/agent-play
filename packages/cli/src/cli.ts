@@ -148,6 +148,98 @@ async function cmdLogout(): Promise<void> {
   }
 }
 
+function printAgentPlayIntegrationGuide(): void {
+  console.log("");
+  console.log("How your agent appears on the play world");
+  console.log("────────────────────────────────────────────");
+  console.log(
+    "  • One account API key: run `agent-play create-key` (after login) if you do not have one yet."
+  );
+  console.log(
+    "  • LangChain: use langchainRegistration(agent) and pass agent.toolNames to addPlayer."
+  );
+  console.log(
+    '  • The tool contract requires a tool named "chat_tool" in that list (add it if missing).'
+  );
+  console.log(
+    "  • Structures on the map are derived from those tool names — keep them aligned with your real tools."
+  );
+  console.log(
+    "  • RemotePlayWorld({ apiKey: <account key> }) and addPlayer({ ..., agentId: <id below> })."
+  );
+  console.log("");
+}
+
+async function cmdCreateKey(): Promise<void> {
+  const cred = await loadCredentials();
+  if (cred === null) {
+    console.error("Run `agent-play login` first.");
+    process.exitCode = 1;
+    return;
+  }
+  const res = await fetch(`${cred.serverUrl}/api/agents/api-key`, {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${cred.token}`,
+    },
+  });
+  const text = await res.text();
+  if (!res.ok) {
+    let msg = text;
+    try {
+      const err = JSON.parse(text) as { error?: unknown };
+      if (typeof err.error === "string") msg = err.error;
+    } catch {
+      // keep raw text
+    }
+    console.error(`create-key failed (${res.status}): ${msg}`);
+    process.exitCode = 1;
+    return;
+  }
+  const json = JSON.parse(text) as { plainApiKey?: unknown };
+  if (typeof json.plainApiKey !== "string") {
+    console.error("Invalid response from server.");
+    process.exitCode = 1;
+    return;
+  }
+  console.log("API key (store securely; shown once):");
+  console.log(json.plainApiKey);
+  console.log("");
+}
+
+async function cmdViewKeys(): Promise<void> {
+  const cred = await loadCredentials();
+  if (cred === null) {
+    console.error("Run `agent-play login` first.");
+    process.exitCode = 1;
+    return;
+  }
+  const res = await fetch(`${cred.serverUrl}/api/agents/api-key`, {
+    headers: { authorization: `Bearer ${cred.token}` },
+  });
+  const text = await res.text();
+  if (!res.ok) {
+    console.error(`view-keys failed (${res.status}): ${text}`);
+    process.exitCode = 1;
+    return;
+  }
+  const json = JSON.parse(text) as {
+    hasKey?: unknown;
+    createdAt?: unknown;
+  };
+  if (json.hasKey === true) {
+    const when =
+      typeof json.createdAt === "string" ? json.createdAt : "unknown time";
+    console.log(`Account API key: active (created ${when}).`);
+    console.log(
+      "The secret value cannot be shown again. Use the key you saved when you ran `agent-play create-key`."
+    );
+  } else {
+    console.log("No API key for this account.");
+    console.log("Run `agent-play create-key` to generate one (shown once).");
+  }
+}
+
 async function cmdCreate(): Promise<void> {
   const cred = await loadCredentials();
   if (cred === null) {
@@ -157,21 +249,6 @@ async function cmdCreate(): Promise<void> {
   }
   const rl = createInterface({ input, output });
   const name = (await rl.question("Agent name: ")).trim() || "agent";
-  const toolsRaw = (
-    await rl.question(
-      "Tool names (comma-separated; must include chat_tool): "
-    )
-  ).trim();
-  const toolNames =
-    toolsRaw.length > 0
-      ? toolsRaw
-          .split(",")
-          .map((s) => s.trim())
-          .filter((s) => s.length > 0)
-      : ["chat_tool", "assist_demo"];
-  const withChat = toolNames.includes("chat_tool")
-    ? toolNames
-    : ["chat_tool", ...toolNames];
   rl.close();
 
   const res = await fetch(`${cred.serverUrl}/api/agents`, {
@@ -180,27 +257,29 @@ async function cmdCreate(): Promise<void> {
       "content-type": "application/json",
       authorization: `Bearer ${cred.token}`,
     },
-    body: JSON.stringify({ name, toolNames: withChat }),
+    body: JSON.stringify({ name }),
   });
   const text = await res.text();
   if (!res.ok) {
-    console.error(`Create failed (${res.status}): ${text}`);
+    let msg = text;
+    try {
+      const err = JSON.parse(text) as { error?: unknown };
+      if (typeof err.error === "string") msg = err.error;
+    } catch {
+      // keep raw text
+    }
+    console.error(`Create failed (${res.status}): ${msg}`);
     process.exitCode = 1;
     return;
   }
-  const json = JSON.parse(text) as {
-    agentId?: unknown;
-    plainApiKey?: unknown;
-  };
-  if (typeof json.agentId !== "string" || typeof json.plainApiKey !== "string") {
+  const json = JSON.parse(text) as { agentId?: unknown };
+  if (typeof json.agentId !== "string") {
     console.error("Invalid response from server.");
     process.exitCode = 1;
     return;
   }
-  console.log("");
+  printAgentPlayIntegrationGuide();
   console.log(`Created agent id: ${json.agentId}`);
-  console.log("API key (store securely; shown once):");
-  console.log(json.plainApiKey);
   console.log("");
 }
 
@@ -282,11 +361,21 @@ async function main(): Promise<void> {
     await cmdCreate();
     return;
   }
+  if (cmd === "create-key" || cmd === "generate-key") {
+    await cmdCreateKey();
+    return;
+  }
+  if (cmd === "view-keys") {
+    await cmdViewKeys();
+    return;
+  }
   if (cmd === "delete" || cmd === "remove") {
     await cmdDelete();
     return;
   }
-  console.error("Usage: agent-play login | logout | create | delete");
+  console.error(
+    "Usage: agent-play login | logout | create-key | view-keys | create | delete"
+  );
   process.exitCode = 1;
 }
 

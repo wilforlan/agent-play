@@ -122,6 +122,12 @@ type SnapshotInteraction = {
   seq?: number;
 };
 
+type SnapshotAssistTool = {
+  name: string;
+  description: string;
+  parameters: Record<string, unknown>;
+};
+
 type PlayerRow = {
   playerId: string;
   name: string;
@@ -129,6 +135,9 @@ type PlayerRow = {
   stationary?: boolean;
   lastUpdate?: JourneyUpdate;
   recentInteractions?: SnapshotInteraction[];
+  assistTools?: SnapshotAssistTool[];
+  onZone?: { zoneCount: number; flagged?: boolean; at: string };
+  onYield?: { yieldCount: number; at: string };
 };
 
 type WorldMapJson = {
@@ -337,6 +346,7 @@ function pushInteractionToChat(
 function hydrateChatFromSnapshot(s: Snapshot): void {
   resetChatLogFromSnapshot(s);
   agentChatOverlays?.syncPlayerIds(s.players.map((p) => p.playerId));
+  agentChatOverlays?.setAssistSnapshot(s);
   refreshPreviewChat();
 }
 
@@ -999,7 +1009,14 @@ export function bootstrap(): void {
     const rightCol = document.createElement("div");
     rightCol.className = "preview-game-col preview-game-col--right";
 
-    agentChatOverlays = createPreviewAgentChatOverlays();
+    agentChatOverlays = createPreviewAgentChatOverlays({
+      getSid,
+      apiBase: API_BASE,
+      reloadSnapshot: () => {
+        const sid = getSid();
+        if (sid !== null) void loadSnapshot(sid);
+      },
+    });
     refreshPreviewChat = () => {
       agentChatOverlays?.refreshAll();
     };

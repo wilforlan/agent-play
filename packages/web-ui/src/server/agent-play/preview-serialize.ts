@@ -22,16 +22,25 @@ export type PreviewInteractionEntryJson = {
   seq: number;
 };
 
+export type AssistToolSnapshotJson = {
+  name: string;
+  description: string;
+  parameters: Record<string, unknown>;
+};
+
 export type PreviewPlayerSnapshotJson = {
   playerId: string;
   name: string;
   type?: string;
   stationary?: boolean;
   assistToolNames?: string[];
+  assistTools?: AssistToolSnapshotJson[];
   hasChatTool?: boolean;
   zoneCount?: number;
   yieldCount?: number;
   flagged?: boolean;
+  onZone?: { zoneCount: number; flagged?: boolean; at: string };
+  onYield?: { yieldCount: number; at: string };
   structures: WorldJourneyUpdate["structures"];
   lastUpdate?: WorldJourneyUpdateJson;
   recentInteractions?: PreviewInteractionEntryJson[];

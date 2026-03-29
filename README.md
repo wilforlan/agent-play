@@ -40,23 +40,21 @@ Nothing above is a dig at the project being young—it is the **same** transpare
 
 ## For developers
 
-The **SDK** (`packages/sdk`, npm name `@agent-play/sdk`) lets you attach a LangChain-style agent, emit world updates, and get a **preview link** (session-scoped) so you can open the watch UI while your server runs. The **play UI** (`packages/play-ui`, `@agent-play/play-ui`) builds to static files you can deploy on Vercel or serve from Express via `mountExpressPreview`.
+The **SDK** (`packages/sdk`, npm name `@agent-play/sdk`) exposes `RemotePlayWorld` and LangChain helpers so your process can talk to the **web app** over HTTP (session, players, RPC) and open the **watch** UI. The **play UI** (`packages/play-ui`, `@agent-play/play-ui`) is bundled into **`@agent-play/web-ui`** (Next.js) and can also be built as static assets for other hosts.
 
 - **[Documentation](docs/README.md)** — Overview, monorepo, SDK, play UI, multiplayer, Redis, CLI, API keys  
-- **[Examples](packages/sdk/examples/README.md)** — Runnable paths from minimal invoke to Express + SSE  
+- **[Examples](packages/sdk/examples/README.md)** — Two scripts: one player and two players against the running web UI  
 
 ```bash
 npm install
-npm run dev             # Express SSE example (port 3333) + Vite play UI (dev)
-npm start               # build SDK + play UI + CLI, then production preview server (port 3333)
-npm run build:play-ui   # browser assets when serving watch only from Express
+npm run dev             # @agent-play/web-ui (Next dev server; watch at /agent-play/watch)
+npm run build:web-ui    # production build of the web app
 npm run build:cli       # `agent-play` CLI into packages/cli/dist
+npm run example         # SDK example 01 (needs web-ui running and OPENAI_API_KEY)
 npm test
 ```
 
-For **`npm run dev`**, open the **Vite** URL printed in the terminal (usually `http://localhost:5173/agent-play/watch?sid=…`) and use the `sid` from the API process logs. The UI is configured to call the API at `http://127.0.0.1:3333/agent-play`.
-
-For **`npm start`**, open the **Express** preview URL from the console (`http://127.0.0.1:3333/agent-play/watch?sid=…`) after the static play UI has been built into `packages/play-ui/dist`.
+For **`npm run dev`**, open the URL printed for **`@agent-play/web-ui`** (often `http://127.0.0.1:3000`) and use **`/agent-play/watch`**. Run **`npm run example`** in another terminal to register a LangChain agent against the same session API.
 
 ---
 

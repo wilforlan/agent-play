@@ -30,6 +30,10 @@ const nextConfig: NextConfig = {
         source: "/agent-play/proximity-action",
         destination: "/api/agent-play/proximity-action",
       },
+      {
+        source: "/agent-play/assist-tool",
+        destination: "/api/agent-play/assist-tool",
+      },
     ];
   },
 };

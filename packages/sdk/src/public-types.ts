@@ -6,9 +6,16 @@ export type RecordInteractionInput = {
   text: string;
 };
 
+export type AssistToolSpec = {
+  name: string;
+  description: string;
+  parameters: Record<string, unknown>;
+};
+
 export type LangChainAgentRegistration = {
   type: "langchain";
   toolNames: string[];
+  assistTools?: AssistToolSpec[];
 };
 
 export type PlayAgentInformation = {
@@ -27,9 +34,31 @@ export type PlatformAgentInformation = {
   updatedAt?: Date;
 };
 
+/**
+ * Register a player (agent) in the world.
+ *
+ * Use **`langchainRegistration(agent)`** for `agent` (requires a **`chat_tool`** tool; `assist_*`
+ * tools are indexed for the watch UI).
+ *
+ * **`apiKey`** is set on **`RemotePlayWorld`** options, not here. With a registered-agent
+ * repository, you may pass **`agentId`** from **`agent-play create`**, or omit it: the server
+ * matches an existing agent by **`name`** plus **`agent.toolNames`**, or creates a registered
+ * agent when under the account limit. Without Redis, omit **`apiKey`** and **`agentId`**.
+ */
 export type AddPlayerInput = PlatformAgentInformation & {
   agent: LangChainAgentRegistration;
-  apiKey?: string;
+  agentId?: string;
+};
+
+export type ZoneEventInfo = {
+  zoneCount: number;
+  flagged?: boolean;
+  at: string;
+};
+
+export type YieldEventInfo = {
+  yieldCount: number;
+  at: string;
 };
 
 export type WorldStructureKind = "home" | "tool" | "api" | "database" | "model";

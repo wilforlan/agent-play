@@ -39,6 +39,17 @@ import type { PreviewSnapshotJson } from "./preview-serialize.js";
 import { serializeWorldJourneyUpdate } from "./preview-serialize.js";
 import { buildWorldMapFromPlayers } from "./world-map.js";
 import { clampWorldPosition, type WorldBounds } from "./world-bounds.js";
+import { MAX_AGENTS_PER_ACCOUNT } from "./account-limits.js";
+
+function sameToolNames(
+  a: readonly string[],
+  b: readonly string[]
+): boolean {
+  if (a.length !== b.length) return false;
+  const as = [...a].sort();
+  const bs = [...b].sort();
+  return as.every((v, i) => v === bs[i]);
+}
 
 function clampPathToBounds(
   path: PositionedStep[],
@@ -53,14 +64,22 @@ function clampPathToBounds(
   });
 }
 
+export type AssistToolSpec = {
+  name: string;
+  description: string;
+  parameters: Record<string, unknown>;
+};
+
 export type LangChainAgentRegistration = {
   type: "langchain";
   toolNames: string[];
+  assistTools?: AssistToolSpec[];
 };
 
 export type AddPlayerInput = PlatformAgentInformation & {
   agent: LangChainAgentRegistration;
   apiKey?: string;
+  agentId?: string;
 };
 
 export type RegisteredPlayer = PlayAgentInformation & {
@@ -120,6 +139,15 @@ export class PlayWorld {
   private readonly playerOrder: string[] = [];
   private readonly playerTypes = new Map<string, string>();
   private readonly toolNamesByPlayer = new Map<string, string[]>();
+  private readonly assistToolsByPlayer = new Map<string, AssistToolSpec[]>();
+  private readonly lastZoneByPlayer = new Map<
+    string,
+    { zoneCount: number; flagged?: boolean; at: string }
+  >();
+  private readonly lastYieldByPlayer = new Map<
+    string,
+    { yieldCount: number; at: string }
+  >();
   private readonly aggregateByPlayer = new Map<
     string,
     { zoneCount: number; yieldCount: number; flagged: boolean }
@@ -179,6 +207,9 @@ export class PlayWorld {
     this.playerOrder.length = 0;
     this.playerTypes.clear();
     this.toolNamesByPlayer.clear();
+    this.assistToolsByPlayer.clear();
+    this.lastZoneByPlayer.clear();
+    this.lastYieldByPlayer.clear();
     this.aggregateByPlayer.clear();
     this.interactionLogByPlayer.clear();
     this.interactionSeq = 0;
@@ -193,6 +224,7 @@ export class PlayWorld {
     }
     if (this.sessionStore !== null) {
       await this.sessionStore.replaceSessionWithNewSid(newSid);
+      await this.sessionStore.persistSnapshot(this.getSnapshotJson());
     }
     agentPlayDebug("play-world", "resetSession", { sessionId: newSid });
     agentPlayVerbose("play-world", "resetSession complete", {
@@ -205,7 +237,7 @@ export class PlayWorld {
     const base =
       this.options.previewBaseUrl ??
       process.env.PLAY_PREVIEW_BASE_URL ??
-      "https://preview.agent-play.local/watch";
+      "https://agent-play.vercel.app";
     const u = new URL(base.includes("://") ? base : `https://${base}`);
     u.search = "";
     return u.toString();
@@ -225,7 +257,7 @@ export class PlayWorld {
         playerId,
         name: info.name,
         structures,
-        stationary: true,
+        stationary: last === undefined,
         assistToolNames: extractAssistToolNames(tools),
         hasChatTool: tools.includes("chat_tool"),
       };
@@ -248,6 +280,18 @@ export class PlayWorld {
         entry.yieldCount = agg.yieldCount;
         entry.flagged = agg.flagged;
       }
+      const assistList = this.assistToolsByPlayer.get(playerId);
+      if (assistList !== undefined && assistList.length > 0) {
+        entry.assistTools = assistList.map((t) => ({ ...t }));
+      }
+      const lz = this.lastZoneByPlayer.get(playerId);
+      if (lz !== undefined) {
+        entry.onZone = { ...lz };
+      }
+      const ly = this.lastYieldByPlayer.get(playerId);
+      if (ly !== undefined) {
+        entry.onYield = { ...ly };
+      }
       players.push(entry);
     }
     const worldMap = buildWorldMapFromPlayers(
@@ -261,6 +305,15 @@ export class PlayWorld {
       out.mcpServers = this.mcpServers.map((m) => ({ ...m }));
     }
     return out;
+  }
+
+  private schedulePersistSnapshot(): void {
+    if (this.sessionStore === null) return;
+    void this.sessionStore.persistSnapshot(this.getSnapshotJson()).catch((err: unknown) => {
+      agentPlayDebug("play-world", "persistSnapshotToStore failed", {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    });
   }
 
   recordProximityAction(input: RecordProximityActionInput): void {
@@ -337,6 +390,13 @@ export class PlayWorld {
         flagged: zoneCount >= 100,
       });
       this.emitAgentSignal(agentId, { kind: "zone", data: { zoneCount } });
+      const atZ = new Date().toISOString();
+      this.lastZoneByPlayer.set(agentId, {
+        zoneCount,
+        flagged: zoneCount >= 100,
+        at: atZ,
+      });
+      this.schedulePersistSnapshot();
       return;
     }
     const next = await this.repository.incrementZoneCount(agentId);
@@ -350,7 +410,13 @@ export class PlayWorld {
         kind: "zone",
         data: { zoneCount: next.zoneCount, flagged: next.flagged },
       });
+      this.lastZoneByPlayer.set(agentId, {
+        zoneCount: next.zoneCount,
+        flagged: next.flagged,
+        at: new Date().toISOString(),
+      });
     }
+    this.schedulePersistSnapshot();
   }
 
   private async applyYieldIncrement(
@@ -369,6 +435,11 @@ export class PlayWorld {
         flagged: o.flagged,
       });
       this.emitAgentSignal(agentId, { kind: "yield", data: { yieldCount } });
+      this.lastYieldByPlayer.set(agentId, {
+        yieldCount,
+        at: new Date().toISOString(),
+      });
+      this.schedulePersistSnapshot();
       return;
     }
     const next = await this.repository.incrementYieldCount(agentId);
@@ -382,7 +453,12 @@ export class PlayWorld {
         kind: "yield",
         data: { yieldCount: next.yieldCount },
       });
+      this.lastYieldByPlayer.set(agentId, {
+        yieldCount: next.yieldCount,
+        at: new Date().toISOString(),
+      });
     }
+    this.schedulePersistSnapshot();
   }
 
   recordInteraction(input: RecordInteractionInput): void {
@@ -419,6 +495,37 @@ export class PlayWorld {
       playerId: input.playerId,
       role: input.role,
       seq,
+    });
+    this.schedulePersistSnapshot();
+  }
+
+  recordAssistToolInvocation(input: {
+    targetPlayerId: string;
+    toolName: string;
+    args: Record<string, unknown>;
+  }): void {
+    const { targetPlayerId, toolName, args } = input;
+    if (!this.agents.has(targetPlayerId)) {
+      throw new Error(
+        `recordAssistToolInvocation: unknown playerId "${targetPlayerId}"`
+      );
+    }
+    const allowed = this.assistToolsByPlayer.get(targetPlayerId) ?? [];
+    if (!allowed.some((t) => t.name === toolName)) {
+      throw new Error(
+        `recordAssistToolInvocation: "${toolName}" is not a registered assist_* tool for this player`
+      );
+    }
+    const argStr = JSON.stringify(args);
+    this.recordInteraction({
+      playerId: targetPlayerId,
+      role: "user",
+      text: `[assist] ${toolName}(${argStr})`,
+    });
+    this.recordInteraction({
+      playerId: targetPlayerId,
+      role: "assistant",
+      text: `Assist ${toolName}: received. Your agent process can execute the tool and stream results via the SDK.`,
     });
   }
 
@@ -469,6 +576,7 @@ export class PlayWorld {
       playerId,
       toolCount: toolNames.length,
     });
+    this.schedulePersistSnapshot();
   }
 
   async addPlayer(input: AddPlayerInput): Promise<RegisteredPlayer> {
@@ -478,16 +586,56 @@ export class PlayWorld {
     if (this.repository !== null) {
       if (input.apiKey === undefined || input.apiKey.length === 0) {
         throw new Error(
-          "addPlayer: apiKey is required when PlayWorld uses an AgentRepository"
+          "addPlayer: register an agent first with `agent-play create` (after `agent-play login`), then pass the printed apiKey and agentId"
         );
       }
-      const verified = await this.repository.verifyApiKeyAndGetAgentId(
-        input.apiKey
-      );
-      if (verified === null) {
+      const userId = await this.repository.verifyApiKeyForUser(input.apiKey);
+      if (userId === null) {
         throw new Error("addPlayer: invalid apiKey");
       }
-      playerId = verified;
+      const explicitId =
+        input.agentId !== undefined && input.agentId.trim().length > 0
+          ? input.agentId.trim()
+          : undefined;
+      if (explicitId !== undefined) {
+        const stored = await this.repository.getAgent(explicitId);
+        if (stored === null) {
+          throw new Error(
+            "addPlayer: unknown agentId; create an agent with `agent-play create` after `agent-play login`"
+          );
+        }
+        if (stored.userId !== userId) {
+          throw new Error(
+            "addPlayer: agentId does not belong to this API key; use an agent id from your account"
+          );
+        }
+        playerId = stored.agentId;
+      } else {
+        const agents = await this.repository.listAgentsForUser(userId);
+        const match = agents.find(
+          (a) =>
+            a.name === input.name &&
+            sameToolNames(a.toolNames, input.agent.toolNames)
+        );
+        if (match !== undefined) {
+          playerId = match.agentId;
+        } else {
+          try {
+            const created = await this.repository.createAgent({
+              name: input.name,
+              toolNames: [...input.agent.toolNames],
+              userId,
+            });
+            playerId = created.agentId;
+          } catch (err) {
+            const detail =
+              err instanceof Error ? err.message : String(err);
+            throw new Error(
+              `addPlayer: no matching registered agent and could not create one (${detail}). Pass agentId from \`agent-play create\`, or align player name and tool list with an existing agent (max ${String(MAX_AGENTS_PER_ACCOUNT)} agents per account).`
+            );
+          }
+        }
+      }
     } else {
       playerId = randomUUID();
     }
@@ -508,6 +656,12 @@ export class PlayWorld {
     this.playerOrder.push(player.id);
     this.playerTypes.set(player.id, input.type);
     this.toolNamesByPlayer.set(player.id, [...input.agent.toolNames]);
+    this.assistToolsByPlayer.set(
+      player.id,
+      input.agent.assistTools !== undefined
+        ? [...input.agent.assistTools]
+        : []
+    );
     if (this.repository !== null) {
       const stored = await this.repository.getAgent(playerId);
       if (stored !== null) {
@@ -536,6 +690,7 @@ export class PlayWorld {
       name: player.name,
       toolCount: input.agent.toolNames.length,
     });
+    this.schedulePersistSnapshot();
     return registered;
   }
 
@@ -566,6 +721,7 @@ export class PlayWorld {
       playerId,
       stepCount: journey.steps.length,
     });
+    this.schedulePersistSnapshot();
   }
 
   ingestInvokeResult(playerId: string, invokeResult: unknown): void {
@@ -592,12 +748,6 @@ export class PlayWorld {
     this.bus.off(event, listener);
   }
 
-  onWorldJourney(
-    listener: (update: WorldJourneyUpdate) => void
-  ): void {
-    this.bus.on(WORLD_JOURNEY_EVENT, listener);
-  }
-
   async removePlayer(id: string): Promise<void> {
     this.agents.delete(id);
     this.structuresByPlayer.delete(id);
@@ -605,10 +755,14 @@ export class PlayWorld {
     this.interactionLogByPlayer.delete(id);
     this.playerTypes.delete(id);
     this.toolNamesByPlayer.delete(id);
+    this.assistToolsByPlayer.delete(id);
+    this.lastZoneByPlayer.delete(id);
+    this.lastYieldByPlayer.delete(id);
     this.aggregateByPlayer.delete(id);
     const idx = this.playerOrder.indexOf(id);
     if (idx >= 0) this.playerOrder.splice(idx, 1);
     agentPlayDebug("play-world", "removePlayer", { playerId: id });
+    this.schedulePersistSnapshot();
   }
 
   registerMCP(options: { name: string; url?: string }): string {
@@ -622,6 +776,7 @@ export class PlayWorld {
     }
     this.mcpServers.push(row);
     agentPlayDebug("play-world", "registerMCP", { name: options.name });
+    this.schedulePersistSnapshot();
     return id;
   }
 

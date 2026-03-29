@@ -1,75 +1,51 @@
-# agent-play SDK examples
+# @agent-play/sdk examples
 
-Read these in order for the shortest path to understanding the LangChain adapter.
+These scripts use the **public SDK** only: `RemotePlayWorld` (HTTP session + RPC to the app), **`langchainRegistration`**, **`hold().for()`**, and optional **`onClose`**. They do **not** embed Express or import `PlayWorld` from the server.
+
+Run the **web UI** first so APIs exist:
+
+```bash
+# from repository root
+npm run dev -w @agent-play/web-ui
+```
+
+With a **registered-agent** repository (**`REDIS_URL`** on the server): run **`agent-play login`**, **`agent-play create-key`** (once per account), **`agent-play create`** for each agent (up to two per account). Set **`AGENT_PLAY_API_KEY`** to the account key and pass **`AGENT_PLAY_AGENT_ID`** (and **`AGENT_PLAY_AGENT_ID_ALPHA`** / **`AGENT_PLAY_AGENT_ID_BETA`** for example 02) when calling **`addPlayer`**. Without Redis, use the examples’ placeholder API key and omit agent ids.
 
 | Order | File | Purpose |
 |------:|------|---------|
-| 1 | [01-langchain-minimal-invoke.ts](./01-langchain-minimal-invoke.ts) | **No Express** — single agent, one tool, `attachLangChainInvoke`, log `world:journey` to the console. |
-| 2 | [02-multi-tool-path.ts](./02-multi-tool-path.ts) | Multi-tool turn; Express + `mountExpressPreview` + sample invoke. |
-| 3 | [03-two-agents-two-players.ts](./03-two-agents-two-players.ts) | Two agents, two player ids, separate journeys; same Express preview stack. |
-| 4 | [04-env-and-preview-link.ts](./04-env-and-preview-link.ts) | `PLAY_PREVIEW_BASE_URL`, optional `PLAY_API_BASE`; Express + preview mount. |
-| 5 | [05-express-sse-bridge.ts](./05-express-sse-bridge.ts) | Minimal ping agent; documents SSE + snapshot routes (same pattern as 02–04, 06). |
-| 6 | [06-financial-advisor-server.ts](./06-financial-advisor-server.ts) | Long-running Express + preview; financial advisor agent + CLI human-in-the-loop. Tools: [lib/financial-advisor-tools.ts](./lib/financial-advisor-tools.ts). |
+| 1 | [01-remote-web-ui-langchain.ts](./01-remote-web-ui-langchain.ts) | One LangChain registration, one player; process stays up via **`hold().for()`**. |
+| 2 | [02-remote-two-players-langchain.ts](./02-remote-two-players-langchain.ts) | Two registrations, two players, same session. |
 
-Examples **02–06** use **`express`** + **`mountExpressPreview`** (static preview under `/agent-play`, `snapshot.json`, SSE). Example **01** stays minimal (in-memory bus only, no HTTP server).
+## Environment
 
-## Prerequisites
-
-- Node 20+ recommended (global `fetch`, `crypto.randomUUID`).
-- `OPENAI_API_KEY` in `.env` for examples that call the model (01–06 when invoking the model).
-- Optional: `PLAY_PREVIEW_BASE_URL`, `PLAY_API_BASE` (see example 04).
-
-## Preview URL and `sid`
-
-- Call `PlayWorld.start()` first; `getSessionId()` / `getPreviewUrl()` use that session id as `sid`.
-- Point `previewBaseUrl` at your real watch entry (including path), e.g. `http://localhost:3333/agent-play/watch`, so generated links open the preview app (Vite-built canvas from `packages/play-ui`).
-- The browser loads `snapshot.json?sid=` on startup, then subscribes to `events?sid=` over SSE for live updates (`world:journey`, `world:player_added`, `world:structures`, **`world:interaction`**).
-- Snapshot JSON includes **`worldMap`**: merged structures and **bounds** for the preview canvas. After `addPlayer`, **`attachLangChainInvoke`** can call **`syncPlayerStructuresFromTools`** when tools change; the server may emit **`world:structures`** over SSE.
-
-## Monorepo layout
-
-Examples live under `packages/sdk/examples`, and the preview bundle is built from `packages/play-ui`. From the **repository root**, run `npm install`, then `npm run build:play-ui`, then `npm run example:02` (or another example script). You can also run `npm run example -w @agent-play/sdk` from the root.
-
-## Debug logging
-
-- Set `AGENT_PLAY_DEBUG=1` for verbose `console.debug` across the SDK.
-- Or pass `{ debug: true }` to `new PlayWorld({ ... })`. If you pass `debug: false`, it overrides the env (useful in tests).
-
-## Browser preview (examples 02–06)
-
-1. From the repository root: `npm run build:play-ui` (builds `packages/play-ui` into `dist`).
-2. Run an example, e.g. `npm run example:02` or `npm run example:sse`.
-3. Open the printed `previewUrl` in a browser.
-
-## Example 06 (financial advisor, long-running)
-
-1. `npm run build:preview`
-2. `npm run example:advisor` (optional `PORT`, `OPENAI_MODEL`)
-3. Open the printed preview URL while you chat in the **same terminal** for human-in-the-loop tools.
+- `AGENT_PLAY_WEB_UI_URL` — Base URL of the running app (default `http://127.0.0.1:3000`).
+- `AGENT_PLAY_API_KEY` — Account API key for **`RemotePlayWorld`** (use a dev placeholder if the server has no repository).
+- `AGENT_PLAY_HOLD_SECONDS` — How long **`hold().for()`** waits (default `3600`).
+- `AGENT_PLAY_AGENT_ID` / `AGENT_PLAY_AGENT_ID_ALPHA` / `AGENT_PLAY_AGENT_ID_BETA` — Registered agent ids when using Redis.
+- `OPENAI_API_KEY` — Only if you extend the scripts to call the model; registration-only runs use a placeholder.
+- `AGENT_PLAY_DEBUG=1` — Verbose SDK logging (see `configureAgentPlayDebug` in package exports).
 
 ## Commands
 
-```bash
-cd play-sdk
-npm install
-
-# Minimal (no Express)
-npx tsx -r dotenv/config examples/01-langchain-minimal-invoke.ts
-
-# With preview UI (build first)
-npm run build:preview
-npm run example:02
-npm run example:03
-npm run example:04
-npm run example:sse
-npm run example:advisor
-```
-
-## Tests
+From repo root:
 
 ```bash
-npm run build:preview
-npm test
+npm run example              # example 01
+npm run example:02           # example 02
 ```
 
-`mount-express-preview` tests expect `preview-ui/dist/index.html` to exist.
+From `packages/sdk`:
+
+```bash
+npx tsx -r dotenv/config examples/01-remote-web-ui-langchain.ts
+npx tsx -r dotenv/config examples/02-remote-two-players-langchain.ts
+```
+
+## What the app provides
+
+- `GET /api/agent-play/session` — Creates or resumes a session (`sid`).
+- `POST /api/agent-play/players` — Registers a player; response includes a **preview URL** for `/agent-play/watch`.
+- `POST /api/agent-play/sdk/rpc` — Tool sync, interactions, invoke ingestion (used by `RemotePlayWorld`).
+- Watch UI loads snapshot + SSE (`/api/agent-play/...`) for live world state.
+
+Assist actions on the watch UI call `POST /api/agent-play/assist-tool` when **`assist_*`** tools were registered via **`langchainRegistration`**.

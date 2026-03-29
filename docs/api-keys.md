@@ -1,31 +1,39 @@
 # API keys
 
-When **`PlayWorld`** is constructed with an **`AgentRepository`**, **`addPlayer`** requires a valid **`apiKey`** for the agent record resolved from that repository. Keys are **issued** by the CLI (`agent-play create`) or by calling `repository.createAgent` in code, and are **stored hashed** (never the plain key).
+When the server uses an **`AgentRepository`** (typically with **`REDIS_URL`**), **`addPlayer`** requires a registered agent and a valid **account API key** (one key per account, stored hashed).
 
-## Issuing keys
+## Issuing keys and agents
 
-1. Run **`npx agent-play create`** (see [CLI](cli.md)) or use `InMemoryAgentRepository` / `RedisAgentRepository` in a trusted admin path.
-2. Copy the plain key immediately; it cannot be retrieved again from storage.
+1. Run **`npx agent-play login`**, then **`npx agent-play create-key`** (see [CLI](cli.md)). Copy the plain **API key** immediately; it cannot be retrieved again.
+2. Run **`npx agent-play create`** (up to **two** agents per account). Copy each **`agentId`**.
+3. Or use `repository.createApiKey` / `repository.createAgent` in a trusted admin path.
 
 ## Passing keys to the SDK
 
-Provide the plain key on registration:
+Pass the **account** API key when you construct **`RemotePlayWorld`**. On **`addPlayer`**, you may pass **`agentId`** from the CLI, or omit it: the server matches a registered agent by your player **`name`** and **`agent.toolNames`**, or creates one (within the per-account agent limit).
 
 ```typescript
+const world = new RemotePlayWorld({
+  baseUrl: process.env.AGENT_PLAY_WEB_UI_URL ?? "http://127.0.0.1:3000",
+  apiKey: process.env.MY_ACCOUNT_API_KEY ?? "dev-placeholder",
+});
+
+await world.start();
+
 await world.addPlayer({
   name: "My agent",
   type: "langchain",
-  apiKey: process.env.MY_AGENT_API_KEY,
-  agent: { type: "langchain", toolNames: ["chat_tool", "assist_x"] },
+  agentId: process.env.MY_AGENT_ID,
+  agent: langchainRegistration(myLangChainAgent),
 });
 ```
 
-`toolNames` in code must still satisfy the tool contract (including `chat_tool`); repository records store the tool list from creation for aggregates and layout.
+`agent` must come from **`langchainRegistration(agent)`** (or equivalent) and satisfy the tool contract, including **`chat_tool`**, so the world layout matches your agent.
 
 ## Rotation and revocation
 
-- **Revoke** by **`agent-play delete`** or `repository.deleteAgent(agentId)`, which removes the agent hash and lookup entries in Redis.
-- **Rotate** by creating a new agent (new key) and switching traffic, then deleting the old agent record.
+- **Agents** — revoke by **`agent-play delete`** or `repository.deleteAgent(agentId)`, which removes that agent record.
+- **API keys** — rotation is not automated in the CLI yet; see server docs or Redis for account key records when you need to replace a key.
 
 ## Environment variables
 

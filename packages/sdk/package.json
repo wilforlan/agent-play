@@ -18,13 +18,8 @@
   "scripts": {
     "build": "echo \"SDK ships TypeScript sources; consumers bundle or compile.\"",
     "tsup": "tsup",
-    "example": "tsx -r dotenv/config examples/01-langchain-minimal-invoke.ts",
-    "example:02": "tsx -r dotenv/config examples/02-multi-tool-path.ts",
-    "example:03": "tsx -r dotenv/config examples/03-two-agents-two-players.ts",
-    "example:04": "tsx -r dotenv/config examples/04-env-and-preview-link.ts",
-    "example:sse": "npx tsx -r examples/05-express-sse-bridge.ts",
-    "example:production": "tsx examples/production-server.ts",
-    "example:advisor": "tsx -r examples/06-financial-advisor-server.ts",
+    "example": "tsx -r dotenv/config examples/01-remote-web-ui-langchain.ts",
+    "example:02": "tsx -r dotenv/config examples/02-remote-two-players-langchain.ts",
     "lint": "eslint src",
     "lint:fix": "npm run lint --fix",
     "test": "vitest run"

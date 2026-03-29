@@ -15,7 +15,7 @@ These areas are where contributors most often need **external documentation** or
 
 ## LangChain agents (`langchain` package)
 
-**Files:** [`examples/*.ts`](../play-sdk/examples/), registration via `langchainRegistration`.
+**Files:** [`examples/*.ts`](../packages/sdk/examples/), registration via `langchainRegistration`.
 
 - Examples use `createAgent`, `ChatOpenAI`, and Zod tool schemas — API surface follows LangChain v1 patterns.
 - **Sharp edge:** Tool names in the agent must match what `layoutStructuresFromTools` expects; renaming tools changes structure ids/positions.

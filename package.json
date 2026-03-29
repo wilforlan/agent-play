@@ -17,11 +17,7 @@
     "dev": "npm run dev -w @agent-play/web-ui",
     "test": "npm run test --workspaces --if-present",
     "example": "npm run example -w @agent-play/sdk",
-    "example:02": "npm run example:02 -w @agent-play/sdk",
-    "example:03": "npm run example:03 -w @agent-play/sdk",
-    "example:04": "npm run example:04 -w @agent-play/sdk",
-    "example:sse": "npm run example:sse -w @agent-play/sdk",
-    "example:advisor": "npm run example:advisor -w @agent-play/sdk"
+    "example:02": "npm run example:02 -w @agent-play/sdk"
   },
   "engines": {
     "node": ">=20"

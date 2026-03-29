@@ -4,6 +4,32 @@ import { logAgentPlayApi } from "@/server/agent-play/log-agent-play-api";
 import { getPlayWorld } from "@/server/get-world";
 import { validateAgentPlaySession } from "@/server/agent-play/session-validation";
 
+type AssistToolIn = {
+  name: string;
+  description: string;
+  parameters: Record<string, unknown>;
+};
+
+function parseAssistTools(raw: unknown): AssistToolIn[] | undefined {
+  if (!Array.isArray(raw)) return undefined;
+  const out: AssistToolIn[] = [];
+  for (const x of raw) {
+    if (typeof x !== "object" || x === null) continue;
+    const o = x as Record<string, unknown>;
+    if (typeof o.name !== "string") continue;
+    const description =
+      typeof o.description === "string" ? o.description : "";
+    const parameters =
+      typeof o.parameters === "object" &&
+      o.parameters !== null &&
+      !Array.isArray(o.parameters)
+        ? (o.parameters as Record<string, unknown>)
+        : {};
+    out.push({ name: o.name, description, parameters });
+  }
+  return out.length > 0 ? out : undefined;
+}
+
 export async function POST(req: NextRequest) {
   logAgentPlayApi("POST players", req);
   const raw = req.nextUrl.searchParams.get("sid");
@@ -22,6 +48,7 @@ export async function POST(req: NextRequest) {
     type?: unknown;
     agent?: unknown;
     apiKey?: unknown;
+    agentId?: unknown;
   };
   if (
     typeof body.name !== "string" ||
@@ -34,6 +61,7 @@ export async function POST(req: NextRequest) {
   const agent = body.agent as {
     type?: unknown;
     toolNames?: unknown;
+    assistTools?: unknown;
   };
   if (
     agent.type !== "langchain" ||
@@ -42,6 +70,7 @@ export async function POST(req: NextRequest) {
   ) {
     return Response.json({ error: "invalid agent" }, { status: 400 });
   }
+  const assistTools = parseAssistTools(agent.assistTools);
   try {
     const registered = await world.addPlayer({
       name: body.name,
@@ -49,10 +78,15 @@ export async function POST(req: NextRequest) {
       agent: {
         type: "langchain",
         toolNames: agent.toolNames,
+        ...(assistTools !== undefined ? { assistTools } : {}),
       },
       apiKey:
         typeof body.apiKey === "string" && body.apiKey.length > 0
           ? body.apiKey
+          : undefined,
+      agentId:
+        typeof body.agentId === "string" && body.agentId.length > 0
+          ? body.agentId
           : undefined,
     });
     agentPlayVerbose("api", "players ok", { playerId: registered.id });

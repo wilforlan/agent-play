@@ -42,14 +42,26 @@ export async function POST(req: NextRequest) {
     name?: unknown;
     toolNames?: unknown;
   };
-  if (typeof body.name !== "string" || !Array.isArray(body.toolNames)) {
+  if (typeof body.name !== "string") {
     return Response.json({ error: "invalid body" }, { status: 400 });
   }
-  const toolNames = body.toolNames.filter(
-    (x): x is string => typeof x === "string"
-  );
-  const result = await repo.createAgent({ name: body.name, toolNames, userId });
-  return Response.json(result);
+  const rawTools = body.toolNames;
+  const toolNames = Array.isArray(rawTools)
+    ? rawTools.filter((x): x is string => typeof x === "string")
+    : [];
+  const effectiveToolNames =
+    toolNames.length > 0 ? toolNames : (["chat_tool"] as const);
+  try {
+    const result = await repo.createAgent({
+      name: body.name,
+      toolNames: [...effectiveToolNames],
+      userId,
+    });
+    return Response.json(result);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return Response.json({ error: msg }, { status: 400 });
+  }
 }
 
 export async function DELETE(req: NextRequest) {
