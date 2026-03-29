@@ -1,15 +1,22 @@
 import { NextRequest } from "next/server";
+import { agentPlayVerbose } from "@/server/agent-play/agent-play-debug";
+import { logAgentPlayApi } from "@/server/agent-play/log-agent-play-api";
 import { getPlayWorld } from "@/server/get-world";
+import { validateAgentPlaySession } from "@/server/agent-play/session-validation";
 
 export async function POST(req: NextRequest) {
-  const sid = req.nextUrl.searchParams.get("sid");
-  if (sid === null || sid.length === 0) {
+  logAgentPlayApi("POST players", req);
+  const raw = req.nextUrl.searchParams.get("sid");
+  if (raw === null || raw.trim().length === 0) {
+    agentPlayVerbose("api", "players rejected", { reason: "missing sid" });
     return Response.json({ error: "missing sid" }, { status: 400 });
   }
-  const world = await getPlayWorld();
-  if (!world.isSessionSid(sid)) {
+  const sid = raw.trim();
+  if (!(await validateAgentPlaySession(sid))) {
+    agentPlayVerbose("api", "players rejected", { reason: "invalid sid" });
     return Response.json({ error: "invalid sid" }, { status: 403 });
   }
+  const world = await getPlayWorld();
   const body = (await req.json()) as {
     name?: unknown;
     type?: unknown;
@@ -48,6 +55,7 @@ export async function POST(req: NextRequest) {
           ? body.apiKey
           : undefined,
     });
+    agentPlayVerbose("api", "players ok", { playerId: registered.id });
     return Response.json({
       playerId: registered.id,
       previewUrl: registered.previewUrl,
@@ -55,6 +63,7 @@ export async function POST(req: NextRequest) {
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
+    agentPlayVerbose("api", "players error", { msg });
     return Response.json({ error: msg }, { status: 400 });
   }
 }

@@ -13,7 +13,12 @@ export default function WatchBootstrap() {
   return (
     <div
       id="watch-root"
-      style={{ minHeight: "100vh", background: "#0f172a" }}
+      style={{
+        minHeight: "100vh",
+        background: "#0f172a",
+        display: "flex",
+        flexDirection: "column",
+      }}
     />
   );
 }

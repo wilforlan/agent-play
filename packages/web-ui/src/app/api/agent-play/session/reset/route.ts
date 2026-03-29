@@ -1,29 +1,24 @@
 import { NextRequest } from "next/server";
 import { agentPlayVerbose } from "@/server/agent-play/agent-play-debug";
 import { logAgentPlayApi } from "@/server/agent-play/log-agent-play-api";
-import { getPlayWorld, getRedisSessionStore } from "@/server/get-world";
+import { getPlayWorld } from "@/server/get-world";
 import { validateAgentPlaySession } from "@/server/agent-play/session-validation";
 
-export async function GET(req: NextRequest) {
-  logAgentPlayApi("GET snapshot", req);
+export async function POST(req: NextRequest) {
+  logAgentPlayApi("POST session/reset", req);
   const raw = req.nextUrl.searchParams.get("sid");
   if (raw === null || raw.trim().length === 0) {
-    agentPlayVerbose("api", "snapshot rejected", { reason: "missing sid" });
     return Response.json({ error: "missing sid" }, { status: 400 });
   }
   const sid = raw.trim();
   if (!(await validateAgentPlaySession(sid))) {
-    agentPlayVerbose("api", "snapshot rejected", { reason: "invalid sid" });
+    agentPlayVerbose("api", "session/reset rejected", { reason: "invalid sid" });
     return Response.json({ error: "invalid sid" }, { status: 403 });
   }
   const world = await getPlayWorld();
-  const snap = world.getSnapshotJson();
-  const store = getRedisSessionStore();
-  if (store !== null) {
-    void store.persistSnapshot(snap);
-  }
-  agentPlayVerbose("api", "snapshot ok", {
-    playerCount: snap.players.length,
+  const newSid = await world.resetSession();
+  agentPlayVerbose("api", "session/reset ok", {
+    newSidPrefix: `${newSid.slice(0, 8)}…`,
   });
-  return Response.json(snap);
+  return Response.json({ sid: newSid });
 }

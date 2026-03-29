@@ -21,9 +21,15 @@ import {
   appendChatLogLine,
   resetChatLogFromSnapshot,
 } from "./preview-chat-log.js";
+import {
+  ensurePreviewSessionId,
+  getPreviewSessionIdSync,
+} from "./preview-session-id.js";
 import { createPreviewAgentChatOverlays } from "./preview-agent-chat-overlays.js";
 import { ensurePreviewChatStyles } from "./preview-chat-panel.js";
 import { createPreviewChatSettingsPanel } from "./preview-chat-settings-panel.js";
+import { createPreviewSessionProfilePanel } from "./preview-session-profile-panel.js";
+import { createPreviewSessionToolsPanel } from "./preview-session-tools-panel.js";
 import {
   getAgentChatDisplaySettings,
   layoutHeightFromScrollMax,
@@ -38,7 +44,10 @@ import {
 } from "./preview-debug-joystick.js";
 import { createPreviewDebugPanel } from "./preview-debug-panel.js";
 import { createPixiPreview, type PixiPreviewHandle } from "./pixi-multiverse.js";
-import { createPreviewSettingsToolbar } from "./preview-settings-toolbar.js";
+import {
+  createPreviewBottomBar,
+  ensurePreviewLayoutStyles,
+} from "./preview-settings-toolbar.js";
 import { getPreviewViewSettings } from "./preview-view-settings.js";
 import { ENABLE_CROWD_LAYER, getActiveSceneTheme } from "./scene-theme.js";
 import { drawHomeStructure, drawToolPad } from "./structure-art.js";
@@ -299,6 +308,8 @@ let crowdLayerContainer: Container | null = null;
 let debugPanelUpdate: (() => void) | null = null;
 let debugMountEl: HTMLElement | null = null;
 let joystickHandle: ReturnType<typeof createPreviewDebugJoystick> | null = null;
+let previewBootstrapStarted = false;
+let previewBootstrapLock: Promise<void> | null = null;
 
 function playerDisplayName(playerId: string): string {
   if (playerId === HUMAN_VIEWER_PLAYER_ID) return "You";
@@ -927,27 +938,38 @@ function onFrame(): void {
 }
 
 export function bootstrap(): void {
-  const sid = getSid();
-  if (!sid) return;
-  const theme = getActiveSceneTheme();
-  palette = mergeMultiversePalette(theme.palettePartial);
-  void (async () => {
+  if (previewBootstrapStarted) return;
+  if (previewBootstrapLock !== null) {
+    void previewBootstrapLock;
+    return;
+  }
+  previewBootstrapLock = (async () => {
+    const sid = await ensurePreviewSessionId();
+    if (!sid) return;
+    if (previewBootstrapStarted) return;
+    previewBootstrapStarted = true;
+    const theme = getActiveSceneTheme();
+    palette = mergeMultiversePalette(theme.palettePartial);
     ensurePreviewChatStyles();
+    ensurePreviewLayoutStyles();
+    const mount =
+      document.getElementById("watch-root") ?? document.body;
     const shell = document.createElement("div");
-    shell.style.cssText =
-      "display:flex;flex-direction:column;align-items:center;min-height:100vh;";
-    document.body.appendChild(shell);
+    shell.className = "preview-shell";
+    mount.appendChild(shell);
 
     proximityHintEl = document.createElement("div");
-    proximityHintEl.style.cssText =
-      "display:none;position:fixed;bottom:88px;left:50%;transform:translateX(-50%);z-index:40;max-width:min(520px,92vw);padding:8px 14px;border-radius:10px;font:600 12px/1.35 system-ui,sans-serif;color:#f8fafc;background:rgba(15,23,42,0.92);border:1px solid rgba(148,163,184,0.4);text-align:center;pointer-events:none;";
+    proximityHintEl.className = "preview-proximity-hint";
     shell.appendChild(proximityHintEl);
 
-    const worldRow = document.createElement("div");
-    worldRow.className = "preview-world-row";
+    const gamePanel = document.createElement("div");
+    gamePanel.className = "preview-game-panel";
 
-    const debugSide = document.createElement("div");
-    debugSide.className = "preview-debug-side";
+    const gameRow = document.createElement("div");
+    gameRow.className = "preview-game-row";
+
+    const leftCol = document.createElement("div");
+    leftCol.className = "preview-game-col preview-game-col--left";
 
     const debugMount = document.createElement("div");
     debugMount.className = "preview-debug-mount";
@@ -957,18 +979,56 @@ export function bootstrap(): void {
     });
     debugPanelUpdate = debug.update;
     debugMount.appendChild(debug.element);
-    debugSide.appendChild(debugMount);
+    leftCol.appendChild(debugMount);
+
+    const centerCol = document.createElement("div");
+    centerCol.className = "preview-game-col preview-game-col--center";
+
+    const canvasWrap = document.createElement("div");
+    canvasWrap.className = "preview-canvas-wrap";
 
     const canvasHost = document.createElement("div");
     canvasHost.style.cssText = `display:block;position:relative;width:${VIEW_W}px;max-width:100%;height:${VIEW_H}px;margin:0 auto;overflow:hidden;`;
 
-    worldRow.append(debugSide, canvasHost);
-    shell.appendChild(worldRow);
+    const joystickWrap = document.createElement("div");
+    joystickWrap.className = "preview-joystick-wrap";
+
+    canvasWrap.appendChild(canvasHost);
+    centerCol.append(canvasWrap, joystickWrap);
+
+    const rightCol = document.createElement("div");
+    rightCol.className = "preview-game-col preview-game-col--right";
 
     agentChatOverlays = createPreviewAgentChatOverlays();
     refreshPreviewChat = () => {
       agentChatOverlays?.refreshAll();
     };
+
+    const controlStack = document.createElement("div");
+    controlStack.className = "preview-control-stack";
+
+    const proximityLegend = document.createElement("div");
+    proximityLegend.className = "preview-proximity-legend";
+    proximityLegend.textContent =
+      "Near another player: A Assist · C Chat · Z Zone · Y Yield";
+
+    const chatPanel = createPreviewChatSettingsPanel({
+      embeddedInToolbar: true,
+      onSettingsApplied: () => {
+        agentChatOverlays?.applyDisplaySettings();
+      },
+    });
+    const sessionToolsPanel = createPreviewSessionToolsPanel();
+    const sessionProfilePanel = createPreviewSessionProfilePanel({
+      onProfileApplied: () => {},
+    });
+
+    controlStack.append(proximityLegend);
+    rightCol.appendChild(controlStack);
+
+    gameRow.append(leftCol, centerCol, rightCol);
+    gamePanel.appendChild(gameRow);
+    shell.appendChild(gamePanel);
 
     worldLayer.addChild(gridGraphics);
     worldLayer.addChild(structureLayer);
@@ -1002,17 +1062,13 @@ export function bootstrap(): void {
 
     canvasHost.appendChild(agentChatOverlays.root);
 
-    joystickHandle = createPreviewDebugJoystick({ parent: debugSide });
+    joystickHandle = createPreviewDebugJoystick({ parent: joystickWrap });
 
-    const chatPanel = createPreviewChatSettingsPanel({
-      embeddedInToolbar: true,
-      onSettingsApplied: () => {
-        agentChatOverlays?.applyDisplaySettings();
-      },
-    });
     shell.appendChild(
-      createPreviewSettingsToolbar({
+      createPreviewBottomBar({
         chatPanel,
+        sessionToolsPanel,
+        sessionProfilePanel,
         onThemeApplied: () => {
           rebuildSceneForTheme();
         },
@@ -1021,7 +1077,6 @@ export function bootstrap(): void {
           applyDebugVisibility();
           applyJoystickVisibility();
         },
-        onSessionProfileChanged: () => {},
       })
     );
 
@@ -1033,7 +1088,9 @@ export function bootstrap(): void {
     window.addEventListener("keyup", onDocumentKeyUp);
 
     void loadSnapshot(sid).then(() => connectSse(sid));
-  })();
+  })().finally(() => {
+    previewBootstrapLock = null;
+  });
 }
 
 if (

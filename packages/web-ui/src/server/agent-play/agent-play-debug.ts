@@ -18,9 +18,15 @@ export function isAgentPlayDebugEnabled(): boolean {
   return process.env.AGENT_PLAY_DEBUG === "1";
 }
 
-const MAX_JSON_LENGTH = 2000;
+export function isAgentPlayVerboseEnabled(): boolean {
+  if (process.env.AGENT_PLAY_VERBOSE === "1") return true;
+  return isAgentPlayDebugEnabled();
+}
 
-function safeSerialize(detail: unknown): string {
+const MAX_JSON_LENGTH = 2000;
+const VERBOSE_JSON_LENGTH = 80_000;
+
+function safeSerializeWithLimit(detail: unknown, maxLen: number): string {
   if (detail === undefined) return "";
   try {
     const seen = new WeakSet<object>();
@@ -33,12 +39,14 @@ function safeSerialize(detail: unknown): string {
       return v;
     });
     if (typeof json !== "string") return String(detail);
-    return json.length > MAX_JSON_LENGTH
-      ? `${json.slice(0, MAX_JSON_LENGTH)}…`
-      : json;
+    return json.length > maxLen ? `${json.slice(0, maxLen)}…` : json;
   } catch {
     return String(detail);
   }
+}
+
+function safeSerialize(detail: unknown): string {
+  return safeSerializeWithLimit(detail, MAX_JSON_LENGTH);
 }
 
 export function agentPlayDebug(
@@ -50,4 +58,17 @@ export function agentPlayDebug(
   const tail =
     detail === undefined ? "" : ` ${safeSerialize(detail)}`;
   console.debug(`[agent-play:${scope}] ${message}${tail}`);
+}
+
+export function agentPlayVerbose(
+  scope: string,
+  message: string,
+  detail?: unknown
+): void {
+  if (!isAgentPlayVerboseEnabled()) return;
+  const tail =
+    detail === undefined
+      ? ""
+      : ` ${safeSerializeWithLimit(detail, VERBOSE_JSON_LENGTH)}`;
+  console.info(`[agent-play:${scope}] ${message}${tail}`);
 }

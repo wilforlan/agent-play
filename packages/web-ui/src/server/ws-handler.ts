@@ -1,4 +1,5 @@
 import type { WebSocket } from "ws";
+import { agentPlayVerbose } from "@/server/agent-play/agent-play-debug";
 import { getPlayWorld } from "@/server/get-world";
 import {
   PLAYER_ADDED_EVENT,
@@ -9,6 +10,7 @@ import {
 } from "@/server/agent-play/play-transport";
 
 export async function attachAgentPlayWs(ws: WebSocket): Promise<void> {
+  agentPlayVerbose("ws", "attachAgentPlayWs");
   const world = await getPlayWorld();
   const pairs: Array<[string, (...args: unknown[]) => void]> = [];
   const wrap = (ev: string) => {

@@ -1,7 +1,10 @@
 import { NextRequest } from "next/server";
+import { agentPlayVerbose } from "@/server/agent-play/agent-play-debug";
+import { logAgentPlayApi } from "@/server/agent-play/log-agent-play-api";
 import { serializeWorldJourneyUpdate } from "@/server/agent-play/preview-serialize";
 import type { WorldJourneyUpdate } from "@/server/agent-play/@types/world";
 import { getPlayWorld } from "@/server/get-world";
+import { validateAgentPlaySession } from "@/server/agent-play/session-validation";
 import {
   PLAYER_ADDED_EVENT,
   WORLD_AGENT_SIGNAL_EVENT,
@@ -11,20 +14,25 @@ import {
 } from "@/server/agent-play/play-transport";
 
 export async function GET(req: NextRequest) {
-  const sid = req.nextUrl.searchParams.get("sid");
-  if (sid === null || sid.length === 0) {
+  logAgentPlayApi("GET events (SSE)", req);
+  const raw = req.nextUrl.searchParams.get("sid");
+  if (raw === null || raw.trim().length === 0) {
+    agentPlayVerbose("api", "events rejected", { reason: "missing sid" });
     return new Response(JSON.stringify({ error: "missing sid" }), {
       status: 400,
       headers: { "content-type": "application/json" },
     });
   }
-  const world = await getPlayWorld();
-  if (!world.isSessionSid(sid)) {
+  const sid = raw.trim();
+  if (!(await validateAgentPlaySession(sid))) {
+    agentPlayVerbose("api", "events rejected", { reason: "invalid sid" });
     return new Response(JSON.stringify({ error: "invalid sid" }), {
       status: 403,
       headers: { "content-type": "application/json" },
     });
   }
+  const world = await getPlayWorld();
+  agentPlayVerbose("api", "events SSE stream opened");
 
   const encoder = new TextEncoder();
   const stream = new ReadableStream({

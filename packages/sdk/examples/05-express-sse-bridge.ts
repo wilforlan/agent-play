@@ -7,7 +7,7 @@
  * - `GET /agent-play/events?sid=` — SSE (`world:agent_signal`, `world:player_added`, `world:structures`, `world:interaction`, …)
  *
  * Set `PlayWorld` `previewBaseUrl` to the **watch URL including `/agent-play/watch`** so `player.previewUrl`
- * matches where the canvas loads. The page reads `?sid=` from the query string.
+ * matches where the canvas loads. The watch page stores the session id in sessionStorage (optional `?sid=` seeds it).
  *
  * Run: `npm run build:preview && npm run example:sse`
  * Env: `OPENAI_API_KEY`, optional `PORT` (default 3333)

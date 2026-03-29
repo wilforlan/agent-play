@@ -6,7 +6,11 @@ import type {
   WorldJourneyUpdate,
   WorldStructure,
 } from "./@types/world.js";
-import { configureAgentPlayDebug, agentPlayDebug } from "./agent-play-debug.js";
+import {
+  configureAgentPlayDebug,
+  agentPlayDebug,
+  agentPlayVerbose,
+} from "./agent-play-debug.js";
 import { isToolMessage } from "@langchain/core/messages";
 import { extractJourney } from "./journey-from-messages.js";
 import { enrichJourneyPath, layoutStructuresFromTools } from "./structure-layout.js";
@@ -26,6 +30,7 @@ import type {
   WorldStructuresPayload,
 } from "./play-transport.js";
 import type { AgentRepository } from "./agent-repository.js";
+import type { RedisSessionStore } from "./redis-session-store.js";
 import {
   assertAgentToolContract,
   extractAssistToolNames,
@@ -68,6 +73,7 @@ export type PlayWorldOptions = {
   playApiBase?: string;
   debug?: boolean;
   repository?: AgentRepository;
+  sessionStore?: RedisSessionStore;
 };
 
 export const HUMAN_VIEWER_PLAYER_ID = "__human__";
@@ -107,6 +113,7 @@ export class PlayWorld {
   private readonly bus = new InMemoryPlayBus();
   private httpTransport: HttpPlayTransport | null = null;
   private readonly repository: AgentRepository | null;
+  private readonly sessionStore: RedisSessionStore | null;
   private readonly agents = new Map<string, PlayAgentInformation>();
   private readonly structuresByPlayer = new Map<string, WorldStructure[]>();
   private readonly lastUpdateByPlayer = new Map<string, WorldJourneyUpdate>();
@@ -127,6 +134,7 @@ export class PlayWorld {
 
   constructor(private readonly options: PlayWorldOptions = {}) {
     this.repository = options.repository ?? null;
+    this.sessionStore = options.sessionStore ?? null;
   }
 
   async start(): Promise<void> {
@@ -135,7 +143,10 @@ export class PlayWorld {
         ? { debug: this.options.debug }
         : {}
     );
-    const sid = randomUUID();
+    const sid =
+      this.sessionStore !== null
+        ? await this.sessionStore.loadOrCreateSessionId()
+        : randomUUID();
     this.sessionId = sid;
     agentPlayDebug("play-world", "start", { sessionId: sid });
     if (this.options.playApiBase !== undefined) {
@@ -155,7 +166,39 @@ export class PlayWorld {
 
   isSessionSid(sid: string): boolean {
     if (this.sessionId === null) return false;
-    return sid === this.sessionId;
+    return sid.trim() === this.sessionId;
+  }
+
+  async resetSession(): Promise<string> {
+    if (this.sessionId === null) {
+      throw new Error("PlayWorld.start() must be called before resetSession");
+    }
+    this.agents.clear();
+    this.structuresByPlayer.clear();
+    this.lastUpdateByPlayer.clear();
+    this.playerOrder.length = 0;
+    this.playerTypes.clear();
+    this.toolNamesByPlayer.clear();
+    this.aggregateByPlayer.clear();
+    this.interactionLogByPlayer.clear();
+    this.interactionSeq = 0;
+    this.mcpServers.length = 0;
+    const newSid = randomUUID();
+    this.sessionId = newSid;
+    if (this.options.playApiBase !== undefined) {
+      this.httpTransport = new HttpPlayTransport({
+        baseUrl: this.options.playApiBase,
+        sessionId: newSid,
+      });
+    }
+    if (this.sessionStore !== null) {
+      await this.sessionStore.replaceSessionWithNewSid(newSid);
+    }
+    agentPlayDebug("play-world", "resetSession", { sessionId: newSid });
+    agentPlayVerbose("play-world", "resetSession complete", {
+      newSidPrefix: `${newSid.slice(0, 8)}…`,
+    });
+    return newSid;
   }
 
   getPreviewUrl(): string {
@@ -163,9 +206,8 @@ export class PlayWorld {
       this.options.previewBaseUrl ??
       process.env.PLAY_PREVIEW_BASE_URL ??
       "https://preview.agent-play.local/watch";
-    const sid = this.getSessionId();
     const u = new URL(base.includes("://") ? base : `https://${base}`);
-    u.searchParams.set("sid", sid);
+    u.search = "";
     return u.toString();
   }
 

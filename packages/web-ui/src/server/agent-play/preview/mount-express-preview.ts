@@ -3,8 +3,9 @@ import express from "express";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { WorldJourneyUpdate } from "../@types/world.js";
-import { agentPlayDebug } from "../agent-play-debug.js";
+import { agentPlayDebug, agentPlayVerbose } from "../agent-play-debug.js";
 import { serializeWorldJourneyUpdate } from "../preview-serialize.js";
+import type { RedisSessionStore } from "../redis-session-store.js";
 import type { PlayWorld } from "../play-world.js";
 import {
   PLAYER_ADDED_EVENT,
@@ -17,6 +18,7 @@ import {
 export type MountExpressPreviewOptions = {
   basePath?: string;
   assetsDir?: string;
+  sessionStore?: RedisSessionStore | null;
 };
 
 const mountPreviewDir = dirname(fileURLToPath(import.meta.url));
@@ -34,18 +36,38 @@ export function defaultPreviewAssetsDir(): string {
   );
 }
 
-function requireValidSid(
+async function requireValidSid(
   world: PlayWorld,
+  sessionStore: RedisSessionStore | null,
   req: Request,
   res: Response
-): string | null {
-  const sid = req.query.sid;
-  if (typeof sid !== "string" || sid.length === 0) {
+): Promise<string | null> {
+  const raw = req.query.sid;
+  if (typeof raw !== "string" || raw.trim().length === 0) {
     agentPlayDebug("mount-preview", "requireValidSid missing sid", {
       path: req.path,
     });
     res.status(400).json({ error: "missing sid" });
     return null;
+  }
+  const sid = raw.trim();
+  agentPlayVerbose("mount-preview", "requireValidSid", {
+    path: req.path,
+    hasRedis: sessionStore !== null,
+    sidPrefix: `${sid.slice(0, 8)}…`,
+  });
+  if (sessionStore !== null) {
+    const redisOk = await sessionStore.isValidSession(sid);
+    const memOk = world.isSessionSid(sid);
+    const ok = redisOk || memOk;
+    if (!ok) {
+      agentPlayDebug("mount-preview", "requireValidSid invalid sid (redis)", {
+        path: req.path,
+      });
+      res.status(403).json({ error: "invalid sid" });
+      return null;
+    }
+    return sid;
   }
   if (!world.isSessionSid(sid)) {
     agentPlayDebug("mount-preview", "requireValidSid invalid sid", {
@@ -64,16 +86,23 @@ export function mountExpressPreview(
 ): void {
   const base = (options.basePath ?? "/agent-play").replace(/\/$/, "");
   const assetsDir = options.assetsDir ?? defaultPreviewAssetsDir();
+  const sessionStore = options.sessionStore ?? null;
 
-  app.get(`${base}/snapshot.json`, (req, res) => {
-    agentPlayDebug("mount-preview", "GET snapshot.json");
-    if (requireValidSid(world, req, res) === null) return;
-    res.json(world.getSnapshotJson());
+  app.get(`${base}/snapshot.json`, async (req, res) => {
+    try {
+      agentPlayDebug("mount-preview", "GET snapshot.json");
+      if ((await requireValidSid(world, sessionStore, req, res)) === null) return;
+      res.json(world.getSnapshotJson());
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: msg });
+    }
   });
 
-  app.get(`${base}/events`, (req, res) => {
-    agentPlayDebug("mount-preview", "GET events SSE open");
-    if (requireValidSid(world, req, res) === null) return;
+  app.get(`${base}/events`, async (req, res) => {
+    try {
+      agentPlayDebug("mount-preview", "GET events SSE open");
+      if ((await requireValidSid(world, sessionStore, req, res)) === null) return;
 
     res.setHeader("Content-Type", "text/event-stream");
     res.setHeader("Cache-Control", "no-cache");
@@ -131,6 +160,12 @@ export function mountExpressPreview(
       world.off(WORLD_INTERACTION_EVENT, onInteraction);
       world.off(WORLD_AGENT_SIGNAL_EVENT, onAgentSignal);
     });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (!res.headersSent) {
+        res.status(500).json({ error: msg });
+      }
+    }
   });
 
   app.options(`${base}/proximity-action`, (_req, res) => {
@@ -143,10 +178,10 @@ export function mountExpressPreview(
   app.post(
     `${base}/proximity-action`,
     express.json(),
-    (req: Request, res: Response) => {
+    async (req: Request, res: Response) => {
+      try {
       agentPlayDebug("mount-preview", "POST proximity-action");
-      const sid = requireValidSid(world, req, res);
-      if (sid === null) return;
+      if ((await requireValidSid(world, sessionStore, req, res)) === null) return;
       const body = req.body as {
         fromPlayerId?: unknown;
         toPlayerId?: unknown;
@@ -183,6 +218,10 @@ export function mountExpressPreview(
       }
       res.setHeader("Access-Control-Allow-Origin", "*");
       res.json({ ok: true });
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        res.status(500).json({ error: msg });
+      }
     }
   );
 

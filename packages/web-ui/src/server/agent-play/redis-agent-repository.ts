@@ -202,9 +202,20 @@ export class RedisAgentRepository implements AgentRepository {
 }
 
 export function createRedisAgentRepository(options: {
-  redisUrl: string;
+  redisUrl?: string;
   hostId: string;
+  redis?: Redis;
 }): RedisAgentRepository {
-  const redis = new Redis(options.redisUrl);
+  if (options.redis !== undefined) {
+    return new RedisAgentRepository({
+      redis: options.redis,
+      hostId: options.hostId,
+    });
+  }
+  const url = options.redisUrl;
+  if (typeof url !== "string" || url.length === 0) {
+    throw new Error("createRedisAgentRepository: redisUrl or redis is required");
+  }
+  const redis = new Redis(url);
   return new RedisAgentRepository({ redis, hostId: options.hostId });
 }

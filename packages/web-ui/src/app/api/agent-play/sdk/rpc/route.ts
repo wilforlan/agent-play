@@ -1,22 +1,28 @@
 import { NextRequest } from "next/server";
+import { agentPlayVerbose } from "@/server/agent-play/agent-play-debug";
+import { logAgentPlayApi } from "@/server/agent-play/log-agent-play-api";
 import { getPlayWorld } from "@/server/get-world";
+import { validateAgentPlaySession } from "@/server/agent-play/session-validation";
 import type { Journey } from "@/server/agent-play/@types/world";
 
 function requireSid(req: NextRequest): string | null {
-  const sid = req.nextUrl.searchParams.get("sid");
-  if (sid === null || sid.length === 0) return null;
-  return sid;
+  const raw = req.nextUrl.searchParams.get("sid");
+  if (raw === null || raw.trim().length === 0) return null;
+  return raw.trim();
 }
 
 export async function POST(req: NextRequest) {
+  logAgentPlayApi("POST sdk/rpc", req);
   const sid = requireSid(req);
   if (sid === null) {
+    agentPlayVerbose("api", "sdk/rpc rejected", { reason: "missing sid" });
     return Response.json({ error: "missing sid" }, { status: 400 });
   }
-  const world = await getPlayWorld();
-  if (!world.isSessionSid(sid)) {
+  if (!(await validateAgentPlaySession(sid))) {
+    agentPlayVerbose("api", "sdk/rpc rejected", { reason: "invalid sid" });
     return Response.json({ error: "invalid sid" }, { status: 403 });
   }
+  const world = await getPlayWorld();
 
   const body = (await req.json()) as {
     op?: unknown;
@@ -25,6 +31,7 @@ export async function POST(req: NextRequest) {
   if (typeof body.op !== "string") {
     return Response.json({ error: "missing op" }, { status: 400 });
   }
+  agentPlayVerbose("api", "sdk/rpc op", { op: body.op });
 
   try {
     switch (body.op) {
@@ -89,6 +96,7 @@ export async function POST(req: NextRequest) {
     }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
+    agentPlayVerbose("api", "sdk/rpc catch", { msg });
     return Response.json({ error: msg }, { status: 400 });
   }
 }

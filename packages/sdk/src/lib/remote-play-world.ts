@@ -158,9 +158,8 @@ export class RemotePlayWorld extends EventEmitter {
   }
 
   getPreviewUrl(): string {
-    const sid = this.getSessionId();
     const u = new URL("/agent-play/watch", this.apiBase);
-    u.searchParams.set("sid", sid);
+    u.search = "";
     return u.toString();
   }
 

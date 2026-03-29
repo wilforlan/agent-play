@@ -129,7 +129,7 @@ export function createPreviewDebugJoystick(options: {
 
   const label = document.createElement("div");
   label.className = "preview-debug-joystick__label";
-  label.textContent = "Agent joystick";
+  label.textContent = "Play Pad";
 
   const base = document.createElement("div");
   base.className = "preview-debug-joystick__base";

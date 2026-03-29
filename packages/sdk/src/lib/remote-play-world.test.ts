@@ -41,7 +41,7 @@ describe("RemotePlayWorld", () => {
           return new Response(
             JSON.stringify({
               playerId: "p1",
-              previewUrl: "http://127.0.0.1:3000/agent-play/watch?sid=sid-1",
+              previewUrl: "http://127.0.0.1:3000/agent-play/watch",
               structures: [],
             }),
             { status: 200 }
@@ -63,7 +63,7 @@ describe("RemotePlayWorld", () => {
       agent: { type: "langchain", toolNames: ["chat_tool"] },
     });
     expect(player.id).toBe("p1");
-    expect(player.previewUrl).toContain("sid-1");
+    expect(player.previewUrl).toBe("http://127.0.0.1:3000/agent-play/watch");
     await world.close();
   });
 
