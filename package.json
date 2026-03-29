@@ -1,0 +1,34 @@
+{
+  "name": "agent-play",
+  "private": true,
+  "description": "Monorepo: Agent Play SDK for Node servers and deployable play UI.",
+  "bin": {
+    "agent-play": "./packages/cli/dist/cli.js"
+  },
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "npm run build:sdk && npm run build:play-ui && npm run build:cli",
+    "build:sdk": "npm run build -w @agent-play/sdk",
+    "build:play-ui": "npm run build -w @agent-play/play-ui",
+    "build:cli": "npm run build -w @agent-play/cli",
+    "start": "npm run build && npx tsx packages/sdk/examples/production-server.ts",
+    "dev": "npx concurrently -k -n api,ui -c blue,magenta \"npm run example:sse -w @agent-play/sdk\" \"npx cross-env VITE_PLAY_API_BASE=http://127.0.0.1:3333/agent-play npm run dev -w @agent-play/play-ui\"",
+    "test": "npm run test --workspaces --if-present",
+    "example": "npm run example -w @agent-play/sdk",
+    "example:02": "npm run example:02 -w @agent-play/sdk",
+    "example:03": "npm run example:03 -w @agent-play/sdk",
+    "example:04": "npm run example:04 -w @agent-play/sdk",
+    "example:sse": "npm run example:sse -w @agent-play/sdk",
+    "example:advisor": "npm run example:advisor -w @agent-play/sdk"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2",
+    "cross-env": "^7.0.3",
+    "tsx": "^4.21.0"
+  }
+}

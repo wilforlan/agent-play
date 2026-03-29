@@ -1,30 +1,27 @@
 # Agent Play — developer documentation
 
-For project vision, community framing, and roadmap-style honesty, start with the [repository README](../README.md).
+For project vision and community framing, read the [repository README](../README.md).
 
-This folder documents **agent-play**: a TypeScript SDK and browser preview that visualize LangChain-style agent runs as a **2D world** with structures (tools), journeys (paths), and live updates.
+Agent Play is a TypeScript SDK plus a browser client that visualize agent runs as a **2D world** with structures (tools), journeys (paths), and live updates.
 
 ## Where the code lives
 
-| Location | Role |
-|----------|------|
-| [`play-sdk/`](../play-sdk/) | npm package `agent-play`: `PlayWorld`, LangChain adapter, Express preview mount, tests |
-| [`play-sdk/preview-ui/`](../play-sdk/preview-ui/) | Vite + TypeScript browser app (Pixi.js canvas, chat UI, settings) |
-| [`play-sdk/examples/`](../play-sdk/examples/) | Runnable examples and the canonical narrative for learning the SDK |
+The repository uses npm workspaces. **`packages/sdk`** is the Node.js package `@agent-play/sdk`: `PlayWorld`, LangChain adapter, Express preview mount, and tests. **`packages/play-ui`** is the Vite application `@agent-play/play-ui` (Pixi.js canvas, chat UI, settings). **`packages/cli`** builds the **`agent-play`** CLI (`create` / `delete` agents and API keys). **`packages/sdk/examples`** holds runnable servers that demonstrate registration and streaming.
 
 ## Documentation map
 
 | Document | Contents |
 |----------|----------|
-| [Core features](core-features.md) | Product capabilities at a glance |
-| [Architecture](architecture.md) | End-to-end data flow, components, session model |
-| [SDK reference](sdk.md) | `PlayWorld`, exports, transport, preview serialization |
-| [Preview UI](preview-ui.md) | Browser app, build, SSE client, main modules |
-| [Events, SSE, and remote API](events-sse-and-remote.md) | Event names, snapshot shape, HTTP forwarding |
-| [Third-party knowledge and sharp edges](third-party-and-sharp-edges.md) | LangChain messages, Pixi, coordinates, debugging |
-| [Tutorials — Quickstart](tutorials/quickstart.md) | Minimal integration path |
-| [Tutorials — Examples](tutorials/examples.md) | Ordered walkthrough of `examples/` |
-| [Contributing](CONTRIBUTING.md) | How to contribute, tests, scope |
-| [Code of Conduct](CODE_OF_CONDUCT.md) | Expected behavior in the project |
+| [Overview](overview.md) | How the SDK and UI relate, and why they are separate deployables |
+| [Monorepo](monorepo.md) | Workspaces, build order, root scripts |
+| [SDK](sdk.md) | `PlayWorld`, preview mount, registering agents, MCP at the integration layer |
+| [Play UI](play-ui.md) | Static build, same-origin vs split deployment, `VITE_PLAY_API_BASE` |
+| [Multiplayer](multiplayer.md) | Human movement, proximity, A/C/Z/Y actions |
+| [Redis / repository](redis-world.md) | `AgentRepository`, Redis key layout, no agent position streams |
+| [CLI](cli.md) | `agent-play create` / `delete` |
+| [API keys](api-keys.md) | Issuing keys, SDK usage, rotation |
+| [MCP registration](mcp.md) | `PlayWorld.registerMCP` and snapshot |
 
-Start with [Architecture](architecture.md) and [tutorials/quickstart.md](tutorials/quickstart.md), then run [examples](../play-sdk/examples/README.md) from the `play-sdk` directory.
+Older topic-specific pages such as [Architecture](architecture.md), [Core features](core-features.md), and [Events, SSE, and remote API](events-sse-and-remote.md) may still describe paths as `play-sdk/`; treat **`packages/sdk`** and **`packages/play-ui`** as the current locations.
+
+Run examples from the repo root with `npm run example` (see root `package.json`) or `npm run example -w @agent-play/sdk`.

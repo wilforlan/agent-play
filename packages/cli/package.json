@@ -1,0 +1,19 @@
+{
+  "name": "@agent-play/cli",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "agent-play": "./dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsup src/cli.ts --format esm --platform node --target node20 --out-dir dist --clean --external @agent-play/sdk"
+  },
+  "dependencies": {
+    "@agent-play/sdk": "workspace:*"
+  },
+  "devDependencies": {
+    "tsup": "^8.5.1",
+    "typescript": "~5.9.3"
+  }
+}

@@ -1,0 +1,1027 @@
+import { Color, Container, Graphics, Text } from "pixi.js";
+import { nextAvatarMotion } from "./avatar-anim.js";
+import { buildCrowdLayer } from "./crowd-draw.js";
+import { layoutCrowdClusters } from "./crowd-layout.js";
+import { drawPlatformHero, type HeroPaletteVariant } from "./hero-puppet.js";
+import {
+  cssColorToPixi,
+  mergeMultiversePalette,
+  structureFill,
+  type MultiversePalette,
+} from "./multiverse-engine.js";
+import {
+  agentChatHorizontalNudgePx,
+  computeAgentChatPanelPosition,
+} from "./agent-chat-panel-position.js";
+import {
+  clampWorldPosition,
+  type WorldBounds,
+} from "@play-sdk/lib/world-bounds.js";
+import {
+  appendChatLogLine,
+  resetChatLogFromSnapshot,
+} from "./preview-chat-log.js";
+import { createPreviewAgentChatOverlays } from "./preview-agent-chat-overlays.js";
+import { ensurePreviewChatStyles } from "./preview-chat-panel.js";
+import { createPreviewChatSettingsPanel } from "./preview-chat-settings-panel.js";
+import {
+  getAgentChatDisplaySettings,
+  layoutHeightFromScrollMax,
+} from "./preview-chat-settings.js";
+import {
+  createPreviewDebugJoystick,
+  getJoystickVector,
+  JOYSTICK_DEFLECT_EPS,
+  setJoystickVectorZero,
+  shouldClampWorldPositionWhenJoystickDriving,
+  shouldClearPrimaryWaypointsWhileJoystickIdle,
+} from "./preview-debug-joystick.js";
+import { createPreviewDebugPanel } from "./preview-debug-panel.js";
+import { createPixiPreview, type PixiPreviewHandle } from "./pixi-multiverse.js";
+import { createPreviewSettingsToolbar } from "./preview-settings-toolbar.js";
+import { getPreviewViewSettings } from "./preview-view-settings.js";
+import { ENABLE_CROWD_LAYER, getActiveSceneTheme } from "./scene-theme.js";
+import { drawHomeStructure, drawToolPad } from "./structure-art.js";
+import type { AvatarFacing } from "./avatar-anim.js";
+import {
+  DEFAULT_PROXIMITY_RADIUS,
+  findNearestProximityPartner,
+  proximityKeyToAction,
+  type ProximityActionKind,
+} from "./proximity-interaction.js";
+
+const BASE = import.meta.env.BASE_URL.replace(/\/$/, "") || "";
+const API_BASE =
+  typeof import.meta.env.VITE_PLAY_API_BASE === "string" &&
+  import.meta.env.VITE_PLAY_API_BASE.length > 0
+    ? import.meta.env.VITE_PLAY_API_BASE.replace(/\/$/, "")
+    : BASE;
+const VIEW_W = 720;
+const VIEW_H = 520;
+const CELL = 48;
+const ORIGIN_X = 24;
+const WORLD_BOTTOM_MARGIN = 14;
+const WORLD_INTERACTION_SSE = "world:interaction";
+const WORLD_AGENT_SIGNAL_SSE = "world:agent_signal";
+const HUMAN_VIEWER_PLAYER_ID = "__human__";
+const HOME_STAND_EPS = 0.26;
+const HOME_FRONT_OFFSET_WX = 0.16;
+const HOME_FRONT_OFFSET_WY = 0.22;
+const PREVIEW_AGENT_CHAT_MARGIN_PX = 6;
+const PREVIEW_AGENT_CHAT_GAP_PX = 8;
+
+type Structure = {
+  id: string;
+  x: number;
+  y: number;
+  kind: string;
+  label?: string;
+  toolName?: string;
+  playerId?: string;
+};
+
+type PathStep = {
+  type: string;
+  x?: number;
+  y?: number;
+  content?: string;
+  toolName?: string;
+};
+
+type JourneyUpdate = {
+  playerId: string;
+  path: PathStep[];
+  structures: Structure[];
+};
+
+type SnapshotInteraction = {
+  role: string;
+  text: string;
+  at?: string;
+  seq?: number;
+};
+
+type PlayerRow = {
+  playerId: string;
+  name: string;
+  structures: Structure[];
+  stationary?: boolean;
+  lastUpdate?: JourneyUpdate;
+  recentInteractions?: SnapshotInteraction[];
+};
+
+type WorldMapJson = {
+  bounds: { minX: number; minY: number; maxX: number; maxY: number };
+  structures: (Structure & { playerId?: string })[];
+};
+
+type Snapshot = {
+  sid: string;
+  players: PlayerRow[];
+  worldMap?: WorldMapJson;
+};
+
+type AgentVisual = {
+  root: Container;
+  hero: Graphics;
+  nameTag: Text;
+};
+
+type StructureVisual = {
+  box: Graphics;
+  caption: Text;
+};
+
+function getSid(): string | null {
+  return new URLSearchParams(location.search).get("sid");
+}
+
+let mapMinX = 0;
+let mapMinY = 0;
+let mapMaxX = 0;
+let mapMaxY = 0;
+let cellScale = CELL;
+let worldOriginScreenY = VIEW_H - WORLD_BOTTOM_MARGIN - 8 * CELL;
+let gridBounds: WorldMapJson["bounds"] | null = null;
+
+let palette: MultiversePalette = mergeMultiversePalette({});
+
+function applyBounds(bounds: WorldMapJson["bounds"]): void {
+  gridBounds = bounds;
+  const pad = 1;
+  const w = Math.max(1, bounds.maxX - bounds.minX + 2 * pad);
+  const h = Math.max(1, bounds.maxY - bounds.minY + 2 * pad);
+  const maxW = VIEW_W - ORIGIN_X * 2;
+  const theme = getActiveSceneTheme();
+  const grassTop = VIEW_H * theme.grassBandTopRatio;
+  const minGridTop = grassTop + 12;
+  const maxBottom = VIEW_H - WORLD_BOTTOM_MARGIN;
+  const maxHSpace = Math.max(40, maxBottom - minGridTop);
+  cellScale = Math.min(maxW / w, maxHSpace / h, 64);
+  mapMinX = bounds.minX - pad;
+  mapMinY = bounds.minY - pad;
+  mapMaxX = bounds.maxX + pad;
+  mapMaxY = bounds.maxY + pad;
+  worldOriginScreenY = maxBottom - h * cellScale;
+}
+
+function worldToScreen(wx: number, wy: number): { x: number; y: number } {
+  return {
+    x: ORIGIN_X + (wx - mapMinX) * cellScale,
+    y: worldOriginScreenY + (mapMaxY - wy) * cellScale,
+  };
+}
+
+function getWorldBoundsForClamp(): WorldBounds | null {
+  if (gridBounds === null) return null;
+  return { minX: mapMinX, minY: mapMinY, maxX: mapMaxX, maxY: mapMaxY };
+}
+
+const arrowKeys = {
+  up: false,
+  down: false,
+  left: false,
+  right: false,
+};
+
+let lastProximityPartnerId: string | null = null;
+let proximityHintEl: HTMLDivElement | null = null;
+
+const playerWorldPos = new Map<string, { x: number; y: number }>();
+const waypointQueues = new Map<string, Array<{ x: number; y: number }>>();
+const lastTickWorldPos = new Map<string, { x: number; y: number }>();
+const walkPhaseByPlayer = new Map<string, number>();
+const facingByPlayer = new Map<string, AvatarFacing>();
+const movingByPlayer = new Map<string, boolean>();
+
+let snapshot: Snapshot | null = null;
+
+function getHumanPlayerId(): string | null {
+  return snapshot === null ? null : HUMAN_VIEWER_PLAYER_ID;
+}
+
+function setArrowKey(key: string, down: boolean): void {
+  if (key === "ArrowUp") arrowKeys.up = down;
+  else if (key === "ArrowDown") arrowKeys.down = down;
+  else if (key === "ArrowLeft") arrowKeys.left = down;
+  else if (key === "ArrowRight") arrowKeys.right = down;
+}
+
+async function sendProximityAction(
+  toPlayerId: string,
+  action: ProximityActionKind
+): Promise<void> {
+  const sid = getSid();
+  if (sid === null) return;
+  const url = `${API_BASE}/proximity-action?sid=${encodeURIComponent(sid)}`;
+  try {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        fromPlayerId: HUMAN_VIEWER_PLAYER_ID,
+        toPlayerId,
+        action,
+      }),
+    });
+    if (!res.ok) return;
+  } catch {
+    return;
+  }
+}
+
+function onDocumentKeyDown(e: KeyboardEvent): void {
+  const inField =
+    e.target instanceof HTMLInputElement ||
+    e.target instanceof HTMLTextAreaElement ||
+    (e.target instanceof HTMLElement && e.target.isContentEditable);
+  if (
+    e.key === "ArrowUp" ||
+    e.key === "ArrowDown" ||
+    e.key === "ArrowLeft" ||
+    e.key === "ArrowRight"
+  ) {
+    if (!inField && getHumanPlayerId() !== null) {
+      e.preventDefault();
+    }
+    setArrowKey(e.key, true);
+    return;
+  }
+  if (inField || e.repeat) return;
+  const partner = lastProximityPartnerId;
+  if (partner === null || partner === HUMAN_VIEWER_PLAYER_ID) return;
+  const act = proximityKeyToAction(e.key);
+  if (act === null) return;
+  e.preventDefault();
+  void sendProximityAction(partner, act);
+}
+
+function onDocumentKeyUp(e: KeyboardEvent): void {
+  if (
+    e.key === "ArrowUp" ||
+    e.key === "ArrowDown" ||
+    e.key === "ArrowLeft" ||
+    e.key === "ArrowRight"
+  ) {
+    setArrowKey(e.key, false);
+  }
+}
+
+let appStage: Container | null = null;
+const structureLayer = new Container();
+const gridGraphics = new Graphics();
+const agentsLayer = new Container();
+const worldLayer = new Container();
+
+const structureNodes = new Map<string, StructureVisual>();
+const agentNodes = new Map<string, AgentVisual>();
+
+let refreshPreviewChat: () => void = () => {};
+
+let agentChatOverlays: ReturnType<typeof createPreviewAgentChatOverlays> | null =
+  null;
+
+let pixiHandle: PixiPreviewHandle | null = null;
+let sceneRootContainer: Container | null = null;
+let crowdLayerContainer: Container | null = null;
+let debugPanelUpdate: (() => void) | null = null;
+let debugMountEl: HTMLElement | null = null;
+let joystickHandle: ReturnType<typeof createPreviewDebugJoystick> | null = null;
+
+function playerDisplayName(playerId: string): string {
+  if (playerId === HUMAN_VIEWER_PLAYER_ID) return "You";
+  return (
+    snapshot?.players.find((p) => p.playerId === playerId)?.name ?? playerId
+  );
+}
+
+function pushInteractionToChat(
+  playerId: string,
+  role: string,
+  text: string,
+  seq?: number
+): void {
+  appendChatLogLine({
+    playerId,
+    playerName: playerDisplayName(playerId),
+    role,
+    text,
+    seq,
+  });
+  refreshPreviewChat();
+}
+
+function hydrateChatFromSnapshot(s: Snapshot): void {
+  resetChatLogFromSnapshot(s);
+  agentChatOverlays?.syncPlayerIds(s.players.map((p) => p.playerId));
+  refreshPreviewChat();
+}
+
+function collectStructuresForRender(s: Snapshot): Structure[] {
+  const byId = new Map<string, Structure>();
+  for (const pl of s.players) {
+    for (const st of pl.structures) {
+      byId.set(st.id, { ...st, playerId: pl.playerId });
+    }
+  }
+  for (const st of s.worldMap?.structures ?? []) {
+    const prev = byId.get(st.id);
+    if (prev !== undefined) {
+      byId.set(st.id, {
+        ...prev,
+        ...st,
+        playerId: st.playerId ?? prev.playerId,
+      });
+    } else {
+      byId.set(st.id, { ...st });
+    }
+  }
+  const list = [...byId.values()];
+  list.sort((a, b) => {
+    const rank = (k: string): number => (k === "home" ? 0 : 1);
+    const ar = rank(a.kind);
+    const br = rank(b.kind);
+    if (ar !== br) return ar - br;
+    return a.id.localeCompare(b.id);
+  });
+  return list;
+}
+
+function getPlayerHomeCell(
+  playerId: string,
+  s: Snapshot | null
+): { x: number; y: number } | null {
+  if (s === null) return null;
+  for (const st of collectStructuresForRender(s)) {
+    if (st.kind === "home" && st.playerId === playerId) {
+      return { x: st.x, y: st.y };
+    }
+  }
+  return null;
+}
+
+function getAgentHeroAnchorScreen(
+  playerId: string,
+  wpos: { x: number; y: number },
+  box: number
+): { cx: number; cy: number } {
+  const home = getPlayerHomeCell(playerId, snapshot);
+  let wx = wpos.x;
+  let wy = wpos.y;
+  if (
+    home !== null &&
+    Math.hypot(wpos.x - home.x, wpos.y - home.y) < HOME_STAND_EPS
+  ) {
+    wx += HOME_FRONT_OFFSET_WX;
+    wy += HOME_FRONT_OFFSET_WY;
+  }
+  const { x: sx, y: sy } = worldToScreen(wx, wy);
+  return { cx: sx + box * 0.3, cy: sy + box * 0.55 };
+}
+
+function setWaypoints(playerId: string, path: PathStep[]): void {
+  const pts: Array<{ x: number; y: number }> = [];
+  for (const step of path) {
+    if (typeof step.x === "number" && typeof step.y === "number") {
+      pts.push({ x: step.x, y: step.y });
+    }
+  }
+  if (pts.length === 0) return;
+  const wb = getWorldBoundsForClamp();
+  const resolved =
+    wb !== null
+      ? pts.map((p) => clampWorldPosition(p, wb))
+      : pts;
+  waypointQueues.set(playerId, resolved);
+}
+
+function applyJourneyUpdate(u: JourneyUpdate): void {
+  if (u.playerId === HUMAN_VIEWER_PLAYER_ID) return;
+  const row = snapshot?.players.find((p) => p.playerId === u.playerId);
+  if (row !== undefined && row.stationary !== false) return;
+  setWaypoints(u.playerId, u.path);
+}
+
+async function loadSnapshot(sid: string): Promise<void> {
+  const res = await fetch(
+    `${API_BASE}/snapshot.json?sid=${encodeURIComponent(sid)}`
+  );
+  if (!res.ok) return;
+  snapshot = (await res.json()) as Snapshot;
+  const b = snapshot.worldMap?.bounds;
+  if (b !== undefined) applyBounds(b);
+  else {
+    mapMinX = 0;
+    mapMinY = 0;
+    mapMaxX = 0;
+    mapMaxY = 0;
+    cellScale = CELL;
+    gridBounds = null;
+    const theme = getActiveSceneTheme();
+    const grassTop = VIEW_H * theme.grassBandTopRatio;
+    const placeholderRows = 8;
+    let y0 = VIEW_H - WORLD_BOTTOM_MARGIN - placeholderRows * cellScale;
+    const minY0 = grassTop + 16;
+    worldOriginScreenY = y0 < minY0 ? minY0 : y0;
+  }
+  const wbSpawn = getWorldBoundsForClamp();
+  let humanSpawn = { x: 0, y: 0 };
+  if (wbSpawn !== null) {
+    humanSpawn = {
+      x: (wbSpawn.minX + wbSpawn.maxX) / 2,
+      y: (wbSpawn.minY + wbSpawn.maxY) / 2,
+    };
+  }
+  for (const p of snapshot.players) {
+    const home = getPlayerHomeCell(p.playerId, snapshot);
+    const spawn =
+      home !== null ? { x: home.x, y: home.y } : { x: 0, y: 0 };
+    const clamped =
+      wbSpawn !== null ? clampWorldPosition(spawn, wbSpawn) : spawn;
+    playerWorldPos.set(p.playerId, clamped);
+    waypointQueues.delete(p.playerId);
+    if (p.stationary === false && p.lastUpdate !== undefined) {
+      applyJourneyUpdate(p.lastUpdate);
+    }
+  }
+  if (!playerWorldPos.has(HUMAN_VIEWER_PLAYER_ID)) {
+    playerWorldPos.set(
+      HUMAN_VIEWER_PLAYER_ID,
+      wbSpawn !== null ? clampWorldPosition(humanSpawn, wbSpawn) : humanSpawn
+    );
+  } else if (wbSpawn !== null) {
+    const cur = playerWorldPos.get(HUMAN_VIEWER_PLAYER_ID);
+    if (cur !== undefined) {
+      playerWorldPos.set(HUMAN_VIEWER_PLAYER_ID, clampWorldPosition(cur, wbSpawn));
+    }
+  }
+  hydrateChatFromSnapshot(snapshot);
+}
+
+function connectSse(sid: string): void {
+  const es = new EventSource(
+    `${API_BASE}/events?sid=${encodeURIComponent(sid)}`
+  );
+  es.addEventListener(WORLD_AGENT_SIGNAL_SSE, () => {
+    void loadSnapshot(sid);
+  });
+  es.addEventListener("world:player_added", () => {
+    void loadSnapshot(sid);
+  });
+  es.addEventListener("world:structures", () => {
+    void loadSnapshot(sid);
+  });
+  es.addEventListener(WORLD_INTERACTION_SSE, (ev) => {
+    const data = JSON.parse((ev as MessageEvent).data) as {
+      playerId: string;
+      role: string;
+      text: string;
+      seq?: number;
+    };
+    pushInteractionToChat(data.playerId, data.role, data.text, data.seq);
+  });
+}
+
+function moveToward(
+  current: { x: number; y: number },
+  target: { x: number; y: number },
+  speed: number,
+  dt: number
+): { x: number; y: number } {
+  const tw = target.x - current.x;
+  const th = target.y - current.y;
+  const len = Math.hypot(tw, th);
+  if (len < 0.05) return { ...target };
+  const step = Math.min(len, speed * dt);
+  return {
+    x: current.x + (tw / len) * step,
+    y: current.y + (th / len) * step,
+  };
+}
+
+function makeAgentVisual(): AgentVisual {
+  const root = new Container();
+  const hero = new Graphics({ roundPixels: true });
+  const nameTag = new Text({
+    text: "",
+    style: {
+      fontFamily: "ui-monospace, monospace",
+      fontSize: 11,
+      fontWeight: "600",
+      fill: cssColorToPixi(palette.textMuted),
+    },
+  });
+  root.addChild(hero);
+  root.addChild(nameTag);
+  return { root, hero, nameTag };
+}
+
+function syncStructureNodes(structs: Structure[]): void {
+  const theme = getActiveSceneTheme();
+  const alive = new Set(structs.map((s) => s.id));
+  for (const id of structureNodes.keys()) {
+    if (!alive.has(id)) {
+      const n = structureNodes.get(id);
+      if (n !== undefined) {
+        structureLayer.removeChild(n.box);
+        structureLayer.removeChild(n.caption);
+        n.box.destroy();
+        n.caption.destroy();
+      }
+      structureNodes.delete(id);
+    }
+  }
+  const box = Math.max(16, Math.min(40, cellScale * 0.85));
+  for (const st of structs) {
+    let n = structureNodes.get(st.id);
+    if (n === undefined) {
+      const boxG = new Graphics({ roundPixels: true });
+      const cap = new Text({
+        text: "",
+        style: {
+          fontFamily: "ui-monospace, monospace",
+          fontSize: 11,
+          fontWeight: "600",
+          fill: cssColorToPixi(palette.text),
+          wordWrap: true,
+          wordWrapWidth: 140,
+        },
+      });
+      n = { box: boxG, caption: cap };
+      structureNodes.set(st.id, n);
+      structureLayer.addChild(boxG);
+      structureLayer.addChild(cap);
+    }
+    const { x: sx, y: sy } = worldToScreen(st.x, st.y);
+    const strokeCol = cssColorToPixi(palette.stroke);
+    if (st.kind === "home") {
+      drawHomeStructure(n.box, box, theme.house);
+      n.box.position.set(sx, sy);
+      n.caption.text = (st.label ?? "Home").slice(0, 24);
+      n.caption.position.set(sx - n.caption.width / 2, sy - box * 1.15);
+    } else {
+      const fillCol = cssColorToPixi(structureFill(st.kind, palette));
+      drawToolPad(n.box, box, fillCol, strokeCol);
+      const bx = sx - box * 0.2;
+      const by = sy - box * 0.2;
+      n.box.position.set(bx, by);
+      const capText =
+        st.toolName !== undefined && st.toolName.length > 0
+          ? st.toolName
+          : (st.label ?? st.id).slice(0, 28);
+      n.caption.text = capText.slice(0, 28);
+      n.caption.position.set(sx - 4, sy - 20);
+    }
+  }
+}
+
+function syncAgentNodes(): void {
+  const rowsBase = snapshot?.players ?? [];
+  const rows =
+    snapshot === null
+      ? []
+      : rowsBase.some((r) => r.playerId === HUMAN_VIEWER_PLAYER_ID)
+        ? [...rowsBase]
+        : [
+            ...rowsBase,
+            {
+              playerId: HUMAN_VIEWER_PLAYER_ID,
+              name: "You",
+              structures: [] as Structure[],
+            },
+          ];
+  const alive = new Set(rows.map((r) => r.playerId));
+  for (const id of agentNodes.keys()) {
+    if (!alive.has(id)) {
+      const v = agentNodes.get(id);
+      if (v !== undefined) {
+        agentsLayer.removeChild(v.root);
+        v.root.destroy({ children: true });
+      }
+      agentNodes.delete(id);
+      playerWorldPos.delete(id);
+      waypointQueues.delete(id);
+      walkPhaseByPlayer.delete(id);
+      facingByPlayer.delete(id);
+      movingByPlayer.delete(id);
+      lastTickWorldPos.delete(id);
+    }
+  }
+  for (const p of rows) {
+    if (!agentNodes.has(p.playerId)) {
+      const v = makeAgentVisual();
+      agentNodes.set(p.playerId, v);
+      agentsLayer.addChild(v.root);
+    }
+  }
+}
+
+function paintGrid(): void {
+  const theme = getActiveSceneTheme();
+  gridGraphics.clear();
+  if (gridBounds === null) return;
+  const pad = 1;
+  const cols = Math.max(
+    1,
+    Math.ceil(gridBounds.maxX - gridBounds.minX + 2 * pad)
+  );
+  const rows = Math.max(
+    1,
+    Math.ceil(gridBounds.maxY - gridBounds.minY + 2 * pad)
+  );
+  const gs = theme.gridStroke;
+  const gy0 = worldOriginScreenY;
+  for (let c = 0; c <= cols; c += 1) {
+    const gx = ORIGIN_X + c * cellScale;
+    gridGraphics
+      .moveTo(gx, gy0)
+      .lineTo(gx, gy0 + rows * cellScale)
+      .stroke({ width: 1, color: gs.color, alpha: gs.alpha });
+  }
+  for (let r = 0; r <= rows; r += 1) {
+    const gy = gy0 + r * cellScale;
+    gridGraphics
+      .moveTo(ORIGIN_X, gy)
+      .lineTo(ORIGIN_X + cols * cellScale, gy)
+      .stroke({ width: 1, color: gs.color, alpha: gs.alpha });
+  }
+}
+
+function getDebugSnapshot(): {
+  agents: readonly {
+    playerId: string;
+    name: string;
+    worldX: number;
+    worldY: number;
+  }[];
+  structures: readonly {
+    id: string;
+    kind: string;
+    x: number;
+    y: number;
+    toolName?: string;
+    playerId?: string;
+  }[];
+} {
+  if (snapshot === null) {
+    return { agents: [], structures: [] };
+  }
+  const agents = snapshot.players.map((p) => {
+    const pos = playerWorldPos.get(p.playerId);
+    return {
+      playerId: p.playerId,
+      name: p.name,
+      worldX: pos?.x ?? 0,
+      worldY: pos?.y ?? 0,
+    };
+  });
+  const humanPos = playerWorldPos.get(HUMAN_VIEWER_PLAYER_ID);
+  if (!agents.some((a) => a.playerId === HUMAN_VIEWER_PLAYER_ID)) {
+    agents.push({
+      playerId: HUMAN_VIEWER_PLAYER_ID,
+      name: "You",
+      worldX: humanPos?.x ?? 0,
+      worldY: humanPos?.y ?? 0,
+    });
+  }
+  const structures = collectStructuresForRender(snapshot).map((s) => ({
+    id: s.id,
+    kind: s.kind,
+    x: s.x,
+    y: s.y,
+    toolName: s.toolName,
+    playerId: s.playerId,
+  }));
+  return { agents, structures };
+}
+
+function applyChatVisibility(): void {
+  const show = getPreviewViewSettings().showChatUi;
+  if (agentChatOverlays !== null) {
+    agentChatOverlays.root.style.visibility = show ? "visible" : "hidden";
+    agentChatOverlays.root.style.pointerEvents = show ? "auto" : "none";
+  }
+}
+
+function applyDebugVisibility(): void {
+  if (debugMountEl === null) return;
+  const on = getPreviewViewSettings().debugMode;
+  debugMountEl.classList.toggle("preview-debug-mount--visible", on);
+  if (on) {
+    debugPanelUpdate?.();
+  }
+}
+
+function applyJoystickVisibility(): void {
+  const v = getPreviewViewSettings();
+  const show = v.joystickEnabled;
+  joystickHandle?.setVisible(show);
+  if (!show) {
+    setJoystickVectorZero();
+  }
+}
+
+function rebuildSceneForTheme(): void {
+  if (appStage === null || pixiHandle === null) return;
+  const theme = getActiveSceneTheme();
+  palette = mergeMultiversePalette(theme.palettePartial);
+  pixiHandle.app.renderer.background.color = new Color(theme.appBackgroundColor);
+  if (sceneRootContainer !== null) {
+    appStage.removeChild(sceneRootContainer);
+    sceneRootContainer.destroy({ children: true });
+    sceneRootContainer = null;
+  }
+  if (crowdLayerContainer !== null) {
+    appStage.removeChild(crowdLayerContainer);
+    crowdLayerContainer.destroy({ children: true });
+    crowdLayerContainer = null;
+  }
+  sceneRootContainer = theme.buildScene(VIEW_W, VIEW_H, 0x5cafe);
+  appStage.addChildAt(sceneRootContainer, 0);
+  if (ENABLE_CROWD_LAYER) {
+    const groundTop = VIEW_H * theme.grassBandTopRatio;
+    const crowdClusters = layoutCrowdClusters({
+      width: VIEW_W,
+      height: VIEW_H,
+      seed: 0x5cafe + theme.crowdSeedSalt,
+      groundTop,
+      groundBottom: VIEW_H - 20,
+      clusterCountRange: [4, 8],
+    });
+    crowdLayerContainer = buildCrowdLayer(crowdClusters);
+    appStage.addChildAt(crowdLayerContainer, 1);
+  }
+}
+
+function onTick(dt: number): void {
+  const speed = 2.2;
+  const joySpeed = 3.5;
+  const arrowSpeed = 2.8;
+  const wb = getWorldBoundsForClamp();
+  const settings = getPreviewViewSettings();
+  const primaryId = getHumanPlayerId();
+  const joystickActive =
+    settings.joystickEnabled && primaryId !== null;
+  const jv = joystickActive ? getJoystickVector() : { x: 0, y: 0 };
+  const joyLen = Math.hypot(jv.x, jv.y);
+  const anyArrow =
+    arrowKeys.up || arrowKeys.down || arrowKeys.left || arrowKeys.right;
+
+  if (
+    shouldClearPrimaryWaypointsWhileJoystickIdle({
+      joystickActive,
+      joyVectorLength: joyLen,
+    }) &&
+    primaryId !== null
+  ) {
+    waypointQueues.delete(primaryId);
+  }
+
+  for (const [id, pos] of playerWorldPos) {
+    if (id !== HUMAN_VIEWER_PLAYER_ID) continue;
+    const prev = { ...pos };
+    let next = { ...pos };
+    const useJoy =
+      joystickActive &&
+      joyLen > JOYSTICK_DEFLECT_EPS &&
+      id === primaryId;
+    const useArrows =
+      primaryId !== null &&
+      id === primaryId &&
+      !useJoy &&
+      anyArrow;
+
+    if (useJoy) {
+      waypointQueues.delete(id);
+      next = {
+        x: pos.x + jv.x * joySpeed * dt,
+        y: pos.y + jv.y * joySpeed * dt,
+      };
+    } else if (useArrows) {
+      waypointQueues.delete(id);
+      const dx = (arrowKeys.right ? 1 : 0) - (arrowKeys.left ? 1 : 0);
+      const dy = (arrowKeys.down ? 1 : 0) - (arrowKeys.up ? 1 : 0);
+      const len = Math.hypot(dx, dy);
+      if (len > 0) {
+        next = {
+          x: pos.x + (dx / len) * arrowSpeed * dt,
+          y: pos.y + (dy / len) * arrowSpeed * dt,
+        };
+      }
+    } else {
+      const queue = waypointQueues.get(id);
+      if (queue && queue.length > 0) {
+        const target = queue[0];
+        if (target) {
+          next = moveToward(pos, target, speed, dt);
+          if (Math.hypot(target.x - next.x, target.y - next.y) < 0.08) {
+            queue.shift();
+          }
+        }
+      }
+    }
+    let shouldClamp = shouldClampWorldPositionWhenJoystickDriving({
+      playerId: id,
+      primaryPlayerId: primaryId,
+      joystickActive,
+    });
+    if (useArrows && primaryId !== null && id === primaryId) {
+      shouldClamp = true;
+    }
+    if (wb !== null && shouldClamp) {
+      next = clampWorldPosition(next, wb);
+    }
+    playerWorldPos.set(id, next);
+    const motion = nextAvatarMotion({
+      prevWorld: prev,
+      nextWorld: next,
+      prevFacing: facingByPlayer.get(id) ?? "right",
+      prevWalkPhase: walkPhaseByPlayer.get(id) ?? 0,
+      dt,
+      stepsPerSecondWhileWalking: 7,
+    });
+    facingByPlayer.set(id, motion.facing);
+    walkPhaseByPlayer.set(id, motion.walkPhase);
+    movingByPlayer.set(id, motion.isMoving);
+    lastTickWorldPos.set(id, { ...next });
+  }
+}
+
+function onFrame(): void {
+  if (appStage === null) return;
+  paintGrid();
+  const structs =
+    snapshot !== null ? collectStructuresForRender(snapshot) : [];
+  syncStructureNodes(structs);
+  syncAgentNodes();
+  const aliveIds = snapshot?.players.map((p) => p.playerId) ?? [];
+  agentChatOverlays?.syncPlayerIds(aliveIds);
+  const box = Math.max(16, Math.min(40, cellScale * 0.85));
+  for (const [id, wpos] of playerWorldPos) {
+    const v = agentNodes.get(id);
+    if (v === undefined) continue;
+    const { cx, cy } = getAgentHeroAnchorScreen(id, wpos, box);
+    const scale = Math.max(0.35, Math.min(0.85, cellScale / 48));
+    v.root.position.set(cx, cy);
+    drawPlatformHero(v.hero, {
+      scale,
+      facing: facingByPlayer.get(id) ?? "right",
+      walkPhase: walkPhaseByPlayer.get(id) ?? 0,
+      isMoving: movingByPlayer.get(id) ?? false,
+    });
+    const displayName =
+      snapshot?.players.find((pl) => pl.playerId === id)?.name ?? id;
+    v.nameTag.text = displayName.slice(0, 14);
+    v.nameTag.position.set(-v.nameTag.width / 2, box * 0.45);
+    if (getPreviewViewSettings().showChatUi) {
+      const chatDisplay = getAgentChatDisplaySettings();
+      const layout = computeAgentChatPanelPosition({
+        anchorScreenX: cx,
+        anchorScreenY: cy,
+        panelWidth: chatDisplay.panelWidthPx,
+        panelLayoutHeightPx: layoutHeightFromScrollMax(
+          chatDisplay.scrollMaxHeightPx
+        ),
+        viewportWidth: VIEW_W,
+        viewportHeight: VIEW_H,
+        marginPx: PREVIEW_AGENT_CHAT_MARGIN_PX,
+        gapAboveAgentPx: PREVIEW_AGENT_CHAT_GAP_PX,
+        horizontalNudgePx: agentChatHorizontalNudgePx(id),
+      });
+      agentChatOverlays?.setLayout(id, layout.left, layout.top);
+    }
+  }
+  const primaryPid = getHumanPlayerId();
+  if (primaryPid !== null && (snapshot?.players.length ?? 0) >= 1) {
+    lastProximityPartnerId = findNearestProximityPartner({
+      primaryId: primaryPid,
+      positions: playerWorldPos,
+      radius: DEFAULT_PROXIMITY_RADIUS,
+    });
+  } else {
+    lastProximityPartnerId = null;
+  }
+  if (proximityHintEl !== null) {
+    if (lastProximityPartnerId !== null) {
+      proximityHintEl.textContent = `Near ${playerDisplayName(lastProximityPartnerId)}. A Assist · C Chat · Z Zone · Y Yield`;
+      proximityHintEl.style.display = "block";
+    } else {
+      proximityHintEl.style.display = "none";
+    }
+  }
+  if (getPreviewViewSettings().debugMode) {
+    debugPanelUpdate?.();
+  }
+}
+
+function bootstrap(): void {
+  const sid = getSid();
+  if (!sid) return;
+  const theme = getActiveSceneTheme();
+  palette = mergeMultiversePalette(theme.palettePartial);
+  void (async () => {
+    ensurePreviewChatStyles();
+    const shell = document.createElement("div");
+    shell.style.cssText =
+      "display:flex;flex-direction:column;align-items:center;min-height:100vh;";
+    document.body.appendChild(shell);
+
+    proximityHintEl = document.createElement("div");
+    proximityHintEl.style.cssText =
+      "display:none;position:fixed;bottom:88px;left:50%;transform:translateX(-50%);z-index:40;max-width:min(520px,92vw);padding:8px 14px;border-radius:10px;font:600 12px/1.35 system-ui,sans-serif;color:#f8fafc;background:rgba(15,23,42,0.92);border:1px solid rgba(148,163,184,0.4);text-align:center;pointer-events:none;";
+    shell.appendChild(proximityHintEl);
+
+    const worldRow = document.createElement("div");
+    worldRow.className = "preview-world-row";
+
+    const debugSide = document.createElement("div");
+    debugSide.className = "preview-debug-side";
+
+    const debugMount = document.createElement("div");
+    debugMount.className = "preview-debug-mount";
+    debugMountEl = debugMount;
+    const debug = createPreviewDebugPanel({
+      getSnapshot: getDebugSnapshot,
+    });
+    debugPanelUpdate = debug.update;
+    debugMount.appendChild(debug.element);
+    debugSide.appendChild(debugMount);
+
+    const canvasHost = document.createElement("div");
+    canvasHost.style.cssText = `display:block;position:relative;width:${VIEW_W}px;max-width:100%;height:${VIEW_H}px;margin:0 auto;overflow:hidden;`;
+
+    worldRow.append(debugSide, canvasHost);
+    shell.appendChild(worldRow);
+
+    agentChatOverlays = createPreviewAgentChatOverlays();
+    refreshPreviewChat = () => {
+      agentChatOverlays?.refreshAll();
+    };
+
+    worldLayer.addChild(gridGraphics);
+    worldLayer.addChild(structureLayer);
+    const handle = await createPixiPreview({
+      width: VIEW_W,
+      height: VIEW_H,
+      parent: canvasHost,
+      backgroundColor: theme.appBackgroundColor,
+      onTick,
+      onFrame,
+    });
+    pixiHandle = handle;
+    appStage = handle.app.stage;
+    sceneRootContainer = theme.buildScene(VIEW_W, VIEW_H, 0x5cafe);
+    handle.app.stage.addChild(sceneRootContainer);
+    if (ENABLE_CROWD_LAYER) {
+      const groundTop = VIEW_H * theme.grassBandTopRatio;
+      const crowdClusters = layoutCrowdClusters({
+        width: VIEW_W,
+        height: VIEW_H,
+        seed: 0x5cafe + theme.crowdSeedSalt,
+        groundTop,
+        groundBottom: VIEW_H - 20,
+        clusterCountRange: [4, 8],
+      });
+      crowdLayerContainer = buildCrowdLayer(crowdClusters);
+      handle.app.stage.addChild(crowdLayerContainer);
+    }
+    handle.app.stage.addChild(worldLayer);
+    handle.app.stage.addChild(agentsLayer);
+
+    canvasHost.appendChild(agentChatOverlays.root);
+
+    joystickHandle = createPreviewDebugJoystick({ parent: debugSide });
+
+    const chatPanel = createPreviewChatSettingsPanel({
+      embeddedInToolbar: true,
+      onSettingsApplied: () => {
+        agentChatOverlays?.applyDisplaySettings();
+      },
+    });
+    shell.appendChild(
+      createPreviewSettingsToolbar({
+        chatPanel,
+        onThemeApplied: () => {
+          rebuildSceneForTheme();
+        },
+        onAgentSettingsChanged: () => {
+          applyChatVisibility();
+          applyDebugVisibility();
+          applyJoystickVisibility();
+        },
+        onSessionProfileChanged: () => {},
+      })
+    );
+
+    applyChatVisibility();
+    applyDebugVisibility();
+    applyJoystickVisibility();
+
+    window.addEventListener("keydown", onDocumentKeyDown);
+    window.addEventListener("keyup", onDocumentKeyUp);
+
+    void loadSnapshot(sid).then(() => connectSse(sid));
+  })();
+}
+
+bootstrap();

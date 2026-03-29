@@ -1,0 +1,76 @@
+export { HUMAN_VIEWER_PLAYER_ID, PlayWorld } from "./lib/play-world.js";
+export type {
+  AddPlayerInput,
+  LangChainAgentRegistration,
+  PlayWorldOptions,
+  ProximityActionKind,
+  RecordInteractionInput,
+  RecordProximityActionInput,
+  RegisteredPlayer,
+} from "./lib/play-world.js";
+export type {
+  AgentRepository,
+  CreateAgentRecordInput,
+  StoredAgentRecord,
+} from "./lib/agent-repository.js";
+export { InMemoryAgentRepository } from "./lib/in-memory-agent-repository.js";
+export {
+  createRedisAgentRepository,
+  RedisAgentRepository,
+} from "./lib/redis-agent-repository.js";
+export {
+  assertAgentToolContract,
+  extractAssistToolNames,
+} from "./lib/agent-tool-contract.js";
+export {
+  PLAYER_ADDED_EVENT,
+  WORLD_AGENT_SIGNAL_EVENT,
+  WORLD_INTERACTION_EVENT,
+  WORLD_JOURNEY_EVENT,
+  WORLD_STRUCTURES_EVENT,
+  type WorldAgentSignalPayload,
+  type WorldInteractionPayload,
+  type WorldInteractionRole,
+  type WorldStructuresPayload,
+} from "./lib/play-transport.js";
+export {
+  agentPlayDebug,
+  configureAgentPlayDebug,
+  isAgentPlayDebugEnabled,
+  resetAgentPlayDebug,
+} from "./lib/agent-play-debug.js";
+export type { PreviewWorldMapJson, WorldMapStructure } from "./lib/world-map.js";
+export { buildWorldMapFromPlayers } from "./lib/world-map.js";
+export {
+  defaultPreviewAssetsDir,
+  mountExpressPreview,
+} from "./preview/mount-express-preview.js";
+export type { MountExpressPreviewOptions } from "./preview/mount-express-preview.js";
+export {
+  serializeJourney,
+  serializeWorldJourneyUpdate,
+} from "./lib/preview-serialize.js";
+export type {
+  JourneyJson,
+  PreviewInteractionEntryJson,
+  PreviewMcpRegistrationJson,
+  PreviewPlayerSnapshotJson,
+  PreviewSnapshotJson,
+  WorldJourneyUpdateJson,
+} from "./lib/preview-serialize.js";
+export {
+  attachLangChainInvoke,
+  langchainAgent,
+  langchainRegistration,
+  type LangChainAgentLike,
+} from "./platforms/langchain.js";
+export type {
+  DestinationJourneyStep,
+  Journey,
+  JourneyStep,
+  OriginJourneyStep,
+  PositionedStep,
+  StructureJourneyStep,
+  WorldJourneyUpdate,
+  WorldStructure,
+} from "./@types/world.js";

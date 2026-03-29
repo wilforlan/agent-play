@@ -14,12 +14,13 @@ When using `mountExpressPreview`, the browser opens:
 
 | SSE `event` | Emitted when | Payload (conceptually) |
 |-------------|----------------|-------------------------|
-| `world:journey` | New journey recorded for a player | Serialized world journey update (path with x/y, structures) |
+| `world:agent_signal` | Agent metadata changes (journey step counts, assist/chat/zone/yield signals, etc.) | `{ playerId, kind, data? }` — not used for agent locomotion |
+| `world:journey` | Reserved / legacy path for journey payloads | May be unused if the server emits only `world:agent_signal` for journey-related updates |
 | `world:player_added` | Player registered | `{ playerId, name, structures, ... }` |
 | `world:structures` | Structures refreshed (e.g. tools synced) | Player id + structure list |
 | `world:interaction` | User/assistant/tool line recorded | `{ playerId, role, text, at, seq }` |
 
-The preview client in [`main.ts`](../play-sdk/preview-ui/src/main.ts) listens for these and updates local state (waypoints, chat log, structure reload on snapshot).
+The preview client in [`main.ts`](../packages/play-ui/src/main.ts) reloads the snapshot on `world:agent_signal`, `world:player_added`, and `world:structures`, and appends chat lines on `world:interaction`. It does **not** animate registered agents along journey paths for movement; agents are **stationary** in the world model.
 
 ## Snapshot
 
@@ -28,8 +29,9 @@ The preview client in [`main.ts`](../play-sdk/preview-ui/src/main.ts) listens fo
 Returns JSON from `PlayWorld.getSnapshotJson()`:
 
 - `sid`
-- `players[]` — `playerId`, `name`, `structures`, optional `lastUpdate`, `recentInteractions`
+- `players[]` — `playerId`, `name`, `structures`, optional `lastUpdate`, `recentInteractions`, `stationary`, assist/chat aggregates, etc.
 - `worldMap` — `bounds`, merged `structures` for rendering the grid
+- optional `mcpServers[]` — registrations from `PlayWorld.registerMCP`
 
 Invalid or missing `sid` → 400/403 from the mount helper.
 
