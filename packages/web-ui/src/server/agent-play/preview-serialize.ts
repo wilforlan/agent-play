@@ -32,6 +32,7 @@ export type PreviewPlayerSnapshotJson = {
   playerId: string;
   name: string;
   type?: string;
+  toolNames?: string[];
   stationary?: boolean;
   assistToolNames?: string[];
   assistTools?: AssistToolSnapshotJson[];
@@ -75,5 +76,24 @@ export function serializeWorldJourneyUpdate(
     journey: serializeJourney(update.journey),
     path: update.path,
     structures: update.structures,
+  };
+}
+
+export function parseJourneyJson(json: JourneyJson): Journey {
+  return {
+    steps: json.steps,
+    startedAt: new Date(json.startedAt),
+    completedAt: new Date(json.completedAt),
+  };
+}
+
+export function parseWorldJourneyUpdateJson(
+  json: WorldJourneyUpdateJson
+): WorldJourneyUpdate {
+  return {
+    playerId: json.playerId,
+    journey: parseJourneyJson(json.journey),
+    path: json.path,
+    structures: json.structures,
   };
 }

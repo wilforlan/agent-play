@@ -4,14 +4,11 @@ These areas are where contributors most often need **external documentation** or
 
 ## LangChain (`@langchain/core` messages)
 
-**Files:** [`journey-from-messages.ts`](../play-sdk/src/lib/journey-from-messages.ts), [`platforms/langchain.ts`](../play-sdk/src/platforms/langchain.ts), parts of [`play-world.ts`](../play-sdk/src/lib/play-world.ts).
+**Files:** the **SDK** (`packages/sdk`) exposes `langchainRegistration` and remote RPC helpers; the **web-ui** host stores whatever **`Journey`** and interaction lines you send.
 
-- Journeys are **not** generic JSON; they are inferred from **message sequences** after `invoke`: `HumanMessage` / `AIMessage` / tool calls / tool results.
-- You need familiarity with:
-  - `isAIMessage`, `isToolMessage`, `isHumanMessage`, `isBaseMessage`
-  - Tool call shape (`tool_calls` on AI messages) and tool result pairing
-- **Sharp edge:** Multimodal or array `content` on messages is normalized to strings in several places; exotic content types may need explicit handling.
-- **Sharp edge:** If the model returns unexpected message ordering, path extraction may produce empty or partial journeys — use `AGENT_PLAY_DEBUG=1` to trace.
+- The host **does not** turn invoke output into journeys automatically. After `invoke`, map your **message sequence** (human, AI tool calls, tool results, final AI) into a **`Journey`** (`public-types` in the SDK) and call **`recordJourney`**.
+- Useful LangChain familiarity: `tool_calls` on AI messages, tool result messages, and normalizing `content` when building step text.
+- **Sharp edge:** Odd message ordering or multimodal `content` is your integration’s concern when building `Journey` steps and `recordInteraction` text.
 
 ## LangChain agents (`langchain` package)
 
@@ -20,17 +17,16 @@ These areas are where contributors most often need **external documentation** or
 - Examples use `createAgent`, `ChatOpenAI`, and Zod tool schemas — API surface follows LangChain v1 patterns.
 - **Sharp edge:** Tool names in the agent must match what `layoutStructuresFromTools` expects; renaming tools changes structure ids/positions.
 
-## Express and SSE
+## Next.js app and SSE
 
-**Files:** [`mount-express-preview.ts`](../play-sdk/src/preview/mount-express-preview.ts).
+**Files:** [`packages/web-ui/src/app/api/agent-play/events/route.ts`](../packages/web-ui/src/app/api/agent-play/events/route.ts).
 
-- Peer dependency: `express` ^4 or ^5.
-- SSE requires correct headers, no buffering middleware on the events route, and valid `sid` per request.
-- **Sharp edge:** `defaultPreviewAssetsDir()` resolves `preview-ui/dist` relative to compiled output; broken paths if the package is moved without rebuilding the UI.
+- SSE uses `ReadableStream` and valid `sid` per request; when `REDIS_URL` is set, clients subscribe to Redis Pub/Sub fanout so all instances see the same events.
+- **Sharp edge:** The watch UI expects `prebuild` to copy `play-ui` into `web-ui/src/canvas/vendor`; skipping the copy step yields a stale or missing bundle.
 
 ## Pixi.js v8
 
-**Files:** [`preview-ui/src/`](../play-sdk/preview-ui/src/) — multiverse/canvas modules.
+**Files:** [`packages/play-ui/src/`](../packages/play-ui/src/) — multiverse/canvas modules.
 
 - Scene graph (`Container`, `Graphics`, `Text`), render loop (`ticker` / custom `onTick`/`onFrame`), coordinate systems (screen vs world).
 - **Sharp edge:** World coordinates in the preview use a **grid** derived from `worldMap.bounds` and `cellScale`; agent positions are continuous floats — mapping is in `main.ts` (`worldToScreen`).
@@ -38,7 +34,7 @@ These areas are where contributors most often need **external documentation** or
 
 ## Browser: EventSource
 
-**Files:** [`main.ts`](../play-sdk/preview-ui/src/main.ts) SSE connection.
+**Files:** [`main.ts`](../packages/play-ui/src/main.ts) SSE connection.
 
 - Reconnection behavior is browser-dependent; network drops may require page refresh in dev.
 - **Sharp edge:** CORS and credentials if preview is on a different origin than the API.
@@ -52,10 +48,10 @@ These areas are where contributors most often need **external documentation** or
 ## World bounds and two runtimes
 
 - Server: `play-world.ts` clamps enriched paths with `clampPathToBounds`.
-- Browser: [`world-bounds.ts`](../play-sdk/src/lib/world-bounds.ts) imported via Vite alias into preview UI for client-side clamping and joystick behavior.
+- Browser: [`world-bounds.ts`](../packages/sdk/src/lib/world-bounds.ts) imported into play-ui for client-side clamping and joystick behavior.
 
 **Sharp edge:** Logic drift between server and client if only one side is updated — keep shared math in `world-bounds.ts` and test both packages when changing bounds rules.
 
 ## Vitest (dual versions)
 
-- Root `play-sdk` uses Vitest 3; `preview-ui` uses Vitest 4. Run tests **from each package** (`npm test` in `play-sdk` vs `play-sdk/preview-ui`).
+- `packages/sdk` and `packages/web-ui` use Vitest 3; `packages/play-ui` uses Vitest 4. Run tests **per workspace** (`npm run test -w @agent-play/sdk`, etc.).

@@ -23,6 +23,10 @@ const nextConfig: NextConfig = {
         destination: "/api/agent-play/snapshot",
       },
       {
+        source: "/agent-play/sdk/rpc",
+        destination: "/api/agent-play/sdk/rpc",
+      },
+      {
         source: "/agent-play/events",
         destination: "/api/agent-play/events",
       },

@@ -3,7 +3,11 @@ import { agentPlayVerbose } from "@/server/agent-play/agent-play-debug";
 import { logAgentPlayApi } from "@/server/agent-play/log-agent-play-api";
 import { serializeWorldJourneyUpdate } from "@/server/agent-play/preview-serialize";
 import type { WorldJourneyUpdate } from "@/server/agent-play/@types/world";
-import { getPlayWorld } from "@/server/get-world";
+import {
+  getPlayWorld,
+  getRedisSessionStore,
+  subscribeWorldFanout,
+} from "@/server/get-world";
 import { validateAgentPlaySession } from "@/server/agent-play/session-validation";
 import {
   PLAYER_ADDED_EVENT,
@@ -12,6 +16,7 @@ import {
   WORLD_JOURNEY_EVENT,
   WORLD_STRUCTURES_EVENT,
 } from "@/server/agent-play/play-transport";
+import type { WorldFanoutMessage } from "@/server/agent-play/redis-world-fanout";
 
 export async function GET(req: NextRequest) {
   logAgentPlayApi("GET events (SSE)", req);
@@ -32,7 +37,10 @@ export async function GET(req: NextRequest) {
     });
   }
   const world = await getPlayWorld();
-  agentPlayVerbose("api", "events SSE stream opened");
+  const store = getRedisSessionStore();
+  agentPlayVerbose("api", "events SSE stream opened", {
+    redisFanout: store !== null,
+  });
 
   const encoder = new TextEncoder();
   const stream = new ReadableStream({
@@ -40,6 +48,14 @@ export async function GET(req: NextRequest) {
       const send = (event: string, data: unknown) => {
         const line = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
         controller.enqueue(encoder.encode(line));
+      };
+
+      let lastFanoutKey = "";
+      const onRedisFanout = (msg: WorldFanoutMessage) => {
+        const dedupeKey = `${String(msg.rev)}\0${msg.event}\0${JSON.stringify(msg.data)}`;
+        if (dedupeKey === lastFanoutKey) return;
+        lastFanoutKey = dedupeKey;
+        send(msg.event, msg.data);
       };
 
       const onJourney = (payload: unknown) => {
@@ -59,11 +75,16 @@ export async function GET(req: NextRequest) {
         send(WORLD_AGENT_SIGNAL_EVENT, payload);
       };
 
-      world.on(WORLD_JOURNEY_EVENT, onJourney);
-      world.on(PLAYER_ADDED_EVENT, onPlayer);
-      world.on(WORLD_STRUCTURES_EVENT, onStructures);
-      world.on(WORLD_INTERACTION_EVENT, onInteraction);
-      world.on(WORLD_AGENT_SIGNAL_EVENT, onAgentSignal);
+      let unsubscribeFanout: (() => void) | undefined;
+      if (store !== null) {
+        unsubscribeFanout = subscribeWorldFanout(onRedisFanout);
+      } else {
+        world.on(WORLD_JOURNEY_EVENT, onJourney);
+        world.on(PLAYER_ADDED_EVENT, onPlayer);
+        world.on(WORLD_STRUCTURES_EVENT, onStructures);
+        world.on(WORLD_INTERACTION_EVENT, onInteraction);
+        world.on(WORLD_AGENT_SIGNAL_EVENT, onAgentSignal);
+      }
 
       const ping = setInterval(() => {
         controller.enqueue(encoder.encode(": ping\n\n"));
@@ -71,11 +92,14 @@ export async function GET(req: NextRequest) {
 
       req.signal.addEventListener("abort", () => {
         clearInterval(ping);
-        world.off(WORLD_JOURNEY_EVENT, onJourney);
-        world.off(PLAYER_ADDED_EVENT, onPlayer);
-        world.off(WORLD_STRUCTURES_EVENT, onStructures);
-        world.off(WORLD_INTERACTION_EVENT, onInteraction);
-        world.off(WORLD_AGENT_SIGNAL_EVENT, onAgentSignal);
+        unsubscribeFanout?.();
+        if (store === null) {
+          world.off(WORLD_JOURNEY_EVENT, onJourney);
+          world.off(PLAYER_ADDED_EVENT, onPlayer);
+          world.off(WORLD_STRUCTURES_EVENT, onStructures);
+          world.off(WORLD_INTERACTION_EVENT, onInteraction);
+          world.off(WORLD_AGENT_SIGNAL_EVENT, onAgentSignal);
+        }
         controller.close();
       });
     },

@@ -13,6 +13,8 @@ export const WORLD_INTERACTION_EVENT = "world:interaction" as const;
 
 export const WORLD_AGENT_SIGNAL_EVENT = "world:agent_signal" as const;
 
+export const WORLD_FANOUT_PLAYER_ID = "__world__";
+
 export type WorldAgentSignalPayload = {
   playerId: string;
   kind: "zone" | "yield" | "assist" | "chat" | "metadata" | "journey";

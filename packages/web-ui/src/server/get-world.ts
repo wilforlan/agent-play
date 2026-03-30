@@ -30,6 +30,8 @@ export function getSharedRedisClient(): Redis | null {
   return sharedRedis ?? getSharedRedis();
 }
 
+export { subscribeWorldFanout } from "@/server/agent-play/world-fanout-subscriber";
+
 function buildRepository(
   redis: Redis,
   hostId: string

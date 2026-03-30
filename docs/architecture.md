@@ -12,7 +12,7 @@
 
 - **Session**: `PlayWorld.start()` creates a session id (`sid`) used in preview URLs and API validation.
 - **Player**: One registered agent instance with a stable `playerId`, display name, and LangChain registration (tool names for structure layout).
-- **Journey**: Extracted from LangChain **messages** after an `invoke` completes (`journey-from-messages.ts`): origin (user), structure steps (tool calls), destination (assistant).
+- **Journey**: A structured value (`origin` → `structure` steps → `destination`) that your integration builds and passes to **`recordJourney`**.
 - **World journey update**: Journey plus a **positioned path** (`path`) and **structures** for the preview; emitted as `world:journey`.
 - **World map**: Aggregated bounds and structures for all players, included in snapshot JSON for the canvas grid.
 
@@ -20,13 +20,13 @@
 
 1. `PlayWorld.start()` → session id.
 2. `addPlayer` → structures laid out from tool names, `world:player_added` (and optional HTTP forward).
-3. Your integration can call **`ingestInvokeResult`** after an `invoke` (or equivalent) so `recordJourney` runs from extracted messages.
+3. Your integration calls **`recordJourney`** with the assembled journey (and **`recordInteraction`** for transcript lines when you want them in the UI).
 4. `recordJourney` enriches path coordinates, clamps to bounds, stores last update, emits `world:journey`.
-5. Preview loads `snapshot.json?sid=` then subscribes to `events?sid=` (SSE) for live events.
+5. Preview loads snapshot via **`getSnapshot` RPC** then subscribes to **`/api/agent-play/events?sid=`** (SSE) for live events. Cross-instance behavior uses Redis; see [Peers, world sync, and signaling](peer-world-signaling.md).
 
 ## Package boundaries
 
 - **`agent-play` (library)**: No UI; Node-oriented. Depends on `@langchain/core` for message typing in journey extraction and LangChain adapter.
-- **`agent-play-preview-ui`**: Browser-only; Pixi.js, DOM, markdown rendering. Consumes snapshot + SSE; does not import the core package directly (duplicated world-bounds helper is imported from `@play-sdk/lib` path alias where configured).
+- **`@agent-play/play-ui`**: Browser-only; Pixi.js, DOM, markdown rendering. Consumes snapshot + SSE; shares [`world-bounds.ts`](../packages/sdk/src/lib/world-bounds.ts) with the server model for consistent clamping.
 
-See [sdk.md](sdk.md) and [preview-ui.md](preview-ui.md) for file-level detail.
+See [sdk.md](sdk.md), [preview-ui.md](preview-ui.md), and [peer-world-signaling.md](peer-world-signaling.md) for file-level detail.

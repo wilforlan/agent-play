@@ -1,8 +1,11 @@
 import { NextRequest } from "next/server";
 import { agentPlayVerbose } from "@/server/agent-play/agent-play-debug";
 import { logAgentPlayApi } from "@/server/agent-play/log-agent-play-api";
-import { getPlayWorld } from "@/server/get-world";
+import { PLAYER_ADDED_EVENT } from "@/server/agent-play/play-transport";
+import { runRedisBackedWorldMutation } from "@/server/agent-play/world-mutation-pipeline";
+import { getPlayWorld, getRedisSessionStore } from "@/server/get-world";
 import { validateAgentPlaySession } from "@/server/agent-play/session-validation";
+import type { RegisteredPlayer } from "@/server/agent-play/play-world";
 
 type AssistToolIn = {
   name: string;
@@ -43,6 +46,7 @@ export async function POST(req: NextRequest) {
     return Response.json({ error: "invalid sid" }, { status: 403 });
   }
   const world = await getPlayWorld();
+  const store = getRedisSessionStore();
   const body = (await req.json()) as {
     name?: unknown;
     type?: unknown;
@@ -71,24 +75,50 @@ export async function POST(req: NextRequest) {
     return Response.json({ error: "invalid agent" }, { status: 400 });
   }
   const assistTools = parseAssistTools(agent.assistTools);
+  const addInput = {
+    name: body.name,
+    type: body.type,
+    agent: {
+      type: "langchain" as const,
+      toolNames: agent.toolNames,
+      ...(assistTools !== undefined ? { assistTools } : {}),
+    },
+    apiKey:
+      typeof body.apiKey === "string" && body.apiKey.length > 0
+        ? body.apiKey
+        : undefined,
+    agentId:
+      typeof body.agentId === "string" && body.agentId.length > 0
+        ? body.agentId
+        : undefined,
+  };
   try {
-    const registered = await world.addPlayer({
-      name: body.name,
-      type: body.type,
-      agent: {
-        type: "langchain",
-        toolNames: agent.toolNames,
-        ...(assistTools !== undefined ? { assistTools } : {}),
-      },
-      apiKey:
-        typeof body.apiKey === "string" && body.apiKey.length > 0
-          ? body.apiKey
-          : undefined,
-      agentId:
-        typeof body.agentId === "string" && body.agentId.length > 0
-          ? body.agentId
-          : undefined,
-    });
+    let registered: RegisteredPlayer | undefined;
+    if (store !== null) {
+      await runRedisBackedWorldMutation({
+        sid,
+        world,
+        store,
+        mutate: async () => {
+          const reg = await world.withMutedRedisFanoutAsync(async () =>
+            world.addPlayer(addInput)
+          );
+          registered = reg;
+          const row = world
+            .getSnapshotJson()
+            .players.find((r) => r.playerId === reg.id);
+          if (row === undefined) {
+            throw new Error("addPlayer: snapshot row missing after add");
+          }
+          return [{ event: PLAYER_ADDED_EVENT, data: { player: row } }];
+        },
+      });
+    } else {
+      registered = await world.addPlayer(addInput);
+    }
+    if (registered === undefined) {
+      throw new Error("addPlayer: no result");
+    }
     agentPlayVerbose("api", "players ok", { playerId: registered.id });
     return Response.json({
       playerId: registered.id,

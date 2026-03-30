@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
 import { agentPlayVerbose } from "@/server/agent-play/agent-play-debug";
 import { logAgentPlayApi } from "@/server/agent-play/log-agent-play-api";
-import { resolveSnapshotForResponse } from "@/server/agent-play/resolve-snapshot-for-response";
+import { readResolvedSnapshot } from "@/server/agent-play/read-resolved-snapshot";
 import { getPlayWorld, getRedisSessionStore } from "@/server/get-world";
 import { validateAgentPlaySession } from "@/server/agent-play/session-validation";
 
@@ -20,12 +20,9 @@ export async function GET(req: NextRequest) {
     return Response.json({ error: "invalid sid" }, { status: 403 });
   }
   const world = await getPlayWorld();
-  const live = world.getSnapshotJson();
   const store = getRedisSessionStore();
-  let snap = live;
+  const snap = await readResolvedSnapshot({ sid, world, store });
   if (store !== null) {
-    const cached = await store.getSnapshotJson();
-    snap = resolveSnapshotForResponse({ sid, live, cached });
     void store.persistSnapshot(snap);
   }
   agentPlayVerbose("api", "snapshot ok", {

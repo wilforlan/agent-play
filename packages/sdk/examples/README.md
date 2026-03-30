@@ -45,7 +45,7 @@ npx tsx -r dotenv/config examples/02-remote-two-players-langchain.ts
 
 - `GET /api/agent-play/session` — Creates or resumes a session (`sid`).
 - `POST /api/agent-play/players` — Registers a player; response includes a **preview URL** for `/agent-play/watch`.
-- `POST /api/agent-play/sdk/rpc` — Tool sync, interactions, invoke ingestion (used by `RemotePlayWorld`).
-- Watch UI loads snapshot + SSE (`/api/agent-play/...`) for live world state.
+- `POST /api/agent-play/sdk/rpc` — Tool sync, interactions, invoke ingestion, and `op: getSnapshot` (used by `RemotePlayWorld` and the watch UI for JSON snapshot).
+- Watch UI loads snapshot via RPC + SSE (`/api/agent-play/...`) for live world state across instances when Redis is enabled.
 
 Assist actions on the watch UI call `POST /api/agent-play/assist-tool` when **`assist_*`** tools were registered via **`langchainRegistration`**.

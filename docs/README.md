@@ -6,12 +6,14 @@ Agent Play is a TypeScript SDK plus a browser client that visualize agent runs a
 
 ## Where the code lives
 
-The repository uses npm workspaces. **`packages/sdk`** is the Node.js package `@agent-play/sdk`: `PlayWorld`, LangChain adapter, Express preview mount, and tests. **`packages/play-ui`** is the Vite application `@agent-play/play-ui` (Pixi.js canvas, chat UI, settings). **`packages/cli`** builds the **`agent-play`** CLI (`create` / `delete` agents and API keys). **`packages/sdk/examples`** holds runnable servers that demonstrate registration and streaming.
+The repository uses npm workspaces. **`packages/sdk`** is the Node.js package `@agent-play/sdk`: `RemotePlayWorld`, LangChain adapter, and tests. **`packages/play-ui`** is the Vite application `@agent-play/play-ui` (Pixi.js canvas, chat UI, settings), vendored into **`packages/web-ui`** for the Next.js app. **`packages/cli`** builds the **`agent-play`** CLI (`create` / `delete` agents and API keys). **`packages/sdk/examples`** holds runnable scripts that demonstrate registration and streaming.
 
 ## Documentation map
 
 | Document | Contents |
 |----------|----------|
+| [Development guide](development.md) | Local setup, env templates, running the stack, troubleshooting |
+| [Pending feature backlog](pending-features.md) | Roadmap themes and scope notes |
 | [Overview](overview.md) | How the SDK and UI relate, and why they are separate deployables |
 | [Monorepo](monorepo.md) | Workspaces, build order, root scripts |
 | [SDK](sdk.md) | `PlayWorld`, preview mount, registering agents, MCP at the integration layer |

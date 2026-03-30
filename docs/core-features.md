@@ -11,8 +11,7 @@ This document lists **product-level capabilities** of agent-play as implemented 
 ## LangChain integration
 
 - **Registration** — `langchainRegistration(agent)` exposes tool names (requires **`chat_tool`**) and indexes **`assist_*`** tools for assist UI; the world renders **structure nodes** from tool names.
-- **Journey ingestion** — Call **`ingestInvokeResult`** from your own code when you want post-invoke journeys and tool lines recorded.
-- **Journey extraction** — Turns post-run **messages** into an ordered journey: origin → tool steps → destination, with tool names and call metadata.
+- **Journey updates** — Call **`recordJourney`** with a **`Journey`** value your pipeline constructs (steps align to structures on the map). Use **`recordInteraction`** for optional chat/tool log lines. Map post-run **messages** into those steps in your integration; the host stores and renders what you send.
 
 ## World model
 
@@ -24,7 +23,7 @@ This document lists **product-level capabilities** of agent-play as implemented 
 
 - **In-memory events** — `PlayWorld` uses an event bus for same-process subscribers (journey, interaction, structures, etc.).
 - **Optional HTTP forwarding** — `playApiBase` can POST events to a remote service for multi-process setups.
-- **Express mount** — `mountExpressPreview` serves static UI, `snapshot.json`, and **SSE** (`world:journey`, `world:player_added`, `world:structures`, `world:interaction`).
+- **Next.js host** — The web-ui app serves the watch UI, **`getSnapshot` RPC**, **GET snapshot**, and **SSE** (`world:journey`, `world:player_added`, `world:structures`, `world:interaction`), with Redis fanout when configured.
 
 ## Browser preview UI
 
@@ -39,4 +38,4 @@ This document lists **product-level capabilities** of agent-play as implemented 
 
 ## Testing
 
-- **Vitest** — Unit tests in `play-sdk/src` and `play-sdk/preview-ui/src` (separate Vitest major versions per package).
+- **Vitest** — Unit tests in `packages/sdk`, `packages/play-ui`, and `packages/web-ui` (versions may differ slightly per workspace).

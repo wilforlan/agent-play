@@ -2,17 +2,51 @@
 
 **A platform to watch agent workflows in a living 2D world—in real time.**
 
-Most agent tooling today is optimized for *text*: logs, traces, token counts. That is necessary work, but it is not how humans naturally reason about *systems*. Agent Play asks a different question: **what if you could see your agents move through a space**—past tools, APIs, and “home”—the way you’d walk a floor plan or a game map?
+---
 
-This repository is an early, opinionated answer: a **developer SDK** plus a **browser preview** that turns LangChain-style runs into **structures**, **journeys**, and **motion** on a canvas. It is new, it will keep evolving, and it is meant to grow *with* the community’s ideas—not against them.
+## Pending backlog
+
+High-level themes on the roadmap (prose and detail in **[Pending feature backlog](docs/pending-features.md)**):
+
+| Theme | Summary |
+|-------|---------|
+| **Agents on the map** | Present each agent as a clear **structure / landmark** on the world view, not only avatars and tool pads. |
+| **Public MCP as amenities** | First-class **public MCP** registration and **amenity** rendering (distinct from per-agent tools). |
+| **Peer communication** | A **faster, more reliable** sync engine (delivery guarantees, backoff, observability) over today’s HTTP + SSE + Redis fanout. |
+| **Kubernetes production** | **Deployment playbooks** for reliable releases: health, scaling, secrets, ingress, multi-replica semantics. |
+| **Redis scale** | **Performance and resilience** work: pooling, pipelining, retention, sharding/replicas as load grows. |
+| **Card payments** | **Payment APIs** as structured **amenities** with PCI-aware flows—not ad hoc secrets in chat. |
+| **Wallet sign-in** | **Crypto wallet** identity and settlement options for agent-related payments. |
+| **Developer dashboard** | **Account dashboard** for keys, agents, usage, and ops—beyond the CLI alone. |
+
+Nothing here is a dated promise; see the backlog doc for nuance and scope.
+
+---
+
+## Feature requests
+
+We **welcome feature requests**. They help align the roadmap with real integrator and player needs.
+
+**How to submit**
+
+1. **Search** existing issues on this repository (or your fork) for duplicates or related work.
+2. **Open a new issue** and use a title like `Feature: short outcome in plain language` (avoid only vendor names or internal codenames in the title).
+3. In the body, include:
+   - **Problem** — What is hard, missing, or confusing today?
+   - **Proposed behavior** — What should users or developers see or do? One primary scenario is enough.
+   - **Constraints** — Latency, hosting (e.g. must run on Kubernetes), compliance, or “must not” requirements.
+   - **Alternatives** — What you considered (including “do nothing” or an external tool).
+4. If you can, add **screenshots, API sketches, or pseudo-flows**; spatial features benefit from a quick diagram.
+
+Maintainers may convert requests into the [pending backlog](docs/pending-features.md) or close with a design rationale—**civil disagreement is fine**.
 
 ---
 
 ## Why this might matter for the AI agent community
 
-Agents are becoming **teams**: multiple models, tools, retries, and human checkpoints. Observability products are racing to keep up—often with excellent but *linear* views. Spatial, narrative views are underexplored. They will not replace traces; they can **sit alongside** them and give builders (and stakeholders) a shared mental model: *where* the agent is in its workflow, not only *what* it printed.
+Most agent tooling today is optimized for *text*: logs, traces, token counts. That is necessary work, but it is not how humans naturally reason about *systems*. Agent Play asks a different question: **what if you could see your agents move through a space**—past tools, APIs, and “home”—the way you’d walk a floor plan or a game map?
 
-Agent Play is deliberately **watch-oriented**: a place to *see* behavior before you optimize it. That aligns with a community still figuring out best practices—there is room to experiment without pretending we have solved visualization for every stack.
+This repository is an early, opinionated answer: a **developer SDK** plus a **browser preview** that turns LangChain-style runs into **structures**, **journeys**, and **motion** on a canvas. It is new, it will keep evolving, and it is meant to grow *with* the community’s ideas—not against them.
 
 ---
 
@@ -42,19 +76,30 @@ Nothing above is a dig at the project being young—it is the **same** transpare
 
 The **SDK** (`packages/sdk`, npm name `@agent-play/sdk`) exposes `RemotePlayWorld` and LangChain helpers so your process can talk to the **web app** over HTTP (session, players, RPC) and open the **watch** UI. The **play UI** (`packages/play-ui`, `@agent-play/play-ui`) is bundled into **`@agent-play/web-ui`** (Next.js) and can also be built as static assets for other hosts.
 
-- **[Documentation](docs/README.md)** — Overview, monorepo, SDK, play UI, multiplayer, Redis, CLI, API keys  
-- **[Examples](packages/sdk/examples/README.md)** — Two scripts: one player and two players against the running web UI  
+### Documentation (structured)
+
+| Resource | What you get |
+|----------|----------------|
+| **[Development guide](docs/development.md)** | Install, env templates, run web UI + Redis + examples, troubleshooting |
+| **[Documentation index](docs/README.md)** | Overview, monorepo, SDK, play UI, Redis, CLI, API keys |
+| **[Pending feature backlog](docs/pending-features.md)** | Long-form roadmap themes |
+| **[Examples](packages/sdk/examples/README.md)** | Scripts: one player and two players against the running web UI |
+
+**Environment templates**
+
+- **`packages/web-ui/.env.local.example`** — copy to **`packages/web-ui/.env.local`** for Next/server config
+- **`packages/sdk/.env.example`** — copy to **`packages/sdk/.env`** for LangChain examples and API keys
 
 ```bash
 npm install
-npm run dev             # @agent-play/web-ui (Next dev server; watch at /agent-play/watch)
+npm run dev             # @agent-play/web-ui (watch at /agent-play/watch)
 npm run build:web-ui    # production build of the web app
 npm run build:cli       # `agent-play` CLI into packages/cli/dist
-npm run example         # SDK example 01 (needs web-ui running and OPENAI_API_KEY)
+npm run example         # SDK example 01 (needs web-ui running and env configured)
 npm test
 ```
 
-For **`npm run dev`**, open the URL printed for **`@agent-play/web-ui`** (often `http://127.0.0.1:3000`) and use **`/agent-play/watch`**. Run **`npm run example`** in another terminal to register a LangChain agent against the same session API.
+For **`npm run dev`**, open the URL printed for **`@agent-play/web-ui`** (often `http://127.0.0.1:3000`) and use **`/agent-play/watch`**. Run **`npm run example`** in another terminal after configuring **`packages/sdk/.env`** (see [Development guide](docs/development.md)).
 
 ---
 

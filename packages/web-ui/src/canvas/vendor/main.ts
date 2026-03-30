@@ -6,7 +6,8 @@ import { drawPlatformHero, type HeroPaletteVariant } from "./hero-puppet.js";
 import {
   cssColorToPixi,
   mergeMultiversePalette,
-  structureFill,
+  mcpStorePalette,
+  vendorStallPalette,
   type MultiversePalette,
 } from "./multiverse-engine.js";
 import {
@@ -50,7 +51,12 @@ import {
 } from "./preview-settings-toolbar.js";
 import { getPreviewViewSettings } from "./preview-view-settings.js";
 import { ENABLE_CROWD_LAYER, getActiveSceneTheme } from "./scene-theme.js";
-import { drawHomeStructure, drawToolPad } from "./structure-art.js";
+import {
+  drawHomeStructure,
+  drawMcpStore,
+  drawToolPad,
+  drawVendorStall,
+} from "./structure-art.js";
 import type { AvatarFacing } from "./avatar-anim.js";
 import {
   DEFAULT_PROXIMITY_RADIUS,
@@ -350,6 +356,23 @@ function hydrateChatFromSnapshot(s: Snapshot): void {
   refreshPreviewChat();
 }
 
+function mcpStoreWorldPositions(
+  bounds: WorldMapJson["bounds"],
+  count: number
+): Array<{ x: number; y: number }> {
+  if (count === 0) return [];
+  const out: Array<{ x: number; y: number }> = [];
+  const { minX, maxX, maxY } = bounds;
+  const span = Math.max(0.15, maxX - minX);
+  const rowY = maxY - Math.min(0.45, (maxY - bounds.minY) * 0.15);
+  for (let i = 0; i < count; i += 1) {
+    const t = count === 1 ? 0.5 : i / (count - 1);
+    const x = minX + t * span;
+    out.push({ x, y: rowY });
+  }
+  return out;
+}
+
 function collectStructuresForRender(s: Snapshot): Structure[] {
   const byId = new Map<string, Structure>();
   for (const pl of s.players) {
@@ -368,6 +391,26 @@ function collectStructuresForRender(s: Snapshot): Structure[] {
     } else {
       byId.set(st.id, { ...st });
     }
+  }
+  const bounds = s.worldMap?.bounds ?? {
+    minX: 0,
+    minY: 0,
+    maxX: 3,
+    maxY: 3,
+  };
+  const mcpRegs = s.mcpServers ?? [];
+  const mcpXY = mcpStoreWorldPositions(bounds, mcpRegs.length);
+  for (let i = 0; i < mcpRegs.length; i += 1) {
+    const reg = mcpRegs[i];
+    const pos = mcpXY[i];
+    if (reg === undefined || pos === undefined) continue;
+    byId.set(`mcp:${reg.id}`, {
+      id: `mcp:${reg.id}`,
+      kind: "tool",
+      x: pos.x,
+      y: pos.y,
+      label: reg.name,
+    });
   }
   const list = [...byId.values()];
   list.sort((a, b) => {
@@ -437,10 +480,20 @@ function applyJourneyUpdate(u: JourneyUpdate): void {
 
 async function loadSnapshot(sid: string): Promise<void> {
   const res = await fetch(
-    `${API_BASE}/snapshot.json?sid=${encodeURIComponent(sid)}`
+    `${API_BASE}/sdk/rpc?sid=${encodeURIComponent(sid)}`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ op: "getSnapshot", payload: {} }),
+    }
   );
   if (!res.ok) return;
-  snapshot = (await res.json()) as Snapshot;
+  const body = (await res.json()) as {
+    snapshot?: Snapshot;
+    error?: string;
+  };
+  if (typeof body.error === "string" || body.snapshot === undefined) return;
+  snapshot = body.snapshot;
   const b = snapshot.worldMap?.bounds;
   if (b !== undefined) applyBounds(b);
   else {
@@ -587,23 +640,29 @@ function syncStructureNodes(structs: Structure[]): void {
     }
     const { x: sx, y: sy } = worldToScreen(st.x, st.y);
     const strokeCol = cssColorToPixi(palette.stroke);
+    const isMcpStore = st.id.startsWith("mcp:");
     if (st.kind === "home") {
       drawHomeStructure(n.box, box, theme.house);
       n.box.position.set(sx, sy);
       n.caption.text = (st.label ?? "Home").slice(0, 24);
       n.caption.position.set(sx - n.caption.width / 2, sy - box * 1.15);
+    } else if (isMcpStore) {
+      const storePal = mcpStorePalette(palette);
+      const storeBox = box * 1.12;
+      drawMcpStore(n.box, storeBox, storePal);
+      n.box.position.set(sx - storeBox * 0.42, sy - storeBox * 0.48);
+      n.caption.text = (st.label ?? "Store").slice(0, 22);
+      n.caption.position.set(sx - n.caption.width / 2, sy - storeBox * 0.92);
     } else {
-      const fillCol = cssColorToPixi(structureFill(st.kind, palette));
-      drawToolPad(n.box, box, fillCol, strokeCol);
-      const bx = sx - box * 0.2;
-      const by = sy - box * 0.2;
-      n.box.position.set(bx, by);
+      const stallPal = vendorStallPalette(palette);
+      drawVendorStall(n.box, box, stallPal);
+      n.box.position.set(sx - box * 0.38, sy - box * 0.42);
       const capText =
         st.toolName !== undefined && st.toolName.length > 0
           ? st.toolName
           : (st.label ?? st.id).slice(0, 28);
       n.caption.text = capText.slice(0, 28);
-      n.caption.position.set(sx - 4, sy - 20);
+      n.caption.position.set(sx - n.caption.width / 2, sy - box * 0.92);
     }
   }
 }

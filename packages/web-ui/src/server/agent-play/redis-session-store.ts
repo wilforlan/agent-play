@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import type Redis from "ioredis";
 import { agentPlayVerbose } from "./agent-play-debug.js";
 import type { PreviewSnapshotJson } from "./preview-serialize.js";
+import { worldFanoutChannel } from "./redis-world-fanout.js";
 
 const EVENT_LOG_MAX = 200;
 
@@ -130,6 +131,50 @@ export class RedisSessionStore {
       lastSnapshotAt: new Date().toISOString(),
       snapshotBytes: String(Buffer.byteLength(raw, "utf8")),
     });
+  }
+
+  async persistSnapshotReturningRev(
+    snapshot: PreviewSnapshotJson
+  ): Promise<number> {
+    const raw = JSON.stringify(snapshot);
+    const key = snapshotKey(this.hostId);
+    const sess = sessionHashKey(this.hostId);
+    const results = await this.redis
+      .multi()
+      .set(key, raw)
+      .hincrby(sess, "snapshotRev", 1)
+      .hset(sess, {
+        lastSnapshotAt: new Date().toISOString(),
+        snapshotBytes: String(Buffer.byteLength(raw, "utf8")),
+      })
+      .exec();
+    if (results === null) {
+      throw new Error("redis persistSnapshot: transaction aborted");
+    }
+    const hincr = results[1];
+    if (hincr === null || hincr[0] !== null) {
+      throw new Error(
+        `redis persistSnapshot: hincrby failed: ${String(hincr?.[0])}`
+      );
+    }
+    return hincr[1] as number;
+  }
+
+  async getSnapshotRev(): Promise<number> {
+    const v = await this.redis.hget(sessionHashKey(this.hostId), "snapshotRev");
+    if (v === null || v.length === 0) return 0;
+    const n = Number(v);
+    return Number.isFinite(n) ? n : 0;
+  }
+
+  async publishWorldFanout(
+    rev: number,
+    event: string,
+    data: unknown
+  ): Promise<void> {
+    const channel = worldFanoutChannel(this.hostId);
+    const msg = JSON.stringify({ rev, event, data });
+    await this.redis.publish(channel, msg);
   }
 
   async appendEventLog(entry: SessionEventLogEntry): Promise<void> {

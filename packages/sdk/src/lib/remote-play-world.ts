@@ -236,13 +236,6 @@ export class RemotePlayWorld {
     await this.rpc("syncPlayerStructuresFromTools", { playerId, toolNames });
   }
 
-  async ingestInvokeResult(
-    playerId: string,
-    invokeResult: unknown
-  ): Promise<void> {
-    await this.rpc("ingestInvokeResult", { playerId, invokeResult });
-  }
-
   async registerMcp(options: { name: string; url?: string }): Promise<string> {
     const sid = this.getSessionId();
     const url = `${this.apiBase}/api/agent-play/mcp/register?sid=${encodeURIComponent(sid)}`;

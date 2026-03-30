@@ -1,5 +1,7 @@
 node_modules
 .env
+.env.local
+packages/*/.env.local
 *-lock.json
 .next
 dist

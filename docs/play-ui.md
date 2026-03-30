@@ -1,6 +1,6 @@
 # Play UI (Vite, static deploy)
 
-The play UI is built with Vite and outputs HTML, JavaScript, and assets under `packages/play-ui/dist`. Configure your host to serve that folder with the same URL prefix you use in `mountExpressPreview` (often `/agent-play`), because the build uses `base: "/agent-play/"` by default.
+The play UI is built with Vite and outputs HTML, JavaScript, and assets under `packages/play-ui/dist`. The **web-ui** package copies `play-ui/src` into `src/canvas/vendor` during prebuild and serves the watch experience at `/agent-play/watch` with `base: "/agent-play/"` in the Vite config.
 
 **Same origin.** If the browser loads the watch page from the same host and path as the API, you do not need extra configuration. The client uses the Vite `BASE_URL` for snapshot, SSE, and proximity calls.
 

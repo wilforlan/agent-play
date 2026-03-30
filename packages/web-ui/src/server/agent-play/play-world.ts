@@ -11,14 +11,13 @@ import {
   agentPlayDebug,
   agentPlayVerbose,
 } from "./agent-play-debug.js";
-import { isToolMessage } from "@langchain/core/messages";
-import { extractJourney } from "./journey-from-messages.js";
 import { enrichJourneyPath, layoutStructuresFromTools } from "./structure-layout.js";
 import {
   HttpPlayTransport,
   InMemoryPlayBus,
   PLAYER_ADDED_EVENT,
   WORLD_AGENT_SIGNAL_EVENT,
+  WORLD_FANOUT_PLAYER_ID,
   WORLD_INTERACTION_EVENT,
   WORLD_JOURNEY_EVENT,
   WORLD_STRUCTURES_EVENT,
@@ -36,7 +35,12 @@ import {
   extractAssistToolNames,
 } from "./agent-tool-contract.js";
 import type { PreviewSnapshotJson } from "./preview-serialize.js";
-import { serializeWorldJourneyUpdate } from "./preview-serialize.js";
+import {
+  parseWorldJourneyUpdateJson,
+  serializeWorldJourneyUpdate,
+} from "./preview-serialize.js";
+import type { RedisFanoutItem } from "./world-redis-sync.js";
+import { scheduleRedisWorldPersist } from "./world-redis-sync.js";
 import { buildWorldMapFromPlayers } from "./world-map.js";
 import { clampWorldPosition, type WorldBounds } from "./world-bounds.js";
 import { MAX_AGENTS_PER_ACCOUNT } from "./account-limits.js";
@@ -49,6 +53,22 @@ function sameToolNames(
   const as = [...a].sort();
   const bs = [...b].sort();
   return as.every((v, i) => v === bs[i]);
+}
+
+function toolNamesFromStructuresAndChat(
+  structures: WorldStructure[],
+  hasChatTool: boolean
+): string[] {
+  const names: string[] = [];
+  for (const s of structures) {
+    if (s.kind === "tool" && s.toolName !== undefined) {
+      names.push(s.toolName);
+    }
+  }
+  if (hasChatTool) {
+    names.push("chat_tool");
+  }
+  return names;
 }
 
 function clampPathToBounds(
@@ -159,6 +179,7 @@ export class PlayWorld {
     name: string;
     url?: string;
   }> = [];
+  private redisFanoutMuteDepth = 0;
 
   constructor(private readonly options: PlayWorldOptions = {}) {
     this.repository = options.repository ?? null;
@@ -197,6 +218,137 @@ export class PlayWorld {
     return sid.trim() === this.sessionId;
   }
 
+  hydrateFromSnapshot(snapshot: PreviewSnapshotJson): void {
+    if (this.sessionId === null) {
+      throw new Error(
+        "PlayWorld.start() must be called before hydrateFromSnapshot"
+      );
+    }
+    this.sessionId = snapshot.sid;
+    this.agents.clear();
+    this.structuresByPlayer.clear();
+    this.lastUpdateByPlayer.clear();
+    this.playerOrder.length = 0;
+    this.playerTypes.clear();
+    this.toolNamesByPlayer.clear();
+    this.assistToolsByPlayer.clear();
+    this.lastZoneByPlayer.clear();
+    this.lastYieldByPlayer.clear();
+    this.aggregateByPlayer.clear();
+    this.interactionLogByPlayer.clear();
+    this.interactionSeq = 0;
+    this.mcpServers.length = 0;
+    const sid = snapshot.sid;
+    let maxSeq = 0;
+    for (const row of snapshot.players) {
+      this.playerOrder.push(row.playerId);
+      this.agents.set(row.playerId, {
+        id: row.playerId,
+        name: row.name,
+        sid,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+      this.structuresByPlayer.set(row.playerId, row.structures.map((s) => ({ ...s })));
+      if (row.type !== undefined) {
+        this.playerTypes.set(row.playerId, row.type);
+      }
+      const tools =
+        row.toolNames !== undefined && row.toolNames.length > 0
+          ? [...row.toolNames]
+          : toolNamesFromStructuresAndChat(
+              row.structures,
+              row.hasChatTool === true
+            );
+      this.toolNamesByPlayer.set(row.playerId, tools);
+      if (row.assistTools !== undefined && row.assistTools.length > 0) {
+        this.assistToolsByPlayer.set(
+          row.playerId,
+          row.assistTools.map((t) => ({ ...t }))
+        );
+      } else {
+        this.assistToolsByPlayer.set(row.playerId, []);
+      }
+      if (row.lastUpdate !== undefined) {
+        this.lastUpdateByPlayer.set(
+          row.playerId,
+          parseWorldJourneyUpdateJson(row.lastUpdate)
+        );
+      }
+      if (row.recentInteractions !== undefined && row.recentInteractions.length > 0) {
+        const entries: InteractionEntry[] = row.recentInteractions.map((r) => {
+          if (typeof r.seq === "number" && r.seq > maxSeq) maxSeq = r.seq;
+          return {
+            role: r.role,
+            text: r.text,
+            at: r.at,
+            seq: r.seq,
+          };
+        });
+        this.interactionLogByPlayer.set(row.playerId, entries);
+      }
+      if (
+        row.zoneCount !== undefined ||
+        row.yieldCount !== undefined ||
+        row.flagged !== undefined
+      ) {
+        this.aggregateByPlayer.set(row.playerId, {
+          zoneCount: row.zoneCount ?? 0,
+          yieldCount: row.yieldCount ?? 0,
+          flagged: row.flagged ?? false,
+        });
+      }
+      if (row.onZone !== undefined) {
+        this.lastZoneByPlayer.set(row.playerId, { ...row.onZone });
+      }
+      if (row.onYield !== undefined) {
+        this.lastYieldByPlayer.set(row.playerId, { ...row.onYield });
+      }
+    }
+    this.interactionSeq = maxSeq;
+    if (snapshot.mcpServers !== undefined) {
+      for (const m of snapshot.mcpServers) {
+        const row: { id: string; name: string; url?: string } = {
+          id: m.id,
+          name: m.name,
+        };
+        if (m.url !== undefined) row.url = m.url;
+        this.mcpServers.push(row);
+      }
+    }
+  }
+
+  private metadataFanout(): RedisFanoutItem[] {
+    return [
+      {
+        event: WORLD_AGENT_SIGNAL_EVENT,
+        data: {
+          playerId: WORLD_FANOUT_PLAYER_ID,
+          kind: "metadata" as const,
+          data: {},
+        },
+      },
+    ];
+  }
+
+  withMutedRedisFanout<T>(fn: () => T): T {
+    this.redisFanoutMuteDepth += 1;
+    try {
+      return fn();
+    } finally {
+      this.redisFanoutMuteDepth -= 1;
+    }
+  }
+
+  async withMutedRedisFanoutAsync<T>(fn: () => Promise<T>): Promise<T> {
+    this.redisFanoutMuteDepth += 1;
+    try {
+      return await fn();
+    } finally {
+      this.redisFanoutMuteDepth -= 1;
+    }
+  }
+
   async resetSession(): Promise<string> {
     if (this.sessionId === null) {
       throw new Error("PlayWorld.start() must be called before resetSession");
@@ -224,7 +376,17 @@ export class PlayWorld {
     }
     if (this.sessionStore !== null) {
       await this.sessionStore.replaceSessionWithNewSid(newSid);
-      await this.sessionStore.persistSnapshot(this.getSnapshotJson());
+      const snap = this.getSnapshotJson();
+      const rev = await this.sessionStore.persistSnapshotReturningRev(snap);
+      await this.sessionStore.publishWorldFanout(
+        rev,
+        WORLD_AGENT_SIGNAL_EVENT,
+        {
+          playerId: WORLD_FANOUT_PLAYER_ID,
+          kind: "metadata",
+          data: {},
+        }
+      );
     }
     agentPlayDebug("play-world", "resetSession", { sessionId: newSid });
     agentPlayVerbose("play-world", "resetSession complete", {
@@ -257,6 +419,7 @@ export class PlayWorld {
         playerId,
         name: info.name,
         structures,
+        toolNames: [...tools],
         stationary: last === undefined,
         assistToolNames: extractAssistToolNames(tools),
         hasChatTool: tools.includes("chat_tool"),
@@ -307,9 +470,15 @@ export class PlayWorld {
     return out;
   }
 
-  private schedulePersistSnapshot(): void {
+  private schedulePersistSnapshot(fanout?: RedisFanoutItem[]): void {
     if (this.sessionStore === null) return;
-    void this.sessionStore.persistSnapshot(this.getSnapshotJson()).catch((err: unknown) => {
+    if (this.redisFanoutMuteDepth > 0) return;
+    const items = fanout ?? this.metadataFanout();
+    void scheduleRedisWorldPersist(
+      this.sessionStore,
+      () => this.getSnapshotJson(),
+      items
+    ).catch((err: unknown) => {
       agentPlayDebug("play-world", "persistSnapshotToStore failed", {
         error: err instanceof Error ? err.message : String(err),
       });
@@ -352,10 +521,18 @@ export class PlayWorld {
         : `Proximity: ${this.agents.get(input.fromPlayerId)?.name ?? "?"} — ${label}`,
     });
     if (input.action === "assist" || input.action === "chat") {
+      const sig: WorldAgentSignalPayload = {
+        playerId: input.toPlayerId,
+        kind: input.action,
+        data: { fromPlayerId: input.fromPlayerId },
+      };
       this.emitAgentSignal(input.toPlayerId, {
         kind: input.action,
         data: { fromPlayerId: input.fromPlayerId },
       });
+      this.schedulePersistSnapshot([
+        { event: WORLD_AGENT_SIGNAL_EVENT, data: sig },
+      ]);
     }
     if (input.action === "zone") {
       void this.applyZoneIncrement(input.toPlayerId);
@@ -396,7 +573,16 @@ export class PlayWorld {
         flagged: zoneCount >= 100,
         at: atZ,
       });
-      this.schedulePersistSnapshot();
+      this.schedulePersistSnapshot([
+        {
+          event: WORLD_AGENT_SIGNAL_EVENT,
+          data: {
+            playerId: agentId,
+            kind: "zone" as const,
+            data: { zoneCount },
+          },
+        },
+      ]);
       return;
     }
     const next = await this.repository.incrementZoneCount(agentId);
@@ -415,8 +601,22 @@ export class PlayWorld {
         flagged: next.flagged,
         at: new Date().toISOString(),
       });
+      this.schedulePersistSnapshot([
+        {
+          event: WORLD_AGENT_SIGNAL_EVENT,
+          data: {
+            playerId: agentId,
+            kind: "zone" as const,
+            data: {
+              zoneCount: next.zoneCount,
+              flagged: next.flagged,
+            },
+          },
+        },
+      ]);
+      return;
     }
-    this.schedulePersistSnapshot();
+    this.schedulePersistSnapshot(this.metadataFanout());
   }
 
   private async applyYieldIncrement(
@@ -439,7 +639,16 @@ export class PlayWorld {
         yieldCount,
         at: new Date().toISOString(),
       });
-      this.schedulePersistSnapshot();
+      this.schedulePersistSnapshot([
+        {
+          event: WORLD_AGENT_SIGNAL_EVENT,
+          data: {
+            playerId: agentId,
+            kind: "yield" as const,
+            data: { yieldCount },
+          },
+        },
+      ]);
       return;
     }
     const next = await this.repository.incrementYieldCount(agentId);
@@ -457,18 +666,29 @@ export class PlayWorld {
         yieldCount: next.yieldCount,
         at: new Date().toISOString(),
       });
+      this.schedulePersistSnapshot([
+        {
+          event: WORLD_AGENT_SIGNAL_EVENT,
+          data: {
+            playerId: agentId,
+            kind: "yield" as const,
+            data: { yieldCount: next.yieldCount },
+          },
+        },
+      ]);
+      return;
     }
-    this.schedulePersistSnapshot();
+    this.schedulePersistSnapshot(this.metadataFanout());
   }
 
-  recordInteraction(input: RecordInteractionInput): void {
+  recordInteraction(input: RecordInteractionInput): WorldInteractionPayload | null {
     if (!this.agents.has(input.playerId)) {
       throw new Error(
         `recordInteraction: unknown playerId "${input.playerId}"`
       );
     }
     const trimmed = input.text.trim();
-    if (trimmed.length === 0) return;
+    if (trimmed.length === 0) return null;
     this.interactionSeq += 1;
     const seq = this.interactionSeq;
     const at = new Date().toISOString();
@@ -496,7 +716,10 @@ export class PlayWorld {
       role: input.role,
       seq,
     });
-    this.schedulePersistSnapshot();
+    this.schedulePersistSnapshot([
+      { event: WORLD_INTERACTION_EVENT, data: payload },
+    ]);
+    return payload;
   }
 
   recordAssistToolInvocation(input: {
@@ -576,7 +799,9 @@ export class PlayWorld {
       playerId,
       toolCount: toolNames.length,
     });
-    this.schedulePersistSnapshot();
+    this.schedulePersistSnapshot([
+      { event: WORLD_STRUCTURES_EVENT, data: payload },
+    ]);
   }
 
   async addPlayer(input: AddPlayerInput): Promise<RegisteredPlayer> {
@@ -677,12 +902,13 @@ export class PlayWorld {
       previewUrl: this.getPreviewUrl(),
       structures,
     };
-    const added = {
-      playerId: player.id,
-      name: player.name,
-      type: input.type,
-      structures,
-    };
+    const snapRow = this.getSnapshotJson().players.find(
+      (r) => r.playerId === player.id
+    );
+    if (snapRow === undefined) {
+      throw new Error("addPlayer: failed to build snapshot row");
+    }
+    const added = { player: snapRow };
     this.bus.emit(PLAYER_ADDED_EVENT, added);
     void this.forwardHttp(PLAYER_ADDED_EVENT, added);
     agentPlayDebug("play-world", "addPlayer", {
@@ -690,23 +916,29 @@ export class PlayWorld {
       name: player.name,
       toolCount: input.agent.toolNames.length,
     });
-    this.schedulePersistSnapshot();
+    this.schedulePersistSnapshot([
+      { event: PLAYER_ADDED_EVENT, data: added },
+    ]);
     return registered;
   }
 
   recordJourney(playerId: string, journey: Journey): void {
+    this.emitJourneyRecorded(this.buildWorldJourneyUpdate(playerId, journey));
+  }
+
+  private buildWorldJourneyUpdate(
+    playerId: string,
+    journey: Journey
+  ): WorldJourneyUpdate {
     const structures = this.structuresByPlayer.get(playerId) ?? [];
     const pathRaw = enrichJourneyPath(journey, structures);
-    const worldMap = buildWorldMapFromPlayers([
-      { playerId, structures },
-    ]);
+    const worldMap = buildWorldMapFromPlayers([{ playerId, structures }]);
     const path = clampPathToBounds(pathRaw, worldMap.bounds);
-    const payload: WorldJourneyUpdate = {
-      playerId,
-      journey,
-      path,
-      structures,
-    };
+    return { playerId, journey, path, structures };
+  }
+
+  private emitJourneyRecorded(payload: WorldJourneyUpdate): void {
+    const { playerId, journey } = payload;
     this.lastUpdateByPlayer.set(playerId, payload);
     this.bus.emit(WORLD_JOURNEY_EVENT, payload);
     void this.forwardHttp(WORLD_JOURNEY_EVENT, payload);
@@ -721,23 +953,10 @@ export class PlayWorld {
       playerId,
       stepCount: journey.steps.length,
     });
-    this.schedulePersistSnapshot();
-  }
-
-  ingestInvokeResult(playerId: string, invokeResult: unknown): void {
-    agentPlayDebug("play-world", "ingestInvokeResult", {
-      playerId,
-      hasMessages:
-        invokeResult !== null &&
-        typeof invokeResult === "object" &&
-        Array.isArray((invokeResult as { messages?: unknown }).messages),
-    });
-    if (invokeResult === null || typeof invokeResult !== "object") return;
-    const messages = (invokeResult as { messages?: unknown }).messages;
-    if (!Array.isArray(messages)) return;
-    this.appendToolInteractionsFromInvokeMessages(playerId, messages);
-    const journey = extractJourney(messages);
-    this.recordJourney(playerId, journey);
+    this.schedulePersistSnapshot([
+      { event: WORLD_JOURNEY_EVENT, data: serializeWorldJourneyUpdate(payload) },
+      { event: WORLD_AGENT_SIGNAL_EVENT, data: signal },
+    ]);
   }
 
   on(event: string, listener: (...args: unknown[]) => void): void {
@@ -794,41 +1013,5 @@ export class PlayWorld {
       agentPlayDebug("play-world", "forwardHttp", { event, payload, error: err });
       return undefined;
     });
-  }
-
-  private appendToolInteractionsFromInvokeMessages(
-    playerId: string,
-    messages: unknown[]
-  ): void {
-    for (const m of messages) {
-      if (!isToolMessage(m)) continue;
-      const name =
-        typeof (m as { name?: string }).name === "string"
-          ? (m as { name: string }).name
-          : "tool";
-      const content = (m as { content?: unknown }).content;
-      const text =
-        typeof content === "string"
-          ? content
-          : Array.isArray(content)
-            ? content.map(String).join("")
-            : content === undefined || content === null
-              ? ""
-              : String(content);
-      const snippet = text.trim().slice(0, 240);
-      if (snippet.length === 0) {
-        this.recordInteraction({
-          playerId,
-          role: "tool",
-          text: `${name} (done)`,
-        });
-      } else {
-        this.recordInteraction({
-          playerId,
-          role: "tool",
-          text: `${name}: ${snippet}`,
-        });
-      }
-    }
   }
 }
