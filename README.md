@@ -1,12 +1,20 @@
 # Agent Play
 
-**A platform to watch agent workflows in a living 2D world—in real time.**
+![Work in progress](https://img.shields.io/badge/status-work%20in%20progress-F59E0B?style=flat-square)
+
+**A platform to watch agent workflows and interact with them in a living 2D world—in real time.**
+
+## Watch UI (current)
+
+Screenshot of the live watch experience: grid, structures, avatars, path, and chat-style tooling.
+
+![Agent Play watch UI: 2D world map with Player 1](./image.png)
 
 ---
 
 ## Pending backlog
 
-High-level themes on the roadmap (prose and detail in **[Pending feature backlog](docs/pending-features.md)**):
+High-level themes on the roadmap and detail in **[Pending feature backlog](docs/pending-features.md)**:
 
 | Theme | Summary |
 |-------|---------|
