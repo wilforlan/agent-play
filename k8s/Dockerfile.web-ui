@@ -1,12 +1,15 @@
 # Build from repository root:
 #   docker build -f k8s/Dockerfile.web-ui -t agent-play-web-ui .
 #
+# Uses packages/web-ui as the image app root (/app) so npm uses web-ui/package.json
+# (not the monorepo root workspaces). packages/sdk is copied to /sdk so next.config.ts
+# and tsconfig paths that reference ../sdk keep resolving.
+#
 # Runs the same custom server as production (server.ts: Next + WebSocket on /ws/agent-play).
 FROM node:20-bookworm-slim AS builder
 WORKDIR /app
 ENV NEXT_TELEMETRY_DISABLED=1
-COPY package.json ./
-COPY packages ./packages
+COPY packages/web-ui/ ./
 RUN npm install --ignore-scripts
 ENV NODE_ENV=production
 ARG NEXT_PUBLIC_AGENT_PLAY_BASE=/agent-play
@@ -25,7 +28,6 @@ ENV NEXT_TELEMETRY_DISABLED=1
 RUN addgroup --system --gid 1001 nodejs && adduser --system --uid 1001 nextjs
 COPY --from=builder --chown=nextjs:nodejs /app /app
 ENV PATH=/app/node_modules/.bin:$PATH
-WORKDIR /app/packages/web-ui
 USER nextjs
 EXPOSE 8888
 CMD ["tsx", "server.ts"]

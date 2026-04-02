@@ -1,17 +1,8 @@
-import path from "node:path";
-import { fileURLToPath } from "node:url";
 import type { NextConfig } from "next";
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const sdkLib = path.join(__dirname, "..", "sdk", "src", "lib");
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
   webpack: (config) => {
-    config.resolve.alias = {
-      ...config.resolve.alias,
-      "@play-sdk/lib": sdkLib,
-    };
     config.resolve.extensionAlias = {
       ...config.resolve.extensionAlias,
       ".js": [".ts", ".tsx", ".js"],
