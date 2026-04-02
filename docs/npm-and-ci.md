@@ -23,9 +23,34 @@ npm run build:play-ui
 
 Or `npm run build` to run all four build steps.
 
+## Version numbers (all published packages)
+
+The root **`package.json`** has a **`version`** field used as the single source of truth for bumps. From the repo root, set the same semver on **root**, **`@agent-play/sdk`**, **`@agent-play/cli`**, **`@agent-play/play-ui`**, and **`@agent-play/web-ui`**:
+
+```bash
+npm run version:packages -- 0.2.0
+npm run version:packages -- patch
+npm run version:packages -- minor
+npm run version:packages -- major
+```
+
+Implementation: [`scripts/sync-package-versions.mjs`](../scripts/sync-package-versions.mjs). **`node scripts/sync-package-versions.mjs --check`** exits **0** only when the root and every workspace **`package.json`** **`version`** match.
+
+### Git hooks (local)
+
+Version sync is **not** run in CI. **`npm install`** runs **`prepare`**, which points Git at **`.githooks`** when **`.git`** exists. To set hooks again: **`npm run setup:git-hooks`** (same as **`git config core.hooksPath .githooks`**).
+
+**`pre-push`** runs before **`git push`**:
+
+1. If the outgoing push includes **no** commits that touch **`packages/`**, the hook exits (nothing to verify).
+2. If there are **uncommitted** changes under **`packages/`**, the push is **blocked** (commit or stash first).
+3. Otherwise it runs **`--check`**. If versions are out of sync, it runs **`sync-package-versions`**, then **blocks** the push until you **commit** the updated **`package.json`** files and push again.
+
+See [Development guide](development.md#git-hooks).
+
 ## Publishing (manual)
 
-1. Bump `version` in each package you are publishing (`packages/sdk/package.json`, etc.).
+1. Bump versions with **`npm run version:packages`** (see above), then commit. Use **`pre-push`** so versions stay aligned before you push.
 2. `npm login` to npm.
 3. From the repo root, after `npm install` and builds:
 
@@ -39,7 +64,7 @@ npm publish -w @agent-play/play-ui --access public
 
 ## GitHub Actions
 
-Workflow [`.github/workflows/publish-npm.yml`](../.github/workflows/publish-npm.yml) runs on pushes to **`main`**, on **`v*`** tags, and on **`workflow_dispatch`**. Configure the **`NPM_TOKEN`** repository secret (automation token from npmjs.com with publish scope). **`npm publish`** fails if the version in each package’s `package.json` is already on the registry—bump versions before merging to **`main`** when you intend to release.
+Workflow [`.github/workflows/publish-npm.yml`](../.github/workflows/publish-npm.yml) runs on pushes to **`main`**, on **`v*`** tags, and on **`workflow_dispatch`**. Configure the **`NPM_TOKEN`** repository secret (automation token from npmjs.com with publish scope). **`npm publish`** fails if that version already exists on the registry—bump versions locally (and commit) before a new release.
 
 ## API documentation (TypeDoc)
 

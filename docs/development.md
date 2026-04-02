@@ -22,6 +22,16 @@ npm install
 
 This installs all workspace packages (`packages/sdk`, `packages/web-ui`, `packages/play-ui`, `packages/cli`).
 
+### Git hooks
+
+**`npm install`** runs **`prepare`**, which sets **`core.hooksPath`** to **`.githooks`** when a **`.git`** directory is present (skipped in tarballs or installs without Git). You can run it again manually:
+
+```bash
+npm run setup:git-hooks
+```
+
+Before **`git push`**, if your outgoing commits touch anything under **`packages/`**, the hook refuses the push when **`packages/`** has uncommitted changes, or when workspace **`package.json`** **`version`** fields do not match the root **`package.json`** (it runs **`scripts/sync-package-versions.mjs`** and asks you to commit the fix). If your push does not touch **`packages/`**, the hook does nothing.
+
 ### Environment files
 
 1. **Web UI (Next.js)** — copy the template and edit:
