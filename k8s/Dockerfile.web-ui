@@ -5,9 +5,9 @@
 FROM node:20-bookworm-slim AS builder
 WORKDIR /app
 ENV NEXT_TELEMETRY_DISABLED=1
-COPY package.json package-lock.json ./
+COPY package.json ./
 COPY packages ./packages
-RUN npm ci
+RUN npm install
 ENV NODE_ENV=production
 ARG NEXT_PUBLIC_AGENT_PLAY_BASE=/agent-play
 ARG NEXT_PUBLIC_PLAY_API_BASE=/agent-play
