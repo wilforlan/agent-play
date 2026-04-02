@@ -167,4 +167,6 @@ Template: **`packages/sdk/.env.example`**.
 
 - [Documentation index](README.md)
 - [Monorepo layout](monorepo.md)
+- [Kubernetes deployment](kubernetes-deployment.md)
+- [npm & CI](npm-and-ci.md)
 - [Contributing](CONTRIBUTING.md)

@@ -9,15 +9,18 @@
     "packages/*"
   ],
   "scripts": {
-    "build": "npm run build:sdk && npm run build:cli && npm run build:web-ui",
+    "build": "npm run build:sdk && npm run build:cli && npm run build:web-ui && npm run build:play-ui",
     "build:sdk": "npm run build -w @agent-play/sdk",
     "build:web-ui": "npm run build -w @agent-play/web-ui",
     "build:cli": "npm run build -w @agent-play/cli",
+    "build:play-ui": "npm run build -w @agent-play/play-ui",
+    "docs:api": "typedoc --options typedoc.json && node -e \"require('fs').mkdirSync('docs/api-reference',{recursive:true}); require('fs').writeFileSync('docs/api-reference/.nojekyll','')\"",
     "start": "npm run dev -w @agent-play/web-ui",
     "dev": "npm run dev -w @agent-play/web-ui",
     "test": "npm run test --workspaces --if-present",
     "example": "npm run example -w @agent-play/sdk",
-    "example:02": "npm run example:02 -w @agent-play/sdk"
+    "example:02": "npm run example:02 -w @agent-play/sdk",
+    "deploy": "bash k8s/deploy.sh"
   },
   "engines": {
     "node": ">=20"
@@ -25,6 +28,7 @@
   "devDependencies": {
     "concurrently": "^9.1.2",
     "cross-env": "^7.0.3",
-    "tsx": "^4.21.0"
+    "tsx": "^4.21.0",
+    "typedoc": "^0.26.11"
   }
 }

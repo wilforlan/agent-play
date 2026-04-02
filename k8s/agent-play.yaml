@@ -1,0 +1,236 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: wilforlan-agent-play
+  labels:
+    app.kubernetes.io/name: wilforlan-agent-play
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: wilforlan-agent-play-config
+  labels:
+    app.kubernetes.io/name: wilforlan-agent-play
+    app.kubernetes.io/component: config
+data:
+  PLAY_PREVIEW_BASE_URL: "http://68.183.166.100:8888"
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: wilforlan-agent-play-redis-data
+  labels:
+    app.kubernetes.io/name: wilforlan-agent-play
+    app.kubernetes.io/component: redis
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: wilforlan-agent-play-redis
+  labels:
+    app.kubernetes.io/name: wilforlan-agent-play
+    app.kubernetes.io/component: redis
+spec:
+  revisionHistoryLimit: 5
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  replicas: 1
+  selector:
+    matchLabels:
+      app: wilforlan-agent-play-redis
+  template:
+    metadata:
+      labels:
+        app: wilforlan-agent-play-redis
+        app.kubernetes.io/name: wilforlan-agent-play
+        app.kubernetes.io/component: redis
+    spec:
+      securityContext:
+        fsGroup: 999
+      containers:
+        - name: redis
+          image: redis:7.2-alpine
+          imagePullPolicy: IfNotPresent
+          args: ["redis-server", "--appendonly", "yes"]
+          ports:
+            - name: redis
+              containerPort: 6379
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: "1"
+              memory: 512Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: false
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: data
+              mountPath: /data
+          livenessProbe:
+            exec:
+              command: ["redis-cli", "ping"]
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            exec:
+              command: ["redis-cli", "ping"]
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: wilforlan-agent-play-redis-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: wilforlan-agent-play-redis
+  labels:
+    app.kubernetes.io/name: wilforlan-agent-play
+    app.kubernetes.io/component: redis
+spec:
+  type: ClusterIP
+  selector:
+    app: wilforlan-agent-play-redis
+  ports:
+    - name: redis
+      port: 6379
+      targetPort: redis
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: wilforlan-agent-play-web-ui
+  labels:
+    app.kubernetes.io/name: wilforlan-agent-play
+    app.kubernetes.io/component: web-ui
+spec:
+  revisionHistoryLimit: 5
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  progressDeadlineSeconds: 600
+  replicas: 1
+  selector:
+    matchLabels:
+      app: wilforlan-agent-play-web-ui
+  template:
+    metadata:
+      labels:
+        app: wilforlan-agent-play-web-ui
+        app.kubernetes.io/name: wilforlan-agent-play
+        app.kubernetes.io/component: web-ui
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        runAsGroup: 1001
+        fsGroup: 1001
+      initContainers:
+        - name: wait-for-redis
+          image: busybox:1.36
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            runAsUser: 65534
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            requests:
+              cpu: 10m
+              memory: 8Mi
+            limits:
+              cpu: 100m
+              memory: 32Mi
+          command:
+            - sh
+            - -c
+            - "until nc -z wilforlan-agent-play-redis 6379; do sleep 1; done"
+      containers:
+        - name: web-ui
+          image: agent-play-web-ui:latest
+          imagePullPolicy: Always
+          ports:
+            - name: http
+              containerPort: 8888
+          env:
+            - name: PORT
+              value: "8888"
+            - name: HOSTNAME
+              value: "0.0.0.0"
+            - name: NODE_ENV
+              value: production
+            - name: REDIS_URL
+              value: redis://wilforlan-agent-play-redis:6379
+            - name: PLAY_PREVIEW_BASE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: wilforlan-agent-play-config
+                  key: PLAY_PREVIEW_BASE_URL
+            - name: NEXT_PUBLIC_AGENT_PLAY_BASE
+              value: /agent-play
+            - name: NEXT_PUBLIC_PLAY_API_BASE
+              value: /agent-play
+          resources:
+            requests:
+              cpu: 100m
+              memory: 512Mi
+            limits:
+              cpu: "2"
+              memory: 1536Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: false
+            capabilities:
+              drop: ["ALL"]
+          readinessProbe:
+            tcpSocket:
+              port: http
+            initialDelaySeconds: 20
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 6
+          livenessProbe:
+            tcpSocket:
+              port: http
+            initialDelaySeconds: 60
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 3
+      terminationGracePeriodSeconds: 30
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: wilforlan-agent-play-web-ui
+  labels:
+    app.kubernetes.io/name: wilforlan-agent-play
+    app.kubernetes.io/component: web-ui
+spec:
+  type: ClusterIP
+  selector:
+    app: wilforlan-agent-play-web-ui
+  ports:
+    - name: http
+      port: 8888
+      targetPort: http

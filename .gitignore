@@ -2,6 +2,7 @@ node_modules
 .env
 .env.local
 packages/*/.env.local
+docs/api-reference
 *-lock.json
 .next
 dist

@@ -1,10 +1,28 @@
 {
   "name": "@agent-play/play-ui",
-  "private": true,
+  "version": "0.0.1",
+  "description": "Vite-built watch canvas (Pixi.js) for Agent Play. Publishes static files under dist/ for self-hosting or embedding beside your own API.",
+  "private": false,
   "type": "module",
+  "files": [
+    "dist"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/wilforlan/agent-play.git",
+    "directory": "packages/play-ui"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "exports": {
+    "./dist/*": "./dist/*",
+    "./package.json": "./package.json"
+  },
   "scripts": {
     "build": "vite build",
     "dev": "vite",
+    "prepublishOnly": "npm run test && npm run build",
     "test": "vitest run"
   },
   "dependencies": {

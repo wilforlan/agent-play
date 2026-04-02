@@ -1,19 +1,34 @@
 #!/usr/bin/env node
+/**
+ * @packageDocumentation
+ * **agent-play** CLI: authenticate against the web UI, manage API keys and registered agents.
+ * Commands: `login`, `logout`, `create-key`, `view-keys`, `create`, `delete`.
+ * Default server URL comes from `AGENT_PLAY_SERVER_URL` or `http://127.0.0.1:3000`.
+ */
 import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
 
+/** Stored session after `login`: web UI origin and bearer token. */
 type Credentials = {
   serverUrl: string;
   token: string;
 };
 
+/**
+ * @returns Absolute path to `~/.agent-play/credentials.json`.
+ * @remarks **Callers:** {@link loadCredentials}, {@link saveCredentials}, {@link cmdLogout}. **Callees:** `path.join`, `homedir`.
+ */
 function credentialsPath(): string {
   return join(homedir(), ".agent-play", "credentials.json");
 }
 
+/**
+ * Reads saved credentials, or `null` if missing or invalid.
+ * @remarks **Callers:** `cmdCreateKey`, `cmdViewKeys`, `cmdCreate`, `cmdDelete`. **Callees:** `readFile`, `JSON.parse`.
+ */
 async function loadCredentials(): Promise<Credentials | null> {
   try {
     const raw = await readFile(credentialsPath(), "utf8");
@@ -29,6 +44,10 @@ async function loadCredentials(): Promise<Credentials | null> {
   }
 }
 
+/**
+ * Persists credentials to disk (creates `~/.agent-play` if needed).
+ * @remarks **Callers:** {@link cmdLogin}. **Callees:** `mkdir`, `writeFile`.
+ */
 async function saveCredentials(c: Credentials): Promise<void> {
   const dir = join(homedir(), ".agent-play");
   await mkdir(dir, { recursive: true });
@@ -39,10 +58,18 @@ async function saveCredentials(c: Credentials): Promise<void> {
   );
 }
 
+/**
+ * @returns `AGENT_PLAY_SERVER_URL` or `http://127.0.0.1:3000`.
+ * @remarks **Callers:** {@link cmdLogin} prompt default.
+ */
 function defaultServerUrl(): string {
   return process.env.AGENT_PLAY_SERVER_URL ?? "http://127.0.0.1:3000";
 }
 
+/**
+ * Interactive sign-up or sign-in; writes {@link Credentials} via {@link saveCredentials}.
+ * @remarks **Callers:** {@link main} when argv is `login`. **Callees:** `fetch` to `/api/auth/lookup`, `/login`, `/register`.
+ */
 async function cmdLogin(): Promise<void> {
   const rl = createInterface({ input, output });
   const serverUrl = (
@@ -139,6 +166,10 @@ async function cmdLogin(): Promise<void> {
   console.log(`Signed in. Credentials saved to ${credentialsPath()}`);
 }
 
+/**
+ * Deletes the credentials file if present.
+ * @remarks **Callers:** {@link main} when argv is `logout`. **Callees:** `unlink`.
+ */
 async function cmdLogout(): Promise<void> {
   try {
     await unlink(credentialsPath());
@@ -148,6 +179,10 @@ async function cmdLogout(): Promise<void> {
   }
 }
 
+/**
+ * Prints stdout guidance for wiring LangChain agents to the map after `create`.
+ * @remarks **Callers:** {@link cmdCreate} only. **Callees:** `console.log`.
+ */
 function printAgentPlayIntegrationGuide(): void {
   console.log("");
   console.log("How your agent appears on the play world");
@@ -170,6 +205,10 @@ function printAgentPlayIntegrationGuide(): void {
   console.log("");
 }
 
+/**
+ * POSTs to `/api/agents/api-key` to mint a new account API key (shown once).
+ * @remarks **Callers:** {@link main}. **Callees:** {@link loadCredentials}, `fetch`.
+ */
 async function cmdCreateKey(): Promise<void> {
   const cred = await loadCredentials();
   if (cred === null) {
@@ -207,6 +246,10 @@ async function cmdCreateKey(): Promise<void> {
   console.log("");
 }
 
+/**
+ * GETs `/api/agents/api-key` to report whether a key exists (never prints the secret).
+ * @remarks **Callers:** {@link main}. **Callees:** {@link loadCredentials}, `fetch`.
+ */
 async function cmdViewKeys(): Promise<void> {
   const cred = await loadCredentials();
   if (cred === null) {
@@ -240,6 +283,10 @@ async function cmdViewKeys(): Promise<void> {
   }
 }
 
+/**
+ * POSTs `/api/agents` to register a named agent; prints `agentId` and {@link printAgentPlayIntegrationGuide}.
+ * @remarks **Callers:** {@link main}. **Callees:** {@link loadCredentials}, `fetch`, {@link printAgentPlayIntegrationGuide}.
+ */
 async function cmdCreate(): Promise<void> {
   const cred = await loadCredentials();
   if (cred === null) {
@@ -283,6 +330,10 @@ async function cmdCreate(): Promise<void> {
   console.log("");
 }
 
+/**
+ * Lists agents then DELETEs `/api/agents?id=` for user-picked id.
+ * @remarks **Callers:** {@link main}. **Callees:** {@link loadCredentials}, `fetch`, readline.
+ */
 async function cmdDelete(): Promise<void> {
   const cred = await loadCredentials();
   if (cred === null) {
@@ -347,6 +398,10 @@ async function cmdDelete(): Promise<void> {
   console.log(delJson.ok === true ? "Deleted." : "Not found.");
 }
 
+/**
+ * Dispatches on `process.argv[2]` to command handlers.
+ * @remarks **Callers:** top-level `void main()`. **Callees:** `cmdLogin`, `cmdLogout`, `cmdCreate`, `cmdCreateKey`, `cmdViewKeys`, `cmdDelete`.
+ */
 async function main(): Promise<void> {
   const cmd = process.argv[2];
   if (cmd === "login") {

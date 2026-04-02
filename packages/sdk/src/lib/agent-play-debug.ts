@@ -1,25 +1,59 @@
+/**
+ * Optional structured `console.debug` for SDK internals; gated by {@link configureAgentPlayDebug} or `AGENT_PLAY_DEBUG=1`.
+ */
 type DebugConfigure = {
+  /** When set, overrides environment: `true` forces debug on, `false` forces off. */
   debug?: boolean;
 };
 
+/**
+ * In-memory override for debug enablement (undefined = follow env only).
+ *
+ * @remarks **Writers:** {@link configureAgentPlayDebug}, {@link resetAgentPlayDebug}.
+ * **Readers:** {@link isAgentPlayDebugEnabled}.
+ */
 let configuredDebug: boolean | undefined;
 
+/**
+ * Sets whether SDK debug logging is enabled regardless of `AGENT_PLAY_DEBUG`.
+ *
+ * @param opts.debug - `true` / `false` to force; omit to clear override.
+ *
+ * @remarks **Callers:** tests and user code. **Callees:** none.
+ */
 export function configureAgentPlayDebug(opts: DebugConfigure): void {
   configuredDebug = opts.debug ?? undefined;
 }
 
+/**
+ * Clears the in-memory override so only `AGENT_PLAY_DEBUG` applies.
+ *
+ * @remarks **Callers:** tests. **Callees:** none.
+ */
 export function resetAgentPlayDebug(): void {
   configuredDebug = undefined;
 }
 
+/**
+ * @returns Whether debug logging should run: override wins, else `AGENT_PLAY_DEBUG === "1"`.
+ *
+ * @remarks **Callers:** {@link agentPlayDebug}. **Callees:** `process.env` read.
+ */
 export function isAgentPlayDebugEnabled(): boolean {
   if (configuredDebug === false) return false;
   if (configuredDebug === true) return true;
   return process.env.AGENT_PLAY_DEBUG === "1";
 }
 
+/** Max length of JSON detail string before truncation in {@link safeSerialize}. */
 const MAX_JSON_LENGTH = 2000;
 
+/**
+ * Serializes `detail` for log lines, truncating long JSON and handling circular refs.
+ *
+ * @internal
+ * @remarks **Callers:** {@link agentPlayDebug} only. **Callees:** `JSON.stringify` with replacer.
+ */
 function safeSerialize(detail: unknown): string {
   if (detail === undefined) return "";
   try {
@@ -41,6 +75,15 @@ function safeSerialize(detail: unknown): string {
   }
 }
 
+/**
+ * Emits `console.debug` when {@link isAgentPlayDebugEnabled} is true.
+ *
+ * @param scope - Short label (e.g. `"langchain"`).
+ * @param message - Human-readable message.
+ * @param detail - Optional object serialized by {@link safeSerialize}.
+ *
+ * @remarks **Callers:** {@link langchainRegistration} and other SDK modules. **Callees:** {@link isAgentPlayDebugEnabled}, {@link safeSerialize}.
+ */
 export function agentPlayDebug(
   scope: string,
   message: string,

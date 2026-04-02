@@ -1,0 +1,31 @@
+# Build from repository root:
+#   docker build -f k8s/Dockerfile.web-ui -t agent-play-web-ui .
+#
+# Runs the same custom server as production (server.ts: Next + WebSocket on /ws/agent-play).
+FROM node:20-bookworm-slim AS builder
+WORKDIR /app
+ENV NEXT_TELEMETRY_DISABLED=1
+COPY package.json package-lock.json ./
+COPY packages ./packages
+RUN npm ci
+ENV NODE_ENV=production
+ARG NEXT_PUBLIC_AGENT_PLAY_BASE=/agent-play
+ARG NEXT_PUBLIC_PLAY_API_BASE=/agent-play
+ENV NEXT_PUBLIC_AGENT_PLAY_BASE=$NEXT_PUBLIC_AGENT_PLAY_BASE
+ENV NEXT_PUBLIC_PLAY_API_BASE=$NEXT_PUBLIC_PLAY_API_BASE
+RUN npm run build -w @agent-play/web-ui
+RUN npm prune --omit=dev
+
+FROM node:20-bookworm-slim AS runner
+WORKDIR /app
+ENV NODE_ENV=production
+ENV PORT=8888
+ENV HOSTNAME=0.0.0.0
+ENV NEXT_TELEMETRY_DISABLED=1
+RUN addgroup --system --gid 1001 nodejs && adduser --system --uid 1001 nextjs
+COPY --from=builder --chown=nextjs:nodejs /app /app
+ENV PATH=/app/node_modules/.bin:$PATH
+WORKDIR /app/packages/web-ui
+USER nextjs
+EXPOSE 8888
+CMD ["tsx", "server.ts"]

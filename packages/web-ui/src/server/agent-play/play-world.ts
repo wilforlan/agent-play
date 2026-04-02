@@ -42,7 +42,7 @@ import {
 import type { RedisFanoutItem } from "./world-redis-sync.js";
 import { scheduleRedisWorldPersist } from "./world-redis-sync.js";
 import { buildWorldMapFromPlayers } from "./world-map.js";
-import { clampWorldPosition, type WorldBounds } from "./world-bounds.js";
+import { clampWorldPosition, type WorldBounds } from "@agent-play/sdk";
 import { MAX_AGENTS_PER_ACCOUNT } from "./account-limits.js";
 
 function sameToolNames(

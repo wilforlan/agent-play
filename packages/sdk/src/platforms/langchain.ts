@@ -1,8 +1,21 @@
+/**
+ * LangChain adapter: derives tool names and assist metadata from a LangChain agent for
+ * {@link import("../public-types.js").LangChainAgentRegistration}.
+ *
+ * @remarks **Primary export:** {@link langchainRegistration}. Private helpers build error strings and
+ * `AssistToolSpec` rows from Zod schemas when available.
+ */
 import { agentPlayDebug } from "../lib/agent-play-debug.js";
 import type { AssistToolSpec, LangChainAgentRegistration } from "../public-types.js";
 
+/** Required tool name enforced by the watch UI contract. */
 const CHAT_TOOL = "chat_tool";
 
+/**
+ * Error text when the agent has no `tools` array.
+ *
+ * @remarks **Callers:** {@link langchainRegistration}. **Callees:** none.
+ */
 function formatMissingAgentToolsError(): string {
   return [
     "langchainRegistration: expected a LangChain agent with a tools array.",
@@ -12,6 +25,11 @@ function formatMissingAgentToolsError(): string {
   ].join("\n");
 }
 
+/**
+ * Error text when `chat_tool` is missing from tool names.
+ *
+ * @remarks **Callers:** {@link langchainRegistration}. **Callees:** none.
+ */
 function formatMissingChatToolError(): string {
   return [
     "langchainRegistration: missing required tool \"chat_tool\".",
@@ -23,6 +41,11 @@ function formatMissingChatToolError(): string {
   ].join("\n");
 }
 
+/**
+ * Best-effort parameter shape from a Zod object schema’s `shape()` for UI hints.
+ *
+ * @remarks **Callers:** {@link describeTool}. **Callees:** none.
+ */
 function parametersFromSchema(schema: unknown): Record<string, unknown> {
   if (schema === null || typeof schema !== "object") {
     return {};
@@ -41,6 +64,11 @@ function parametersFromSchema(schema: unknown): Record<string, unknown> {
   return out;
 }
 
+/**
+ * Builds an {@link AssistToolSpec} from a LangChain tool descriptor.
+ *
+ * @remarks **Callers:** {@link langchainRegistration} for `assist_*` tools only. **Callees:** {@link parametersFromSchema}.
+ */
 function describeTool(t: {
   name: string;
   description?: string;
@@ -56,6 +84,13 @@ function describeTool(t: {
   };
 }
 
+/**
+ * Reads `agent.tools` or `agent.options.tools` from common LangChain agent shapes.
+ *
+ * @returns The tools array, or `null` if not found.
+ *
+ * @remarks **Callers:** {@link langchainRegistration} only. **Callees:** none.
+ */
 function extractToolsArray(agent: unknown): unknown[] | null {
   if (typeof agent !== "object" || agent === null) {
     return null;
@@ -79,6 +114,16 @@ function extractToolsArray(agent: unknown): unknown[] | null {
   return null;
 }
 
+/**
+ * Validates a LangChain-style agent exposes tools (including required `chat_tool`) and returns
+ * a {@link LangChainAgentRegistration} for `addPlayer`.
+ *
+ * @param agent - Return value from `createAgent` (or equivalent) with a `tools` array.
+ * @throws Error if tools are missing or `chat_tool` is not present.
+ *
+ * @remarks **Callers:** user code before `RemotePlayWorld.addPlayer`. **Callees:** {@link extractToolsArray},
+ * {@link formatMissingAgentToolsError}, {@link formatMissingChatToolError}, {@link describeTool}, {@link agentPlayDebug}.
+ */
 export function langchainRegistration(
   agent: unknown
 ): LangChainAgentRegistration {

@@ -90,6 +90,9 @@ The **SDK** (`packages/sdk`, npm name `@agent-play/sdk`) exposes `RemotePlayWorl
 |----------|----------------|
 | **[Development guide](docs/development.md)** | Install, env templates, run web UI + Redis + examples, troubleshooting |
 | **[Documentation index](docs/README.md)** | Overview, monorepo, SDK, play UI, Redis, CLI, API keys |
+| **[API reference](docs/api-reference.md)** | TypeDoc HTML (local + GitHub Pages), SDK and CLI |
+| **[Kubernetes deployment](docs/kubernetes-deployment.md)** | Index; [docs/k8s/](docs/k8s/README.md) for startup, Redis, web server |
+| **[npm & CI](docs/npm-and-ci.md)** | Publishing `@agent-play/*`, workflows |
 | **[Pending feature backlog](docs/pending-features.md)** | Long-form roadmap themes |
 | **[Examples](packages/sdk/examples/README.md)** | Scripts: one player and two players against the running web UI |
 
@@ -103,6 +106,8 @@ npm install
 npm run dev             # @agent-play/web-ui (watch at /agent-play/watch)
 npm run build:web-ui    # production build of the web app
 npm run build:cli       # `agent-play` CLI into packages/cli/dist
+npm run build:play-ui   # static watch bundle (`@agent-play/play-ui`)
+npm run docs:api        # TypeDoc HTML to docs/api-reference/ (gitignored)
 npm run example         # SDK example 01 (needs web-ui running and env configured)
 npm test
 ```

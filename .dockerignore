@@ -1,0 +1,15 @@
+node_modules
+.git
+.gitignore
+.next
+**/.next
+dist
+**/dist
+*.md
+!packages/web-ui/**/*.md
+.DS_Store
+coverage
+.env
+.env.local
+packages/*/.env.local
+image.png

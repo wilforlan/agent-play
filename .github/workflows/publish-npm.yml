@@ -1,0 +1,37 @@
+name: Publish npm packages
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          registry-url: "https://registry.npmjs.org"
+      - run: npm ci
+      - name: Build packages
+        run: |
+          npm run build -w @agent-play/sdk
+          npm run build -w @agent-play/cli
+          npm run build -w @agent-play/play-ui
+      - name: Publish @agent-play/sdk
+        run: npm publish -w @agent-play/sdk --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      - name: Publish @agent-play/cli
+        run: npm publish -w @agent-play/cli --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      - name: Publish @agent-play/play-ui
+        run: npm publish -w @agent-play/play-ui --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

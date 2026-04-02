@@ -1,10 +1,22 @@
 {
   "name": "@agent-play/cli",
   "version": "0.0.1",
-  "private": true,
+  "description": "Command-line tool for Agent Play: login, API keys, and agent registration against the web UI.",
+  "private": false,
   "type": "module",
   "bin": {
     "agent-play": "./dist/cli.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/wilforlan/agent-play.git",
+    "directory": "packages/cli"
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "scripts": {
     "build": "tsup src/cli.ts --format esm --platform node --target node20 --out-dir dist --clean"

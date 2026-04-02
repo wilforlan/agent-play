@@ -1,3 +1,20 @@
+/**
+ * @packageDocumentation
+ * **@agent-play/play-ui** watch canvas (`main.ts`): single-page Pixi.js scene for the multiverse preview.
+ *
+ * **Lifecycle**
+ * 1. {@link bootstrap} (exported) runs on load: reads `sid`, {@link loadSnapshot}, {@link connectSse}, starts Pixi {@link createPixiPreview}.
+ * 2. **Tick loop** — {@link onTick} advances avatar motion; {@link onFrame} runs after physics.
+ * 3. **SSE** — `world:journey`, `world:interaction`, etc. update {@link applyJourneyUpdate} and chat.
+ *
+ * **Major collaborators (imported)**
+ * - `@play-sdk/lib/world-bounds` — {@link clampWorldPosition} for joystick.
+ * - `./pixi-multiverse` — WebGL app wrapper.
+ * - `./structure-art` — vector drawings for home, tools, vendor stalls, MCP stores.
+ * - `./preview-*` — DOM chat, settings, debug UI layered over the canvas.
+ *
+ * **Module state** — File-scope `let` blocks hold map bounds, palette, agent/structure node maps, SSE handle, and Pixi handles (see comments above each cluster).
+ */
 import { Color, Container, Graphics, Text } from "pixi.js";
 import { nextAvatarMotion } from "./avatar-anim.js";
 import { buildCrowdLayer } from "./crowd-draw.js";
@@ -97,6 +114,7 @@ const HOME_FRONT_OFFSET_WY = 0.22;
 const PREVIEW_AGENT_CHAT_MARGIN_PX = 6;
 const PREVIEW_AGENT_CHAT_GAP_PX = 8;
 
+/** Snapshot structure row (subset of server JSON). */
 type Structure = {
   id: string;
   x: number;
@@ -151,10 +169,17 @@ type WorldMapJson = {
   structures: (Structure & { playerId?: string })[];
 };
 
+type SnapshotMcpRegistration = {
+  id: string;
+  name: string;
+  url?: string;
+};
+
 type Snapshot = {
   sid: string;
   players: PlayerRow[];
   worldMap?: WorldMapJson;
+  mcpServers?: SnapshotMcpRegistration[];
 };
 
 type AgentVisual = {
@@ -168,6 +193,10 @@ type StructureVisual = {
   caption: Text;
 };
 
+/**
+ * Reads `?sid=` from the page URL (required for API calls).
+ * @remarks **Callers:** {@link bootstrap}, {@link loadSnapshot}, {@link connectSse}. **Callees:** `URLSearchParams`.
+ */
 function getSid(): string | null {
   return new URLSearchParams(location.search).get("sid");
 }
@@ -180,8 +209,13 @@ let cellScale = CELL;
 let worldOriginScreenY = VIEW_H - WORLD_BOTTOM_MARGIN - 8 * CELL;
 let gridBounds: WorldMapJson["bounds"] | null = null;
 
+/** Active theme colors; updated when theme changes. */
 let palette: MultiversePalette = mergeMultiversePalette({});
 
+/**
+ * Stores grid bounds and recomputes scale/origin so the map fits the fixed view size.
+ * @remarks **Callers:** {@link loadSnapshot}, theme rebuilds. **Callees:** none.
+ */
 function applyBounds(bounds: WorldMapJson["bounds"]): void {
   gridBounds = bounds;
   const pad = 1;
@@ -201,6 +235,10 @@ function applyBounds(bounds: WorldMapJson["bounds"]): void {
   worldOriginScreenY = maxBottom - h * cellScale;
 }
 
+/**
+ * Maps world grid coordinates to Pixi screen pixels (Y flipped so +y is “north” on screen).
+ * @remarks **Callers:** drawing, {@link getAgentHeroAnchorScreen}, proximity. **Callees:** none.
+ */
 function worldToScreen(wx: number, wy: number): { x: number; y: number } {
   return {
     x: ORIGIN_X + (wx - mapMinX) * cellScale,
@@ -208,6 +246,10 @@ function worldToScreen(wx: number, wy: number): { x: number; y: number } {
   };
 }
 
+/**
+ * @returns {@link WorldBounds} for {@link clampWorldPosition}, or `null` before first snapshot.
+ * @remarks **Callers:** {@link setWaypoints}, {@link loadSnapshot}, joystick. **Callees:** none.
+ */
 function getWorldBoundsForClamp(): WorldBounds | null {
   if (gridBounds === null) return null;
   return { minX: mapMinX, minY: mapMinY, maxX: mapMaxX, maxY: mapMaxY };
@@ -230,12 +272,21 @@ const walkPhaseByPlayer = new Map<string, number>();
 const facingByPlayer = new Map<string, AvatarFacing>();
 const movingByPlayer = new Map<string, boolean>();
 
+/** Latest RPC snapshot; drives rendering and chat. */
 let snapshot: Snapshot | null = null;
 
+/**
+ * @returns `__human__` id when snapshot exists (viewer-controlled pawn), else `null`.
+ * @remarks **Callers:** keyboard handlers. **Callees:** none.
+ */
 function getHumanPlayerId(): string | null {
   return snapshot === null ? null : HUMAN_VIEWER_PLAYER_ID;
 }
 
+/**
+ * Updates arrow-key state for {@link onTick} human movement.
+ * @remarks **Callers:** {@link onDocumentKeyDown}, {@link onDocumentKeyUp}. **Callees:** none.
+ */
 function setArrowKey(key: string, down: boolean): void {
   if (key === "ArrowUp") arrowKeys.up = down;
   else if (key === "ArrowDown") arrowKeys.down = down;
@@ -243,6 +294,10 @@ function setArrowKey(key: string, down: boolean): void {
   else if (key === "ArrowRight") arrowKeys.right = down;
 }
 
+/**
+ * POSTs proximity intent (assist/chat/zone/yield) to the host.
+ * @remarks **Callers:** {@link onDocumentKeyDown}. **Callees:** `fetch`.
+ */
 async function sendProximityAction(
   toPlayerId: string,
   action: ProximityActionKind
@@ -266,6 +321,10 @@ async function sendProximityAction(
   }
 }
 
+/**
+ * Routes arrow keys to movement and letter keys to proximity when an agent partner is targeted.
+ * @remarks **Callers:** `document` listener from {@link bootstrap}. **Callees:** {@link setArrowKey}, {@link sendProximityAction}.
+ */
 function onDocumentKeyDown(e: KeyboardEvent): void {
   const inField =
     e.target instanceof HTMLInputElement ||
@@ -292,6 +351,10 @@ function onDocumentKeyDown(e: KeyboardEvent): void {
   void sendProximityAction(partner, act);
 }
 
+/**
+ * Releases arrow keys for human movement.
+ * @remarks **Callers:** `document` listener. **Callees:** {@link setArrowKey}.
+ */
 function onDocumentKeyUp(e: KeyboardEvent): void {
   if (
     e.key === "ArrowUp" ||
@@ -326,6 +389,10 @@ let joystickHandle: ReturnType<typeof createPreviewDebugJoystick> | null = null;
 let previewBootstrapStarted = false;
 let previewBootstrapLock: Promise<void> | null = null;
 
+/**
+ * Resolves a stable display name for chat labels (“You” for the human viewer).
+ * @remarks **Callers:** chat overlays, {@link pushInteractionToChat}. **Callees:** none.
+ */
 function playerDisplayName(playerId: string): string {
   if (playerId === HUMAN_VIEWER_PLAYER_ID) return "You";
   return (
@@ -333,6 +400,10 @@ function playerDisplayName(playerId: string): string {
   );
 }
 
+/**
+ * Appends one SSE interaction line and refreshes the DOM chat panel.
+ * @remarks **Callers:** {@link connectSse}. **Callees:** {@link appendChatLogLine}, {@link playerDisplayName}, `refreshPreviewChat`.
+ */
 function pushInteractionToChat(
   playerId: string,
   role: string,
@@ -349,6 +420,10 @@ function pushInteractionToChat(
   refreshPreviewChat();
 }
 
+/**
+ * Rebuilds chat state from a fresh snapshot (players + assist metadata).
+ * @remarks **Callers:** {@link loadSnapshot}. **Callees:** {@link resetChatLogFromSnapshot}, overlays.
+ */
 function hydrateChatFromSnapshot(s: Snapshot): void {
   resetChatLogFromSnapshot(s);
   agentChatOverlays?.syncPlayerIds(s.players.map((p) => p.playerId));
@@ -356,6 +431,10 @@ function hydrateChatFromSnapshot(s: Snapshot): void {
   refreshPreviewChat();
 }
 
+/**
+ * Places MCP “store” nodes along the back row of the bounds.
+ * @remarks **Callers:** {@link collectStructuresForRender}. **Callees:** none.
+ */
 function mcpStoreWorldPositions(
   bounds: WorldMapJson["bounds"],
   count: number
@@ -373,6 +452,10 @@ function mcpStoreWorldPositions(
   return out;
 }
 
+/**
+ * Merges per-player structures, world map, and synthetic `mcp:*` structures for one render pass.
+ * @remarks **Callers:** {@link syncStructureNodes}, {@link getPlayerHomeCell}, etc. **Callees:** {@link mcpStoreWorldPositions}.
+ */
 function collectStructuresForRender(s: Snapshot): Structure[] {
   const byId = new Map<string, Structure>();
   for (const pl of s.players) {
