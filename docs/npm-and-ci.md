@@ -27,7 +27,7 @@ Or `npm run build` to run all four build steps.
 
 1. Bump `version` in each package you are publishing (`packages/sdk/package.json`, etc.).
 2. `npm login` to npm.
-3. From the repo root, after `npm ci` and builds:
+3. From the repo root, after `npm install` and builds:
 
 ```bash
 npm publish -w @agent-play/sdk --access public
