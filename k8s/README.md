@@ -34,7 +34,7 @@ From the **repository root**:
 
 Optional: `REGISTRY`, `IMAGE_NAME`, `TAG` (defaults to short git SHA).
 
-Bump **`newTag`** in **`kustomization.yaml`** to the tag you pushed ( **`newName`** is already **`ghcr.io/wilforlan/agent-play-web-ui`**).
+After a successful push, the script runs **`scripts/update-kustomization-image.py`** to set **`k8s/kustomization.yaml`** **`images[0].newName`** and **`newTag`** to **`${REGISTRY}/${IMAGE_NAME}`** and the built tag (falls back to **`sed`** if **`python3`** or the script is missing).
 
 ## Deploy on the server (rollout, rollback, updates)
 

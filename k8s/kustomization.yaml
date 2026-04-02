@@ -10,4 +10,4 @@ commonAnnotations:
 images:
   - name: agent-play-web-ui
     newName: ghcr.io/wilforlan/agent-play-web-ui
-    newTag: "0.0.1"
+    newTag: "0.0.0" # updated with scripts/update-kustomization-image.py

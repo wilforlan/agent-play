@@ -27,7 +27,7 @@ Optional: `REGISTRY` (defaults to **`ghcr.io/wilforlan`**), `IMAGE_NAME`, `TAG`.
 
 ## 3. Point Kustomize at that image tag
 
-Edit [`k8s/kustomization.yaml`](../../k8s/kustomization.yaml): set **`images[0].newTag`** to the tag you pushed. **`newName`** is **`ghcr.io/wilforlan/agent-play-web-ui`**.
+[`k8s/build-push-web-ui.sh`](../../k8s/build-push-web-ui.sh) updates [`k8s/kustomization.yaml`](../../k8s/kustomization.yaml) **`images[0].newName`** and **`newTag`** after each push. Override **`REGISTRY`** / **`IMAGE_NAME`** / **`TAG`** if needed.
 
 ## 4. Apply and roll out
 

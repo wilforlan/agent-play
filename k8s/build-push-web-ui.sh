@@ -42,8 +42,39 @@ echo "Pushing ${FULL_IMAGE} and ${LATEST_IMAGE}"
 docker push "${FULL_IMAGE}"
 docker push "${LATEST_IMAGE}"
 
+KUSTOMIZE_FILE="${ROOT}/k8s/kustomization.yaml"
+NEW_NAME="${REGISTRY}/${IMAGE_NAME}"
+
+update_kustomization() {
+  local kfile="$1"
+  local new_name="$2"
+  local new_tag="$3"
+  if [[ ! -f "$kfile" ]]; then
+    echo "warning: ${kfile} not found; skip kustomization update." >&2
+    return 1
+  fi
+  local py="${ROOT}/scripts/update-kustomization-image.py"
+  if command -v python3 >/dev/null 2>&1 && [[ -f "$py" ]]; then
+    if python3 "$py" --kustomization "$kfile" --new-name "$new_name" --new-tag "$new_tag"; then
+      return 0
+    fi
+    echo "warning: kustomization update via python3 failed; trying sed" >&2
+  fi
+  local tmp
+  tmp="$(mktemp)"
+  sed \
+    -e "s|^    newName: .*|    newName: ${new_name}|" \
+    -e "s|^    newTag: .*|    newTag: \"${new_tag}\"|" \
+    "$kfile" >"$tmp"
+  mv "$tmp" "$kfile"
+  return 0
+}
+
 echo ""
-echo "Update k8s/kustomization.yaml images[0].newTag to match this build (newName is ${REGISTRY}/${IMAGE_NAME}):"
-echo "  newTag: \"${TAG}\""
+if update_kustomization "$KUSTOMIZE_FILE" "$NEW_NAME" "$TAG"; then
+  echo "Updated ${KUSTOMIZE_FILE}: newName=${NEW_NAME}, newTag=\"${TAG}\""
+else
+  echo "Set manually in ${KUSTOMIZE_FILE}: newName: ${NEW_NAME}, newTag: \"${TAG}\""
+fi
 echo ""
 echo "Then on the server: npm run deploy -- apply"

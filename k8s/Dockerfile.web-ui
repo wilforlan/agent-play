@@ -7,7 +7,7 @@ WORKDIR /app
 ENV NEXT_TELEMETRY_DISABLED=1
 COPY package.json ./
 COPY packages ./packages
-RUN npm install
+RUN npm install --ignore-scripts
 ENV NODE_ENV=production
 ARG NEXT_PUBLIC_AGENT_PLAY_BASE=/agent-play
 ARG NEXT_PUBLIC_PLAY_API_BASE=/agent-play
