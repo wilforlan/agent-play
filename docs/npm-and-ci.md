@@ -39,7 +39,7 @@ npm publish -w @agent-play/play-ui --access public
 
 ## GitHub Actions
 
-Workflow [`.github/workflows/publish-npm.yml`](../.github/workflows/publish-npm.yml) runs on **`workflow_dispatch`** and on **`v*`** tags. Configure the **`NPM_TOKEN`** repository secret (automation token from npmjs.com with publish scope).
+Workflow [`.github/workflows/publish-npm.yml`](../.github/workflows/publish-npm.yml) runs on pushes to **`main`**, on **`v*`** tags, and on **`workflow_dispatch`**. Configure the **`NPM_TOKEN`** repository secret (automation token from npmjs.com with publish scope). **`npm publish`** fails if the version in each package’s `package.json` is already on the registry—bump versions before merging to **`main`** when you intend to release.
 
 ## API documentation (TypeDoc)
 
