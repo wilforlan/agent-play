@@ -86,11 +86,13 @@ The **SDK** (`packages/sdk`, npm name `@agent-play/sdk`) exposes `RemotePlayWorl
 
 ### Documentation (structured)
 
+**Browse the generated API docs on GitHub Pages:** **[https://wilforlan.github.io/agent-play/](https://wilforlan.github.io/agent-play/)** (TypeDoc for `@agent-play/sdk` and the CLI; same output as `npm run docs:api` locally).
+
 | Resource | What you get |
 |----------|----------------|
 | **[Development guide](docs/development.md)** | Install, env templates, run web UI + Redis + examples, troubleshooting |
 | **[Documentation index](docs/README.md)** | Overview, monorepo, SDK, play UI, Redis, CLI, API keys |
-| **[API reference](docs/api-reference.md)** | TypeDoc HTML (local + GitHub Pages), SDK and CLI |
+| **[API reference](docs/api-reference.md)** | TypeDoc HTML locally or on **[GitHub Pages](https://wilforlan.github.io/agent-play/)** — SDK and CLI |
 | **[Kubernetes deployment](docs/kubernetes-deployment.md)** | Index; [docs/k8s/](docs/k8s/README.md) for startup, Redis, web server |
 | **[npm & CI](docs/npm-and-ci.md)** | Publishing `@agent-play/*`, workflows |
 | **[Pending feature backlog](docs/pending-features.md)** | Long-form roadmap themes |
