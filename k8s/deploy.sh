@@ -1,14 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+K8S_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT="$(cd "${K8S_DIR}/.." && pwd)"
 cd "$ROOT"
 
-NAMESPACE="${NAMESPACE:-wilforlan-agent-play}"
-DEPLOY_WEB="${DEPLOY_WEB:-wilforlan-agent-play-web-ui}"
-DEPLOY_REDIS="${DEPLOY_REDIS:-wilforlan-agent-play-redis}"
-ROLLOUT_TIMEOUT_WEB="${ROLLOUT_TIMEOUT_WEB:-10m}"
-ROLLOUT_TIMEOUT_REDIS="${ROLLOUT_TIMEOUT_REDIS:-5m}"
+# shellcheck disable=SC1091
+source "${K8S_DIR}/rollout-config.sh"
 
 usage() {
   echo "usage: npm run deploy -- <command> [args]"
@@ -28,6 +26,15 @@ case "${1:-}" in
     usage
     exit 0
     ;;
+esac
+
+if ! command -v kubectl >/dev/null 2>&1; then
+  echo "kubectl: command not found." >&2
+  echo "Install Docker, kubectl, and related tools: bash k8s/setup.sh" >&2
+  exit 127
+fi
+
+case "${1:-}" in
   apply | update)
     kubectl apply -k k8s/
     kubectl rollout status "deployment/${DEPLOY_REDIS}" -n "${NAMESPACE}" --timeout="${ROLLOUT_TIMEOUT_REDIS}"
@@ -59,3 +66,4 @@ case "${1:-}" in
     exit 1
     ;;
 esac
+

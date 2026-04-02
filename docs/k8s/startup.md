@@ -5,9 +5,11 @@ Deploy **Redis** and the **web UI** (Next.js + WebSocket on `/ws/agent-play`) us
 ## Prerequisites
 
 - **Docker** to build and push the web UI image to **GHCR** (`ghcr.io/wilforlan`).
-- **kubectl** with Kustomize.
+- **kubectl** with Kustomize (`kubectl apply -k`).
 - A default **StorageClass** so the Redis PVC can bind.
 - Pull credentials on the cluster if the GHCR package is private.
+
+**Missing tools on a Linux server?** Run **`bash k8s/setup.sh`** or **`npm run setup:k8s-server`** (Linux only). It can install Docker, kubectl, git, and curl; prompt for **GHCR** and **`~/.agent-play-config/ghcr.env`**; optionally run **`build-push-web-ui.sh`**; check whether something is listening on port **8888** (see **`k8s/rollout-config.sh`**) and print **`http://<server-ip>:8888`** when it is; and offer a first **`kubectl apply`** via **`npm run deploy -- apply`** (same rollout defaults as **`k8s/deploy.sh`**).
 
 Commands assume the **repository root**.
 

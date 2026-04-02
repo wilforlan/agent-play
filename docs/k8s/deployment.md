@@ -1,6 +1,6 @@
 # Server deployment commands
 
-From the **repository root**, with **`kubectl`** pointing at the right cluster and namespace. The script is [`k8s/deploy.sh`](../../k8s/deploy.sh); **`npm run deploy`** invokes it.
+From the **repository root**, with **`kubectl`** pointing at the right cluster and namespace. The script is [`k8s/deploy.sh`](../../k8s/deploy.sh); **`npm run deploy`** invokes it. Default **`NAMESPACE`**, deployment names, timeouts, and **`APP_HTTP_PORT`** are defined once in [`k8s/rollout-config.sh`](../../k8s/rollout-config.sh) (also used by [`k8s/setup.sh`](../../k8s/setup.sh) for the first-deployment flow and port checks).
 
 ## Usage
 
@@ -32,6 +32,9 @@ Rollback, history, and restart apply to the **web UI** deployment. Redis is only
 | **`DEPLOY_REDIS`** | `wilforlan-agent-play-redis` | Redis Deployment name. |
 | **`ROLLOUT_TIMEOUT_WEB`** | `10m` | Timeout waiting on the web UI rollout. |
 | **`ROLLOUT_TIMEOUT_REDIS`** | `5m` | Timeout waiting on the Redis rollout. |
+| **`APP_HTTP_PORT`** | `8888` | Container and Service port for the web UI; used by **`k8s/setup.sh`** to detect a listener on the host and print **`http://<ip>:<port>`** (not passed to **`kubectl`** by **`deploy.sh`**). |
+
+Defaults are exported from **`k8s/rollout-config.sh`**; set these variables in the environment to override.
 
 Example:
 
