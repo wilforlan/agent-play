@@ -13,7 +13,8 @@
   },
   "files": [
     "dist",
-    "examples"
+    "examples",
+    "README.md"
   ],
   "author": "Isaac Williams",
   "license": "MIT",

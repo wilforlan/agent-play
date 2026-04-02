@@ -8,7 +8,7 @@ Published package names:
 | `@agent-play/cli` | `agent-play` CLI binary (`dist/cli.js`). |
 | `@agent-play/play-ui` | Static Vite bundle (`dist/`) for the watch canvas; consume files under `node_modules/@agent-play/play-ui/dist/` or serve the folder behind your API. |
 
-All three are **public** scoped packages (`publishConfig.access: public`).
+All three are **public** scoped packages (`publishConfig.access: public`). Each package directory includes a **`README.md`** (listed in `files` where applicable) so the npm registry and `npm pack` show install and doc links.
 
 ## Local build
 
