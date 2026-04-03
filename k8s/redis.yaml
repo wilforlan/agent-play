@@ -1,0 +1,96 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: wilforlan-agent-play-redis-data
+  labels:
+    app.kubernetes.io/name: wilforlan-agent-play
+    app.kubernetes.io/component: redis
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: wilforlan-agent-play-redis
+  labels:
+    app.kubernetes.io/name: wilforlan-agent-play
+    app.kubernetes.io/component: redis
+spec:
+  revisionHistoryLimit: 5
+  strategy:
+    type: Recreate
+  replicas: 1
+  selector:
+    matchLabels:
+      app: wilforlan-agent-play-redis
+  template:
+    metadata:
+      labels:
+        app: wilforlan-agent-play-redis
+        app.kubernetes.io/name: wilforlan-agent-play
+        app.kubernetes.io/component: redis
+    spec:
+      securityContext:
+        fsGroup: 999
+      containers:
+        - name: redis
+          image: public.ecr.aws/docker/library/redis:7.2-alpine
+          imagePullPolicy: IfNotPresent
+          command: ["redis-server"]
+          args: ["--appendonly", "yes"]
+          ports:
+            - name: redis
+              containerPort: 6379
+          resources:
+            requests:
+              cpu: 100m
+              memory: 64Mi
+            limits:
+              cpu: "500m"
+              memory: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: false
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: data
+              mountPath: /data
+          livenessProbe:
+            exec:
+              command: ["redis-cli", "ping"]
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            exec:
+              command: ["redis-cli", "ping"]
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: wilforlan-agent-play-redis-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: wilforlan-agent-play-redis
+  labels:
+    app.kubernetes.io/name: wilforlan-agent-play
+    app.kubernetes.io/component: redis
+spec:
+  type: ClusterIP
+  selector:
+    app: wilforlan-agent-play-redis
+  ports:
+    - name: redis
+      port: 6379
+      targetPort: redis

@@ -1,11 +1,11 @@
 # Redis on Kubernetes
 
-Resources are defined in [`k8s/agent-play.yaml`](../../k8s/agent-play.yaml) (PVC, Deployment, Service).
+Resources are defined in [`k8s/redis.yaml`](../../k8s/redis.yaml) (PVC, Deployment, Service).
 
 ## What gets created
 
 1. **PersistentVolumeClaim** `wilforlan-agent-play-redis-data` — **1Gi**, `ReadWriteOnce`. AOF data under `/data`.
-2. **Deployment** `wilforlan-agent-play-redis` — one replica, image **`redis:7.2-alpine`**, `redis-server --appendonly yes`, resource requests/limits, **exec** probes (`redis-cli ping`), **`fsGroup: 999`** for volume permissions with the official image user.
+2. **Deployment** `wilforlan-agent-play-redis` — one replica, **`Recreate`** strategy, image **`public.ecr.aws/docker/library/redis:7.2-alpine`**, `redis-server --appendonly yes`, resource requests/limits, **exec** probes (`redis-cli ping`), **`fsGroup: 999`** for volume permissions with the official image user.
 3. **Service** `wilforlan-agent-play-redis` — ClusterIP port **6379**.
 
 ## Web UI connection

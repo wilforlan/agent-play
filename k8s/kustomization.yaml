@@ -2,7 +2,9 @@ apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 namespace: wilforlan-agent-play
 resources:
-  - agent-play.yaml
+  - namespace.yaml
+  - redis.yaml
+  - web-ui.yaml
 commonLabels:
   app.kubernetes.io/part-of: wilforlan-agent-play
 commonAnnotations:
@@ -10,4 +12,7 @@ commonAnnotations:
 images:
   - name: agent-play-web-ui
     newName: ghcr.io/wilforlan/agent-play-web-ui
-    newTag: "0.0.0" # updated with scripts/update-kustomization-image.py
+    newTag: "888410e"
+# Private GHCR package (403 anonymous token): run ./k8s/create-ghcr-pull-secret.sh then uncomment:
+patches:
+  - path: patches/web-ui-ghcr-pull.yaml

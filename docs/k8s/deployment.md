@@ -20,8 +20,9 @@ Run **`npm run deploy`** with no arguments (or **`npm run deploy -- help`**) to 
 | **`rollback-to N`** | **`kubectl rollout undo`** for **`wilforlan-agent-play-web-ui`** with **`--to-revision=N`**, then waits. Use **`history`** to list revisions. |
 | **`history`** | **`kubectl rollout history deployment/wilforlan-agent-play-web-ui`** in the namespace. |
 | **`restart`** | **`kubectl rollout restart deployment/wilforlan-agent-play-web-ui`**, then waits for the rollout. |
+| **`clean`** [**`--yes`**] | Runs **`kubectl delete -k k8s/`**: removes the Agent Play **namespace** and all resources from this repo’s kustomization (including the Redis PVC). Prompts you to type the namespace name unless **`--yes`** is passed. |
 
-Rollback, history, and restart apply to the **web UI** deployment. Redis is only included in **`apply`** and **`status`**.
+Rollback, history, and restart apply to the **web UI** deployment. Redis is only included in **`apply`** and **`status`**. **`clean`** removes the whole stack.
 
 ## Environment
 

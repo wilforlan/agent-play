@@ -10,7 +10,7 @@ The detailed guide lives under **[`docs/k8s/`](k8s/README.md)**:
 | [Redis](k8s/redis.md) | PVC, Redis, Service, persistence |
 | [Web server](k8s/server.md) | Dockerfile, web UI, registry image |
 
-Manifests in **[`k8s/`](../k8s/)**: **`agent-play.yaml`**, **`kustomization.yaml`** (image **`ghcr.io/wilforlan/agent-play-web-ui`**), **`Dockerfile.web-ui`**, **`build-push-web-ui.sh`**, **`deploy.sh`**. From the repo root, **`npm run deploy -- apply`** (or **`rollback`**, **`status`**, etc.) runs **`deploy.sh`**.
+Manifests in **[`k8s/`](../k8s/)**: **`namespace.yaml`**, **`redis.yaml`**, **`web-ui.yaml`**, **`kustomization.yaml`** (image **`ghcr.io/wilforlan/agent-play-web-ui`**), **`Dockerfile.web-ui`**, **`build-push-web-ui.sh`**, **`deploy.sh`**. From the repo root, **`npm run deploy -- apply`** (or **`rollback`**, **`status`**, etc.) runs **`deploy.sh`**.
 
 ## Related
 

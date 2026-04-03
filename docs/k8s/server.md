@@ -15,7 +15,7 @@ Prefer [`k8s/build-push-web-ui.sh`](../../k8s/build-push-web-ui.sh), then **`npm
 
 ## Kubernetes
 
-Definition: [`k8s/agent-play.yaml`](../../k8s/agent-play.yaml) (Deployment + Service `wilforlan-agent-play-web-ui`), tuned via [`k8s/kustomization.yaml`](../../k8s/kustomization.yaml) for the **registry image**.
+Definition: [`k8s/web-ui.yaml`](../../k8s/web-ui.yaml) (Deployment + Service `wilforlan-agent-play-web-ui`), tuned via [`k8s/kustomization.yaml`](../../k8s/kustomization.yaml) for the **registry image**.
 
 | Piece | Role |
 |--------|------|

@@ -231,6 +231,46 @@ ghcr_login_interactive() {
   write_ghcr_env "$user" "$token"
 }
 
+enable_kustomize_ghcr_pull_patch_if_needed() {
+  local kfile="${K8S_DIR}/kustomization.yaml"
+  if grep -q '^  - path: patches/web-ui-ghcr-pull.yaml$' "$kfile"; then
+    echo "kustomization.yaml already applies patches/web-ui-ghcr-pull.yaml."
+    return 0
+  fi
+  local tmp
+  tmp="$(mktemp)"
+  if ! sed -e 's/^# patches:$/patches:/' -e 's/^#   - path: patches\/web-ui-ghcr-pull.yaml$/  - path: patches\/web-ui-ghcr-pull.yaml/' "$kfile" >"$tmp"; then
+    rm -f "$tmp"
+    return 1
+  fi
+  mv "$tmp" "$kfile"
+  echo "Enabled patches/web-ui-ghcr-pull.yaml in kustomization.yaml (imagePullSecrets: ghcr-pull)."
+}
+
+cluster_ghcr_pull_optional() {
+  if [[ ! -f "$GHCR_ENV" ]]; then
+    return 0
+  fi
+  if ! have_cmd kubectl; then
+    echo ""
+    echo "Saved GHCR credentials, but kubectl is missing. After installing kubectl, run:"
+    echo "  bash ${K8S_DIR}/create-ghcr-pull-secret.sh"
+    echo "  Then uncomment patches in k8s/kustomization.yaml (see k8s/README.md)."
+    return 0
+  fi
+  echo ""
+  if ! ask "Configure Kubernetes to pull the web UI image from ghcr.io (create ghcr-pull secret + enable kustomize patch)?"; then
+    echo "Skipped. Private GHCR images need this or a public package; see k8s/README.md."
+    return 0
+  fi
+  if ! bash "${K8S_DIR}/create-ghcr-pull-secret.sh"; then
+    echo "Cluster GHCR pull setup failed. Fix kubectl context and credentials, then run:" >&2
+    echo "  bash ${K8S_DIR}/create-ghcr-pull-secret.sh" >&2
+    return 0
+  fi
+  enable_kustomize_ghcr_pull_patch_if_needed
+}
+
 is_tcp_port_listening() {
   local port="$1"
   if [[ "$OS_NAME" == "Darwin" ]] && have_cmd lsof; then
@@ -361,6 +401,8 @@ fi
 
 echo ""
 ghcr_login_interactive
+
+cluster_ghcr_pull_optional
 
 echo ""
 if have_cmd docker && have_cmd git; then

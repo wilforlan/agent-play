@@ -14,6 +14,7 @@ The repository uses npm workspaces. **`packages/sdk`** is the Node.js package `@
 |----------|----------|
 | [Development guide](development.md) | Local setup, env templates, running the stack, troubleshooting |
 | [Kubernetes deployment](kubernetes-deployment.md) | Index; [`k8s/`](k8s/README.md) (startup, [deployment](k8s/deployment.md), Redis, server) |
+| [Notes / runbooks](notes/README.md) | Informal k8s debugging and session context ([Agent Play k8s debugging](notes/k8s-agent-play-debugging.md)) |
 | [npm & CI](npm-and-ci.md) | `@agent-play/sdk`, `@agent-play/cli`, `@agent-play/play-ui`, publish workflow, TypeDoc / GitHub Pages |
 | [API reference (generated)](api-reference.md) | How HTML docs are built and deployed |
 | [Pending feature backlog](pending-features.md) | Roadmap themes and scope notes |

@@ -1,8 +1,40 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# macOS: ensure Docker Desktop is running before push.
+# Apple Silicon → amd64 cluster: DOCKER_BUILD_PLATFORM=linux/amd64 ./k8s/build-push-web-ui.sh
+
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
+
+OS_NAME="$(uname -s)"
+
+have_cmd() {
+  command -v "$1" >/dev/null 2>&1
+}
+
+ensure_docker_ready() {
+  if ! have_cmd docker; then
+    echo "docker: command not found." >&2
+    if [[ "$OS_NAME" == "Darwin" ]]; then
+      echo "Install Docker Desktop (or run: brew install --cask docker), then start Docker.app." >&2
+    else
+      echo "Install Docker Engine, then re-run this script (or: bash k8s/setup.sh)." >&2
+    fi
+    exit 127
+  fi
+  if ! docker info >/dev/null 2>&1; then
+    echo "Docker is installed but the daemon is not reachable." >&2
+    if [[ "$OS_NAME" == "Darwin" ]]; then
+      echo "Start Docker Desktop and wait until it is running, then retry." >&2
+    else
+      echo "Start the Docker service (e.g. sudo systemctl start docker) or log in as a user in the docker group." >&2
+    fi
+    exit 1
+  fi
+}
+
+ensure_docker_ready
 
 CONFIG_DIR="${AGENT_PLAY_CONFIG_DIR:-$HOME/.agent-play-config}"
 GHCR_ENV="${CONFIG_DIR}/ghcr.env"
@@ -31,12 +63,20 @@ FULL_IMAGE="${REGISTRY}/${IMAGE_NAME}:${TAG}"
 LATEST_IMAGE="${REGISTRY}/${IMAGE_NAME}:latest"
 
 echo "Building ${FULL_IMAGE}"
+if [[ -n "${DOCKER_BUILD_PLATFORM:-}" ]]; then
+  echo "Using Docker platform: ${DOCKER_BUILD_PLATFORM} (set DOCKER_BUILD_PLATFORM=linux/amd64 on Apple Silicon if your cluster is amd64)"
+fi
 
-docker build \
-  -f k8s/Dockerfile.web-ui \
-  -t "${FULL_IMAGE}" \
-  -t "${LATEST_IMAGE}" \
-  .
+build_args=(
+  -f k8s/Dockerfile.web-ui
+  -t "${FULL_IMAGE}"
+  -t "${LATEST_IMAGE}"
+)
+if [[ -n "${DOCKER_BUILD_PLATFORM:-}" ]]; then
+  build_args+=(--platform "${DOCKER_BUILD_PLATFORM}")
+fi
+
+docker build "${build_args[@]}" .
 
 echo "Pushing ${FULL_IMAGE} and ${LATEST_IMAGE}"
 docker push "${FULL_IMAGE}"

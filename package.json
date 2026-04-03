@@ -23,6 +23,7 @@
     "example": "npm run example -w @agent-play/sdk",
     "example:02": "npm run example:02 -w @agent-play/sdk",
     "deploy": "bash k8s/deploy.sh",
+    "deploy:clean": "bash k8s/clean-cluster.sh",
     "version:packages": "node scripts/sync-package-versions.mjs",
     "setup:git-hooks": "bash scripts/setup-git-hooks.sh",
     "setup:k8s-server": "bash k8s/setup.sh"

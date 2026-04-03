@@ -17,6 +17,7 @@ usage() {
   echo "  rollback-to N    Roll web UI back to a specific revision (use history)"
   echo "  history          kubectl rollout history for web UI"
   echo "  restart          Rolling restart of the web UI pods only"
+  echo "  clean [--yes]    kubectl delete -k k8s/ (removes namespace and workloads; use --yes to skip confirm)"
   echo ""
   echo "Environment: NAMESPACE (default wilforlan-agent-play), DEPLOY_WEB, DEPLOY_REDIS, ROLLOUT_TIMEOUT_*; kubectl context must target the cluster."
 }
@@ -30,11 +31,16 @@ esac
 
 if ! command -v kubectl >/dev/null 2>&1; then
   echo "kubectl: command not found." >&2
-  echo "Install Docker, kubectl, and related tools: bash k8s/setup.sh" >&2
+  echo "Install tools with: npm run setup:k8s-server   (Linux and macOS)" >&2
+  echo "Or: bash k8s/setup.sh" >&2
   exit 127
 fi
 
 case "${1:-}" in
+  clean)
+    shift
+    bash "${K8S_DIR}/clean-cluster.sh" "$@"
+    ;;
   apply | update)
     kubectl apply -k k8s/
     kubectl rollout status "deployment/${DEPLOY_REDIS}" -n "${NAMESPACE}" --timeout="${ROLLOUT_TIMEOUT_REDIS}"
