@@ -16,7 +16,7 @@ ARG NEXT_PUBLIC_AGENT_PLAY_BASE=/agent-play
 ARG NEXT_PUBLIC_PLAY_API_BASE=/agent-play
 ENV NEXT_PUBLIC_AGENT_PLAY_BASE=$NEXT_PUBLIC_AGENT_PLAY_BASE
 ENV NEXT_PUBLIC_PLAY_API_BASE=$NEXT_PUBLIC_PLAY_API_BASE
-RUN npm run build -w @agent-play/web-ui
+RUN npx next build
 RUN npm prune --omit=dev
 
 FROM node:20-bookworm-slim AS runner

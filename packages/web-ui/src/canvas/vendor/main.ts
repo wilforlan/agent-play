@@ -8,7 +8,7 @@
  * 3. **SSE** — `world:journey`, `world:interaction`, etc. update {@link applyJourneyUpdate} and chat.
  *
  * **Major collaborators (imported)**
- * - `@play-sdk/lib/world-bounds` — {@link clampWorldPosition} for joystick.
+ * - `@agent-play/sdk` — {@link clampWorldPosition} for joystick.
  * - `./pixi-multiverse` — WebGL app wrapper.
  * - `./structure-art` — vector drawings for home, tools, vendor stalls, MCP stores.
  * - `./preview-*` — DOM chat, settings, debug UI layered over the canvas.
@@ -34,7 +34,7 @@ import {
 import {
   clampWorldPosition,
   type WorldBounds,
-} from "@play-sdk/lib/world-bounds.js";
+} from "@agent-play/sdk";
 import {
   appendChatLogLine,
   resetChatLogFromSnapshot,

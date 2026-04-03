@@ -12,7 +12,7 @@
     "types": ["vite/client"],
     "baseUrl": ".",
     "paths": {
-      "@play-sdk/lib/*": ["../sdk/src/lib/*"]
+      "@agent-play/sdk": ["../sdk/src/*"]
     }
   },
   "include": ["src/**/*.ts", "vite.config.ts"]
