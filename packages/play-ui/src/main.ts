@@ -62,6 +62,7 @@ import {
 } from "./preview-debug-joystick.js";
 import { createPreviewDebugPanel } from "./preview-debug-panel.js";
 import { createPixiPreview, type PixiPreviewHandle } from "./pixi-multiverse.js";
+import { attachMobileSidePanelControls } from "./preview-mobile-side-panels.js";
 import {
   createPreviewBottomBar,
   ensurePreviewLayoutStyles,
@@ -1120,8 +1121,12 @@ export function bootstrap(): void {
     const gameRow = document.createElement("div");
     gameRow.className = "preview-game-row";
 
+    const canvasStage = document.createElement("div");
+    canvasStage.className = "preview-canvas-stage";
+
     const leftCol = document.createElement("div");
     leftCol.className = "preview-game-col preview-game-col--left";
+    leftCol.id = "preview-side-left";
 
     const debugMount = document.createElement("div");
     debugMount.className = "preview-debug-mount";
@@ -1146,10 +1151,38 @@ export function bootstrap(): void {
     joystickWrap.className = "preview-joystick-wrap";
 
     canvasWrap.appendChild(canvasHost);
-    centerCol.append(canvasWrap, joystickWrap);
+
+    const mobileBackdrop = document.createElement("button");
+    mobileBackdrop.type = "button";
+    mobileBackdrop.className = "preview-mobile-side-backdrop";
+    mobileBackdrop.setAttribute("aria-label", "Close side panel");
+
+    const mobileToggles = document.createElement("div");
+    mobileToggles.className = "preview-mobile-side-toggles";
+    const toggleLeft = document.createElement("button");
+    toggleLeft.type = "button";
+    toggleLeft.className =
+      "preview-mobile-side-toggle preview-mobile-side-toggle--left";
+    toggleLeft.textContent = "Debug";
+    toggleLeft.setAttribute("aria-controls", "preview-side-left");
+    const toggleRight = document.createElement("button");
+    toggleRight.type = "button";
+    toggleRight.className =
+      "preview-mobile-side-toggle preview-mobile-side-toggle--right";
+    toggleRight.textContent = "Session";
+    toggleRight.setAttribute("aria-controls", "preview-side-right");
+    mobileToggles.append(toggleLeft, toggleRight);
+
+    centerCol.append(
+      canvasWrap,
+      joystickWrap,
+      mobileBackdrop,
+      mobileToggles
+    );
 
     const rightCol = document.createElement("div");
     rightCol.className = "preview-game-col preview-game-col--right";
+    rightCol.id = "preview-side-right";
 
     agentChatOverlays = createPreviewAgentChatOverlays({
       getSid,
@@ -1185,9 +1218,17 @@ export function bootstrap(): void {
     controlStack.append(proximityLegend);
     rightCol.appendChild(controlStack);
 
-    gameRow.append(leftCol, centerCol, rightCol);
+    canvasStage.append(leftCol, centerCol, rightCol);
+    gameRow.appendChild(canvasStage);
     gamePanel.appendChild(gameRow);
     shell.appendChild(gamePanel);
+
+    attachMobileSidePanelControls({
+      shell,
+      toggleLeft,
+      toggleRight,
+      backdrop: mobileBackdrop,
+    });
 
     worldLayer.addChild(gridGraphics);
     worldLayer.addChild(structureLayer);

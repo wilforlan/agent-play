@@ -14,7 +14,7 @@ export default function WatchBootstrap() {
     <div
       id="watch-root"
       style={{
-        minHeight: "100vh",
+        minHeight: "100dvh",
         background: "#0f172a",
         display: "flex",
         flexDirection: "column",
