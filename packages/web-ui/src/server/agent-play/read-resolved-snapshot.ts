@@ -9,6 +9,7 @@ export async function readResolvedSnapshot(options: {
   store: RedisSessionStore | null;
 }): Promise<PreviewSnapshotJson> {
   const { sid, world, store } = options;
+  await world.ensureHydratedFromRedisStore(store, sid);
   const live = world.getSnapshotJson();
   if (store === null) {
     return live;

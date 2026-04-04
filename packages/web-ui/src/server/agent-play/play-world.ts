@@ -318,6 +318,23 @@ export class PlayWorld {
     }
   }
 
+  async ensureHydratedFromRedisStore(
+    store: RedisSessionStore | null,
+    sid: string
+  ): Promise<void> {
+    if (this.playerOrder.length > 0) return;
+    if (store === null) return;
+    const cached = await store.getSnapshotJson();
+    if (
+      cached !== null &&
+      cached.sid === sid &&
+      Array.isArray(cached.players) &&
+      cached.players.length > 0
+    ) {
+      this.hydrateFromSnapshot(cached);
+    }
+  }
+
   private metadataFanout(): RedisFanoutItem[] {
     return [
       {
