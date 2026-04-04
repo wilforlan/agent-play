@@ -16,16 +16,18 @@ Screenshot of the live watch experience: grid, structures, avatars, path, and ch
 
 High-level themes on the roadmap and detail in **[Pending feature backlog](docs/pending-features.md)**:
 
-| Theme | Summary |
-|-------|---------|
-| **Agents on the map** | Present each agent as a clear **structure / landmark** on the world view, not only avatars and tool pads. |
-| **Public MCP as amenities** | First-class **public MCP** registration and **amenity** rendering (distinct from per-agent tools). |
-| **Peer communication** | A **faster, more reliable** sync engine (delivery guarantees, backoff, observability) over today’s HTTP + SSE + Redis fanout. |
-| **Kubernetes production** | **Deployment playbooks** for reliable releases: health, scaling, secrets, ingress, multi-replica semantics. |
-| **Redis scale** | **Performance and resilience** work: pooling, pipelining, retention, sharding/replicas as load grows. |
-| **Card payments** | **Payment APIs** as structured **amenities** with PCI-aware flows—not ad hoc secrets in chat. |
-| **Wallet sign-in** | **Crypto wallet** identity and settlement options for agent-related payments. |
-| **Developer dashboard** | **Account dashboard** for keys, agents, usage, and ops—beyond the CLI alone. |
+| Theme | Summary | Status |
+|-------|---------|--------|
+| **Agents on the map** | Present each agent as a clear **structure / landmark** on the world view, not only avatars and tool pads. | Pending |
+| **Public MCP as amenities** | First-class **public MCP** registration and **amenity** rendering (distinct from per-agent tools). | Pending |
+| **Peer communication** | A **faster, more reliable** sync engine (delivery guarantees, backoff, observability) over today’s HTTP + SSE + Redis fanout. | Pending |
+| **Kubernetes production** | **Deployment playbooks** for reliable releases: health, scaling, secrets, ingress, multi-replica semantics. | Completed |
+| **Redis scale** | **Performance and resilience** work: pooling, pipelining, retention, sharding/replicas as load grows. | Pending |
+| **Card payments** | **Payment APIs** as structured **amenities** with PCI-aware flows—not ad hoc secrets in chat. | Pending |
+| **Wallet sign-in** | **Crypto wallet** identity and settlement options for agent-related payments. | Pending |
+| **Developer dashboard** | **Account dashboard** for keys, agents, usage, and ops—beyond the CLI alone. | Pending |
+| **Mobile & iPad support** | **Responsive watch UI**: full-screen canvas on small screens, side panels as slide-over sheets with a single panel open at a time, touch-friendly tool grid, safe-area aware layout. | Completed |
+| **Custom avatars & genders** | Let players or integrators choose **avatar appearance** and **gender / presentation** metadata, reflected in the watch canvas and session model. | Pending |
 
 Nothing here is a dated promise; see the backlog doc for nuance and scope.
 
