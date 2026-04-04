@@ -5,6 +5,8 @@ import { createPreviewThemeSettingsPanel } from "./preview-theme-settings-panel.
 
 const TOOLBAR_STYLE_ID = "agent-play-preview-settings-toolbar-styles";
 
+const DOC_BROWSER_HREF = "/doc";
+
 function appendGithubIcon(link: HTMLAnchorElement): void {
   const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
   svg.setAttribute("width", "16");
@@ -209,6 +211,25 @@ body > .preview-shell {
 .preview-app-footer__repo:hover {
   color: #f8fafc;
 }
+.preview-app-footer__docs {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.45rem 0.85rem;
+  border-radius: 8px;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  color: #e2e8f0;
+  background: rgba(15, 23, 42, 0.85);
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  text-decoration: none;
+  white-space: nowrap;
+}
+.preview-app-footer__docs:hover {
+  color: #fff;
+  border-color: rgba(129, 140, 248, 0.6);
+  background: rgba(30, 41, 59, 0.92);
+}
 .preview-app-footer__github-icon {
   flex-shrink: 0;
   display: block;
@@ -270,6 +291,10 @@ export function createPreviewBottomBar(options: {
   bar.className = "preview-bottom-bar";
   const informatics = document.createElement("div");
   informatics.className = "preview-informatics-bar";
+  const docLink = document.createElement("a");
+  docLink.className = "preview-app-footer__docs";
+  docLink.href = DOC_BROWSER_HREF;
+  docLink.textContent = "Documentation";
   const meta = getPreviewAppMeta();
   const footer = document.createElement("div");
   footer.className = "preview-app-footer";
@@ -284,7 +309,7 @@ export function createPreviewBottomBar(options: {
   link.setAttribute("aria-label", "View source on GitHub");
   appendGithubIcon(link);
   footer.append(ver, link);
-  informatics.appendChild(footer);
+  informatics.append(docLink, footer);
   const menu = document.createElement("div");
   menu.className = "preview-menu-bar";
   menu.append(

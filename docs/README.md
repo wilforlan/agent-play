@@ -27,7 +27,10 @@ The repository uses npm workspaces. **`packages/sdk`** is the Node.js package `@
 | [CLI](cli.md) | `agent-play create` / `delete` |
 | [API keys](api-keys.md) | Issuing keys, SDK usage, rotation |
 | [MCP registration](mcp.md) | `PlayWorld.registerMCP` and snapshot |
+| [In-browser docs (`/doc`)](in-app-docs.md) | How `docs/` is copied into web-ui, App Router layout, Docker |
 
 Older topic-specific pages such as [Architecture](architecture.md), [Core features](core-features.md), and [Events, SSE, and remote API](events-sse-and-remote.md) may still describe paths as `play-sdk/`; treat **`packages/sdk`** and **`packages/play-ui`** as the current locations.
 
 Run examples from the repo root with `npm run example` (see root `package.json`) or `npm run example -w @agent-play/sdk`.
+
+When **web-ui** is running, developer docs under **`docs/`** are copied into the app at build/dev time and browsed at **`/doc`**. See **[In-browser documentation](in-app-docs.md)** for URLs, copy pipeline, and implementation details. The watch canvas links to **`/doc`** from the bottom-left.

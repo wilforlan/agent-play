@@ -75,7 +75,8 @@ npm run dev
 This runs **`npm run dev -w @agent-play/web-ui`**, which executes `tsx server.ts` after `predev` copies `play-ui` sources into `packages/web-ui/src/canvas/vendor`.
 
 - Default URL: **`http://127.0.0.1:3000`** (see `HOSTNAME` / `PORT` in `packages/web-ui/server.ts`).
-- **Watch UI:** open **`http://127.0.0.1:3000/agent-play/watch`** (append `?sid=…` when you have a session id from the SDK).
+- **Watch UI:** open **`http://127.0.0.1:3000/agent-play/watch`** (append `?sid=…` when you have a session id from the SDK). The home route **`/`** also mounts the watch canvas; use **Documentation** (bottom-left) to open **`/doc`**.
+- **Developer docs in the browser:** **`/doc`** serves the markdown under **`docs/`** (sidebar, GFM). Content is synced by **`packages/web-ui/scripts/copy-docs.mjs`** (`predev` / `prebuild`). See [In-browser documentation](in-app-docs.md).
 - **API prefix:** JSON and RPC live under **`/api/agent-play/…`**; the play UI often uses rewrites from **`/agent-play/…`** paths.
 
 If you change **`packages/play-ui/src`**, run **`npm run prebuild -w @agent-play/web-ui`** (or restart dev so `predev` runs) so the vendored canvas matches.

@@ -1,0 +1,230 @@
+.shell {
+  display: grid;
+  grid-template-columns: minmax(220px, 280px) minmax(0, 1fr);
+  min-height: 100vh;
+  font-family:
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    "Segoe UI",
+    Roboto,
+    "Helvetica Neue",
+    Arial,
+    sans-serif;
+  color: #0f172a;
+  background: #f8fafc;
+}
+
+@media (max-width: 900px) {
+  .shell {
+    grid-template-columns: 1fr;
+  }
+
+  .sidebar {
+    border-right: none;
+    border-bottom: 1px solid #e2e8f0;
+    max-height: 40vh;
+    overflow: auto;
+  }
+}
+
+.sidebar {
+  padding: 1.25rem 1rem;
+  background: #fff;
+  border-right: 1px solid #e2e8f0;
+  overflow: auto;
+}
+
+.backToApp {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin: 0 0 1.25rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid #e2e8f0;
+  font-size: 0.8125rem;
+}
+
+.backToAppLink {
+  color: #4f46e5;
+  text-decoration: none;
+  font-weight: 500;
+}
+
+.backToAppLink:hover {
+  text-decoration: underline;
+}
+
+.sidebarTitle {
+  margin: 0 0 0.75rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #64748b;
+}
+
+.navList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.navItem {
+  margin: 0;
+}
+
+.navLink {
+  display: block;
+  padding: 0.35rem 0.5rem;
+  border-radius: 6px;
+  font-size: 0.875rem;
+  color: #334155;
+  text-decoration: none;
+  line-height: 1.35;
+}
+
+.navLink:hover {
+  background: #f1f5f9;
+  color: #0f172a;
+}
+
+.navLinkActive {
+  display: block;
+  padding: 0.35rem 0.5rem;
+  border-radius: 6px;
+  font-size: 0.875rem;
+  line-height: 1.35;
+  background: #e0e7ff;
+  color: #3730a3;
+  font-weight: 500;
+  text-decoration: none;
+}
+
+.main {
+  padding: 2rem clamp(1rem, 4vw, 3rem) 4rem;
+  max-width: 52rem;
+}
+
+.title {
+  margin: 0 0 1.5rem;
+  font-size: 1.75rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  border-bottom: 1px solid #e2e8f0;
+  padding-bottom: 0.75rem;
+}
+
+.prose {
+  font-size: 1rem;
+  line-height: 1.65;
+  color: #1e293b;
+}
+
+.prose :global(h1) {
+  font-size: 1.5rem;
+  margin: 1.75rem 0 0.75rem;
+  font-weight: 650;
+}
+
+.prose :global(h2) {
+  font-size: 1.25rem;
+  margin: 1.5rem 0 0.5rem;
+  font-weight: 600;
+  padding-bottom: 0.25rem;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.prose :global(h3) {
+  font-size: 1.1rem;
+  margin: 1.25rem 0 0.4rem;
+  font-weight: 600;
+}
+
+.prose :global(p) {
+  margin: 0.75rem 0;
+}
+
+.prose :global(a) {
+  color: #4f46e5;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.prose :global(a:hover) {
+  color: #3730a3;
+}
+
+.prose :global(ul),
+.prose :global(ol) {
+  margin: 0.75rem 0;
+  padding-left: 1.5rem;
+}
+
+.prose :global(li) {
+  margin: 0.25rem 0;
+}
+
+.prose :global(blockquote) {
+  margin: 1rem 0;
+  padding: 0.5rem 1rem;
+  border-left: 4px solid #cbd5e1;
+  background: #fff;
+  color: #475569;
+}
+
+.prose :global(code) {
+  font-family:
+    ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 0.9em;
+  background: #f1f5f9;
+  padding: 0.15em 0.4em;
+  border-radius: 4px;
+}
+
+.prose :global(pre) {
+  margin: 1rem 0;
+  padding: 1rem;
+  overflow: auto;
+  background: #1e293b;
+  color: #e2e8f0;
+  border-radius: 8px;
+  font-size: 0.85rem;
+  line-height: 1.5;
+}
+
+.prose :global(pre code) {
+  background: transparent;
+  padding: 0;
+  color: inherit;
+}
+
+.prose :global(table) {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1rem 0;
+  font-size: 0.9rem;
+}
+
+.prose :global(th),
+.prose :global(td) {
+  border: 1px solid #e2e8f0;
+  padding: 0.5rem 0.75rem;
+  text-align: left;
+}
+
+.prose :global(th) {
+  background: #f1f5f9;
+  font-weight: 600;
+}
+
+.prose :global(hr) {
+  margin: 1.5rem 0;
+  border: none;
+  border-top: 1px solid #e2e8f0;
+}
+
+.empty {
+  padding: 2rem;
+  color: #64748b;
+}

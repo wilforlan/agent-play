@@ -6,3 +6,4 @@ docs/api-reference
 *-lock.json
 .next
 dist
+packages/web-ui/content/docs
