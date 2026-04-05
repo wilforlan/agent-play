@@ -109,10 +109,10 @@ The example registers a player and drives `RemotePlayWorld` RPCs against your lo
 
 ## Using the platform end-to-end
 
-1. **Session** — `RemotePlayWorld.start()` (or your own client calling the start/session endpoints) creates a **`sid`**. Share **`/agent-play/watch?sid=…`** for viewers.
-2. **Agents** — `addPlayer` with `langchainRegistration` (or compatible shape) installs structures derived from tool names. **`recordJourney`** and **`recordInteraction`** update paths and chat-style lines (see [SDK](sdk.md)).
+1. **Session** — `RemotePlayWorld.connect()` (or **`GET /api/agent-play/session`**) creates a **`sid`**. Share **`/agent-play/watch?sid=…`** for viewers.
+2. **Agents** — `addPlayer` requires **`agentId`** and returns **`registeredAgent`** metadata when the server resolves a repository row. **`recordJourney`** and **`recordInteraction`** update paths and chat lines (see [SDK](sdk.md) and [World map v3](updates-world-map-v3.md)).
 3. **API keys** — With Redis-backed `AgentRepository`, use the CLI **`agent-play login`**, **`create-key`**, **`create`** as in [API keys](api-keys.md).
-4. **Live updates** — Browsers subscribe to **SSE** (`/api/agent-play/events?sid=…`) for `world:journey`, interactions, structures, etc.; multi-instance setups rely on **Redis** fanout when `REDIS_URL` is set (see [Events, SSE, and remote API](events-sse-and-remote.md) and [Peers, world sync, and signaling](peer-world-signaling.md)).
+4. **Live updates** — Browsers subscribe to **SSE** (`/api/agent-play/events?sid=…`) for `world:journey`, `world:player_added`, interactions, and signals; multi-instance setups rely on **Redis** fanout when `REDIS_URL` is set (see [Events, SSE, and remote API](events-sse-and-remote.md) and [Peers, world sync, and signaling](peer-world-signaling.md)).
 
 ---
 
@@ -168,14 +168,18 @@ Template: **`packages/sdk/.env.example`**.
 
 ## Troubleshooting
 
-- **403 on snapshot/SSE** — `sid` missing, expired, or not present in session store; ensure the same server (and Redis) you used to create the session.
+- **403 on snapshot/SSE** — `sid` missing, expired, or not present in session store; ensure the same server (and Redis) you used to create the session. **`POST .../sdk/rpc` with `op: getWorldSnapshot`** does not require `?sid=`; mutating RPC ops still do.
+- **`getWorldSnapshot` / empty map** — Hydration and session alignment are driven by the server singleton; call **`connect()`** before **`addPlayer`** so the client **`sid`** matches **`GET /api/agent-play/session`**.
+- **Redis keys after upgrade** — Session hashes use **`agent-play:${AGENT_PLAY_HOST_ID}:session`** (see `RedisSessionStore`). If you had data under an old fixed key from a prior build, re-seed sessions or flush legacy keys.
+- **Built-in agents** — The **`@agent-play/web-ui`** server no longer calls **`registerBuiltinAgents`** on boot. Run **`npm run start:builtins`** (or your own process using **`@agent-play/agents`**) to register built-ins against a live web UI.
 - **Stale canvas after editing play-ui** — Re-run **`npm run predev` / `prebuild`** for web-ui or restart `npm run dev`.
-- **No API key / addPlayer failures** — Confirm **`REDIS_URL`** and CLI **`create-key`** / **`create`** flow; see [API keys](api-keys.md).
+- **No API key / addPlayer failures** — Confirm **`REDIS_URL`** and CLI **`create-key`** / **`create`** flow; see [API keys](api-keys.md). **`agentId`** is always required on **`addPlayer`**.
 
 ---
 
 ## Related documentation
 
+- [World map v3 (protocol updates)](updates-world-map-v3.md)
 - [Documentation index](README.md)
 - [Monorepo layout](monorepo.md)
 - [Kubernetes deployment](kubernetes-deployment.md)

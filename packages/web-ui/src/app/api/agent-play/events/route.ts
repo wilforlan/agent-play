@@ -1,21 +1,8 @@
 import { NextRequest } from "next/server";
 import { agentPlayVerbose } from "@/server/agent-play/agent-play-debug";
 import { logAgentPlayApi } from "@/server/agent-play/log-agent-play-api";
-import { serializeWorldJourneyUpdate } from "@/server/agent-play/preview-serialize";
-import type { WorldJourneyUpdate } from "@/server/agent-play/@types/world";
-import {
-  getPlayWorld,
-  getRedisSessionStore,
-  subscribeWorldFanout,
-} from "@/server/get-world";
+import { getPlayWorld, subscribeWorldFanout } from "@/server/get-world";
 import { validateAgentPlaySession } from "@/server/agent-play/session-validation";
-import {
-  PLAYER_ADDED_EVENT,
-  WORLD_AGENT_SIGNAL_EVENT,
-  WORLD_INTERACTION_EVENT,
-  WORLD_JOURNEY_EVENT,
-  WORLD_STRUCTURES_EVENT,
-} from "@/server/agent-play/play-transport";
 import type { WorldFanoutMessage } from "@/server/agent-play/redis-world-fanout";
 
 export async function GET(req: NextRequest) {
@@ -36,10 +23,9 @@ export async function GET(req: NextRequest) {
       headers: { "content-type": "application/json" },
     });
   }
-  const world = await getPlayWorld();
-  const store = getRedisSessionStore();
+  await getPlayWorld();
   agentPlayVerbose("api", "events SSE stream opened", {
-    redisFanout: store !== null,
+    fanout: "world",
   });
 
   const encoder = new TextEncoder();
@@ -52,39 +38,43 @@ export async function GET(req: NextRequest) {
 
       let lastFanoutKey = "";
       const onRedisFanout = (msg: WorldFanoutMessage) => {
-        const dedupeKey = `${String(msg.rev)}\0${msg.event}\0${JSON.stringify(msg.data)}`;
+        const payload =
+          typeof msg.data === "object" &&
+          msg.data !== null &&
+          !Array.isArray(msg.data)
+            ? {
+                ...(msg.data as Record<string, unknown>),
+                rev: msg.rev,
+                ...(msg.merkleRootHex !== undefined
+                  ? { merkleRootHex: msg.merkleRootHex }
+                  : {}),
+                ...(msg.merkleLeafCount !== undefined
+                  ? { merkleLeafCount: msg.merkleLeafCount }
+                  : {}),
+                ...(msg.playerChainNotify !== undefined
+                  ? { playerChainNotify: msg.playerChainNotify }
+                  : {}),
+              }
+            : {
+                payload: msg.data,
+                rev: msg.rev,
+                ...(msg.merkleRootHex !== undefined
+                  ? { merkleRootHex: msg.merkleRootHex }
+                  : {}),
+                ...(msg.merkleLeafCount !== undefined
+                  ? { merkleLeafCount: msg.merkleLeafCount }
+                  : {}),
+                ...(msg.playerChainNotify !== undefined
+                  ? { playerChainNotify: msg.playerChainNotify }
+                  : {}),
+              };
+        const dedupeKey = `${String(msg.rev)}\0${msg.event}\0${JSON.stringify(payload)}`;
         if (dedupeKey === lastFanoutKey) return;
         lastFanoutKey = dedupeKey;
-        send(msg.event, msg.data);
+        send(msg.event, payload);
       };
 
-      const onJourney = (payload: unknown) => {
-        const update = payload as WorldJourneyUpdate;
-        send(WORLD_JOURNEY_EVENT, serializeWorldJourneyUpdate(update));
-      };
-      const onPlayer = (payload: unknown) => {
-        send(PLAYER_ADDED_EVENT, payload);
-      };
-      const onStructures = (payload: unknown) => {
-        send(WORLD_STRUCTURES_EVENT, payload);
-      };
-      const onInteraction = (payload: unknown) => {
-        send(WORLD_INTERACTION_EVENT, payload);
-      };
-      const onAgentSignal = (payload: unknown) => {
-        send(WORLD_AGENT_SIGNAL_EVENT, payload);
-      };
-
-      let unsubscribeFanout: (() => void) | undefined;
-      if (store !== null) {
-        unsubscribeFanout = subscribeWorldFanout(onRedisFanout);
-      } else {
-        world.on(WORLD_JOURNEY_EVENT, onJourney);
-        world.on(PLAYER_ADDED_EVENT, onPlayer);
-        world.on(WORLD_STRUCTURES_EVENT, onStructures);
-        world.on(WORLD_INTERACTION_EVENT, onInteraction);
-        world.on(WORLD_AGENT_SIGNAL_EVENT, onAgentSignal);
-      }
+      const unsubscribeFanout = subscribeWorldFanout(onRedisFanout);
 
       const ping = setInterval(() => {
         controller.enqueue(encoder.encode(": ping\n\n"));
@@ -92,14 +82,7 @@ export async function GET(req: NextRequest) {
 
       req.signal.addEventListener("abort", () => {
         clearInterval(ping);
-        unsubscribeFanout?.();
-        if (store === null) {
-          world.off(WORLD_JOURNEY_EVENT, onJourney);
-          world.off(PLAYER_ADDED_EVENT, onPlayer);
-          world.off(WORLD_STRUCTURES_EVENT, onStructures);
-          world.off(WORLD_INTERACTION_EVENT, onInteraction);
-          world.off(WORLD_AGENT_SIGNAL_EVENT, onAgentSignal);
-        }
+        unsubscribeFanout();
         controller.close();
       });
     },

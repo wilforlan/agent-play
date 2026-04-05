@@ -9,7 +9,7 @@ Run the **web UI** first so APIs exist:
 npm run dev -w @agent-play/web-ui
 ```
 
-With a **registered-agent** repository (**`REDIS_URL`** on the server): run **`agent-play login`**, **`agent-play create-key`** (once per account), **`agent-play create`** for each agent (up to two per account). Set **`AGENT_PLAY_API_KEY`** to the account key and pass **`AGENT_PLAY_AGENT_ID`** (and **`AGENT_PLAY_AGENT_ID_ALPHA`** / **`AGENT_PLAY_AGENT_ID_BETA`** for example 02) when calling **`addPlayer`**. Without Redis, use the examples’ placeholder API key and omit agent ids.
+With a **registered-agent** repository (**`REDIS_URL`** on the server): run **`agent-play login`**, **`agent-play create-key`** (once per account), **`agent-play create`** for each agent. Set **`AGENT_PLAY_API_KEY`** and pass **`AGENT_PLAY_AGENT_ID`** (and **`AGENT_PLAY_AGENT_ID_ALPHA`** / **`AGENT_PLAY_AGENT_ID_BETA`** for example 02) so **`addPlayer`** uses real ids from **`agent-play create`**. Without Redis, the examples default to stable local **`agentId`** strings.
 
 | Order | File | Purpose |
 |------:|------|---------|
@@ -45,7 +45,7 @@ npx tsx -r dotenv/config examples/02-remote-two-players-langchain.ts
 
 - `GET /api/agent-play/session` — Creates or resumes a session (`sid`).
 - `POST /api/agent-play/players` — Registers a player; response includes a **preview URL** for `/agent-play/watch`.
-- `POST /api/agent-play/sdk/rpc` — Tool sync, interactions, invoke ingestion, and `op: getSnapshot` (used by `RemotePlayWorld` and the watch UI for JSON snapshot).
+- `POST /api/agent-play/sdk/rpc` — `getWorldSnapshot` and `getPlayerChainNode` (no `sid` query); `recordInteraction`, `recordJourney` (with `sid` for mutating ops). **`RemotePlayWorld.subscribeWorldState`** uses **`getPlayerChainNode`** when SSE **`data`** includes **`playerChainNotify`**.
 - Watch UI loads snapshot via RPC + SSE (`/api/agent-play/...`) for live world state across instances when Redis is enabled.
 
 Assist actions on the watch UI call `POST /api/agent-play/assist-tool` when **`assist_*`** tools were registered via **`langchainRegistration`**.

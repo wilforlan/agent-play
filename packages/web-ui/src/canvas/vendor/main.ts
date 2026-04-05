@@ -33,6 +33,11 @@ import {
 } from "./agent-chat-panel-position.js";
 import {
   clampWorldPosition,
+  mergeSnapshotWithPlayerChainNode,
+  parsePlayerChainFanoutNotifyFromSsePayload,
+  parsePlayerChainNodeRpcBody,
+  sortNodeRefsForSerializedFetch,
+  type AgentPlaySnapshot,
   type WorldBounds,
 } from "@agent-play/sdk";
 import {
@@ -109,6 +114,7 @@ const WORLD_BOTTOM_MARGIN = 14;
 const WORLD_INTERACTION_SSE = "world:interaction";
 const WORLD_AGENT_SIGNAL_SSE = "world:agent_signal";
 const HUMAN_VIEWER_PLAYER_ID = "__human__";
+const MAX_PLAYER_CHAIN_FETCH_STEPS = 102;
 const HOME_STAND_EPS = 0.26;
 const HOME_FRONT_OFFSET_WX = 0.16;
 const HOME_FRONT_OFFSET_WY = 0.22;
@@ -123,6 +129,7 @@ type Structure = {
   kind: string;
   label?: string;
   toolName?: string;
+  agentId?: string;
   playerId?: string;
 };
 
@@ -135,7 +142,7 @@ type PathStep = {
 };
 
 type JourneyUpdate = {
-  playerId: string;
+  agentId: string;
   path: PathStep[];
   structures: Structure[];
 };
@@ -153,8 +160,8 @@ type SnapshotAssistTool = {
   parameters: Record<string, unknown>;
 };
 
-type PlayerRow = {
-  playerId: string;
+type AgentRow = {
+  agentId: string;
   name: string;
   structures: Structure[];
   stationary?: boolean;
@@ -165,9 +172,32 @@ type PlayerRow = {
   onYield?: { yieldCount: number; at: string };
 };
 
+type SnapshotAgentOccupant = {
+  kind: "agent";
+  agentId: string;
+  name: string;
+  x: number;
+  y: number;
+  stationary?: boolean;
+  lastUpdate?: unknown;
+  recentInteractions?: SnapshotInteraction[];
+  assistTools?: SnapshotAssistTool[];
+  onZone?: { zoneCount: number; flagged?: boolean; at: string };
+  onYield?: { yieldCount: number; at: string };
+};
+
+type SnapshotMcpOccupant = {
+  kind: "mcp";
+  id: string;
+  name: string;
+  x: number;
+  y: number;
+  url?: string;
+};
+
 type WorldMapJson = {
   bounds: { minX: number; minY: number; maxX: number; maxY: number };
-  structures: (Structure & { playerId?: string })[];
+  occupants: (SnapshotAgentOccupant | SnapshotMcpOccupant)[];
 };
 
 type SnapshotMcpRegistration = {
@@ -178,10 +208,39 @@ type SnapshotMcpRegistration = {
 
 type Snapshot = {
   sid: string;
-  players: PlayerRow[];
-  worldMap?: WorldMapJson;
+  worldMap: WorldMapJson;
   mcpServers?: SnapshotMcpRegistration[];
 };
+
+function mapOccupantLastUpdate(
+  agentId: string,
+  raw: unknown
+): JourneyUpdate | undefined {
+  if (typeof raw !== "object" || raw === null) return undefined;
+  const rec = raw as { path?: unknown };
+  if (!Array.isArray(rec.path)) return undefined;
+  return {
+    agentId,
+    path: rec.path as PathStep[],
+    structures: [],
+  };
+}
+
+function listAgentRows(s: Snapshot): AgentRow[] {
+  return s.worldMap.occupants
+    .filter((o): o is SnapshotAgentOccupant => o.kind === "agent")
+    .map((o) => ({
+      agentId: o.agentId,
+      name: o.name,
+      structures: [],
+      stationary: o.stationary,
+      lastUpdate: mapOccupantLastUpdate(o.agentId, o.lastUpdate),
+      recentInteractions: o.recentInteractions,
+      assistTools: o.assistTools,
+      onZone: o.onZone,
+      onYield: o.onYield,
+    }));
+}
 
 type AgentVisual = {
   root: Container;
@@ -300,7 +359,7 @@ function setArrowKey(key: string, down: boolean): void {
  * @remarks **Callers:** {@link onDocumentKeyDown}. **Callees:** `fetch`.
  */
 async function sendProximityAction(
-  toPlayerId: string,
+  toAgentId: string,
   action: ProximityActionKind
 ): Promise<void> {
   const sid = getSid();
@@ -311,8 +370,8 @@ async function sendProximityAction(
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        fromPlayerId: HUMAN_VIEWER_PLAYER_ID,
-        toPlayerId,
+        fromViewerId: HUMAN_VIEWER_PLAYER_ID,
+        toAgentId,
         action,
       }),
     });
@@ -396,8 +455,10 @@ let previewBootstrapLock: Promise<void> | null = null;
  */
 function playerDisplayName(playerId: string): string {
   if (playerId === HUMAN_VIEWER_PLAYER_ID) return "You";
+  if (snapshot === null) return playerId;
   return (
-    snapshot?.players.find((p) => p.playerId === playerId)?.name ?? playerId
+    listAgentRows(snapshot).find((p) => p.agentId === playerId)?.name ??
+    playerId
   );
 }
 
@@ -406,14 +467,14 @@ function playerDisplayName(playerId: string): string {
  * @remarks **Callers:** {@link connectSse}. **Callees:** {@link appendChatLogLine}, {@link playerDisplayName}, `refreshPreviewChat`.
  */
 function pushInteractionToChat(
-  playerId: string,
+  agentId: string,
   role: string,
   text: string,
   seq?: number
 ): void {
   appendChatLogLine({
-    playerId,
-    playerName: playerDisplayName(playerId),
+    agentId,
+    playerName: playerDisplayName(agentId),
     role,
     text,
     seq,
@@ -427,84 +488,31 @@ function pushInteractionToChat(
  */
 function hydrateChatFromSnapshot(s: Snapshot): void {
   resetChatLogFromSnapshot(s);
-  agentChatOverlays?.syncPlayerIds(s.players.map((p) => p.playerId));
-  agentChatOverlays?.setAssistSnapshot(s);
+  const rows = listAgentRows(s);
+  agentChatOverlays?.syncAgentIds(rows.map((p) => p.agentId));
+  agentChatOverlays?.setAssistSnapshot({
+    agents: rows.map((p) => ({
+      agentId: p.agentId,
+      assistTools: p.assistTools,
+    })),
+  });
   refreshPreviewChat();
 }
 
-/**
- * Places MCP “store” nodes along the back row of the bounds.
- * @remarks **Callers:** {@link collectStructuresForRender}. **Callees:** none.
- */
-function mcpStoreWorldPositions(
-  bounds: WorldMapJson["bounds"],
-  count: number
-): Array<{ x: number; y: number }> {
-  if (count === 0) return [];
-  const out: Array<{ x: number; y: number }> = [];
-  const { minX, maxX, maxY } = bounds;
-  const span = Math.max(0.15, maxX - minX);
-  const rowY = maxY - Math.min(0.45, (maxY - bounds.minY) * 0.15);
-  for (let i = 0; i < count; i += 1) {
-    const t = count === 1 ? 0.5 : i / (count - 1);
-    const x = minX + t * span;
-    out.push({ x, y: rowY });
-  }
-  return out;
-}
-
-/**
- * Merges per-player structures, world map, and synthetic `mcp:*` structures for one render pass.
- * @remarks **Callers:** {@link syncStructureNodes}, {@link getPlayerHomeCell}, etc. **Callees:** {@link mcpStoreWorldPositions}.
- */
 function collectStructuresForRender(s: Snapshot): Structure[] {
-  const byId = new Map<string, Structure>();
-  for (const pl of s.players) {
-    for (const st of pl.structures) {
-      byId.set(st.id, { ...st, playerId: pl.playerId });
-    }
-  }
-  for (const st of s.worldMap?.structures ?? []) {
-    const prev = byId.get(st.id);
-    if (prev !== undefined) {
-      byId.set(st.id, {
-        ...prev,
-        ...st,
-        playerId: st.playerId ?? prev.playerId,
-      });
-    } else {
-      byId.set(st.id, { ...st });
-    }
-  }
-  const bounds = s.worldMap?.bounds ?? {
-    minX: 0,
-    minY: 0,
-    maxX: 3,
-    maxY: 3,
-  };
-  const mcpRegs = s.mcpServers ?? [];
-  const mcpXY = mcpStoreWorldPositions(bounds, mcpRegs.length);
-  for (let i = 0; i < mcpRegs.length; i += 1) {
-    const reg = mcpRegs[i];
-    const pos = mcpXY[i];
-    if (reg === undefined || pos === undefined) continue;
-    byId.set(`mcp:${reg.id}`, {
-      id: `mcp:${reg.id}`,
+  const out: Structure[] = [];
+  for (const o of s.worldMap.occupants) {
+    if (o.kind !== "mcp") continue;
+    out.push({
+      id: `mcp:${o.id}`,
       kind: "tool",
-      x: pos.x,
-      y: pos.y,
-      label: reg.name,
+      x: o.x,
+      y: o.y,
+      label: o.name,
     });
   }
-  const list = [...byId.values()];
-  list.sort((a, b) => {
-    const rank = (k: string): number => (k === "home" ? 0 : 1);
-    const ar = rank(a.kind);
-    const br = rank(b.kind);
-    if (ar !== br) return ar - br;
-    return a.id.localeCompare(b.id);
-  });
-  return list;
+  out.sort((a, b) => a.id.localeCompare(b.id));
+  return out;
 }
 
 function getPlayerHomeCell(
@@ -512,12 +520,12 @@ function getPlayerHomeCell(
   s: Snapshot | null
 ): { x: number; y: number } | null {
   if (s === null) return null;
-  for (const st of collectStructuresForRender(s)) {
-    if (st.kind === "home" && st.playerId === playerId) {
-      return { x: st.x, y: st.y };
-    }
-  }
-  return null;
+  const occ = s.worldMap.occupants.find(
+    (o): o is SnapshotAgentOccupant =>
+      o.kind === "agent" && o.agentId === playerId
+  );
+  if (occ === undefined) return null;
+  return { x: occ.x, y: occ.y };
 }
 
 function getAgentHeroAnchorScreen(
@@ -556,29 +564,16 @@ function setWaypoints(playerId: string, path: PathStep[]): void {
 }
 
 function applyJourneyUpdate(u: JourneyUpdate): void {
-  if (u.playerId === HUMAN_VIEWER_PLAYER_ID) return;
-  const row = snapshot?.players.find((p) => p.playerId === u.playerId);
+  if (u.agentId === HUMAN_VIEWER_PLAYER_ID) return;
+  if (snapshot === null) return;
+  const row = listAgentRows(snapshot).find((p) => p.agentId === u.agentId);
   if (row !== undefined && row.stationary !== false) return;
-  setWaypoints(u.playerId, u.path);
+  setWaypoints(u.agentId, u.path);
 }
 
-async function loadSnapshot(sid: string): Promise<void> {
-  const res = await fetch(
-    `${API_BASE}/sdk/rpc?sid=${encodeURIComponent(sid)}`,
-    {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ op: "getSnapshot", payload: {} }),
-    }
-  );
-  if (!res.ok) return;
-  const body = (await res.json()) as {
-    snapshot?: Snapshot;
-    error?: string;
-  };
-  if (typeof body.error === "string" || body.snapshot === undefined) return;
-  snapshot = body.snapshot;
-  const b = snapshot.worldMap?.bounds;
+function ingestSnapshot(snap: Snapshot): void {
+  snapshot = snap;
+  const b = snapshot.worldMap.bounds;
   if (b !== undefined) applyBounds(b);
   else {
     mapMinX = 0;
@@ -602,14 +597,14 @@ async function loadSnapshot(sid: string): Promise<void> {
       y: (wbSpawn.minY + wbSpawn.maxY) / 2,
     };
   }
-  for (const p of snapshot.players) {
-    const home = getPlayerHomeCell(p.playerId, snapshot);
+  for (const p of listAgentRows(snapshot)) {
+    const home = getPlayerHomeCell(p.agentId, snapshot);
     const spawn =
       home !== null ? { x: home.x, y: home.y } : { x: 0, y: 0 };
     const clamped =
       wbSpawn !== null ? clampWorldPosition(spawn, wbSpawn) : spawn;
-    playerWorldPos.set(p.playerId, clamped);
-    waypointQueues.delete(p.playerId);
+    playerWorldPos.set(p.agentId, clamped);
+    waypointQueues.delete(p.agentId);
     if (p.stationary === false && p.lastUpdate !== undefined) {
       applyJourneyUpdate(p.lastUpdate);
     }
@@ -628,27 +623,106 @@ async function loadSnapshot(sid: string): Promise<void> {
   hydrateChatFromSnapshot(snapshot);
 }
 
+async function loadSnapshot(sid: string): Promise<void> {
+  void sid;
+  const res = await fetch(`${API_BASE}/sdk/rpc`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ op: "getWorldSnapshot", payload: {} }),
+  });
+  if (!res.ok) return;
+  const body = (await res.json()) as {
+    snapshot?: Snapshot;
+    error?: string;
+  };
+  if (typeof body.error === "string" || body.snapshot === undefined) return;
+  const snap = body.snapshot;
+  if (
+    snap.worldMap === undefined ||
+    !Array.isArray(snap.worldMap.occupants)
+  ) {
+    return;
+  }
+  ingestSnapshot(snap);
+}
+
+async function tryApplyPlayerChainNotify(data: unknown): Promise<boolean> {
+  const notify = parsePlayerChainFanoutNotifyFromSsePayload(data);
+  if (notify === undefined || notify.nodes.length === 0) {
+    return false;
+  }
+  if (snapshot === null) {
+    return false;
+  }
+  let next: AgentPlaySnapshot = snapshot as AgentPlaySnapshot;
+  const ordered = sortNodeRefsForSerializedFetch(notify.nodes);
+  const cap = Math.min(ordered.length, MAX_PLAYER_CHAIN_FETCH_STEPS);
+  for (let i = 0; i < cap; i++) {
+    const ref = ordered[i];
+    if (ref === undefined) continue;
+    const res = await fetch(`${API_BASE}/sdk/rpc`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        op: "getPlayerChainNode",
+        payload: { stableKey: ref.stableKey },
+      }),
+    });
+    const body = (await res.json()) as { node?: unknown; error?: string };
+    if (!res.ok || body.node === undefined) {
+      return false;
+    }
+    try {
+      const node = parsePlayerChainNodeRpcBody(body);
+      next = mergeSnapshotWithPlayerChainNode(next, node);
+    } catch {
+      return false;
+    }
+  }
+  ingestSnapshot(next as Snapshot);
+  return true;
+}
+
+async function handleWorldMapSse(sid: string, raw: string): Promise<void> {
+  let data: unknown;
+  try {
+    data = JSON.parse(raw) as unknown;
+  } catch {
+    void loadSnapshot(sid);
+    return;
+  }
+  const merged = await tryApplyPlayerChainNotify(data);
+  if (!merged) {
+    void loadSnapshot(sid);
+  }
+}
+
 function connectSse(sid: string): void {
   const es = new EventSource(
     `${API_BASE}/events?sid=${encodeURIComponent(sid)}`
   );
-  es.addEventListener(WORLD_AGENT_SIGNAL_SSE, () => {
-    void loadSnapshot(sid);
+  es.addEventListener(WORLD_AGENT_SIGNAL_SSE, (ev) => {
+    void handleWorldMapSse(sid, (ev as MessageEvent).data as string);
   });
-  es.addEventListener("world:player_added", () => {
-    void loadSnapshot(sid);
-  });
-  es.addEventListener("world:structures", () => {
-    void loadSnapshot(sid);
+  es.addEventListener("world:player_added", (ev) => {
+    void handleWorldMapSse(sid, (ev as MessageEvent).data as string);
   });
   es.addEventListener(WORLD_INTERACTION_SSE, (ev) => {
     const data = JSON.parse((ev as MessageEvent).data) as {
-      playerId: string;
+      agentId?: string;
+      playerId?: string;
       role: string;
       text: string;
       seq?: number;
     };
-    pushInteractionToChat(data.playerId, data.role, data.text, data.seq);
+    const lineAgentId =
+      typeof data.agentId === "string"
+        ? data.agentId
+        : typeof data.playerId === "string"
+          ? data.playerId
+          : "";
+    if (lineAgentId.length === 0) return;
+    pushInteractionToChat(lineAgentId, data.role, data.text, data.seq);
   });
 }
 
@@ -752,21 +826,21 @@ function syncStructureNodes(structs: Structure[]): void {
 }
 
 function syncAgentNodes(): void {
-  const rowsBase = snapshot?.players ?? [];
+  const rowsBase = snapshot === null ? [] : listAgentRows(snapshot);
   const rows =
     snapshot === null
       ? []
-      : rowsBase.some((r) => r.playerId === HUMAN_VIEWER_PLAYER_ID)
+      : rowsBase.some((r) => r.agentId === HUMAN_VIEWER_PLAYER_ID)
         ? [...rowsBase]
         : [
             ...rowsBase,
             {
-              playerId: HUMAN_VIEWER_PLAYER_ID,
+              agentId: HUMAN_VIEWER_PLAYER_ID,
               name: "You",
               structures: [] as Structure[],
             },
           ];
-  const alive = new Set(rows.map((r) => r.playerId));
+  const alive = new Set(rows.map((r) => r.agentId));
   for (const id of agentNodes.keys()) {
     if (!alive.has(id)) {
       const v = agentNodes.get(id);
@@ -784,9 +858,9 @@ function syncAgentNodes(): void {
     }
   }
   for (const p of rows) {
-    if (!agentNodes.has(p.playerId)) {
+    if (!agentNodes.has(p.agentId)) {
       const v = makeAgentVisual();
-      agentNodes.set(p.playerId, v);
+      agentNodes.set(p.agentId, v);
       agentsLayer.addChild(v.root);
     }
   }
@@ -842,10 +916,10 @@ function getDebugSnapshot(): {
   if (snapshot === null) {
     return { agents: [], structures: [] };
   }
-  const agents = snapshot.players.map((p) => {
-    const pos = playerWorldPos.get(p.playerId);
+  const agents = listAgentRows(snapshot).map((p) => {
+    const pos = playerWorldPos.get(p.agentId);
     return {
-      playerId: p.playerId,
+      playerId: p.agentId,
       name: p.name,
       worldX: pos?.x ?? 0,
       worldY: pos?.y ?? 0,
@@ -866,7 +940,7 @@ function getDebugSnapshot(): {
     x: s.x,
     y: s.y,
     toolName: s.toolName,
-    playerId: s.playerId,
+    playerId: s.agentId ?? s.playerId,
   }));
   return { agents, structures };
 }
@@ -1030,8 +1104,9 @@ function onFrame(): void {
     snapshot !== null ? collectStructuresForRender(snapshot) : [];
   syncStructureNodes(structs);
   syncAgentNodes();
-  const aliveIds = snapshot?.players.map((p) => p.playerId) ?? [];
-  agentChatOverlays?.syncPlayerIds(aliveIds);
+  const aliveIds =
+    snapshot === null ? [] : listAgentRows(snapshot).map((p) => p.agentId);
+  agentChatOverlays?.syncAgentIds(aliveIds);
   const box = Math.max(16, Math.min(40, cellScale * 0.85));
   for (const [id, wpos] of playerWorldPos) {
     const v = agentNodes.get(id);
@@ -1046,7 +1121,9 @@ function onFrame(): void {
       isMoving: movingByPlayer.get(id) ?? false,
     });
     const displayName =
-      snapshot?.players.find((pl) => pl.playerId === id)?.name ?? id;
+      snapshot === null
+        ? id
+        : listAgentRows(snapshot).find((pl) => pl.agentId === id)?.name ?? id;
     v.nameTag.text = displayName.slice(0, 14);
     v.nameTag.position.set(-v.nameTag.width / 2, box * 0.45);
     if (getPreviewViewSettings().showChatUi) {
@@ -1068,7 +1145,10 @@ function onFrame(): void {
     }
   }
   const primaryPid = getHumanPlayerId();
-  if (primaryPid !== null && (snapshot?.players.length ?? 0) >= 1) {
+  if (
+    primaryPid !== null &&
+    (snapshot === null ? 0 : listAgentRows(snapshot).length) >= 1
+  ) {
     lastProximityPartnerId = findNearestProximityPartner({
       primaryId: primaryPid,
       positions: playerWorldPos,

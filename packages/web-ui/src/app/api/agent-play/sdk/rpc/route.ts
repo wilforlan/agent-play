@@ -1,18 +1,14 @@
 import { NextRequest } from "next/server";
-import { agentPlayVerbose } from "@/server/agent-play/agent-play-debug";
+import {
+  agentPlayVerbose,
+  isAgentPlayVerboseEnabled,
+} from "@/server/agent-play/agent-play-debug";
 import { logAgentPlayApi } from "@/server/agent-play/log-agent-play-api";
 import type { Journey } from "@/server/agent-play/@types/world";
-import {
-  WORLD_AGENT_SIGNAL_EVENT,
-  WORLD_INTERACTION_EVENT,
-  WORLD_JOURNEY_EVENT,
-  WORLD_STRUCTURES_EVENT,
-} from "@/server/agent-play/play-transport";
 import { readResolvedSnapshot } from "@/server/agent-play/read-resolved-snapshot";
-import { runRedisBackedWorldMutation } from "@/server/agent-play/world-mutation-pipeline";
-import { getPlayWorld, getRedisSessionStore } from "@/server/get-world";
+import { readPlayerChainNode } from "@/server/agent-play/read-player-chain-node";
+import { getPlayWorld, getSessionStore } from "@/server/get-world";
 import { validateAgentPlaySession } from "@/server/agent-play/session-validation";
-import type { RedisFanoutItem } from "@/server/agent-play/world-redis-sync";
 
 function requireSid(req: NextRequest): string | null {
   const raw = req.nextUrl.searchParams.get("sid");
@@ -20,66 +16,62 @@ function requireSid(req: NextRequest): string | null {
   return raw.trim();
 }
 
-function journeyFanoutForPlayer(
-  world: Awaited<ReturnType<typeof getPlayWorld>>,
-  playerId: string
-): RedisFanoutItem[] {
-  const last = world.getSnapshotJson().players.find((r) => r.playerId === playerId)
-    ?.lastUpdate;
-  if (last === undefined) {
-    return [
-      {
-        event: WORLD_AGENT_SIGNAL_EVENT,
-        data: {
-          playerId,
-          kind: "journey" as const,
-          data: {},
-        },
-      },
-    ];
-  }
-  return [
-    { event: WORLD_JOURNEY_EVENT, data: last },
-    {
-      event: WORLD_AGENT_SIGNAL_EVENT,
-      data: {
-        playerId,
-        kind: "journey" as const,
-        data: { stepCount: last.journey.steps.length },
-      },
-    },
-  ];
-}
-
 export async function POST(req: NextRequest) {
   logAgentPlayApi("POST sdk/rpc", req);
-  const sid = requireSid(req);
-  if (sid === null) {
-    agentPlayVerbose("api", "sdk/rpc rejected", { reason: "missing sid" });
-    return Response.json({ error: "missing sid" }, { status: 400 });
+  let body: { op?: unknown; payload?: unknown };
+  try {
+    body = (await req.json()) as { op?: unknown; payload?: unknown };
+  } catch {
+    return Response.json({ error: "invalid JSON" }, { status: 400 });
   }
-  if (!(await validateAgentPlaySession(sid))) {
-    agentPlayVerbose("api", "sdk/rpc rejected", { reason: "invalid sid" });
-    return Response.json({ error: "invalid sid" }, { status: 403 });
-  }
-  const world = await getPlayWorld();
-  const store = getRedisSessionStore();
-
-  const body = (await req.json()) as {
-    op?: unknown;
-    payload?: unknown;
-  };
   if (typeof body.op !== "string") {
     return Response.json({ error: "missing op" }, { status: 400 });
   }
   agentPlayVerbose("api", "sdk/rpc op", { op: body.op });
 
+  const world = await getPlayWorld();
+  const store = getSessionStore();
+
   try {
-    switch (body.op) {
-      case "getSnapshot": {
-        const snap = await readResolvedSnapshot({ sid, world, store });
-        return Response.json({ snapshot: snap });
+    if (body.op === "getWorldSnapshot") {
+      const snap = await readResolvedSnapshot({
+        sid: world.getSessionId(),
+        store,
+      });
+      if (isAgentPlayVerboseEnabled()) {
+        agentPlayVerbose("api", "getWorldSnapshot", snap);
       }
+      return Response.json({ snapshot: snap });
+    }
+
+    // Incremental sync: one player-chain node from the live snapshot (see read-player-chain-node).
+    if (body.op === "getPlayerChainNode") {
+      const p = body.payload as { stableKey?: unknown };
+      if (typeof p.stableKey !== "string" || p.stableKey.trim().length === 0) {
+        return Response.json({ error: "invalid payload" }, { status: 400 });
+      }
+      const node = await readPlayerChainNode({
+        sid: world.getSessionId(),
+        store,
+        stableKey: p.stableKey.trim(),
+      });
+      if (node === null) {
+        return Response.json({ error: "unknown stableKey" }, { status: 400 });
+      }
+      return Response.json({ node });
+    }
+
+    const sid = requireSid(req);
+    if (sid === null) {
+      agentPlayVerbose("api", "sdk/rpc rejected", { reason: "missing sid" });
+      return Response.json({ error: "missing sid" }, { status: 400 });
+    }
+    if (!(await validateAgentPlaySession(sid))) {
+      agentPlayVerbose("api", "sdk/rpc rejected", { reason: "invalid sid" });
+      return Response.json({ error: "invalid sid" }, { status: 403 });
+    }
+
+    switch (body.op) {
       case "recordInteraction": {
         const p = body.payload as {
           playerId?: unknown;
@@ -99,30 +91,11 @@ export async function POST(req: NextRequest) {
         if (riText.trim().length === 0) {
           return Response.json({ ok: true });
         }
-        if (store !== null) {
-          await runRedisBackedWorldMutation({
-            sid,
-            world,
-            store,
-            mutate: async () => {
-              const payload = world.withMutedRedisFanout(() =>
-                world.recordInteraction({
-                  playerId: riPlayerId,
-                  role: riRole,
-                  text: riText,
-                })
-              );
-              if (payload === null) return [];
-              return [{ event: WORLD_INTERACTION_EVENT, data: payload }];
-            },
-          });
-        } else {
-          world.recordInteraction({
-            playerId: riPlayerId,
-            role: riRole,
-            text: riText,
-          });
-        }
+        await world.recordInteraction({
+          playerId: riPlayerId,
+          role: riRole,
+          text: riText,
+        });
         return Response.json({ ok: true });
       }
       case "recordJourney": {
@@ -135,67 +108,7 @@ export async function POST(req: NextRequest) {
         }
         const rjPlayerId = p.playerId;
         const rjJourney = p.journey as Journey;
-        if (store !== null) {
-          await runRedisBackedWorldMutation({
-            sid,
-            world,
-            store,
-            mutate: async () => {
-              world.withMutedRedisFanout(() => {
-                world.recordJourney(rjPlayerId, rjJourney);
-              });
-              return journeyFanoutForPlayer(world, rjPlayerId);
-            },
-          });
-        } else {
-          world.recordJourney(rjPlayerId, rjJourney);
-        }
-        return Response.json({ ok: true });
-      }
-      case "syncPlayerStructuresFromTools": {
-        const p = body.payload as {
-          playerId?: unknown;
-          toolNames?: unknown;
-        };
-        if (typeof p.playerId !== "string" || !Array.isArray(p.toolNames)) {
-          return Response.json({ error: "invalid payload" }, { status: 400 });
-        }
-        const stPlayerId = p.playerId;
-        const toolNames = p.toolNames.filter(
-          (x): x is string => typeof x === "string"
-        );
-        if (store !== null) {
-          await runRedisBackedWorldMutation({
-            sid,
-            world,
-            store,
-            mutate: async () => {
-              world.withMutedRedisFanout(() => {
-                world.syncPlayerStructuresFromTools(stPlayerId, toolNames);
-              });
-              const info = world.getPlayer(stPlayerId);
-              const snap = world.getSnapshotJson();
-              const row = snap.players.find((r) => r.playerId === stPlayerId);
-              if (info === undefined || row === undefined) return [];
-              const type = snap.players.find((r) => r.playerId === stPlayerId)
-                ?.type;
-              const payload: {
-                playerId: string;
-                name: string;
-                structures: (typeof row)["structures"];
-                type?: string;
-              } = {
-                playerId: stPlayerId,
-                name: info.name,
-                structures: row.structures,
-              };
-              if (type !== undefined) payload.type = type;
-              return [{ event: WORLD_STRUCTURES_EVENT, data: payload }];
-            },
-          });
-        } else {
-          world.syncPlayerStructuresFromTools(stPlayerId, toolNames);
-        }
+        await world.recordJourney(rjPlayerId, rjJourney);
         return Response.json({ ok: true });
       }
       default:

@@ -1,5 +1,5 @@
 export type ChatLine = {
-  playerId: string;
+  agentId: string;
   playerName: string;
   role: string;
   text: string;
@@ -13,20 +13,27 @@ let lines: ChatLine[] = [];
 let localSeq = 0;
 
 export function resetChatLogFromSnapshot(snapshot: {
-  players: {
-    playerId: string;
-    name: string;
-    recentInteractions?: { role: string; text: string; seq?: number }[];
-  }[];
+  worldMap?: {
+    occupants: Array<
+      | {
+          kind: "agent";
+          agentId: string;
+          name: string;
+          recentInteractions?: { role: string; text: string; seq?: number }[];
+        }
+      | { kind: "mcp" }
+    >;
+  };
 }): void {
   const merged: ChatLine[] = [];
-  for (const p of snapshot.players) {
-    for (const e of p.recentInteractions ?? []) {
+  for (const o of snapshot.worldMap?.occupants ?? []) {
+    if (o.kind !== "agent") continue;
+    for (const e of o.recentInteractions ?? []) {
       const t = e.text.trim();
       if (t.length === 0) continue;
       merged.push({
-        playerId: p.playerId,
-        playerName: p.name,
+        agentId: o.agentId,
+        playerName: o.name,
         role: e.role,
         text: t.slice(0, CHAT_MAX_TEXT_PER_MESSAGE),
         seq: e.seq ?? 0,
@@ -35,8 +42,8 @@ export function resetChatLogFromSnapshot(snapshot: {
   }
   merged.sort((a, b) => {
     if (a.seq !== b.seq) return a.seq - b.seq;
-    return `${a.playerId}\0${a.text}`.localeCompare(
-      `${b.playerId}\0${b.text}`
+    return `${a.agentId}\0${a.text}`.localeCompare(
+      `${b.agentId}\0${b.text}`
     );
   });
   lines = merged.slice(-CHAT_MAX_MESSAGES);
@@ -45,7 +52,7 @@ export function resetChatLogFromSnapshot(snapshot: {
 }
 
 export function appendChatLogLine(input: {
-  playerId: string;
+  agentId: string;
   playerName: string;
   role: string;
   text: string;
@@ -55,11 +62,11 @@ export function appendChatLogLine(input: {
   if (t.length === 0) return;
   const seq = input.seq ?? (localSeq += 1);
   const exists = lines.some(
-    (l) => l.playerId === input.playerId && l.seq === seq && l.role === input.role
+    (l) => l.agentId === input.agentId && l.seq === seq && l.role === input.role
   );
   if (exists) return;
   lines.push({
-    playerId: input.playerId,
+    agentId: input.agentId,
     playerName: input.playerName,
     role: input.role,
     text: t.slice(0, CHAT_MAX_TEXT_PER_MESSAGE),
@@ -72,8 +79,8 @@ export function getChatLogLines(): readonly ChatLine[] {
   return lines;
 }
 
-export function getChatLogLinesForPlayer(playerId: string): readonly ChatLine[] {
-  return lines.filter((l) => l.playerId === playerId);
+export function getChatLogLinesForAgent(agentId: string): readonly ChatLine[] {
+  return lines.filter((l) => l.agentId === agentId);
 }
 
 export function clearChatLog(): void {

@@ -1,6 +1,10 @@
 # API reference (TypeDoc)
 
-Internal APIs for **@agent-play/sdk** and **@agent-play/cli** are documented with **TSDoc/JSDoc** in source and rendered with [TypeDoc](https://typedoc.org/) into static HTML.
+Internal APIs for **`@agent-play/sdk`** and **`@agent-play/cli`** are documented with **TSDoc/JSDoc** in source and rendered with [TypeDoc](https://typedoc.org/) into static HTML.
+
+The **SDK entry** (`packages/sdk/src/index.ts`) documents **`RemotePlayWorld`** (`connect`, `getWorldSnapshot`, **`getPlayerChainNode`**, **`subscribeWorldState`**, mutations, `hold`, `onClose`), **`langchainRegistration`**, world bounds helpers, event constants, **player-chain merge exports** (`mergeSnapshotWithPlayerChainNode`, `parsePlayerChainFanoutNotify`, `parsePlayerChainFanoutNotifyFromSsePayload`, `parsePlayerChainNodeRpcBody`, `sortNodeRefsForSerializedFetch`), stable key constants, and the **`public-types`** surface (including **`PlayerChainFanoutNotify`**, **`PlayerChainNodeResponse`**, …).
+
+**Breaking changes reflected in docs:** Server world fanout carries **`playerChainNotify`** (node ids + metadata), not legacy **`playerChainDelta`** digests on the wire. Integrators should use **`getPlayerChainNode`** + merge helpers or full **`getWorldSnapshot`**.
 
 ## Generate locally
 

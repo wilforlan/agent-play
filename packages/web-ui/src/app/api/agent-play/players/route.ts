@@ -1,129 +1,110 @@
 import { NextRequest } from "next/server";
 import { agentPlayVerbose } from "@/server/agent-play/agent-play-debug";
 import { logAgentPlayApi } from "@/server/agent-play/log-agent-play-api";
-import { PLAYER_ADDED_EVENT } from "@/server/agent-play/play-transport";
-import { runRedisBackedWorldMutation } from "@/server/agent-play/world-mutation-pipeline";
-import { getPlayWorld, getRedisSessionStore } from "@/server/get-world";
+import type { LangChainAgentRegistration } from "@/server/agent-play/play-world.js";
+import { getPlayWorld } from "@/server/get-world";
 import { validateAgentPlaySession } from "@/server/agent-play/session-validation";
-import type { RegisteredPlayer } from "@/server/agent-play/play-world";
 
-type AssistToolIn = {
-  name: string;
-  description: string;
-  parameters: Record<string, unknown>;
-};
+function isRecord(v: unknown): v is Record<string, unknown> {
+  return typeof v === "object" && v !== null;
+}
 
-function parseAssistTools(raw: unknown): AssistToolIn[] | undefined {
-  if (!Array.isArray(raw)) return undefined;
-  const out: AssistToolIn[] = [];
-  for (const x of raw) {
-    if (typeof x !== "object" || x === null) continue;
-    const o = x as Record<string, unknown>;
-    if (typeof o.name !== "string") continue;
-    const description =
-      typeof o.description === "string" ? o.description : "";
-    const parameters =
-      typeof o.parameters === "object" &&
-      o.parameters !== null &&
-      !Array.isArray(o.parameters)
-        ? (o.parameters as Record<string, unknown>)
-        : {};
-    out.push({ name: o.name, description, parameters });
+function parseLangChainAgent(v: unknown): LangChainAgentRegistration | null {
+  if (!isRecord(v)) return null;
+  if (v.type !== "langchain") return null;
+  const toolNames = v.toolNames;
+  if (!Array.isArray(toolNames)) return null;
+  const names = toolNames.filter((x): x is string => typeof x === "string");
+  if (names.length !== toolNames.length) return null;
+  const assist = v.assistTools;
+  let assistTools: LangChainAgentRegistration["assistTools"];
+  if (assist !== undefined) {
+    if (!Array.isArray(assist)) return null;
+    const mapped: NonNullable<LangChainAgentRegistration["assistTools"]> = [];
+    for (const row of assist) {
+      if (!isRecord(row)) return null;
+      if (typeof row.name !== "string" || typeof row.description !== "string") {
+        return null;
+      }
+      const params = row.parameters;
+      if (params !== undefined && (typeof params !== "object" || params === null)) {
+        return null;
+      }
+      mapped.push({
+        name: row.name,
+        description: row.description,
+        parameters:
+          params !== undefined && isRecord(params)
+            ? { ...params }
+            : {},
+      });
+    }
+    assistTools = mapped;
   }
-  return out.length > 0 ? out : undefined;
+  return {
+    type: "langchain",
+    toolNames: names,
+    assistTools,
+  };
 }
 
 export async function POST(req: NextRequest) {
-  logAgentPlayApi("POST players", req);
-  const raw = req.nextUrl.searchParams.get("sid");
-  if (raw === null || raw.trim().length === 0) {
+  logAgentPlayApi("POST agent-play/players", req);
+  const rawSid = req.nextUrl.searchParams.get("sid");
+  if (rawSid === null || rawSid.trim().length === 0) {
     agentPlayVerbose("api", "players rejected", { reason: "missing sid" });
     return Response.json({ error: "missing sid" }, { status: 400 });
   }
-  const sid = raw.trim();
+  const sid = rawSid.trim();
   if (!(await validateAgentPlaySession(sid))) {
     agentPlayVerbose("api", "players rejected", { reason: "invalid sid" });
     return Response.json({ error: "invalid sid" }, { status: 403 });
   }
   const world = await getPlayWorld();
-  const store = getRedisSessionStore();
-  const body = (await req.json()) as {
-    name?: unknown;
-    type?: unknown;
-    agent?: unknown;
-    apiKey?: unknown;
-    agentId?: unknown;
-  };
-  if (
-    typeof body.name !== "string" ||
-    typeof body.type !== "string" ||
-    body.agent === null ||
-    typeof body.agent !== "object"
-  ) {
+  if (!world.isSessionSid(sid)) {
+    agentPlayVerbose("api", "players rejected", { reason: "sid mismatch" });
+    return Response.json({ error: "session mismatch" }, { status: 403 });
+  }
+
+  let body: unknown;
+  try {
+    body = await req.json();
+  } catch {
+    return Response.json({ error: "invalid JSON" }, { status: 400 });
+  }
+  if (!isRecord(body)) {
     return Response.json({ error: "invalid body" }, { status: 400 });
   }
-  const agent = body.agent as {
-    type?: unknown;
-    toolNames?: unknown;
-    assistTools?: unknown;
-  };
-  if (
-    agent.type !== "langchain" ||
-    !Array.isArray(agent.toolNames) ||
-    !agent.toolNames.every((x): x is string => typeof x === "string")
-  ) {
+  if (typeof body.name !== "string" || typeof body.type !== "string") {
+    return Response.json({ error: "invalid body" }, { status: 400 });
+  }
+  const agent = parseLangChainAgent(body.agent);
+  if (agent === null) {
     return Response.json({ error: "invalid agent" }, { status: 400 });
   }
-  const assistTools = parseAssistTools(agent.assistTools);
-  const addInput = {
-    name: body.name,
-    type: body.type,
-    agent: {
-      type: "langchain" as const,
-      toolNames: agent.toolNames,
-      ...(assistTools !== undefined ? { assistTools } : {}),
-    },
-    apiKey:
-      typeof body.apiKey === "string" && body.apiKey.length > 0
-        ? body.apiKey
-        : undefined,
-    agentId:
-      typeof body.agentId === "string" && body.agentId.length > 0
-        ? body.agentId
-        : undefined,
-  };
+
+  const apiKey = typeof body.apiKey === "string" ? body.apiKey : undefined;
+  const agentIdRaw = typeof body.agentId === "string" ? body.agentId.trim() : "";
+  if (agentIdRaw.length === 0) {
+    agentPlayVerbose("api", "players rejected", { reason: "missing agentId" });
+    return Response.json({ error: "agentId is required" }, { status: 400 });
+  }
+  const agentId = agentIdRaw;
+  const name = body.name;
+  const type = body.type;
+
   try {
-    let registered: RegisteredPlayer | undefined;
-    if (store !== null) {
-      await runRedisBackedWorldMutation({
-        sid,
-        world,
-        store,
-        mutate: async () => {
-          const reg = await world.withMutedRedisFanoutAsync(async () =>
-            world.addPlayer(addInput)
-          );
-          registered = reg;
-          const row = world
-            .getSnapshotJson()
-            .players.find((r) => r.playerId === reg.id);
-          if (row === undefined) {
-            throw new Error("addPlayer: snapshot row missing after add");
-          }
-          return [{ event: PLAYER_ADDED_EVENT, data: { player: row } }];
-        },
-      });
-    } else {
-      registered = await world.addPlayer(addInput);
-    }
-    if (registered === undefined) {
-      throw new Error("addPlayer: no result");
-    }
-    agentPlayVerbose("api", "players ok", { playerId: registered.id });
+    const registered = await world.addPlayer({
+      name,
+      type,
+      agent,
+      apiKey,
+      agentId,
+    });
     return Response.json({
       playerId: registered.id,
       previewUrl: registered.previewUrl,
-      structures: registered.structures,
+      registeredAgent: registered.registeredAgent,
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);

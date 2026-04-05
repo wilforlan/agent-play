@@ -4,13 +4,10 @@
  * @remarks **Emitters:** server `PlayWorld` and Redis fanout. **Consumers:** watch UI `EventSource`,
  * integration tests, and any host that forwards `POST` events.
  */
-import type { WorldInteractionRole, WorldStructure } from "./public-types.js";
+import type { WorldInteractionRole } from "./public-types.js";
 
 /** Fired when `addPlayer` completes; payload includes snapshot row for the new player. */
 export const PLAYER_ADDED_EVENT = "world:player_added";
-
-/** Fired when structures change (sync tools, layout refresh). */
-export const WORLD_STRUCTURES_EVENT = "world:structures";
 
 /** Fired for each new chat/interaction line. */
 export const WORLD_INTERACTION_EVENT = "world:interaction";
@@ -45,16 +42,4 @@ export type WorldInteractionPayload = {
   text: string;
   at: string;
   seq: number;
-};
-
-/**
- * Payload for {@link WORLD_STRUCTURES_EVENT}.
- *
- * @property type - Optional agent platform type string.
- */
-export type WorldStructuresPayload = {
-  playerId: string;
-  name: string;
-  structures: WorldStructure[];
-  type?: string;
 };

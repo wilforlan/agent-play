@@ -1,97 +1,105 @@
 import { describe, expect, it } from "vitest";
 import {
   appendChatLogLine,
-  clearChatLog,
-  getChatLogLines,
-  getChatLogLinesForPlayer,
+  getChatLogLinesForAgent,
   resetChatLogFromSnapshot,
 } from "./preview-chat-log.js";
 
-describe("preview-chat-log", () => {
-  it("appends and sorts snapshot lines by seq", () => {
-    clearChatLog();
+const emptyWorld = { worldMap: { occupants: [] as const } };
+
+describe("preview chat log", () => {
+  it("rebuilds from snapshot recentInteractions", () => {
     resetChatLogFromSnapshot({
-      players: [
-        {
-          playerId: "a",
-          name: "A",
-          recentInteractions: [
-            { role: "user", text: "second", seq: 2 },
-            { role: "assistant", text: "first", seq: 1 },
-          ],
-        },
-      ],
+      worldMap: {
+        occupants: [
+          {
+            kind: "agent",
+            agentId: "a",
+            name: "A",
+            recentInteractions: [{ role: "user", text: "hello", seq: 2 }],
+          },
+          {
+            kind: "agent",
+            agentId: "b",
+            name: "B",
+            recentInteractions: [{ role: "assistant", text: "hi", seq: 1 }],
+          },
+        ],
+      },
     });
-    const lis = [...getChatLogLines()];
-    expect(lis.map((r) => r.text)).toEqual(["first", "second"]);
+    expect(getChatLogLinesForAgent("a").map((l) => l.text)).toEqual(["hello"]);
+    expect(getChatLogLinesForAgent("b").map((l) => l.text)).toEqual(["hi"]);
   });
 
-  it("dedupes append by playerId seq and role", () => {
-    clearChatLog();
+  it("dedupes append by agentId seq and role", () => {
+    resetChatLogFromSnapshot(emptyWorld);
     appendChatLogLine({
-      playerId: "p",
+      agentId: "p",
       playerName: "P",
       role: "user",
-      text: "hi",
-      seq: 5,
+      text: "one",
+      seq: 1,
     });
     appendChatLogLine({
-      playerId: "p",
+      agentId: "p",
       playerName: "P",
       role: "user",
-      text: "hi",
-      seq: 5,
+      text: "one",
+      seq: 1,
     });
-    expect(getChatLogLines().length).toBe(1);
+    expect(getChatLogLinesForAgent("p").length).toBe(1);
   });
 
-  it("returns only lines for the requested player after snapshot", () => {
-    clearChatLog();
+  it("merges multi-agent histories sorted by seq", () => {
     resetChatLogFromSnapshot({
-      players: [
-        {
-          playerId: "a",
-          name: "A",
-          recentInteractions: [{ role: "user", text: "from a", seq: 1 }],
-        },
-        {
-          playerId: "b",
-          name: "B",
-          recentInteractions: [
-            { role: "assistant", text: "from b", seq: 2 },
-            { role: "user", text: "from b2", seq: 3 },
-          ],
-        },
-      ],
+      worldMap: {
+        occupants: [
+          {
+            kind: "agent",
+            agentId: "a",
+            name: "A",
+            recentInteractions: [{ role: "user", text: "from a", seq: 3 }],
+          },
+          {
+            kind: "agent",
+            agentId: "b",
+            name: "B",
+            recentInteractions: [
+              { role: "user", text: "b first", seq: 1 },
+              { role: "assistant", text: "b second", seq: 2 },
+            ],
+          },
+        ],
+      },
     });
-    expect(getChatLogLinesForPlayer("a").map((l) => l.text)).toEqual(["from a"]);
-    expect(getChatLogLinesForPlayer("b").map((l) => l.text)).toEqual([
-      "from b",
-      "from b2",
+    expect(getChatLogLinesForAgent("a").map((l) => l.text)).toEqual(["from a"]);
+    expect(getChatLogLinesForAgent("b").map((l) => l.text)).toEqual([
+      "b first",
+      "b second",
     ]);
   });
 
-  it("returns only lines for the requested player after append", () => {
-    clearChatLog();
+  it("append assigns incrementing seq when omitted", () => {
+    resetChatLogFromSnapshot(emptyWorld);
     appendChatLogLine({
-      playerId: "x",
+      agentId: "x",
       playerName: "X",
       role: "user",
       text: "x1",
     });
     appendChatLogLine({
-      playerId: "y",
+      agentId: "y",
       playerName: "Y",
       role: "user",
       text: "y1",
     });
     appendChatLogLine({
-      playerId: "x",
+      agentId: "x",
       playerName: "X",
-      role: "assistant",
+      role: "user",
       text: "x2",
     });
-    expect(getChatLogLinesForPlayer("x").map((l) => l.text)).toEqual(["x1", "x2"]);
-    expect(getChatLogLinesForPlayer("y").map((l) => l.text)).toEqual(["y1"]);
+    expect(getChatLogLinesForAgent("x").map((l) => l.text)).toEqual(["x1", "x2"]);
+    expect(getChatLogLinesForAgent("y").map((l) => l.text)).toEqual(["y1"]);
   });
 });

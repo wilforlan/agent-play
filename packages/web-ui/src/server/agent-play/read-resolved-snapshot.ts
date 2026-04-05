@@ -1,19 +1,17 @@
-import type { PreviewSnapshotJson } from "./preview-serialize.js";
-import { resolveSnapshotForResponse } from "./resolve-snapshot-for-response.js";
-import type { RedisSessionStore } from "./redis-session-store.js";
-import type { PlayWorld } from "./play-world.js";
+import {
+  buildSnapshotWorldMap,
+  type PreviewSnapshotJson,
+} from "./preview-serialize.js";
+import type { WorldSessionStore } from "./world-session-store.js";
 
 export async function readResolvedSnapshot(options: {
   sid: string;
-  world: PlayWorld;
-  store: RedisSessionStore | null;
+  store: WorldSessionStore;
 }): Promise<PreviewSnapshotJson> {
-  const { sid, world, store } = options;
-  await world.ensureHydratedFromRedisStore(store, sid);
-  const live = world.getSnapshotJson();
-  if (store === null) {
-    return live;
-  }
+  const { sid, store } = options;
   const cached = await store.getSnapshotJson();
-  return resolveSnapshotForResponse({ sid, live, cached });
+  if (cached !== null && cached.sid === sid) {
+    return cached;
+  }
+  return { sid, worldMap: buildSnapshotWorldMap([]) };
 }

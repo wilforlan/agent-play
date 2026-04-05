@@ -10,6 +10,16 @@ let fanoutHandlersAttached = false;
 const fanoutListeners = new Set<(m: WorldFanoutMessage) => void>();
 let fanoutSubscribePromise: Promise<void> | null = null;
 
+export function dispatchWorldFanoutLocal(message: WorldFanoutMessage): void {
+  for (const listener of [...fanoutListeners]) {
+    try {
+      listener(message);
+    } catch {
+      //
+    }
+  }
+}
+
 function getSubscriberRedis(): Redis | null {
   const redisUrl = process.env.REDIS_URL;
   if (typeof redisUrl !== "string" || redisUrl.length === 0) {

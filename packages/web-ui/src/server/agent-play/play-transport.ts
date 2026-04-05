@@ -1,13 +1,10 @@
 import { EventEmitter } from "node:events";
 import fetch from "node-fetch";
-import type { WorldStructure } from "./@types/world.js";
 import { agentPlayDebug } from "./agent-play-debug.js";
 
 export const WORLD_JOURNEY_EVENT = "world:journey";
 
 export const PLAYER_ADDED_EVENT = "world:player_added";
-
-export const WORLD_STRUCTURES_EVENT = "world:structures";
 
 export const WORLD_INTERACTION_EVENT = "world:interaction" as const;
 
@@ -29,13 +26,6 @@ export type WorldInteractionPayload = {
   text: string;
   at: string;
   seq: number;
-};
-
-export type WorldStructuresPayload = {
-  playerId: string;
-  name: string;
-  structures: WorldStructure[];
-  type?: string;
 };
 
 export class InMemoryPlayBus extends EventEmitter {

@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
 import { agentPlayVerbose } from "@/server/agent-play/agent-play-debug";
 import { logAgentPlayApi } from "@/server/agent-play/log-agent-play-api";
-import { getRedisSessionStore } from "@/server/get-world";
+import { getRedisSessionStore, getSessionStore } from "@/server/get-world";
 import { validateAgentPlaySession } from "@/server/agent-play/session-validation";
 
 export async function GET(req: NextRequest) {
@@ -15,14 +15,7 @@ export async function GET(req: NextRequest) {
     agentPlayVerbose("api", "session/details rejected", { reason: "invalid sid" });
     return Response.json({ error: "invalid sid" }, { status: 403 });
   }
-  const store = getRedisSessionStore();
-  if (store === null) {
-    agentPlayVerbose("api", "session/details memory-only (no redis store)");
-    return Response.json({
-      source: "memory",
-      message: "Redis session store not configured",
-    });
-  }
+  const store = getSessionStore();
   const meta = await store.getPublishedMetadata();
   const eventsLimit = Number(req.nextUrl.searchParams.get("eventsLimit") ?? "50");
   const events = await store.getRecentEventLog(
@@ -30,7 +23,7 @@ export async function GET(req: NextRequest) {
   );
   const includeSnapshot = req.nextUrl.searchParams.get("includeSnapshot") === "1";
   const body: Record<string, unknown> = {
-    source: "redis",
+    source: getRedisSessionStore() !== null ? "redis" : "memory",
     meta,
     recentEvents: events,
   };

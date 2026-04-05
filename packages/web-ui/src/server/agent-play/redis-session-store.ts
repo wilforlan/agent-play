@@ -2,7 +2,18 @@ import { randomUUID } from "node:crypto";
 import type Redis from "ioredis";
 import { agentPlayVerbose } from "./agent-play-debug.js";
 import type { PreviewSnapshotJson } from "./preview-serialize.js";
+import { getPlayerChainGenesisSync } from "./load-player-chain-genesis.js";
+import {
+  buildLeafFieldMapFromSnapshot,
+  buildPlayerChainFromSnapshot,
+  playerChainLeavesKey,
+} from "./player-chain/index.js";
 import { worldFanoutChannel } from "./redis-world-fanout.js";
+import type {
+  PersistSnapshotRev,
+  PublishedSessionMetadata,
+  WorldFanoutOptions,
+} from "./world-session-store.js";
 
 const EVENT_LOG_MAX = 200;
 
@@ -22,10 +33,15 @@ function settingsHashKey(hostId: string): string {
   return `agent-play:${hostId}:session:settings`;
 }
 
+function gridOccupiedKey(hostId: string): string {
+  return `agent-play:${hostId}:session:grid:occupied`;
+}
+
 export type RedisSessionStoreOptions = {
   redis: Redis;
   hostId: string;
   previewBaseUrl?: string;
+  playerChainGenesis?: string;
 };
 
 export type SessionEventLogEntry = {
@@ -35,6 +51,8 @@ export type SessionEventLogEntry = {
 };
 
 export class RedisSessionStore {
+  readonly fanoutDelivery = "redis" as const;
+  readonly playerChainGenesis: string;
   private readonly redis: Redis;
   private readonly hostId: string;
   private readonly previewBaseUrl: string | undefined;
@@ -43,6 +61,46 @@ export class RedisSessionStore {
     this.redis = options.redis;
     this.hostId = options.hostId;
     this.previewBaseUrl = options.previewBaseUrl;
+    this.playerChainGenesis =
+      options.playerChainGenesis ?? getPlayerChainGenesisSync();
+  }
+
+  private appendSnapshotAndGridToMulti(
+    chain: ReturnType<Redis["multi"]>,
+    snapshot: PreviewSnapshotJson,
+    raw: string
+  ): void {
+    const key = snapshotKey(this.hostId);
+    const gridKey = gridOccupiedKey(this.hostId);
+    const coordKeys = snapshot.worldMap.occupants.map(
+      (o) => `${Math.round(o.x)},${Math.round(o.y)}`
+    );
+    chain.set(key, raw);
+    chain.del(gridKey);
+    if (coordKeys.length > 0) {
+      chain.sadd(gridKey, ...coordKeys);
+    }
+  }
+
+  private appendPlayerChainLeavesToMulti(
+    chain: ReturnType<Redis["multi"]>,
+    snapshot: PreviewSnapshotJson
+  ): void {
+    const leavesKey = playerChainLeavesKey(this.hostId);
+    const fields = buildLeafFieldMapFromSnapshot(
+      snapshot,
+      this.playerChainGenesis
+    );
+    chain.del(leavesKey);
+    const fieldCount = Object.keys(fields).length;
+    if (fieldCount > 0) {
+      chain.hset(leavesKey, fields);
+    }
+    agentPlayVerbose("redis-session", "appendPlayerChainLeavesToMulti", {
+      hostId: this.hostId,
+      leavesKey,
+      leafFieldCount: fieldCount,
+    });
   }
 
   async loadOrCreateSessionId(): Promise<string> {
@@ -108,8 +166,10 @@ export class RedisSessionStore {
   async replaceSessionWithNewSid(newSid: string): Promise<void> {
     const sh = sessionHashKey(this.hostId);
     await this.redis.del(snapshotKey(this.hostId));
+    await this.redis.del(gridOccupiedKey(this.hostId));
     await this.redis.del(eventLogKey(this.hostId));
     await this.redis.del(settingsHashKey(this.hostId));
+    await this.redis.del(playerChainLeavesKey(this.hostId));
     await this.redis.del(sh);
     const now = new Date().toISOString();
     const fields: Record<string, string> = {
@@ -125,39 +185,48 @@ export class RedisSessionStore {
 
   async persistSnapshot(snapshot: PreviewSnapshotJson): Promise<void> {
     const raw = JSON.stringify(snapshot);
-    const key = snapshotKey(this.hostId);
-    await this.redis.set(key, raw);
-    await this.redis.hset(sessionHashKey(this.hostId), {
+    const sessKey = sessionHashKey(this.hostId);
+    const { merkleRootHex, merkleLeafCount } = buildPlayerChainFromSnapshot(
+      snapshot,
+      this.playerChainGenesis
+    );
+    const chain = this.redis.multi();
+    this.appendSnapshotAndGridToMulti(chain, snapshot, raw);
+    this.appendPlayerChainLeavesToMulti(chain, snapshot);
+    chain.hset(sessKey, {
       lastSnapshotAt: new Date().toISOString(),
       snapshotBytes: String(Buffer.byteLength(raw, "utf8")),
+      merkleRootHex,
+      merkleLeafCount: String(merkleLeafCount),
     });
+    await chain.exec();
   }
 
   async persistSnapshotReturningRev(
     snapshot: PreviewSnapshotJson
-  ): Promise<number> {
+  ): Promise<PersistSnapshotRev> {
     const raw = JSON.stringify(snapshot);
-    const key = snapshotKey(this.hostId);
+    const { merkleRootHex, merkleLeafCount } = buildPlayerChainFromSnapshot(
+      snapshot,
+      this.playerChainGenesis
+    );
     const sess = sessionHashKey(this.hostId);
-    const results = await this.redis
-      .multi()
-      .set(key, raw)
-      .hincrby(sess, "snapshotRev", 1)
-      .hset(sess, {
-        lastSnapshotAt: new Date().toISOString(),
-        snapshotBytes: String(Buffer.byteLength(raw, "utf8")),
-      })
-      .exec();
+    const chain = this.redis.multi();
+    this.appendSnapshotAndGridToMulti(chain, snapshot, raw);
+    this.appendPlayerChainLeavesToMulti(chain, snapshot);
+    chain.hincrby(sess, "snapshotRev", 1);
+    chain.hset(sess, {
+      lastSnapshotAt: new Date().toISOString(),
+      snapshotBytes: String(Buffer.byteLength(raw, "utf8")),
+      merkleRootHex,
+      merkleLeafCount: String(merkleLeafCount),
+    });
+    const results = await chain.exec();
     if (results === null) {
       throw new Error("redis persistSnapshot: transaction aborted");
     }
-    const hincr = results[1];
-    if (hincr === null || hincr[0] !== null) {
-      throw new Error(
-        `redis persistSnapshot: hincrby failed: ${String(hincr?.[0])}`
-      );
-    }
-    return hincr[1] as number;
+    const rev = await this.getSnapshotRev();
+    return { rev, merkleRootHex, merkleLeafCount };
   }
 
   async getSnapshotRev(): Promise<number> {
@@ -170,10 +239,27 @@ export class RedisSessionStore {
   async publishWorldFanout(
     rev: number,
     event: string,
-    data: unknown
+    data: unknown,
+    options?: WorldFanoutOptions
   ): Promise<void> {
     const channel = worldFanoutChannel(this.hostId);
-    const msg = JSON.stringify({ rev, event, data });
+    const envelope: Record<string, unknown> = { rev, event, data };
+    if (
+      options?.merkleRootHex !== undefined &&
+      options.merkleRootHex.length > 0
+    ) {
+      envelope.merkleRootHex = options.merkleRootHex;
+    }
+    if (
+      options?.merkleLeafCount !== undefined &&
+      Number.isFinite(options.merkleLeafCount)
+    ) {
+      envelope.merkleLeafCount = options.merkleLeafCount;
+    }
+    if (options?.playerChainNotify !== undefined) {
+      envelope.playerChainNotify = options.playerChainNotify;
+    }
+    const msg = JSON.stringify(envelope);
     await this.redis.publish(channel, msg);
   }
 
@@ -200,19 +286,13 @@ export class RedisSessionStore {
     await this.redis.hset(settingsHashKey(this.hostId), partial);
   }
 
-  async getPublishedMetadata(): Promise<{
-    sid: string | null;
-    createdAt: string | null;
-    updatedAt: string | null;
-    lastSnapshotAt: string | null;
-    lastEventAt: string | null;
-    snapshotBytes: string | null;
-    eventLogLength: number;
-    settings: Record<string, string>;
-  }> {
+  async getPublishedMetadata(): Promise<PublishedSessionMetadata> {
     const meta = await this.redis.hgetall(sessionHashKey(this.hostId));
     const settings = await this.redis.hgetall(settingsHashKey(this.hostId));
     const eventLen = await this.redis.llen(eventLogKey(this.hostId));
+    const leafRaw = meta.merkleLeafCount;
+    const leafN =
+      leafRaw !== undefined && leafRaw.length > 0 ? Number(leafRaw) : NaN;
     return {
       sid: meta.sid ?? null,
       createdAt: meta.createdAt ?? null,
@@ -222,6 +302,8 @@ export class RedisSessionStore {
       snapshotBytes: meta.snapshotBytes ?? null,
       eventLogLength: eventLen,
       settings,
+      merkleRootHex: meta.merkleRootHex ?? null,
+      merkleLeafCount: Number.isFinite(leafN) ? leafN : null,
     };
   }
 

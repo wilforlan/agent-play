@@ -26,7 +26,7 @@ export async function POST(req: NextRequest) {
   if (typeof body.name !== "string" || body.name.trim().length === 0) {
     return Response.json({ error: "invalid body" }, { status: 400 });
   }
-  const id = world.registerMCP({
+  const id = await world.registerMCP({
     name: body.name.trim(),
     url: typeof body.url === "string" && body.url.length > 0 ? body.url : undefined,
   });

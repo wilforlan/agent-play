@@ -111,7 +111,7 @@ function parameterFieldKeys(parameters: Record<string, unknown>): string[] {
 
 export function mountAssistPanel(options: {
   card: HTMLElement;
-  playerId: string;
+  agentId: string;
   getSid: () => string | null;
   apiBase: string;
   reloadSnapshot: () => void | Promise<void>;
@@ -165,7 +165,7 @@ export function mountAssistPanel(options: {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
-          targetPlayerId: options.playerId,
+          targetAgentId: options.agentId,
           toolName,
           args,
         }),

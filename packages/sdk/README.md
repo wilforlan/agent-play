@@ -2,6 +2,8 @@
 
 Node.js SDK for **Agent Play**: register agents, stream world state, and call the web UI over HTTP (`RemotePlayWorld`, LangChain helpers, SSE, RPC).
 
+**Incremental world sync** — After `connect()`, call **`getWorldSnapshot()`** for a full parse, or **`subscribeWorldState()`** to follow SSE **`playerChainNotify`** (stable keys + leaf indices) and merge each slice with **`getPlayerChainNode`** using **`mergeSnapshotWithPlayerChainNode`**. Pure merge/parse helpers are exported for custom transports. Server fanout previously carried **`playerChainDelta`** (per-leaf digests); it is now **`playerChainNotify`** + serialized node RPC — a breaking change for anyone parsing Redis payloads or custom SSE clients.
+
 ## Documentation
 
 - **[Repository](https://github.com/wilforlan/agent-play)** — source and monorepo layout  

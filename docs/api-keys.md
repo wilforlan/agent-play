@@ -10,7 +10,7 @@ When the server uses an **`AgentRepository`** (typically with **`REDIS_URL`**), 
 
 ## Passing keys to the SDK
 
-Pass the **account** API key when you construct **`RemotePlayWorld`**. On **`addPlayer`**, you may pass **`agentId`** from the CLI, or omit it: the server matches a registered agent by your player **`name`** and **`agent.toolNames`**, or creates one (within the per-account agent limit).
+Pass the **account** API key when you construct **`RemotePlayWorld`**. **`addPlayer`** always requires **`agentId`**: use an id from **`agent-play create`** when the server has a repository, or any stable string for local dev without Redis.
 
 ```typescript
 const world = new RemotePlayWorld({
@@ -18,12 +18,12 @@ const world = new RemotePlayWorld({
   apiKey: process.env.MY_ACCOUNT_API_KEY ?? "dev-placeholder",
 });
 
-await world.start();
+await world.connect();
 
 await world.addPlayer({
   name: "My agent",
   type: "langchain",
-  agentId: process.env.MY_AGENT_ID,
+  agentId: process.env.MY_AGENT_ID ?? "local-dev-agent-1",
   agent: langchainRegistration(myLangChainAgent),
 });
 ```

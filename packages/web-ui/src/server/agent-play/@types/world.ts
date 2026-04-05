@@ -1,14 +1,3 @@
-export type WorldStructureKind = "home" | "tool" | "api" | "database" | "model";
-
-export type WorldStructure = {
-  id: string;
-  kind: WorldStructureKind;
-  x: number;
-  y: number;
-  toolName?: string;
-  label?: string;
-};
-
 export type OriginJourneyStep = {
   type: "origin";
   content: string;
@@ -50,5 +39,4 @@ export type WorldJourneyUpdate = {
   playerId: string;
   journey: Journey;
   path: PositionedStep[];
-  structures: WorldStructure[];
 };

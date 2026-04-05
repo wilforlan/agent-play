@@ -22,7 +22,7 @@
 2. `addPlayer` → structures laid out from tool names, `world:player_added` (and optional HTTP forward).
 3. Your integration calls **`recordJourney`** with the assembled journey (and **`recordInteraction`** for transcript lines when you want them in the UI).
 4. `recordJourney` enriches path coordinates, clamps to bounds, stores last update, emits `world:journey`.
-5. Preview loads snapshot via **`getSnapshot` RPC** then subscribes to **`/api/agent-play/events?sid=`** (SSE) for live events. Cross-instance behavior uses Redis; see [Peers, world sync, and signaling](peer-world-signaling.md).
+5. Preview loads snapshot via **`getWorldSnapshot` RPC** then subscribes to **`/api/agent-play/events?sid=`** (SSE) for live events. Cross-instance behavior uses Redis; see [Peers, world sync, and signaling](peer-world-signaling.md).
 
 ## Package boundaries
 

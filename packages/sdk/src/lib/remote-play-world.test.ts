@@ -1,6 +1,15 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { RemotePlayWorld } from "./remote-play-world.js";
 
+const sampleRegisteredAgent = (agentId: string, name: string) => ({
+  agentId,
+  name,
+  toolNames: ["chat_tool"],
+  zoneCount: 0,
+  yieldCount: 0,
+  flagged: false,
+});
+
 describe("RemotePlayWorld", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
@@ -17,7 +26,7 @@ describe("RemotePlayWorld", () => {
     ).toThrow(/apiKey/);
   });
 
-  it("start reads session sid from the web UI", async () => {
+  it("connect reads session sid from the web UI", async () => {
     const fetchMock = vi.fn(async (url: string | URL) => {
       const u = String(url);
       if (u.endsWith("/api/agent-play/session")) {
@@ -31,7 +40,7 @@ describe("RemotePlayWorld", () => {
       baseUrl: "http://127.0.0.1:3000",
       apiKey: "k",
     });
-    await world.start();
+    await world.connect();
     expect(world.getSessionId()).toBe("sid-1");
     expect(fetchMock).toHaveBeenCalledWith(
       "http://127.0.0.1:3000/api/agent-play/session",
@@ -58,7 +67,7 @@ describe("RemotePlayWorld", () => {
             JSON.stringify({
               playerId: "p1",
               previewUrl: "http://127.0.0.1:3000/agent-play/watch",
-              structures: [],
+              registeredAgent: sampleRegisteredAgent("aid-1", "a"),
             }),
             { status: 200 }
           );
@@ -72,7 +81,7 @@ describe("RemotePlayWorld", () => {
       baseUrl: "http://127.0.0.1:3000",
       apiKey: "key",
     });
-    await world.start();
+    await world.connect();
     const player = await world.addPlayer({
       name: "a",
       type: "langchain",
@@ -81,6 +90,215 @@ describe("RemotePlayWorld", () => {
     });
     expect(player.id).toBe("p1");
     expect(player.previewUrl).toBe("http://127.0.0.1:3000/agent-play/watch");
+    expect(player.registeredAgent.agentId).toBe("aid-1");
+    await world.close();
+  });
+
+  it("getWorldSnapshot posts without sid and parses worldMap occupants", async () => {
+    const fetchMock = vi.fn(
+      async (url: string | URL, init?: RequestInit) => {
+        const u = String(url);
+        if (u.endsWith("/api/agent-play/session")) {
+          return new Response(JSON.stringify({ sid: "sid-1" }), { status: 200 });
+        }
+        if (
+          u.endsWith("/api/agent-play/sdk/rpc") &&
+          !u.includes("sid=") &&
+          init?.method === "POST"
+        ) {
+          const body = JSON.parse(String(init.body)) as { op?: string };
+          expect(body.op).toBe("getWorldSnapshot");
+          return new Response(
+            JSON.stringify({
+              snapshot: {
+                sid: "sid-1",
+                worldMap: {
+                  bounds: { minX: 0, minY: 0, maxX: 3, maxY: 3 },
+                  occupants: [
+                    {
+                      kind: "agent",
+                      agentId: "p1",
+                      name: "Alpha",
+                      x: 0,
+                      y: 0,
+                    },
+                    {
+                      kind: "agent",
+                      agentId: "p2",
+                      name: "Beta",
+                      x: 1,
+                      y: 0,
+                    },
+                  ],
+                },
+              },
+            }),
+            { status: 200 }
+          );
+        }
+        return new Response("not found", { status: 404 });
+      }
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const world = new RemotePlayWorld({
+      baseUrl: "http://127.0.0.1:3000",
+      apiKey: "k",
+    });
+    await world.connect();
+    const snap = await world.getWorldSnapshot();
+    expect(snap.sid).toBe("sid-1");
+    expect(snap.worldMap.occupants).toHaveLength(2);
+    expect(snap.worldMap.occupants[0]?.kind).toBe("agent");
+    await world.close();
+  });
+
+  it("getPlayerChainNode posts getPlayerChainNode op without sid query", async () => {
+    const fetchMock = vi.fn(
+      async (url: string | URL, init?: RequestInit) => {
+        const u = String(url);
+        if (u.endsWith("/api/agent-play/session")) {
+          return new Response(JSON.stringify({ sid: "sid-1" }), { status: 200 });
+        }
+        if (
+          u.endsWith("/api/agent-play/sdk/rpc") &&
+          !u.includes("sid=") &&
+          init?.method === "POST"
+        ) {
+          const body = JSON.parse(String(init.body)) as { op?: string };
+          expect(body.op).toBe("getPlayerChainNode");
+          return new Response(
+            JSON.stringify({
+              node: {
+                kind: "genesis",
+                stableKey: "__genesis__",
+                text: "root-bytes",
+              },
+            }),
+            { status: 200 }
+          );
+        }
+        return new Response("not found", { status: 404 });
+      }
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const world = new RemotePlayWorld({
+      baseUrl: "http://127.0.0.1:3000",
+      apiKey: "k",
+    });
+    await world.connect();
+    const node = await world.getPlayerChainNode("__genesis__");
+    expect(node.kind).toBe("genesis");
+    if (node.kind === "genesis") {
+      expect(node.text).toBe("root-bytes");
+    }
+    await world.close();
+  });
+
+  it("getWorldSnapshot parses platform on agent occupants", async () => {
+    const fetchMock = vi.fn(
+      async (url: string | URL, init?: RequestInit) => {
+        const u = String(url);
+        if (u.endsWith("/api/agent-play/session")) {
+          return new Response(JSON.stringify({ sid: "sid-1" }), { status: 200 });
+        }
+        if (
+          u.endsWith("/api/agent-play/sdk/rpc") &&
+          !u.includes("sid=") &&
+          init?.method === "POST"
+        ) {
+          return new Response(
+            JSON.stringify({
+              snapshot: {
+                sid: "sid-1",
+                worldMap: {
+                  bounds: { minX: 0, minY: 0, maxX: 1, maxY: 1 },
+                  occupants: [
+                    {
+                      kind: "agent",
+                      agentId: "p1",
+                      name: "Alpha",
+                      x: 0,
+                      y: 0,
+                      platform: "langchain",
+                    },
+                  ],
+                },
+              },
+            }),
+            { status: 200 }
+          );
+        }
+        return new Response("not found", { status: 404 });
+      }
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const world = new RemotePlayWorld({
+      baseUrl: "http://127.0.0.1:3000",
+      apiKey: "k",
+    });
+    await world.connect();
+    const snap = await world.getWorldSnapshot();
+    const occ = snap.worldMap.occupants[0];
+    expect(occ?.kind).toBe("agent");
+    if (occ?.kind === "agent") {
+      expect(occ.platform).toBe("langchain");
+    }
+    await world.close();
+  });
+
+  it("getWorldSnapshot maps deprecated agentType field to platform", async () => {
+    const fetchMock = vi.fn(
+      async (url: string | URL, init?: RequestInit) => {
+        const u = String(url);
+        if (u.endsWith("/api/agent-play/session")) {
+          return new Response(JSON.stringify({ sid: "sid-1" }), { status: 200 });
+        }
+        if (
+          u.endsWith("/api/agent-play/sdk/rpc") &&
+          !u.includes("sid=") &&
+          init?.method === "POST"
+        ) {
+          return new Response(
+            JSON.stringify({
+              snapshot: {
+                sid: "sid-1",
+                worldMap: {
+                  bounds: { minX: 0, minY: 0, maxX: 1, maxY: 1 },
+                  occupants: [
+                    {
+                      kind: "agent",
+                      agentId: "p1",
+                      name: "Alpha",
+                      x: 0,
+                      y: 0,
+                      agentType: "langchain",
+                    },
+                  ],
+                },
+              },
+            }),
+            { status: 200 }
+          );
+        }
+        return new Response("not found", { status: 404 });
+      }
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const world = new RemotePlayWorld({
+      baseUrl: "http://127.0.0.1:3000",
+      apiKey: "k",
+    });
+    await world.connect();
+    const snap = await world.getWorldSnapshot();
+    const occ = snap.worldMap.occupants[0];
+    expect(occ?.kind).toBe("agent");
+    if (occ?.kind === "agent") {
+      expect(occ.platform).toBe("langchain");
+    }
     await world.close();
   });
 
@@ -109,7 +327,7 @@ describe("RemotePlayWorld", () => {
       baseUrl: "http://127.0.0.1:3000",
       apiKey: "k",
     });
-    await world.start();
+    await world.connect();
     await world.recordInteraction({
       playerId: "p1",
       role: "user",

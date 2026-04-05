@@ -66,16 +66,16 @@ async function main() {
   world.onClose(() => {
     console.log("RemotePlayWorld closed.");
   });
-  await world.start();
+  await world.connect();
+
+  const agentId =
+    process.env.AGENT_PLAY_AGENT_ID?.trim() ?? "example-local-agent-1";
 
   const player = await world.addPlayer({
     name: "remote-demo",
     type: "langchain",
     agent: langchainRegistration(agent),
-    ...(process.env.AGENT_PLAY_AGENT_ID !== undefined &&
-    process.env.AGENT_PLAY_AGENT_ID.length > 0
-      ? { agentId: process.env.AGENT_PLAY_AGENT_ID }
-      : {}),
+    agentId,
   });
 
   console.log("Open the watch UI (session is server-side; UI resolves session via API):");

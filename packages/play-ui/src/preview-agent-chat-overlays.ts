@@ -1,5 +1,5 @@
 import { createChatBubbleElement, ensurePreviewChatStyles } from "./preview-chat-panel.js";
-import { getChatLogLinesForPlayer } from "./preview-chat-log.js";
+import { getChatLogLinesForAgent } from "./preview-chat-log.js";
 import {
   applyAgentChatDisplayToLayer,
   getAgentChatDisplaySettings,
@@ -107,8 +107,8 @@ type CardEntry = {
 };
 
 export type AgentChatOverlaySnapshot = {
-  players: ReadonlyArray<{
-    playerId: string;
+  agents: ReadonlyArray<{
+    agentId: string;
     assistTools?: readonly AssistToolDef[];
   }>;
 };
@@ -119,10 +119,10 @@ export function createPreviewAgentChatOverlays(options: {
   reloadSnapshot: () => void | Promise<void>;
 }): {
   root: HTMLElement;
-  syncPlayerIds: (ids: readonly string[]) => void;
-  refreshPlayer: (playerId: string) => void;
+  syncAgentIds: (ids: readonly string[]) => void;
+  refreshPlayer: (agentId: string) => void;
   refreshAll: () => void;
-  setLayout: (playerId: string, left: number, top: number) => void;
+  setLayout: (agentId: string, left: number, top: number) => void;
   applyDisplaySettings: () => void;
   setAssistSnapshot: (snapshot: AgentChatOverlaySnapshot) => void;
 } {
@@ -142,17 +142,17 @@ export function createPreviewAgentChatOverlays(options: {
 
   const setAssistSnapshot = (snapshot: AgentChatOverlaySnapshot): void => {
     assistCountById.clear();
-    for (const p of snapshot.players) {
+    for (const p of snapshot.agents) {
       const n = p.assistTools?.length ?? 0;
-      assistCountById.set(p.playerId, n);
-      const h = assistById.get(p.playerId);
+      assistCountById.set(p.agentId, n);
+      const h = assistById.get(p.agentId);
       if (h !== undefined) {
         h.setTools(p.assistTools ?? []);
       }
     }
   };
 
-  const syncPlayerIds = (ids: readonly string[]): void => {
+  const syncAgentIds = (ids: readonly string[]): void => {
     const want = new Set(ids);
     for (const id of byId.keys()) {
       if (!want.has(id)) {
@@ -178,7 +178,7 @@ export function createPreviewAgentChatOverlays(options: {
       byId.set(id, { card, scroll });
       const assist = mountAssistPanel({
         card,
-        playerId: id,
+        agentId: id,
         getSid: options.getSid,
         apiBase: options.apiBase,
         reloadSnapshot: options.reloadSnapshot,
@@ -188,11 +188,11 @@ export function createPreviewAgentChatOverlays(options: {
     }
   };
 
-  const refreshPlayer = (playerId: string): void => {
-    const entry = byId.get(playerId);
+  const refreshPlayer = (agentId: string): void => {
+    const entry = byId.get(agentId);
     if (entry === undefined) return;
-    const rows = getChatLogLinesForPlayer(playerId);
-    const assistN = assistCountById.get(playerId) ?? 0;
+    const rows = getChatLogLinesForAgent(agentId);
+    const assistN = assistCountById.get(agentId) ?? 0;
     if (rows.length === 0 && assistN === 0) {
       entry.scroll.replaceChildren();
       entry.card.style.visibility = "hidden";
@@ -201,7 +201,7 @@ export function createPreviewAgentChatOverlays(options: {
     const label =
       rows[0]?.playerName !== undefined && rows[0].playerName.length > 0
         ? rows[0].playerName
-        : playerId;
+        : agentId;
     entry.card.setAttribute("aria-label", `Chat for ${label}`);
     entry.card.style.visibility = "visible";
     entry.scroll.replaceChildren();
@@ -217,8 +217,8 @@ export function createPreviewAgentChatOverlays(options: {
     }
   };
 
-  const setLayout = (playerId: string, left: number, top: number): void => {
-    const entry = byId.get(playerId);
+  const setLayout = (agentId: string, left: number, top: number): void => {
+    const entry = byId.get(agentId);
     if (entry === undefined) return;
     entry.card.style.left = `${left}px`;
     entry.card.style.top = `${top}px`;
@@ -230,7 +230,7 @@ export function createPreviewAgentChatOverlays(options: {
 
   return {
     root: layer,
-    syncPlayerIds,
+    syncAgentIds,
     refreshPlayer,
     refreshAll,
     setLayout,

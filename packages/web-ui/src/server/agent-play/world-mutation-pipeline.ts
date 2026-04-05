@@ -1,5 +1,5 @@
-import type { PlayWorld } from "./play-world.js";
-import type { RedisSessionStore } from "./redis-session-store.js";
+import type { PreviewSnapshotJson } from "./preview-serialize.js";
+import type { WorldSessionStore } from "./world-session-store.js";
 import {
   persistSnapshotAndFanout,
   runExclusiveRedisWorldIo,
@@ -8,22 +8,22 @@ import {
 
 export type { RedisFanoutItem };
 
-export async function runRedisBackedWorldMutation(options: {
+export async function runStoredWorldMutation(options: {
   sid: string;
-  world: PlayWorld;
-  store: RedisSessionStore;
-  mutate: () => Promise<RedisFanoutItem[]>;
+  store: WorldSessionStore;
+  mutate: (
+    snapshot: PreviewSnapshotJson | null
+  ) => Promise<{ next: PreviewSnapshotJson; fanout: RedisFanoutItem[] }>;
 }): Promise<void> {
   await runExclusiveRedisWorldIo(async () => {
     const cached = await options.store.getSnapshotJson();
-    if (cached !== null && cached.sid === options.sid) {
-      options.world.hydrateFromSnapshot(cached);
+    if (cached !== null && cached.sid !== options.sid) {
+      throw new Error("stored snapshot session mismatch");
     }
-    const fanout = await options.mutate();
-    await persistSnapshotAndFanout(
-      options.store,
-      options.world.getSnapshotJson(),
-      fanout
-    );
+    const { next, fanout } = await options.mutate(cached);
+    if (next.sid !== options.sid) {
+      throw new Error("mutation produced wrong session id");
+    }
+    await persistSnapshotAndFanout(options.store, next, fanout);
   });
 }

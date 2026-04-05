@@ -50,7 +50,7 @@ export async function POST(req: NextRequest) {
     return Response.json({ error: "invalid action" }, { status: 400 });
   }
   try {
-    world.recordProximityAction({
+    await world.recordProximityAction({
       fromPlayerId: body.fromPlayerId,
       toPlayerId: body.toPlayerId,
       action,

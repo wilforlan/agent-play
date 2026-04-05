@@ -3,8 +3,8 @@
  *
  * Same architecture as example 01: **RemotePlayWorld** talks to **@agent-play/web-ui** over HTTP
  * (`/api/agent-play/session`, `/api/agent-play/players`, `/api/agent-play/sdk/rpc`). One session
- * (`sid`) holds multiple players; each `addPlayer` gets a distinct `playerId` and tool-derived
- * structures.
+ * (`sid`) holds multiple players; each `addPlayer` uses a required **`agentId`** (from **`agent-play create`** when
+ * using a repository, or the example defaults locally).
  *
  * Open the printed preview URL once: both avatars share the same world and session.
  *
@@ -84,25 +84,24 @@ async function main() {
   const holdSeconds = Number(process.env.AGENT_PLAY_HOLD_SECONDS ?? 3600);
 
   const world = new RemotePlayWorld({ baseUrl: base, apiKey });
-  await world.start();
+  await world.connect();
+
+  const agentIdA =
+    process.env.AGENT_PLAY_AGENT_ID_ALPHA?.trim() ?? "example-local-agent-alpha";
+  const agentIdB =
+    process.env.AGENT_PLAY_AGENT_ID_BETA?.trim() ?? "example-local-agent-beta";
 
   const playerA = await world.addPlayer({
     name: "alpha",
     type: "langchain",
     agent: langchainRegistration(agentAlpha),
-    ...(process.env.AGENT_PLAY_AGENT_ID_ALPHA !== undefined &&
-    process.env.AGENT_PLAY_AGENT_ID_ALPHA.length > 0
-      ? { agentId: process.env.AGENT_PLAY_AGENT_ID_ALPHA }
-      : {}),
+    agentId: agentIdA,
   });
   const playerB = await world.addPlayer({
     name: "beta",
     type: "langchain",
     agent: langchainRegistration(agentBeta),
-    ...(process.env.AGENT_PLAY_AGENT_ID_BETA !== undefined &&
-    process.env.AGENT_PLAY_AGENT_ID_BETA.length > 0
-      ? { agentId: process.env.AGENT_PLAY_AGENT_ID_BETA }
-      : {}),
+    agentId: agentIdB,
   });
 
   console.log("Session id:", world.getSessionId());

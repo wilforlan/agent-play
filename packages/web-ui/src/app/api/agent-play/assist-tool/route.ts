@@ -33,7 +33,7 @@ export async function POST(req: NextRequest) {
     isRecord(body.args) && !Array.isArray(body.args) ? body.args : {};
   try {
     const world = await getPlayWorld();
-    world.recordAssistToolInvocation({
+    await world.recordAssistToolInvocation({
       targetPlayerId: body.targetPlayerId,
       toolName: body.toolName,
       args,

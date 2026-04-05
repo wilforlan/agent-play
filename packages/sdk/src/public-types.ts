@@ -1,5 +1,5 @@
 /**
- * Domain types for sessions, journeys, players, and world structures shared by the SDK and server.
+ * Domain types for sessions, journeys, agents, and the shared world map exposed by the SDK and server.
  */
 
 /** Role for a single line in the interaction log / chat stream. */
@@ -66,16 +66,14 @@ export type PlatformAgentInformation = {
  * Use **`langchainRegistration(agent)`** for `agent` (requires a **`chat_tool`** tool; `assist_*`
  * tools are indexed for the watch UI).
  *
- * **`apiKey`** is set on **`RemotePlayWorld`** options, not here. With a registered-agent
- * repository, you may pass **`agentId`** from **`agent-play create`**, or omit it: the server
- * matches an existing agent by **`name`** plus **`agent.toolNames`**, or creates a registered
- * agent when under the account limit. Without Redis, omit **`apiKey`** and **`agentId`**.
+ * **`agentId`** is required: use an id from **`agent-play create`** when the server uses a repository
+ * (with **`apiKey`** from **`RemotePlayWorld`**), or any stable string for local dev without Redis.
  */
 export type AddPlayerInput = PlatformAgentInformation & {
   /** Registration from {@link import("./platforms/langchain.js").langchainRegistration}. */
   agent: LangChainAgentRegistration;
-  /** Optional explicit registered agent id when using Redis repository. */
-  agentId?: string;
+  /** Registered agent id (or session-local id without Redis). */
+  agentId: string;
 };
 
 /** Zone counter event surfaced on snapshots and signals. */
@@ -91,31 +89,20 @@ export type YieldEventInfo = {
   at: string;
 };
 
-/** Kind of world structure tile (home base, tool pad, API, etc.). */
-export type WorldStructureKind = "home" | "tool" | "api" | "database" | "model";
-
-/**
- * One placed structure on the world map for a player.
- *
- * @property id - Stable id (often derived from tool name / layout).
- * @property kind - Visual category.
- * @property x, y - Coordinates in world grid units.
- * @property toolName - When kind is tool-related, the tool name.
- * @property label - Optional human label for the canvas.
- */
-export type WorldStructure = {
-  id: string;
-  kind: WorldStructureKind;
-  x: number;
-  y: number;
-  toolName?: string;
-  label?: string;
+/** Repository-backed summary returned with `addPlayer` when the agent is (or maps to) a stored registration. */
+export type RegisteredAgentSummary = {
+  agentId: string;
+  name: string;
+  toolNames: string[];
+  zoneCount: number;
+  yieldCount: number;
+  flagged: boolean;
 };
 
-/** Result of `addPlayer` including watch URL and laid-out structures. */
+/** Result of `addPlayer` including watch URL and registered-agent metadata from the server. */
 export type RegisteredPlayer = PlayAgentInformation & {
   previewUrl: string;
-  structures: WorldStructure[];
+  registeredAgent: RegisteredAgentSummary;
 };
 
 /** First step of a journey: user message origin. */
@@ -150,7 +137,7 @@ export type JourneyStep =
 /**
  * Ordered journey with timestamps; sent to the server via `recordJourney`.
  *
- * @property steps - Ordered path from origin through structures to destination.
+ * @property steps - Ordered path from origin through tool steps to destination.
  * @property startedAt, completedAt - Wall times for the run (client or server).
  */
 export type Journey = {
@@ -166,10 +153,121 @@ export type PositionedStep = JourneyStep & {
   structureId?: string;
 };
 
-/** Full snapshot row for a journey update (SSE `world:journey`). */
+export type AgentPlayWorldMapBounds = {
+  minX: number;
+  minY: number;
+  maxX: number;
+  maxY: number;
+};
+
+/**
+ * One agent on the world map. Coordinates are grid positions; the server enforces unique `(x,y)` per occupant.
+ */
+export type AgentPlayWorldMapAgentOccupant = {
+  kind: "agent";
+  agentId: string;
+  name: string;
+  x: number;
+  y: number;
+  /**
+   * Integration label from addPlayer `type` (e.g. `langchain`). Populated from the snapshot field `platform`. The legacy wire field `agentType` is deprecated and accepted only for backward compatibility when parsing JSON.
+   */
+  platform?: string;
+  toolNames?: string[];
+  assistToolNames?: string[];
+  assistTools?: AssistToolSpec[];
+  hasChatTool?: boolean;
+  stationary?: boolean;
+  lastUpdate?: unknown;
+  recentInteractions?: Array<{
+    role: WorldInteractionRole;
+    text: string;
+    at: string;
+    seq: number;
+  }>;
+  zoneCount?: number;
+  yieldCount?: number;
+  flagged?: boolean;
+  onZone?: ZoneEventInfo;
+  onYield?: YieldEventInfo;
+};
+
+/** MCP server shown as a separate map occupant (distinct from LangChain agents). */
+export type AgentPlayWorldMapMcpOccupant = {
+  kind: "mcp";
+  id: string;
+  name: string;
+  x: number;
+  y: number;
+  url?: string;
+};
+
+/** Spatial index: axis-aligned bounds plus every agent and MCP registration placed on the grid. */
+export type AgentPlayWorldMap = {
+  bounds: AgentPlayWorldMapBounds;
+  occupants: (AgentPlayWorldMapAgentOccupant | AgentPlayWorldMapMcpOccupant)[];
+};
+
+/**
+ * Session snapshot from {@link import("./lib/remote-play-world.js").RemotePlayWorld.getWorldSnapshot}.
+ * Agents and MCP servers appear only under **`worldMap.occupants`** (no separate `players` list).
+ */
+export type AgentPlaySnapshot = {
+  sid: string;
+  worldMap: AgentPlayWorldMap;
+  mcpServers?: Array<{ id: string; name: string; url?: string }>;
+};
+
+export type PlayerChainNotifyNodeRef = {
+  stableKey: string;
+  leafIndex: number;
+  removed?: boolean;
+  updatedAt?: string;
+};
+
+export type PlayerChainFanoutNotify = {
+  updatedAt: string;
+  nodes: PlayerChainNotifyNodeRef[];
+};
+
+export type PlayerChainGenesisStableKey = "__genesis__";
+export type PlayerChainHeaderStableKey = "__header__";
+
+export type PlayerChainGenesisNode = {
+  kind: "genesis";
+  stableKey: PlayerChainGenesisStableKey;
+  text: string;
+};
+
+export type PlayerChainHeaderNode = {
+  kind: "header";
+  stableKey: PlayerChainHeaderStableKey;
+  sid: string;
+  bounds: AgentPlayWorldMapBounds;
+};
+
+export type PlayerChainOccupantRemovedNode = {
+  kind: "occupant";
+  stableKey: string;
+  removed: true;
+};
+
+export type PlayerChainOccupantPresentNode = {
+  kind: "occupant";
+  stableKey: string;
+  removed: false;
+  occupant: AgentPlayWorldMapAgentOccupant | AgentPlayWorldMapMcpOccupant;
+};
+
+export type PlayerChainNodeResponse =
+  | PlayerChainGenesisNode
+  | PlayerChainHeaderNode
+  | PlayerChainOccupantRemovedNode
+  | PlayerChainOccupantPresentNode;
+
+/** Full journey + path update (SSE `world:journey`); coordinates are embedded in `path` steps. */
 export type WorldJourneyUpdate = {
   playerId: string;
   journey: Journey;
   path: PositionedStep[];
-  structures: WorldStructure[];
 };

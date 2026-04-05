@@ -6,7 +6,6 @@ import {
   WORLD_AGENT_SIGNAL_EVENT,
   WORLD_INTERACTION_EVENT,
   WORLD_JOURNEY_EVENT,
-  WORLD_STRUCTURES_EVENT,
 } from "@/server/agent-play/play-transport";
 
 export async function attachAgentPlayWs(ws: WebSocket): Promise<void> {
@@ -23,7 +22,6 @@ export async function attachAgentPlayWs(ws: WebSocket): Promise<void> {
     world.on(ev, fn);
   };
   wrap(PLAYER_ADDED_EVENT);
-  wrap(WORLD_STRUCTURES_EVENT);
   wrap(WORLD_INTERACTION_EVENT);
   wrap(WORLD_AGENT_SIGNAL_EVENT);
   wrap(WORLD_JOURNEY_EVENT);

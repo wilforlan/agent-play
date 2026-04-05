@@ -1,9 +1,6 @@
-import type {
-  Journey,
-  WorldJourneyUpdate,
-} from "./@types/world.js";
-import type { PreviewWorldMapJson } from "./world-map.js";
+import type { Journey, WorldJourneyUpdate } from "./@types/world.js";
 import type { WorldInteractionRole } from "./play-transport.js";
+import { buildWorldMapFromOccupants as computeWorldMapBounds } from "./world-map.js";
 
 export type JourneyJson = {
   steps: Journey["steps"];
@@ -28,23 +25,43 @@ export type AssistToolSnapshotJson = {
   parameters: Record<string, unknown>;
 };
 
-export type PreviewPlayerSnapshotJson = {
-  playerId: string;
+export type PreviewWorldMapAgentOccupantJson = {
+  kind: "agent";
+  agentId: string;
   name: string;
-  type?: string;
+  x: number;
+  y: number;
+  platform?: string;
   toolNames?: string[];
-  stationary?: boolean;
   assistToolNames?: string[];
   assistTools?: AssistToolSnapshotJson[];
   hasChatTool?: boolean;
+  stationary?: boolean;
+  lastUpdate?: WorldJourneyUpdateJson;
+  recentInteractions?: PreviewInteractionEntryJson[];
   zoneCount?: number;
   yieldCount?: number;
   flagged?: boolean;
   onZone?: { zoneCount: number; flagged?: boolean; at: string };
   onYield?: { yieldCount: number; at: string };
-  structures: WorldJourneyUpdate["structures"];
-  lastUpdate?: WorldJourneyUpdateJson;
-  recentInteractions?: PreviewInteractionEntryJson[];
+};
+
+export type PreviewWorldMapMcpOccupantJson = {
+  kind: "mcp";
+  id: string;
+  name: string;
+  x: number;
+  y: number;
+  url?: string;
+};
+
+export type PreviewWorldMapOccupantJson =
+  | PreviewWorldMapAgentOccupantJson
+  | PreviewWorldMapMcpOccupantJson;
+
+export type PreviewWorldMapJson = {
+  bounds: { minX: number; minY: number; maxX: number; maxY: number };
+  occupants: PreviewWorldMapOccupantJson[];
 };
 
 export type PreviewMcpRegistrationJson = {
@@ -55,7 +72,6 @@ export type PreviewMcpRegistrationJson = {
 
 export type PreviewSnapshotJson = {
   sid: string;
-  players: PreviewPlayerSnapshotJson[];
   worldMap: PreviewWorldMapJson;
   mcpServers?: PreviewMcpRegistrationJson[];
 };
@@ -75,7 +91,6 @@ export function serializeWorldJourneyUpdate(
     playerId: update.playerId,
     journey: serializeJourney(update.journey),
     path: update.path,
-    structures: update.structures,
   };
 }
 
@@ -94,6 +109,11 @@ export function parseWorldJourneyUpdateJson(
     playerId: json.playerId,
     journey: parseJourneyJson(json.journey),
     path: json.path,
-    structures: json.structures,
   };
+}
+
+export function buildSnapshotWorldMap(
+  occupants: PreviewWorldMapOccupantJson[]
+): PreviewWorldMapJson {
+  return computeWorldMapBounds(occupants);
 }

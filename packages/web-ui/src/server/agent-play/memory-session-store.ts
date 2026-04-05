@@ -1,0 +1,168 @@
+import { randomUUID } from "node:crypto";
+import type { PreviewSnapshotJson } from "./preview-serialize.js";
+import type { SessionEventLogEntry } from "./redis-session-store.js";
+import { getPlayerChainGenesisSync } from "./load-player-chain-genesis.js";
+import { buildPlayerChainFromSnapshot } from "./player-chain/index.js";
+import { dispatchWorldFanoutLocal } from "./world-fanout-subscriber.js";
+import type {
+  PersistSnapshotRev,
+  PublishedSessionMetadata,
+  WorldFanoutOptions,
+  WorldSessionStore,
+} from "./world-session-store.js";
+
+const EVENT_LOG_MAX = 200;
+
+export type MemorySessionStoreOptions = {
+  playerChainGenesis?: string;
+};
+
+export class MemorySessionStore implements WorldSessionStore {
+  readonly fanoutDelivery = "local" as const;
+  readonly playerChainGenesis: string;
+  private sid: string | null = null;
+  private snapshot: PreviewSnapshotJson | null = null;
+  private rev = 0;
+  private merkleRootHex: string | null = null;
+  private merkleLeafCount: number | null = null;
+  private readonly eventLog: SessionEventLogEntry[] = [];
+  private readonly settings: Record<string, string> = {};
+
+  constructor(options: MemorySessionStoreOptions = {}) {
+    this.playerChainGenesis = getPlayerChainGenesisSync();
+  }
+
+  async loadOrCreateSessionId(): Promise<string> {
+    if (this.sid !== null) {
+      return this.sid;
+    }
+    const id = randomUUID();
+    this.sid = id;
+    return id;
+  }
+
+  async isValidSession(sid: string): Promise<boolean> {
+    if (sid.length === 0) return false;
+    return this.sid !== null && this.sid === sid.trim();
+  }
+
+  async replaceSessionWithNewSid(newSid: string): Promise<void> {
+    this.sid = newSid;
+    this.snapshot = null;
+    this.rev = 0;
+    this.merkleRootHex = null;
+    this.merkleLeafCount = null;
+    this.eventLog.length = 0;
+    for (const k of Object.keys(this.settings)) {
+      delete this.settings[k];
+    }
+  }
+
+  async getSnapshotJson(): Promise<PreviewSnapshotJson | null> {
+    return this.snapshot;
+  }
+
+  async persistSnapshot(snapshot: PreviewSnapshotJson): Promise<void> {
+    this.snapshot = snapshot;
+    const chain = buildPlayerChainFromSnapshot(
+      snapshot,
+      this.playerChainGenesis
+    );
+    this.merkleRootHex = chain.merkleRootHex;
+    this.merkleLeafCount = chain.merkleLeafCount;
+  }
+
+  async persistSnapshotReturningRev(
+    snapshot: PreviewSnapshotJson
+  ): Promise<PersistSnapshotRev> {
+    this.snapshot = snapshot;
+    this.rev += 1;
+    const chain = buildPlayerChainFromSnapshot(
+      snapshot,
+      this.playerChainGenesis
+    );
+    this.merkleRootHex = chain.merkleRootHex;
+    this.merkleLeafCount = chain.merkleLeafCount;
+    return {
+      rev: this.rev,
+      merkleRootHex: chain.merkleRootHex,
+      merkleLeafCount: chain.merkleLeafCount,
+    };
+  }
+
+  async getSnapshotRev(): Promise<number> {
+    return this.rev;
+  }
+
+  async publishWorldFanout(
+    rev: number,
+    event: string,
+    data: unknown,
+    options?: WorldFanoutOptions
+  ): Promise<void> {
+    const msg: {
+      rev: number;
+      event: string;
+      data: unknown;
+      merkleRootHex?: string;
+      merkleLeafCount?: number;
+      playerChainNotify?: WorldFanoutOptions["playerChainNotify"];
+    } = { rev, event, data };
+    if (
+      options?.merkleRootHex !== undefined &&
+      options.merkleRootHex.length > 0
+    ) {
+      msg.merkleRootHex = options.merkleRootHex;
+    }
+    if (
+      options?.merkleLeafCount !== undefined &&
+      Number.isFinite(options.merkleLeafCount)
+    ) {
+      msg.merkleLeafCount = options.merkleLeafCount;
+    }
+    if (options?.playerChainNotify !== undefined) {
+      msg.playerChainNotify = options.playerChainNotify;
+    }
+    dispatchWorldFanoutLocal(msg);
+  }
+
+  async mergeSettings(partial: Record<string, string>): Promise<void> {
+    if (Object.keys(partial).length === 0) return;
+    Object.assign(this.settings, partial);
+  }
+
+  async appendEventLog(entry: SessionEventLogEntry): Promise<void> {
+    this.eventLog.unshift({
+      type: entry.type,
+      at: entry.at,
+      summary: entry.summary.slice(0, 4_000),
+    });
+    while (this.eventLog.length > EVENT_LOG_MAX) {
+      this.eventLog.pop();
+    }
+  }
+
+  async getPublishedMetadata(): Promise<PublishedSessionMetadata> {
+    return {
+      sid: this.sid,
+      createdAt: null,
+      updatedAt: null,
+      lastSnapshotAt: null,
+      lastEventAt:
+        this.eventLog.length > 0 ? (this.eventLog[0]?.at ?? null) : null,
+      snapshotBytes:
+        this.snapshot !== null
+          ? String(Buffer.byteLength(JSON.stringify(this.snapshot), "utf8"))
+          : null,
+      eventLogLength: this.eventLog.length,
+      settings: { ...this.settings },
+      merkleRootHex: this.merkleRootHex,
+      merkleLeafCount: this.merkleLeafCount,
+    };
+  }
+
+  async getRecentEventLog(limit: number): Promise<SessionEventLogEntry[]> {
+    const n = Math.min(Math.max(limit, 1), EVENT_LOG_MAX);
+    return this.eventLog.slice(0, n).map((e) => ({ ...e }));
+  }
+}

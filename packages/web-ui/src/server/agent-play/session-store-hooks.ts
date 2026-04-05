@@ -1,11 +1,11 @@
 import type { PlayWorld } from "./play-world.js";
-import type { RedisSessionStore, SessionEventLogEntry } from "./redis-session-store.js";
+import type { SessionEventLogEntry } from "./redis-session-store.js";
+import type { WorldSessionStore } from "./world-session-store.js";
 import {
   PLAYER_ADDED_EVENT,
   WORLD_AGENT_SIGNAL_EVENT,
   WORLD_INTERACTION_EVENT,
   WORLD_JOURNEY_EVENT,
-  WORLD_STRUCTURES_EVENT,
 } from "./play-transport.js";
 
 function summarizePayload(payload: unknown): string {
@@ -19,7 +19,7 @@ function summarizePayload(payload: unknown): string {
 
 export function attachSessionStoreEventHooks(
   world: PlayWorld,
-  store: RedisSessionStore
+  store: WorldSessionStore
 ): void {
   const log = (type: string, payload: unknown): void => {
     const entry: SessionEventLogEntry = {
@@ -35,9 +35,6 @@ export function attachSessionStoreEventHooks(
   });
   world.on(PLAYER_ADDED_EVENT, (payload: unknown) => {
     log(PLAYER_ADDED_EVENT, payload);
-  });
-  world.on(WORLD_STRUCTURES_EVENT, (payload: unknown) => {
-    log(WORLD_STRUCTURES_EVENT, payload);
   });
   world.on(WORLD_INTERACTION_EVENT, (payload: unknown) => {
     log(WORLD_INTERACTION_EVENT, payload);

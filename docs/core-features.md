@@ -23,7 +23,7 @@ This document lists **product-level capabilities** of agent-play as implemented 
 
 - **In-memory events** — `PlayWorld` uses an event bus for same-process subscribers (journey, interaction, structures, etc.).
 - **Optional HTTP forwarding** — `playApiBase` can POST events to a remote service for multi-process setups.
-- **Next.js host** — The web-ui app serves the watch UI, **`getSnapshot` RPC**, **GET snapshot**, and **SSE** (`world:journey`, `world:player_added`, `world:structures`, `world:interaction`), with Redis fanout when configured.
+- **Next.js host** — The web-ui app serves the watch UI, **`getWorldSnapshot` RPC**, **GET snapshot**, and **SSE** (`world:journey`, `world:player_added`, `world:interaction`, `world:agent_signal`), with Redis fanout when configured.
 
 ## Browser preview UI
 

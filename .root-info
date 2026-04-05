@@ -1,0 +1,5 @@
+# tool-merkle-root-v3
+# 2026-04-05T00:27:21.749Z
+# Derive anchor id (Merkle root v3) from buffer.txt via scrypt; output matches .root used for RemotePlayWorld trust anchor.
+Merkle root (v3): scrypt(dkLen=32) over buffer.txt bytes; salt=SHA-256(domain label). See file header comment for full spec.
+87b6637b010478e48a83a8d445041ae4df5d607df7932153cdfee5c601e8e39e

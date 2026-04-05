@@ -19,11 +19,12 @@ describe("PlayWorld addPlayer with AgentRepository", () => {
         name: "x",
         type: "langchain",
         agent: { type: "langchain", toolNames: ["chat_tool"] },
+        agentId: "any-id",
       })
     ).rejects.toThrow(/apiKey/);
   });
 
-  it("matches registered agent by name and toolNames when agentId is omitted", async () => {
+  it("loads a registered agent when agentId belongs to the user", async () => {
     const repo = new InMemoryAgentRepository();
     const { plainApiKey } = await repo.createApiKey("u1");
     const { agentId } = await repo.createAgent({
@@ -39,13 +40,19 @@ describe("PlayWorld addPlayer with AgentRepository", () => {
       type: "langchain",
       agent: { type: "langchain", toolNames: ["increment", "chat_tool"] },
       apiKey: plainApiKey,
+      agentId,
     });
     expect(p.id).toBe(agentId);
   });
 
-  it("creates a registered agent when agentId is omitted and no match exists", async () => {
+  it("accepts an existing repository row and session player id matches agentId", async () => {
     const repo = new InMemoryAgentRepository();
     const { plainApiKey } = await repo.createApiKey("u1");
+    const { agentId } = await repo.createAgent({
+      name: "fresh",
+      toolNames: ["chat_tool"],
+      userId: "u1",
+    });
     const w = new PlayWorld({ repository: repo });
     await w.start();
 
@@ -54,6 +61,7 @@ describe("PlayWorld addPlayer with AgentRepository", () => {
       type: "langchain",
       agent: { type: "langchain", toolNames: ["chat_tool"] },
       apiKey: plainApiKey,
+      agentId,
     });
     const stored = await repo.getAgent(p.id);
     expect(stored).not.toBeNull();
@@ -105,14 +113,15 @@ describe("PlayWorld addPlayer with AgentRepository", () => {
     expect(p.id).toBe(agentId);
   });
 
-  it("uses ephemeral player id when repository is not configured", async () => {
+  it("uses provided agentId as session player id when repository is not configured", async () => {
     const w = new PlayWorld();
     await w.start();
     const p = await w.addPlayer({
       name: "x",
       type: "langchain",
       agent: { type: "langchain", toolNames: ["chat_tool"] },
+      agentId: "session-local-x",
     });
-    expect(p.id.length).toBeGreaterThan(0);
+    expect(p.id).toBe("session-local-x");
   });
 });

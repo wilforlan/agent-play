@@ -10,11 +10,20 @@ describe("PlayWorld resetSession", () => {
       name: "a",
       type: "langchain",
       agent: { type: "langchain", toolNames: ["chat_tool"] },
+      agentId: "local-a",
     });
-    expect(w.getSnapshotJson().players.length).toBeGreaterThan(0);
+    expect(
+      (await w.getSnapshotJson()).worldMap.occupants.filter(
+        (o) => o.kind === "agent"
+      ).length
+    ).toBeGreaterThan(0);
     const after = await w.resetSession();
     expect(after).not.toBe(before);
     expect(w.isSessionSid(after)).toBe(true);
-    expect(w.getSnapshotJson().players.length).toBe(0);
+    expect(
+      (await w.getSnapshotJson()).worldMap.occupants.filter(
+        (o) => o.kind === "agent"
+      ).length
+    ).toBe(0);
   });
 });
