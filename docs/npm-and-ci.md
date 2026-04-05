@@ -23,9 +23,9 @@ npm run build:play-ui
 
 Or `npm run build` to run all four build steps.
 
-## Version numbers (all published packages)
+## Version numbers (published packages)
 
-The root **`package.json`** has a **`version`** field used as the single source of truth for bumps. From the repo root, set the same semver on **root**, **`@agent-play/sdk`**, **`@agent-play/cli`**, **`@agent-play/play-ui`**, and **`@agent-play/web-ui`**:
+Each workspace sets its own **`version`** in **`package.json`**. To align every tracked package with the **root** version (optional monorepo-wide bump), run from the repo root:
 
 ```bash
 npm run version:packages -- 0.2.0
@@ -44,23 +44,14 @@ npm run version:packages -- -w web-ui minor
 
 Aliases: **`sdk`**, **`cli`**, **`play-ui`**, **`web-ui`**, **`root`** (root **`package.json`** only), or full names such as **`@agent-play/sdk`**.
 
-Implementation: [`scripts/sync-package-versions.mjs`](../scripts/sync-package-versions.mjs). **`node scripts/sync-package-versions.mjs --check`** exits **0** only when the root and every workspace **`package.json`** **`version`** match.
+Implementation: [`scripts/sync-package-versions.mjs`](../scripts/sync-package-versions.mjs).
 
-### Git hooks (local)
-
-Version sync is **not** run in CI. **`npm install`** runs **`prepare`**, which points Git at **`.githooks`** when **`.git`** exists. To set hooks again: **`npm run setup:git-hooks`** (same as **`git config core.hooksPath .githooks`**).
-
-**`pre-push`** runs before **`git push`**:
-
-1. If the outgoing push includes **no** commits that touch **`packages/`**, the hook exits (nothing to verify).
-2. If there are **uncommitted** changes under **`packages/`**, the push is **blocked** (commit or stash first).
-3. Otherwise it runs **`--check`**. If versions are out of sync, it runs **`sync-package-versions`**, then **blocks** the push until you **commit** the updated **`package.json`** files and push again.
-
-See [Development guide](development.md#git-hooks).
+- **`node scripts/sync-package-versions.mjs --check`** — exit **0** only when the root and every workspace **`package.json`** **`version`** match (optional consistency check).
+- **`node scripts/sync-package-versions.mjs --check-semver`** — exit **0** only when each tracked **`package.json`** has a **parseable semver** (optional local or CI check).
 
 ## Publishing (manual)
 
-1. Bump versions with **`npm run version:packages`** (see above), then commit. Use **`pre-push`** so versions stay aligned before you push.
+1. Bump versions with **`npm run version:packages`** (see above), then commit.
 2. `npm login` to npm.
 3. From the repo root, after `npm install` and builds:
 

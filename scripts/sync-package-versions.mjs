@@ -109,6 +109,26 @@ function checkAllMatchRoot() {
   return true;
 }
 
+function checkAllSemverFieldsValid() {
+  const bad = [];
+  for (const rel of PACKAGE_PATHS) {
+    try {
+      parseSemver(readVersionAt(rel));
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      bad.push(`${rel}: ${msg}`);
+    }
+  }
+  if (bad.length > 0) {
+    console.error("Invalid or missing semver in package.json:");
+    for (const b of bad) {
+      console.error(`  ${b}`);
+    }
+    return false;
+  }
+  return true;
+}
+
 function setVersion(pathFromRoot, version) {
   const path = join(root, pathFromRoot);
   const raw = readFileSync(path, "utf8");
@@ -144,6 +164,9 @@ function parseArgv(argv) {
   let workspace = null;
   for (let i = 0; i < argv.length; i += 1) {
     const a = argv[i];
+    if (a === "--check-semver") {
+      return { mode: "check-semver" };
+    }
     if (a === "--check") {
       return { mode: "check" };
     }
@@ -171,8 +194,10 @@ function printHelp(exitCode) {
   npm run version:packages -- --workspace <name> <version>
   npm run version:packages -- -w <name> patch | minor | major
   node scripts/sync-package-versions.mjs --check
+  node scripts/sync-package-versions.mjs --check-semver
 
-  --check   Exit 0 if root and all workspace package.json versions match; else exit 1.
+  --check         Exit 0 if root and all workspace package.json versions match; else exit 1.
+  --check-semver  Exit 0 if every tracked package.json has a valid semver version; else exit 1.
 
 Without --workspace: set the same semver on the root package and:
   @agent-play/sdk, @agent-play/cli, @agent-play/play-ui, @agent-play/web-ui
@@ -188,6 +213,10 @@ Examples:
 }
 
 const parsed = parseArgv(process.argv.slice(2));
+
+if (parsed.mode === "check-semver") {
+  process.exit(checkAllSemverFieldsValid() ? 0 : 1);
+}
 
 if (parsed.mode === "check") {
   process.exit(checkAllMatchRoot() ? 0 : 1);

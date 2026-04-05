@@ -10,7 +10,6 @@
     "packages/*"
   ],
   "scripts": {
-    "prepare": "node scripts/install-git-hooks.mjs",
     "build": "npm run build:sdk && npm run build:agents && npm run build:cli && npm run build:web-ui && npm run build:play-ui",
     "build:sdk": "npm run build -w @agent-play/sdk",
     "build:agents": "npm run build -w @agent-play/agents",
@@ -27,7 +26,6 @@
     "deploy": "bash k8s/deploy.sh",
     "deploy:clean": "bash k8s/clean-cluster.sh",
     "version:packages": "node scripts/sync-package-versions.mjs",
-    "setup:git-hooks": "bash scripts/setup-git-hooks.sh",
     "setup:k8s-server": "bash k8s/setup.sh"
   },
   "engines": {
