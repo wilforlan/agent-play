@@ -14,6 +14,21 @@ const PACKAGE_PATHS = [
   "packages/web-ui/package.json",
 ];
 
+/** Maps npm scope name or short alias → path from repo root. */
+const WORKSPACE_TO_REL = {
+  "@agent-play/sdk": "packages/sdk/package.json",
+  sdk: "packages/sdk/package.json",
+  "@agent-play/cli": "packages/cli/package.json",
+  cli: "packages/cli/package.json",
+  "@agent-play/play-ui": "packages/play-ui/package.json",
+  "play-ui": "packages/play-ui/package.json",
+  playui: "packages/play-ui/package.json",
+  "@agent-play/web-ui": "packages/web-ui/package.json",
+  "web-ui": "packages/web-ui/package.json",
+  webui: "packages/web-ui/package.json",
+  root: "package.json",
+};
+
 const semverRe = /^(\d+)\.(\d+)\.(\d+)(?:-([\w.]+))?$/;
 
 function parseSemver(v) {
@@ -102,39 +117,117 @@ function setVersion(pathFromRoot, version) {
   writeFileSync(path, `${JSON.stringify(j, null, 2)}\n`, "utf8");
 }
 
-const arg = process.argv[2];
-
-if (arg === "--check") {
-  process.exit(checkAllMatchRoot() ? 0 : 1);
+function resolveWorkspace(id) {
+  const raw = id.trim();
+  if (raw.length === 0) {
+    throw new Error("Workspace id is empty");
+  }
+  const direct = WORKSPACE_TO_REL[raw];
+  if (direct) {
+    return direct;
+  }
+  const lower = raw.toLowerCase();
+  const byLower = WORKSPACE_TO_REL[lower];
+  if (byLower) {
+    return byLower;
+  }
+  const known = Object.keys(WORKSPACE_TO_REL)
+    .filter((k) => !k.includes("@"))
+    .sort();
+  throw new Error(
+    `Unknown workspace "${id}". Use one of: ${known.join(", ")}, or @agent-play/sdk, @agent-play/cli, @agent-play/play-ui, @agent-play/web-ui`
+  );
 }
 
-if (arg === undefined || arg === "-h" || arg === "--help") {
-  console.error(`usage: npm run version:packages -- <version>
-       npm run version:packages -- patch | minor | major
-       node scripts/sync-package-versions.mjs --check
+function parseArgv(argv) {
+  const rest = [];
+  let workspace = null;
+  for (let i = 0; i < argv.length; i += 1) {
+    const a = argv[i];
+    if (a === "--check") {
+      return { mode: "check" };
+    }
+    if (a === "-h" || a === "--help") {
+      return { mode: "help" };
+    }
+    if (a === "--workspace" || a === "-w") {
+      const next = argv[i + 1];
+      if (typeof next !== "string" || next.startsWith("-")) {
+        throw new Error(`Missing value after ${a}`);
+      }
+      workspace = next;
+      i += 1;
+      continue;
+    }
+    rest.push(a);
+  }
+  return { mode: "run", workspace, rest };
+}
+
+function printHelp(exitCode) {
+  console.error(`usage:
+  npm run version:packages -- <version>
+  npm run version:packages -- patch | minor | major
+  npm run version:packages -- --workspace <name> <version>
+  npm run version:packages -- -w <name> patch | minor | major
+  node scripts/sync-package-versions.mjs --check
 
   --check   Exit 0 if root and all workspace package.json versions match; else exit 1.
 
-Sets the same semver on the root package and:
+Without --workspace: set the same semver on the root package and:
   @agent-play/sdk, @agent-play/cli, @agent-play/play-ui, @agent-play/web-ui
+
+With --workspace / -w: set the version only in that package.json (aliases: sdk, cli, play-ui, web-ui, root, or @agent-play/...).
 
 Examples:
   npm run version:packages -- 0.2.0
-  npm run version:packages -- patch`);
-  process.exit(arg === undefined ? 1 : 0);
+  npm run version:packages -- patch
+  npm run version:packages -- -w sdk patch
+  npm run version:packages -- --workspace @agent-play/cli 1.4.0`);
+  process.exit(exitCode);
 }
+
+const parsed = parseArgv(process.argv.slice(2));
+
+if (parsed.mode === "check") {
+  process.exit(checkAllMatchRoot() ? 0 : 1);
+}
+
+if (parsed.mode === "help") {
+  printHelp(0);
+}
+
+if (parsed.mode !== "run") {
+  printHelp(1);
+}
+
+const { workspace, rest } = parsed;
+
+if (rest.length !== 1) {
+  console.error("error: expected exactly one version argument: <semver> | patch | minor | major");
+  printHelp(1);
+}
+
+const arg = rest[0];
 
 let target;
 
 if (arg === "patch" || arg === "minor" || arg === "major") {
-  target = bump(readRootVersion(), arg);
+  const base =
+    workspace === null ? readRootVersion() : readVersionAt(resolveWorkspace(workspace));
+  target = bump(base, arg);
 } else {
   parseSemver(arg);
   target = arg.trim();
 }
 
-for (const rel of PACKAGE_PATHS) {
+if (workspace === null) {
+  for (const rel of PACKAGE_PATHS) {
+    setVersion(rel, target);
+  }
+  console.log(`Set version ${target} in ${PACKAGE_PATHS.length} package.json files.`);
+} else {
+  const rel = resolveWorkspace(workspace);
   setVersion(rel, target);
+  console.log(`Set version ${target} in ${rel} only.`);
 }
-
-console.log(`Set version ${target} in ${PACKAGE_PATHS.length} package.json files.`);

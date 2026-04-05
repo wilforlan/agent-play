@@ -34,6 +34,16 @@ npm run version:packages -- minor
 npm run version:packages -- major
 ```
 
+To bump **one** workspace only (writes that **`package.json`** only; does not sync the rest of the monorepo), pass **`--workspace`** or **`-w`** and a single version or **`patch`**, **`minor`**, or **`major`** (bump is computed from that package’s current version):
+
+```bash
+npm run version:packages -- -w sdk patch
+npm run version:packages -- --workspace @agent-play/cli 1.4.0
+npm run version:packages -- -w web-ui minor
+```
+
+Aliases: **`sdk`**, **`cli`**, **`play-ui`**, **`web-ui`**, **`root`** (root **`package.json`** only), or full names such as **`@agent-play/sdk`**.
+
 Implementation: [`scripts/sync-package-versions.mjs`](../scripts/sync-package-versions.mjs). **`node scripts/sync-package-versions.mjs --check`** exits **0** only when the root and every workspace **`package.json`** **`version`** match.
 
 ### Git hooks (local)
