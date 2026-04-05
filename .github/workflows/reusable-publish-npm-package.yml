@@ -1,0 +1,40 @@
+name: Reusable — publish one npm workspace
+
+on:
+  workflow_call:
+    inputs:
+      workspace:
+        description: Workspace name (e.g. @agent-play/sdk)
+        required: true
+        type: string
+      node_version:
+        description: Node.js version for setup-node
+        required: false
+        type: string
+        default: "20"
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node_version }}
+          registry-url: https://registry.npmjs.org
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build workspace
+        run: npm run build -w ${{ inputs.workspace }}
+
+      - name: Publish to npm
+        run: npm publish -w ${{ inputs.workspace }} --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

@@ -1,0 +1,22 @@
+name: Publish @agent-play/sdk
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    tags:
+      - "v*"
+    paths:
+      - "packages/sdk/**"
+
+concurrency:
+  group: publish-npm-sdk-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    uses: ./.github/workflows/reusable-publish-npm-package.yml
+    with:
+      workspace: "@agent-play/sdk"
+    secrets: inherit

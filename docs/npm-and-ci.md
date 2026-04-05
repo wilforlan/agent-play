@@ -64,13 +64,22 @@ npm publish -w @agent-play/play-ui --access public
 
 ## GitHub Actions
 
-Workflow [`.github/workflows/publish-npm.yml`](../.github/workflows/publish-npm.yml) runs on pushes to **`main`**, on **`v*`** tags, and on **`workflow_dispatch`**. Configure the **`NPM_TOKEN`** repository secret (automation token from npmjs.com with publish scope). **`npm publish`** fails if that version already exists on the registry—bump versions locally (and commit) before a new release.
+Configure the **`NPM_TOKEN`** repository secret (automation token from npmjs.com with publish scope). **`npm publish`** fails if that version already exists on the registry—bump versions locally (and commit) before a new release.
+
+Publishing is split into **one workflow per package** plus a **reusable** implementation:
+
+| Workflow | Scope |
+|----------|--------|
+| [`reusable-publish-npm-package.yml`](../.github/workflows/reusable-publish-npm-package.yml) | **`workflow_call` only** — checkout, **`npm ci`**, **`npm run build -w …`**, **`npm publish -w …`**. Inputs: **`workspace`** (required), optional **`node_version`** (default `20`). |
+| [`publish-npm-sdk.yml`](../.github/workflows/publish-npm-sdk.yml) | **`packages/sdk/**`** — push to **`main`** or **`v*`** tags, or **`workflow_dispatch`**. |
+| [`publish-npm-cli.yml`](../.github/workflows/publish-npm-cli.yml) | **`packages/cli/**`** — same triggers. |
+| [`publish-npm-play-ui.yml`](../.github/workflows/publish-npm-play-ui.yml) | **`packages/play-ui/**`** — same triggers. |
 
 Behavior:
 
-- **Separate jobs** — `@agent-play/sdk`, `@agent-play/cli`, and `@agent-play/play-ui` each build and publish in their own job. A failure in one job does not cancel or fail the others.
-- **Path-based publish on `push`** — For commits pushed to **`main`** or **`v*`** tags, a package is published only when that push includes changes under its workspace folder (`packages/sdk/**`, `packages/cli/**`, or `packages/play-ui/**`). Other packages are skipped.
-- **Manual runs** — **`workflow_dispatch`** shows checkboxes to publish each package independently (defaults: all on).
+- **Isolated runs** — Each package has its own workflow run. A failure publishing one package does not affect the others.
+- **Path scoping on `push`** — GitHub’s **`paths`** filter applies only to that workflow; unchanged packages do not run.
+- **Manual runs** — Run **`workflow_dispatch`** on the workflow for the package you want (Actions → workflow name → Run workflow).
 
 ## API documentation (TypeDoc)
 
