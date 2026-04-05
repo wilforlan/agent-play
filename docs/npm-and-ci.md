@@ -66,6 +66,12 @@ npm publish -w @agent-play/play-ui --access public
 
 Workflow [`.github/workflows/publish-npm.yml`](../.github/workflows/publish-npm.yml) runs on pushes to **`main`**, on **`v*`** tags, and on **`workflow_dispatch`**. Configure the **`NPM_TOKEN`** repository secret (automation token from npmjs.com with publish scope). **`npm publish`** fails if that version already exists on the registry—bump versions locally (and commit) before a new release.
 
+Behavior:
+
+- **Separate jobs** — `@agent-play/sdk`, `@agent-play/cli`, and `@agent-play/play-ui` each build and publish in their own job. A failure in one job does not cancel or fail the others.
+- **Path-based publish on `push`** — For commits pushed to **`main`** or **`v*`** tags, a package is published only when that push includes changes under its workspace folder (`packages/sdk/**`, `packages/cli/**`, or `packages/play-ui/**`). Other packages are skipped.
+- **Manual runs** — **`workflow_dispatch`** shows checkboxes to publish each package independently (defaults: all on).
+
 ## API documentation (TypeDoc)
 
 - **Source:** `typedoc.json` at the repo root documents **`@agent-play/sdk`** and **`@agent-play/cli`** entry points.
