@@ -176,7 +176,7 @@ export function mergeSnapshotWithPlayerChainNode(
       },
     };
   }
-  if (node.removed) {
+  if (node.removed === true) {
     return {
       ...snapshot,
       worldMap: {
@@ -187,7 +187,11 @@ export function mergeSnapshotWithPlayerChainNode(
       },
     };
   }
-  const key = stableOccupantSortKey(node.occupant);
+  if (node.removed !== false) {
+    throw new Error("mergeSnapshotWithPlayerChainNode: invalid occupant node");
+  }
+  const occ = node.occupant;
+  const key = stableOccupantSortKey(occ);
   const occupants = snapshot.worldMap.occupants.filter(
     (o) => stableOccupantSortKey(o) !== key
   );
@@ -195,7 +199,7 @@ export function mergeSnapshotWithPlayerChainNode(
     ...snapshot,
     worldMap: {
       ...snapshot.worldMap,
-      occupants: [...occupants, node.occupant],
+      occupants: [...occupants, occ],
     },
   };
 }
