@@ -27,7 +27,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@agent-play/sdk": "^3.0.1",
+    "@agent-play/sdk": "3.0.2",
     "dompurify": "^3.3.3",
     "marked": "^17.0.5",
     "pixi.js": "^8.17.1"
