@@ -1,14 +1,32 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { RemotePlayWorld } from "./remote-play-world.js";
 
-const sampleRegisteredAgent = (agentId: string, name: string) => ({
-  agentId,
-  name,
-  toolNames: ["chat_tool"],
-  zoneCount: 0,
-  yieldCount: 0,
-  flagged: false,
-});
+const BASE_URL = "http://127.0.0.1:3000";
+const SESSION_URL = `${BASE_URL}/api/agent-play/session`;
+const DEFAULT_API_KEY = "k";
+
+function sessionResponse(): Response {
+  return new Response(JSON.stringify({ sid: "sid-1" }), { status: 200 });
+}
+
+function notFound(): Response {
+  return new Response("not found", { status: 404 });
+}
+
+function playWorld(apiKey: string = DEFAULT_API_KEY): RemotePlayWorld {
+  return new RemotePlayWorld({ baseUrl: BASE_URL, apiKey });
+}
+
+function sampleRegisteredAgent(agentId: string, name: string) {
+  return {
+    agentId,
+    name,
+    toolNames: ["chat_tool"],
+    zoneCount: 0,
+    yieldCount: 0,
+    flagged: false,
+  };
+}
 
 describe("RemotePlayWorld", () => {
   afterEach(() => {
@@ -20,7 +38,7 @@ describe("RemotePlayWorld", () => {
     expect(
       () =>
         new RemotePlayWorld({
-          baseUrl: "http://127.0.0.1:3000",
+          baseUrl: BASE_URL,
           apiKey: "",
         })
     ).toThrow(/apiKey/);
@@ -30,20 +48,17 @@ describe("RemotePlayWorld", () => {
     const fetchMock = vi.fn(async (url: string | URL) => {
       const u = String(url);
       if (u.endsWith("/api/agent-play/session")) {
-        return new Response(JSON.stringify({ sid: "sid-1" }), { status: 200 });
+        return sessionResponse();
       }
-      return new Response("not found", { status: 404 });
+      return notFound();
     });
     vi.stubGlobal("fetch", fetchMock);
 
-    const world = new RemotePlayWorld({
-      baseUrl: "http://127.0.0.1:3000",
-      apiKey: "k",
-    });
+    const world = playWorld();
     await world.connect();
     expect(world.getSessionId()).toBe("sid-1");
     expect(fetchMock).toHaveBeenCalledWith(
-      "http://127.0.0.1:3000/api/agent-play/session",
+      SESSION_URL,
       expect.objectContaining({ headers: {} })
     );
     await world.close();
@@ -54,7 +69,7 @@ describe("RemotePlayWorld", () => {
       async (url: string | URL, init?: RequestInit) => {
         const u = String(url);
         if (u.endsWith("/api/agent-play/session")) {
-          return new Response(JSON.stringify({ sid: "sid-1" }), { status: 200 });
+          return sessionResponse();
         }
         if (u.includes("/api/agent-play/players") && init?.method === "POST") {
           const body = JSON.parse(String(init.body)) as {
@@ -66,21 +81,18 @@ describe("RemotePlayWorld", () => {
           return new Response(
             JSON.stringify({
               playerId: "p1",
-              previewUrl: "http://127.0.0.1:3000/agent-play/watch",
+              previewUrl: `${BASE_URL}/agent-play/watch`,
               registeredAgent: sampleRegisteredAgent("aid-1", "a"),
             }),
             { status: 200 }
           );
         }
-        return new Response("not found", { status: 404 });
+        return notFound();
       }
     );
     vi.stubGlobal("fetch", fetchMock);
 
-    const world = new RemotePlayWorld({
-      baseUrl: "http://127.0.0.1:3000",
-      apiKey: "key",
-    });
+    const world = playWorld("key");
     await world.connect();
     const player = await world.addPlayer({
       name: "a",
@@ -89,7 +101,7 @@ describe("RemotePlayWorld", () => {
       agentId: "aid-1",
     });
     expect(player.id).toBe("p1");
-    expect(player.previewUrl).toBe("http://127.0.0.1:3000/agent-play/watch");
+    expect(player.previewUrl).toBe(`${BASE_URL}/agent-play/watch`);
     expect(player.registeredAgent.agentId).toBe("aid-1");
     await world.close();
   });
@@ -99,7 +111,7 @@ describe("RemotePlayWorld", () => {
       async (url: string | URL, init?: RequestInit) => {
         const u = String(url);
         if (u.endsWith("/api/agent-play/session")) {
-          return new Response(JSON.stringify({ sid: "sid-1" }), { status: 200 });
+          return sessionResponse();
         }
         if (
           u.endsWith("/api/agent-play/sdk/rpc") &&
@@ -136,15 +148,12 @@ describe("RemotePlayWorld", () => {
             { status: 200 }
           );
         }
-        return new Response("not found", { status: 404 });
+        return notFound();
       }
     );
     vi.stubGlobal("fetch", fetchMock);
 
-    const world = new RemotePlayWorld({
-      baseUrl: "http://127.0.0.1:3000",
-      apiKey: "k",
-    });
+    const world = playWorld();
     await world.connect();
     const snap = await world.getWorldSnapshot();
     expect(snap.sid).toBe("sid-1");
@@ -158,7 +167,7 @@ describe("RemotePlayWorld", () => {
       async (url: string | URL, init?: RequestInit) => {
         const u = String(url);
         if (u.endsWith("/api/agent-play/session")) {
-          return new Response(JSON.stringify({ sid: "sid-1" }), { status: 200 });
+          return sessionResponse();
         }
         if (
           u.endsWith("/api/agent-play/sdk/rpc") &&
@@ -178,15 +187,12 @@ describe("RemotePlayWorld", () => {
             { status: 200 }
           );
         }
-        return new Response("not found", { status: 404 });
+        return notFound();
       }
     );
     vi.stubGlobal("fetch", fetchMock);
 
-    const world = new RemotePlayWorld({
-      baseUrl: "http://127.0.0.1:3000",
-      apiKey: "k",
-    });
+    const world = playWorld();
     await world.connect();
     const node = await world.getPlayerChainNode("__genesis__");
     expect(node.kind).toBe("genesis");
@@ -201,7 +207,7 @@ describe("RemotePlayWorld", () => {
       async (url: string | URL, init?: RequestInit) => {
         const u = String(url);
         if (u.endsWith("/api/agent-play/session")) {
-          return new Response(JSON.stringify({ sid: "sid-1" }), { status: 200 });
+          return sessionResponse();
         }
         if (
           u.endsWith("/api/agent-play/sdk/rpc") &&
@@ -230,15 +236,12 @@ describe("RemotePlayWorld", () => {
             { status: 200 }
           );
         }
-        return new Response("not found", { status: 404 });
+        return notFound();
       }
     );
     vi.stubGlobal("fetch", fetchMock);
 
-    const world = new RemotePlayWorld({
-      baseUrl: "http://127.0.0.1:3000",
-      apiKey: "k",
-    });
+    const world = playWorld();
     await world.connect();
     const snap = await world.getWorldSnapshot();
     const occ = snap.worldMap.occupants[0];
@@ -254,7 +257,7 @@ describe("RemotePlayWorld", () => {
       async (url: string | URL, init?: RequestInit) => {
         const u = String(url);
         if (u.endsWith("/api/agent-play/session")) {
-          return new Response(JSON.stringify({ sid: "sid-1" }), { status: 200 });
+          return sessionResponse();
         }
         if (
           u.endsWith("/api/agent-play/sdk/rpc") &&
@@ -283,15 +286,12 @@ describe("RemotePlayWorld", () => {
             { status: 200 }
           );
         }
-        return new Response("not found", { status: 404 });
+        return notFound();
       }
     );
     vi.stubGlobal("fetch", fetchMock);
 
-    const world = new RemotePlayWorld({
-      baseUrl: "http://127.0.0.1:3000",
-      apiKey: "k",
-    });
+    const world = playWorld();
     await world.connect();
     const snap = await world.getWorldSnapshot();
     const occ = snap.worldMap.occupants[0];
@@ -307,7 +307,7 @@ describe("RemotePlayWorld", () => {
       async (url: string | URL, init?: RequestInit) => {
         const u = String(url);
         if (u.endsWith("/api/agent-play/session")) {
-          return new Response(JSON.stringify({ sid: "sid-1" }), { status: 200 });
+          return sessionResponse();
         }
         if (u.includes("/api/agent-play/sdk/rpc") && init?.method === "POST") {
           const body = JSON.parse(String(init.body)) as {
@@ -318,15 +318,12 @@ describe("RemotePlayWorld", () => {
           expect(body.payload?.playerId).toBe("p1");
           return new Response(JSON.stringify({ ok: true }), { status: 200 });
         }
-        return new Response("not found", { status: 404 });
+        return notFound();
       }
     );
     vi.stubGlobal("fetch", fetchMock);
 
-    const world = new RemotePlayWorld({
-      baseUrl: "http://127.0.0.1:3000",
-      apiKey: "k",
-    });
+    const world = playWorld();
     await world.connect();
     await world.recordInteraction({
       playerId: "p1",
@@ -338,10 +335,7 @@ describe("RemotePlayWorld", () => {
 
   it("hold().for resolves after delay", async () => {
     vi.useFakeTimers();
-    const world = new RemotePlayWorld({
-      baseUrl: "http://127.0.0.1:3000",
-      apiKey: "k",
-    });
+    const world = playWorld();
     const p = world.hold().for(0.05);
     await vi.advanceTimersByTimeAsync(50);
     await p;
@@ -349,18 +343,12 @@ describe("RemotePlayWorld", () => {
   });
 
   it("hold().for throws when seconds is not finite", async () => {
-    const world = new RemotePlayWorld({
-      baseUrl: "http://127.0.0.1:3000",
-      apiKey: "k",
-    });
+    const world = playWorld();
     await expect(world.hold().for(Number.NaN)).rejects.toThrow(/finite/);
   });
 
   it("onClose runs when close is called and close is idempotent", async () => {
-    const world = new RemotePlayWorld({
-      baseUrl: "http://127.0.0.1:3000",
-      apiKey: "k",
-    });
+    const world = playWorld();
     let n = 0;
     const off = world.onClose(() => {
       n += 1;
@@ -375,10 +363,7 @@ describe("RemotePlayWorld", () => {
   });
 
   it("onClose can unsubscribe before close", async () => {
-    const world = new RemotePlayWorld({
-      baseUrl: "http://127.0.0.1:3000",
-      apiKey: "k",
-    });
+    const world = playWorld();
     let n = 0;
     const off = world.onClose(() => {
       n += 1;
