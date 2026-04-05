@@ -64,22 +64,13 @@ npm publish -w @agent-play/play-ui --access public
 
 ## GitHub Actions
 
-Configure the **`NPM_TOKEN`** repository secret (automation token from npmjs.com with publish scope). **`npm publish`** fails if that version already exists on the registry—bump versions locally (and commit) before a new release.
-
-Publishing is split into **one workflow per package** plus a **reusable** implementation:
-
-| Workflow | Scope |
-|----------|--------|
-| [`reusable-publish-npm-package.yml`](../.github/workflows/reusable-publish-npm-package.yml) | **`workflow_call` only** — checkout, **`npm ci`**, **`npm run build -w …`**, **`npm publish -w …`**. Inputs: **`workspace`** (required), optional **`node_version`** (default `20`). |
-| [`publish-npm-sdk.yml`](../.github/workflows/publish-npm-sdk.yml) | **`packages/sdk/**`** — push to **`main`** or **`v*`** tags, or **`workflow_dispatch`**. |
-| [`publish-npm-cli.yml`](../.github/workflows/publish-npm-cli.yml) | **`packages/cli/**`** — same triggers. |
-| [`publish-npm-play-ui.yml`](../.github/workflows/publish-npm-play-ui.yml) | **`packages/play-ui/**`** — same triggers. |
+Workflow [`.github/workflows/publish-npm.yml`](../.github/workflows/publish-npm.yml) runs on pushes to **`main`**, on **`v*`** tags, and on **`workflow_dispatch`**. Configure the **`NPM_TOKEN`** repository secret (automation token from npmjs.com with publish scope). **`npm publish`** fails if that version already exists on the registry—bump versions locally (and commit) before a new release.
 
 Behavior:
 
-- **Isolated runs** — Each package has its own workflow run. A failure publishing one package does not affect the others.
-- **Path scoping on `push`** — GitHub’s **`paths`** filter applies only to that workflow; unchanged packages do not run.
-- **Manual runs** — Run **`workflow_dispatch`** on the workflow for the package you want (Actions → workflow name → Run workflow).
+- **Single workflow** — One **`publish`** job runs **`npm ci`** once, then **build + publish** in dependency order: **`@agent-play/sdk`** → **`@agent-play/cli`** → **`@agent-play/play-ui`**. Each step runs only when that package is selected (see below). A failure in an earlier step stops later ones, so the SDK is published to npm before downstream packages in the same run.
+- **Path-based selection on `push`** — A **`changes`** job uses **`dorny/paths-filter`** so only packages with changes under `packages/sdk/**`, `packages/cli/**`, or `packages/play-ui/**` are built and published.
+- **Manual runs** — **`workflow_dispatch`** exposes checkboxes to include or skip each package (defaults: all on).
 
 ## API documentation (TypeDoc)
 
