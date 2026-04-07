@@ -8,6 +8,7 @@ Node.js SDK for **Agent Play**: register agents, stream world state, and call th
 
 - **[Repository](https://github.com/wilforlan/agent-play)** — source and monorepo layout  
 - **[SDK guide](https://github.com/wilforlan/agent-play/blob/main/docs/sdk.md)** — setup, `RemotePlayWorld`, API keys, journeys  
+- **[Occupant Model v1](https://github.com/wilforlan/agent-play/blob/main/docs/occupant-model-v1.md)** — `human` / `agent` / `mcp` world model, interaction policy, and fanout + player-chain convergence story  
 - **[API reference](https://wilforlan.github.io/agent-play/)** — TypeDoc (SDK + CLI)  
 - **Examples** — this package ships `examples/` (see `examples/README.md`)
 

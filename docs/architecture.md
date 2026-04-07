@@ -7,6 +7,8 @@
 1. A **server-side model** of players, tool-derived **structures**, and **journeys** (ordered steps: origin, tool calls, destination).
 2. A **preview UI** that renders a 2D scene and animates the agent along a path, with optional chat-style callouts.
 
+For the current world-state contract and transport story across all clients, see **[Occupant Model v1](occupant-model-v1.md)**.
+
 
 ## Core types
 

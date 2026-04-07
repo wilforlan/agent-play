@@ -14,6 +14,7 @@ The repository uses npm workspaces. **`packages/sdk`** is the Node.js package `@
 |----------|----------|
 | [Development guide](development.md) | Local setup, env templates, running the stack, troubleshooting |
 | [World map v3](updates-world-map-v3.md) | Snapshot/RPC: occupants-only map, `getWorldSnapshot`, **`getPlayerChainNode`**, fanout **`playerChainNotify`**, 100-occupant cap |
+| [Occupant Model v1](occupant-model-v1.md) | Occupant taxonomy (`human`, `agent`, `mcp`), interaction policy, and the end-to-end fanout + player-chain convergence story across SDK/web-ui clients |
 | [Kubernetes deployment](kubernetes-deployment.md) | Index; [`k8s/`](k8s/README.md) (startup, [deployment](k8s/deployment.md), Redis, server) |
 | [Notes / runbooks](notes/README.md) | World model + player chain ([deep dive](notes/agent-play-world-model-and-player-chain.md)), k8s debugging ([runbook](notes/k8s-agent-play-debugging.md)) |
 | [npm & CI](npm-and-ci.md) | `@agent-play/sdk`, `@agent-play/cli`, `@agent-play/play-ui`, publish workflow, TypeDoc / GitHub Pages |
