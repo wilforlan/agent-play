@@ -33,6 +33,15 @@ describe("player-chain index", () => {
   it("stableOccupantSortKey", () => {
     expect(
       stableOccupantSortKey({
+        kind: "human",
+        id: "__human__",
+        name: "You",
+        x: 0,
+        y: 0,
+      })
+    ).toBe("human:__human__");
+    expect(
+      stableOccupantSortKey({
         kind: "agent",
         agentId: "x",
         name: "n",

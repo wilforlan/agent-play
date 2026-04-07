@@ -10,6 +10,7 @@ import type {
   PlayerChainNodeResponse,
 } from "../public-types.js";
 import {
+  parseHumanOccupantRow,
   parseAgentOccupantRow,
   parseMcpOccupantRow,
 } from "./parse-occupant-row.js";
@@ -74,8 +75,13 @@ function parseWorldMap(raw: unknown): AgentPlayWorldMap {
   const occupants: AgentPlayWorldMap["occupants"] = [];
   const coordKeys = new Set<string>();
   for (const row of occ) {
-    if (!isRecord(row) || (row.kind !== "agent" && row.kind !== "mcp")) {
-      throw new Error("getWorldSnapshot: each occupant must have kind agent or mcp");
+    if (
+      !isRecord(row) ||
+      (row.kind !== "human" && row.kind !== "agent" && row.kind !== "mcp")
+    ) {
+      throw new Error(
+        "getWorldSnapshot: each occupant must have kind human, agent, or mcp"
+      );
     }
     const xy =
       typeof row.x === "number" && typeof row.y === "number"
@@ -88,7 +94,9 @@ function parseWorldMap(raw: unknown): AgentPlayWorldMap {
       throw new Error("getWorldSnapshot: duplicate world map coordinate");
     }
     coordKeys.add(xy);
-    if (row.kind === "agent") {
+    if (row.kind === "human") {
+      occupants.push(parseHumanOccupantRow(row));
+    } else if (row.kind === "agent") {
       occupants.push(parseAgentOccupantRow(row));
     } else {
       occupants.push(parseMcpOccupantRow(row));

@@ -119,12 +119,15 @@ export type PlayerChainDigest = {
 };
 
 /**
- * Canonical stable key for an occupant row: `agent:{agentId}` or `mcp:{id}`.
+ * Canonical stable key for an occupant row: `human:{id}`, `agent:{agentId}`, or `mcp:{id}`.
  * Matches sort order for leaves after genesis and header.
  */
 export function stableOccupantSortKey(
   occ: PreviewWorldMapOccupantJson
 ): string {
+  if (occ.kind === "human") {
+    return `human:${occ.id}`;
+  }
   if (occ.kind === "agent") {
     return `agent:${occ.agentId}`;
   }

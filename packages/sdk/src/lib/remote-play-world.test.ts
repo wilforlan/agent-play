@@ -128,6 +128,13 @@ describe("RemotePlayWorld", () => {
                   bounds: { minX: 0, minY: 0, maxX: 3, maxY: 3 },
                   occupants: [
                     {
+                      kind: "human",
+                      id: "__human__",
+                      name: "You",
+                      x: -1,
+                      y: 0,
+                    },
+                    {
                       kind: "agent",
                       agentId: "p1",
                       name: "Alpha",
@@ -157,8 +164,8 @@ describe("RemotePlayWorld", () => {
     await world.connect();
     const snap = await world.getWorldSnapshot();
     expect(snap.sid).toBe("sid-1");
-    expect(snap.worldMap.occupants).toHaveLength(2);
-    expect(snap.worldMap.occupants[0]?.kind).toBe("agent");
+    expect(snap.worldMap.occupants).toHaveLength(3);
+    expect(snap.worldMap.occupants[0]?.kind).toBe("human");
     await world.close();
   });
 

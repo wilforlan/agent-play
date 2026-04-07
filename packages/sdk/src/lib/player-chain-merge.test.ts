@@ -35,6 +35,15 @@ const sampleAgent = (agentId: string, x = 0, y = 0) =>
     y,
   }) satisfies AgentPlaySnapshot["worldMap"]["occupants"][number];
 
+const sampleHuman = (id: string, x = 0, y = 0) =>
+  ({
+    kind: "human" as const,
+    id,
+    name: "You",
+    x,
+    y,
+  }) satisfies AgentPlaySnapshot["worldMap"]["occupants"][number];
+
 describe("mergeSnapshotWithPlayerChainNode", () => {
   it("leaves snapshot unchanged for genesis node", () => {
     const before = minimalSnapshot("x");
@@ -198,6 +207,19 @@ describe("parsePlayerChainNodeRpcBody", () => {
       stableKey: "agent:x",
       removed: true,
     });
+  });
+
+  it("parses and merges human occupant node", () => {
+    const node = parsePlayerChainNodeRpcBody({
+      node: {
+        kind: "occupant",
+        stableKey: "human:__human__",
+        removed: false,
+        occupant: sampleHuman("__human__"),
+      },
+    });
+    const next = mergeSnapshotWithPlayerChainNode(minimalSnapshot("s"), node);
+    expect(next.worldMap.occupants.some((o) => o.kind === "human")).toBe(true);
   });
 
   it("throws when genesis stableKey is wrong", () => {

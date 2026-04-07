@@ -32,6 +32,8 @@ import {
   serializeWorldJourneyUpdate,
   buildSnapshotWorldMap,
   type PreviewWorldMapAgentOccupantJson,
+  type PreviewWorldMapMcpOccupantJson,
+  type PreviewWorldMapHumanOccupantJson,
   type WorldJourneyUpdateJson,
 } from "./preview-serialize.js";
 import type { RedisFanoutItem } from "./world-redis-sync.js";
@@ -303,74 +305,107 @@ export class PlayWorld {
     input: RecordProximityActionInput
   ): Promise<void> {
     const snap = await this.getSnapshotJson();
-    const agentIds = new Set(
-      snap.worldMap.occupants
-        .filter((o): o is PreviewWorldMapAgentOccupantJson => o.kind === "agent")
-        .map((o) => o.agentId)
-    );
-    const fromHuman = input.fromPlayerId === HUMAN_VIEWER_PLAYER_ID;
-    if (!fromHuman && !agentIds.has(input.fromPlayerId)) {
+    const byRef = new Map<
+      string,
+      | PreviewWorldMapHumanOccupantJson
+      | PreviewWorldMapAgentOccupantJson
+      | PreviewWorldMapMcpOccupantJson
+    >();
+    for (const occ of snap.worldMap.occupants) {
+      if (occ.kind === "human") {
+        byRef.set(`human:${occ.id}`, occ);
+      } else if (occ.kind === "agent") {
+        byRef.set(`agent:${occ.agentId}`, occ);
+      } else {
+        byRef.set(`mcp:${occ.id}`, occ);
+      }
+    }
+    const fromRef = input.fromPlayerId.startsWith("human:")
+      ? input.fromPlayerId
+      : input.fromPlayerId === HUMAN_VIEWER_PLAYER_ID
+        ? `human:${HUMAN_VIEWER_PLAYER_ID}`
+        : `agent:${input.fromPlayerId}`;
+    const toRef = input.toPlayerId.includes(":")
+      ? input.toPlayerId
+      : `agent:${input.toPlayerId}`;
+    const fromOcc = byRef.get(fromRef);
+    const toOcc = byRef.get(toRef);
+    if (fromOcc === undefined) {
       throw new Error(
         `recordProximityAction: unknown fromPlayerId "${input.fromPlayerId}"`
       );
     }
-    if (!agentIds.has(input.toPlayerId)) {
+    if (toOcc === undefined) {
       throw new Error(
         `recordProximityAction: unknown toPlayerId "${input.toPlayerId}"`
       );
     }
-    const toOcc = snap.worldMap.occupants.find(
-      (o): o is PreviewWorldMapAgentOccupantJson =>
-        o.kind === "agent" && o.agentId === input.toPlayerId
-    );
-    if (toOcc === undefined) {
-      throw new Error("recordProximityAction: missing target agent");
+    if (fromOcc.kind === "human" && toOcc.kind === "human") {
+      throw new Error("recordProximityAction: human to human is not allowed");
+    }
+    if (toOcc.kind === "mcp" && (input.action === "zone" || input.action === "yield")) {
+      throw new Error("recordProximityAction: zone/yield require an agent target");
     }
     const label = PROXIMITY_ACTION_LABEL[input.action];
-    if (!fromHuman) {
-      const fromOcc = snap.worldMap.occupants.find(
-        (o): o is PreviewWorldMapAgentOccupantJson =>
-          o.kind === "agent" && o.agentId === input.fromPlayerId
-      );
-      if (fromOcc === undefined) {
-        throw new Error("recordProximityAction: missing source agent");
-      }
+    if (fromOcc.kind === "agent") {
       await this.recordInteraction({
-        playerId: input.fromPlayerId,
+        playerId: fromOcc.agentId,
         role: "user",
         text: `[proximity ${label}] toward ${toOcc.name}`,
       });
     }
-    await this.recordInteraction({
-      playerId: input.toPlayerId,
-      role: "tool",
-      text: fromHuman
-        ? `Proximity viewer: ${label}`
-        : `Proximity: ${
-            snap.worldMap.occupants.find(
-              (o): o is PreviewWorldMapAgentOccupantJson =>
-                o.kind === "agent" && o.agentId === input.fromPlayerId
-            )?.name ?? "?"
-          } — ${label}`,
-    });
-    if (input.action === "assist" || input.action === "chat") {
+    const sourceLabel =
+      fromOcc.kind === "human" ? "viewer" : fromOcc.name;
+    if (toOcc.kind === "agent") {
+      await this.recordInteraction({
+        playerId: toOcc.agentId,
+        role: "tool",
+        text:
+          fromOcc.kind === "human"
+            ? `Proximity viewer: ${label}`
+            : `Proximity: ${sourceLabel} — ${label}`,
+      });
+    } else if (toOcc.kind === "mcp") {
+      const payload: WorldInteractionPayload = {
+        playerId: `mcp:${toOcc.id}`,
+        role: "tool",
+        text:
+          fromOcc.kind === "human"
+            ? `MCP proximity viewer: ${label}`
+            : `MCP proximity: ${sourceLabel} — ${label}`,
+        at: new Date().toISOString(),
+        seq: 0,
+      };
+      this.bus.emit(WORLD_INTERACTION_EVENT, payload);
+      void this.forwardHttp(WORLD_INTERACTION_EVENT, payload);
+      const rev = await this.sessionStore.getSnapshotRev();
+      await this.sessionStore.publishWorldFanout(
+        rev,
+        WORLD_INTERACTION_EVENT,
+        payload
+      );
+    }
+    if (
+      toOcc.kind === "agent" &&
+      (input.action === "assist" || input.action === "chat")
+    ) {
       const sig: WorldAgentSignalPayload = {
-        playerId: input.toPlayerId,
+        playerId: toOcc.agentId,
         kind: input.action,
         data: { fromPlayerId: input.fromPlayerId },
       };
-      this.emitAgentSignal(input.toPlayerId, {
+      this.emitAgentSignal(toOcc.agentId, {
         kind: input.action,
         data: { fromPlayerId: input.fromPlayerId },
       });
       const rev = await this.sessionStore.getSnapshotRev();
       await this.sessionStore.publishWorldFanout(rev, WORLD_AGENT_SIGNAL_EVENT, sig);
     }
-    if (input.action === "zone") {
-      await this.applyZoneIncrement(input.toPlayerId);
+    if (toOcc.kind === "agent" && input.action === "zone") {
+      await this.applyZoneIncrement(toOcc.agentId);
     }
-    if (input.action === "yield") {
-      await this.applyYieldIncrement(input.toPlayerId);
+    if (toOcc.kind === "agent" && input.action === "yield") {
+      await this.applyYieldIncrement(toOcc.agentId);
     }
   }
 

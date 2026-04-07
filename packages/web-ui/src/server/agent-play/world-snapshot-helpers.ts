@@ -6,7 +6,19 @@ import {
 } from "./preview-serialize.js";
 
 export function emptySnapshot(sid: string): PreviewSnapshotJson {
-  return { sid, worldMap: buildSnapshotWorldMap([]) };
+  return {
+    sid,
+    worldMap: buildSnapshotWorldMap([
+      {
+        kind: "human",
+        id: "__human__",
+        name: "You",
+        x: 0,
+        y: 0,
+        interactive: false,
+      },
+    ]),
+  };
 }
 
 export function ensureSnapshotSid(

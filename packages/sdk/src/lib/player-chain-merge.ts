@@ -4,6 +4,7 @@
 
 import type {
   AgentPlaySnapshot,
+  AgentPlayWorldMapHumanOccupant,
   AgentPlayWorldMapAgentOccupant,
   AgentPlayWorldMapMcpOccupant,
   PlayerChainFanoutNotify,
@@ -11,6 +12,7 @@ import type {
   PlayerChainNodeResponse,
 } from "../public-types.js";
 import {
+  parseHumanOccupantRow,
   parseAgentOccupantRow,
   parseMcpOccupantRow,
 } from "./parse-occupant-row.js";
@@ -24,8 +26,14 @@ function isRecord(v: unknown): v is Record<string, unknown> {
 }
 
 function stableOccupantSortKey(
-  occ: AgentPlayWorldMapAgentOccupant | AgentPlayWorldMapMcpOccupant
+  occ:
+    | AgentPlayWorldMapHumanOccupant
+    | AgentPlayWorldMapAgentOccupant
+    | AgentPlayWorldMapMcpOccupant
 ): string {
+  if (occ.kind === "human") {
+    return `human:${occ.id}`;
+  }
   if (occ.kind === "agent") {
     return `agent:${occ.agentId}`;
   }
@@ -144,11 +152,16 @@ export function parsePlayerChainNodeRpcBody(json: unknown): PlayerChainNodeRespo
     return { kind: "occupant", stableKey: n.stableKey, removed: true };
   }
   const occ = n.occupant;
-  if (!isRecord(occ) || (occ.kind !== "agent" && occ.kind !== "mcp")) {
+  if (
+    !isRecord(occ) ||
+    (occ.kind !== "human" && occ.kind !== "agent" && occ.kind !== "mcp")
+  ) {
     throw new Error("getPlayerChainNode: invalid occupant payload");
   }
   const occupant =
-    occ.kind === "agent"
+    occ.kind === "human"
+      ? parseHumanOccupantRow(occ)
+      : occ.kind === "agent"
       ? parseAgentOccupantRow(occ)
       : parseMcpOccupantRow(occ);
   return {

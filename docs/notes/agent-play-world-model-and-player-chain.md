@@ -1,6 +1,6 @@
 # Agent Play world model and player chain
 
-This note is for **software developers** who need one place to understand how **shared world state**, **session storage**, **revision numbering**, and the **player chain** (Merkle digest over the snapshot) fit together. It complements the shorter protocol summary in [World map v3](../updates-world-map-v3.md) and the peer/sync picture in [Peers, world sync, and signaling](../peer-world-signaling.md).
+This note is for **software developers** who need one place to understand how **shared world state**, **session storage**, **revision numbering**, and the **player chain** (Merkle digest over the snapshot) fit together. It complements the shorter protocol summary in [World map v3](../updates-world-map-v3.md), the transport overview in [Peers, world sync, and signaling](../peer-world-signaling.md), and occupant-policy direction in [Occupant model and interaction policy](occupant-model-and-interaction-policy.md).
 
 ## World model (v3)
 

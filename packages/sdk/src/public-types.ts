@@ -193,6 +193,16 @@ export type AgentPlayWorldMapAgentOccupant = {
 };
 
 /** MCP server shown as a separate map occupant (distinct from LangChain agents). */
+export type AgentPlayWorldMapHumanOccupant = {
+  kind: "human";
+  id: string;
+  name: string;
+  x: number;
+  y: number;
+  interactive?: boolean;
+};
+
+/** MCP server shown as a separate map occupant (distinct from LangChain agents). */
 export type AgentPlayWorldMapMcpOccupant = {
   kind: "mcp";
   id: string;
@@ -205,7 +215,11 @@ export type AgentPlayWorldMapMcpOccupant = {
 /** Spatial index: axis-aligned bounds plus every agent and MCP registration placed on the grid. */
 export type AgentPlayWorldMap = {
   bounds: AgentPlayWorldMapBounds;
-  occupants: (AgentPlayWorldMapAgentOccupant | AgentPlayWorldMapMcpOccupant)[];
+  occupants: (
+    | AgentPlayWorldMapHumanOccupant
+    | AgentPlayWorldMapAgentOccupant
+    | AgentPlayWorldMapMcpOccupant
+  )[];
 };
 
 /**
@@ -256,7 +270,10 @@ export type PlayerChainOccupantPresentNode = {
   kind: "occupant";
   stableKey: string;
   removed: false;
-  occupant: AgentPlayWorldMapAgentOccupant | AgentPlayWorldMapMcpOccupant;
+  occupant:
+    | AgentPlayWorldMapHumanOccupant
+    | AgentPlayWorldMapAgentOccupant
+    | AgentPlayWorldMapMcpOccupant;
 };
 
 export type PlayerChainNodeResponse =

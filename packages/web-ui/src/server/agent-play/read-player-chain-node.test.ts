@@ -49,6 +49,15 @@ describe("readPlayerChainNode", () => {
     if (o?.kind !== "occupant" || o.removed) return;
     expect(o.occupant.agentId).toBe("p1");
 
+    const human = await readPlayerChainNode({
+      sid,
+      store,
+      stableKey: "human:__human__",
+    });
+    expect(human?.kind).toBe("occupant");
+    if (human?.kind !== "occupant" || human.removed) return;
+    expect(human.occupant.kind).toBe("human");
+
     const missing = await readPlayerChainNode({
       sid,
       store,

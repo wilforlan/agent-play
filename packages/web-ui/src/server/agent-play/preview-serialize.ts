@@ -46,6 +46,15 @@ export type PreviewWorldMapAgentOccupantJson = {
   onYield?: { yieldCount: number; at: string };
 };
 
+export type PreviewWorldMapHumanOccupantJson = {
+  kind: "human";
+  id: string;
+  name: string;
+  x: number;
+  y: number;
+  interactive?: boolean;
+};
+
 export type PreviewWorldMapMcpOccupantJson = {
   kind: "mcp";
   id: string;
@@ -56,6 +65,7 @@ export type PreviewWorldMapMcpOccupantJson = {
 };
 
 export type PreviewWorldMapOccupantJson =
+  | PreviewWorldMapHumanOccupantJson
   | PreviewWorldMapAgentOccupantJson
   | PreviewWorldMapMcpOccupantJson;
 
