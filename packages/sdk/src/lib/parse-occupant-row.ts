@@ -42,6 +42,9 @@ export function parseAgentOccupantRow(
     x: raw.x,
     y: raw.y,
   };
+  if (typeof raw.nodeId === "string" && raw.nodeId.length > 0) {
+    base.nodeId = raw.nodeId;
+  }
   let platform: string | undefined;
   if (typeof raw.platform === "string") {
     platform = raw.platform;

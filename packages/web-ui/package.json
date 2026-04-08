@@ -4,16 +4,19 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "predev": "node ./scripts/copy-sources.mjs && node ./scripts/copy-docs.mjs",
-    "prebuild": "node ./scripts/copy-sources.mjs && node ./scripts/copy-docs.mjs",
+    "predev": "node ./scripts/copy-sources.mjs && node ./scripts/copy-docs.mjs && node ./scripts/copy-root.mjs",
+    "prebuild": "node ./scripts/copy-sources.mjs && node ./scripts/copy-docs.mjs && node ./scripts/copy-root.mjs",
+    "prestart": "node ./scripts/copy-root.mjs",
     "copy-docs": "node ./scripts/copy-docs.mjs",
+    "copy-root": "node ./scripts/copy-root.mjs",
     "dev": "tsx server.ts",
     "build": "next build",
     "start": "NODE_ENV=production tsx server.ts",
     "test": "vitest run"
   },
   "dependencies": {
-    "@agent-play/sdk": "^1.0.0",
+    "@agent-play/node-tools": "^1.0.0",
+    "@agent-play/sdk": "^3.0.2",
     "dompurify": "^3.3.3",
     "ioredis": "^5.6.0",
     "isomorphic-dompurify": "^3.7.1",

@@ -27,6 +27,7 @@ export type AssistToolSnapshotJson = {
 
 export type PreviewWorldMapAgentOccupantJson = {
   kind: "agent";
+  nodeId?: string;
   agentId: string;
   name: string;
   x: number;

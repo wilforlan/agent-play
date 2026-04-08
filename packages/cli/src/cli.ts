@@ -1,195 +1,215 @@
 #!/usr/bin/env node
-/**
- * @packageDocumentation
- * **agent-play** CLI: authenticate against the web UI, manage API keys and registered agents.
- * Commands: `login`, `logout`, `create-key`, `view-keys`, `create`, `delete`.
- * Default server URL comes from `AGENT_PLAY_SERVER_URL` or `http://127.0.0.1:3000`.
- */
+import { existsSync } from "node:fs";
 import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
+import {
+  createNodeCredentialFromPassw,
+  createNodeCredentialFromSecret,
+  generateNodePassw,
+  loadRootKey,
+} from "@agent-play/node-tools";
 
-/** Stored session after `login`: web UI origin and bearer token. */
 type Credentials = {
   serverUrl: string;
-  token: string;
+  nodeId: string;
+  passw: string;
+  secretFilePath: string;
 };
 
-/**
- * @returns Absolute path to `~/.agent-play/credentials.json`.
- * @remarks **Callers:** {@link loadCredentials}, {@link saveCredentials}, {@link cmdLogout}. **Callees:** `path.join`, `homedir`.
- */
+type BootstrapCliOpts = {
+  secretFilePath?: string;
+  rootFilePath?: string;
+};
+
 function credentialsPath(): string {
   return join(homedir(), ".agent-play", "credentials.json");
 }
 
-/**
- * Reads saved credentials, or `null` if missing or invalid.
- * @remarks **Callers:** `cmdCreateKey`, `cmdViewKeys`, `cmdCreate`, `cmdDelete`. **Callees:** `readFile`, `JSON.parse`.
- */
 async function loadCredentials(): Promise<Credentials | null> {
   try {
     const raw = await readFile(credentialsPath(), "utf8");
     const json: unknown = JSON.parse(raw) as unknown;
     if (typeof json !== "object" || json === null) return null;
-    const o = json as { serverUrl?: unknown; token?: unknown };
-    if (typeof o.serverUrl !== "string" || typeof o.token !== "string") {
+    const o = json as {
+      serverUrl?: unknown;
+      nodeId?: unknown;
+      passw?: unknown;
+      secretFilePath?: unknown;
+    };
+    if (
+      typeof o.serverUrl !== "string" ||
+      typeof o.nodeId !== "string" ||
+      typeof o.passw !== "string" ||
+      typeof o.secretFilePath !== "string"
+    ) {
       return null;
     }
-    return { serverUrl: o.serverUrl.replace(/\/$/, ""), token: o.token };
+    return {
+      serverUrl: o.serverUrl.replace(/\/$/, ""),
+      nodeId: o.nodeId,
+      passw: o.passw,
+      secretFilePath: o.secretFilePath,
+    };
   } catch {
     return null;
   }
 }
 
-/**
- * Persists credentials to disk (creates `~/.agent-play` if needed).
- * @remarks **Callers:** {@link cmdLogin}. **Callees:** `mkdir`, `writeFile`.
- */
 async function saveCredentials(c: Credentials): Promise<void> {
   const dir = join(homedir(), ".agent-play");
   await mkdir(dir, { recursive: true });
   await writeFile(
     credentialsPath(),
-    JSON.stringify({ serverUrl: c.serverUrl, token: c.token }, null, 2),
+    JSON.stringify(c, null, 2),
     "utf8"
   );
 }
 
-/**
- * @returns `AGENT_PLAY_SERVER_URL` or `http://127.0.0.1:3000`.
- * @remarks **Callers:** {@link cmdLogin} prompt default.
- */
 function defaultServerUrl(): string {
   return process.env.AGENT_PLAY_SERVER_URL ?? "http://127.0.0.1:3000";
 }
 
-/**
- * Interactive sign-up or sign-in; writes {@link Credentials} via {@link saveCredentials}.
- * @remarks **Callers:** {@link main} when argv is `login`. **Callees:** `fetch` to `/api/auth/lookup`, `/login`, `/register`.
- */
-async function cmdLogin(): Promise<void> {
+function parseBootstrapNodeArgs(argv: string[]): BootstrapCliOpts {
+  const out: BootstrapCliOpts = {};
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    if (a === "--secret-file" && typeof argv[i + 1] === "string") {
+      out.secretFilePath = argv[++i];
+    } else if (a === "--root-file" && typeof argv[i + 1] === "string") {
+      out.rootFilePath = argv[++i];
+    }
+  }
+  return out;
+}
+
+function resolveAgentPlayRootPath(options: BootstrapCliOpts): string {
+  if (
+    typeof options.rootFilePath === "string" &&
+    options.rootFilePath.trim().length > 0
+  ) {
+    return resolve(options.rootFilePath.trim());
+  }
+  const fromEnv = process.env.AGENT_PLAY_ROOT_FILE_PATH;
+  if (typeof fromEnv === "string" && fromEnv.trim().length > 0) {
+    return resolve(fromEnv.trim());
+  }
+  const homeRoot = join(homedir(), ".agent-play", ".root");
+  if (existsSync(homeRoot)) {
+    return homeRoot;
+  }
+  const cwdRoot = resolve(process.cwd(), ".root");
+  if (existsSync(cwdRoot)) {
+    return cwdRoot;
+  }
+  throw new Error(
+    "Agent Play root key not found. Pass --root-file <path>, set AGENT_PLAY_ROOT_FILE_PATH, or place .root in ~/.agent-play/ or the project directory."
+  );
+}
+
+async function registerNodeOnServer(
+  serverUrl: string,
+  passw: string,
+  expectedNodeId: string
+): Promise<void> {
+  const res = await fetch(`${serverUrl}/api/nodes`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ passw }),
+  });
+  const text = await res.text();
+  if (res.status === 409) {
+    return;
+  }
+  if (!res.ok) {
+    let msg = text;
+    try {
+      const err = JSON.parse(text) as { error?: unknown };
+      if (typeof err.error === "string") {
+        msg = err.error;
+      }
+    } catch {
+      // keep raw text
+    }
+    throw new Error(
+      `Node registration failed (${String(res.status)}): ${msg}`
+    );
+  }
+  const json = JSON.parse(text) as { nodeId?: unknown };
+  if (typeof json.nodeId !== "string") {
+    throw new Error("Invalid response from server.");
+  }
+  if (json.nodeId !== expectedNodeId) {
+    throw new Error(
+      "Server node id does not match local derivation; check root file and server configuration."
+    );
+  }
+}
+
+async function cmdBootstrapNode(argv: string[]): Promise<void> {
+  const opts = parseBootstrapNodeArgs(argv);
   const rl = createInterface({ input, output });
   const serverUrl = (
     (await rl.question(
       `Server URL [${defaultServerUrl()}]: `
     )).trim() || defaultServerUrl()
   ).replace(/\/$/, "");
-  const email = (await rl.question("Email: ")).trim();
-  if (email.length === 0) {
-    rl.close();
-    console.error("Email is required.");
-    process.exitCode = 1;
-    return;
-  }
-  const lookupRes = await fetch(`${serverUrl}/api/auth/lookup`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ email }),
-  });
-  const lookupText = await lookupRes.text();
-  if (!lookupRes.ok) {
-    rl.close();
-    console.error(`Lookup failed (${lookupRes.status}): ${lookupText}`);
-    process.exitCode = 1;
-    return;
-  }
-  let lookupJson: unknown;
-  try {
-    lookupJson = JSON.parse(lookupText) as unknown;
-  } catch {
-    rl.close();
-    console.error("Invalid JSON from server.");
-    process.exitCode = 1;
-    return;
-  }
-  const exists =
-    typeof lookupJson === "object" &&
-    lookupJson !== null &&
-    (lookupJson as { exists?: unknown }).exists === true;
+  rl.close();
 
-  let token: string | undefined;
-  if (exists) {
-    const password = (await rl.question("Password: ")).trim();
-    rl.close();
-    const loginRes = await fetch(`${serverUrl}/api/auth/login`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ email, password }),
+  const rootPath = resolveAgentPlayRootPath(opts);
+  const rootKey = loadRootKey(rootPath);
+
+  const dir = join(homedir(), ".agent-play");
+  await mkdir(dir, { recursive: true });
+
+  let credential: { nodeId: string; passw: string };
+  let secretFilePath: string;
+
+  if (typeof opts.secretFilePath === "string" && opts.secretFilePath.length > 0) {
+    secretFilePath = resolve(opts.secretFilePath.trim());
+    const secretMaterial = await readFile(secretFilePath);
+    credential = createNodeCredentialFromSecret({
+      secretMaterial,
+      rootKey,
     });
-    const loginText = await loginRes.text();
-    if (!loginRes.ok) {
-      console.error(`Login failed (${loginRes.status}): ${loginText}`);
-      process.exitCode = 1;
-      return;
-    }
-    const loginJson = JSON.parse(loginText) as { token?: unknown };
-    if (typeof loginJson.token !== "string") {
-      console.error("Missing token in response.");
-      process.exitCode = 1;
-      return;
-    }
-    token = loginJson.token;
   } else {
-    const name = (await rl.question("Your name: ")).trim() || "User";
-    const password = (await rl.question("Choose a password (min 8 chars): ")).trim();
-    if (password.length < 8) {
-      rl.close();
-      console.error("Password must be at least 8 characters.");
-      process.exitCode = 1;
-      return;
-    }
-    rl.close();
-    const regRes = await fetch(`${serverUrl}/api/auth/register`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ email, name, password }),
-    });
-    const regText = await regRes.text();
-    if (!regRes.ok) {
-      console.error(`Sign up failed (${regRes.status}): ${regText}`);
-      process.exitCode = 1;
-      return;
-    }
-    const regJson = JSON.parse(regText) as { token?: unknown };
-    if (typeof regJson.token !== "string") {
-      console.error("Missing token in response.");
-      process.exitCode = 1;
-      return;
-    }
-    token = regJson.token;
+    const passw = generateNodePassw();
+    credential = createNodeCredentialFromPassw({ passw, rootKey });
+    secretFilePath = join(dir, `.${credential.nodeId.slice(0, 12)}`);
+    await writeFile(secretFilePath, `${credential.passw}\n`, "utf8");
   }
 
-  await saveCredentials({ serverUrl, token });
-  console.log(`Signed in. Credentials saved to ${credentialsPath()}`);
+  await registerNodeOnServer(serverUrl, credential.passw, credential.nodeId);
+
+  await saveCredentials({
+    serverUrl,
+    nodeId: credential.nodeId,
+    passw: credential.passw,
+    secretFilePath,
+  });
+
+  console.log(`nodeId: ${credential.nodeId}`);
+  console.log(`passw: ${credential.passw}`);
+  console.log(`secretFilePath: ${secretFilePath}`);
+  console.log("Keep this material safe. Losing it means losing access.");
 }
 
-/**
- * Deletes the credentials file if present.
- * @remarks **Callers:** {@link main} when argv is `logout`. **Callees:** `unlink`.
- */
-async function cmdLogout(): Promise<void> {
+async function cmdClearNodeCredentials(): Promise<void> {
   try {
     await unlink(credentialsPath());
-    console.log("Logged out.");
+    console.log("Credentials removed.");
   } catch {
-    console.log("No saved session.");
+    console.log("No saved credentials.");
   }
 }
 
-/**
- * Prints stdout guidance for wiring LangChain agents to the map after `create`.
- * @remarks **Callers:** {@link cmdCreate} only. **Callees:** `console.log`.
- */
 function printAgentPlayIntegrationGuide(): void {
   console.log("");
   console.log("How your agent appears on the play world");
   console.log("────────────────────────────────────────────");
-  console.log(
-    "  • One account API key: run `agent-play create-key` (after login) if you do not have one yet."
-  );
+  console.log("  • Use node credentials with RemotePlayWorld secretFilePath.");
   console.log(
     "  • LangChain: use langchainRegistration(agent) and pass agent.toolNames to addPlayer."
   );
@@ -200,97 +220,15 @@ function printAgentPlayIntegrationGuide(): void {
     "  • Structures on the map are derived from those tool names — keep them aligned with your real tools."
   );
   console.log(
-    "  • RemotePlayWorld({ apiKey: <account key> }) and addPlayer({ ..., agentId: <id below> })."
+    "  • RemotePlayWorld({ secretFilePath }) and addPlayer({ ..., mainNodeId, agentId })."
   );
   console.log("");
 }
 
-/**
- * POSTs to `/api/agents/api-key` to mint a new account API key (shown once).
- * @remarks **Callers:** {@link main}. **Callees:** {@link loadCredentials}, `fetch`.
- */
-async function cmdCreateKey(): Promise<void> {
-  const cred = await loadCredentials();
-  if (cred === null) {
-    console.error("Run `agent-play login` first.");
-    process.exitCode = 1;
-    return;
-  }
-  const res = await fetch(`${cred.serverUrl}/api/agents/api-key`, {
-    method: "POST",
-    headers: {
-      authorization: `Bearer ${cred.token}`,
-    },
-  });
-  const text = await res.text();
-  if (!res.ok) {
-    let msg = text;
-    try {
-      const err = JSON.parse(text) as { error?: unknown };
-      if (typeof err.error === "string") msg = err.error;
-    } catch {
-      // keep raw text
-    }
-    console.error(`create-key failed (${res.status}): ${msg}`);
-    process.exitCode = 1;
-    return;
-  }
-  const json = JSON.parse(text) as { plainApiKey?: unknown };
-  if (typeof json.plainApiKey !== "string") {
-    console.error("Invalid response from server.");
-    process.exitCode = 1;
-    return;
-  }
-  console.log("API key (store securely; shown once):");
-  console.log(json.plainApiKey);
-  console.log("");
-}
-
-/**
- * GETs `/api/agents/api-key` to report whether a key exists (never prints the secret).
- * @remarks **Callers:** {@link main}. **Callees:** {@link loadCredentials}, `fetch`.
- */
-async function cmdViewKeys(): Promise<void> {
-  const cred = await loadCredentials();
-  if (cred === null) {
-    console.error("Run `agent-play login` first.");
-    process.exitCode = 1;
-    return;
-  }
-  const res = await fetch(`${cred.serverUrl}/api/agents/api-key`, {
-    headers: { authorization: `Bearer ${cred.token}` },
-  });
-  const text = await res.text();
-  if (!res.ok) {
-    console.error(`view-keys failed (${res.status}): ${text}`);
-    process.exitCode = 1;
-    return;
-  }
-  const json = JSON.parse(text) as {
-    hasKey?: unknown;
-    createdAt?: unknown;
-  };
-  if (json.hasKey === true) {
-    const when =
-      typeof json.createdAt === "string" ? json.createdAt : "unknown time";
-    console.log(`Account API key: active (created ${when}).`);
-    console.log(
-      "The secret value cannot be shown again. Use the key you saved when you ran `agent-play create-key`."
-    );
-  } else {
-    console.log("No API key for this account.");
-    console.log("Run `agent-play create-key` to generate one (shown once).");
-  }
-}
-
-/**
- * POSTs `/api/agents` to register a named agent; prints `agentId` and {@link printAgentPlayIntegrationGuide}.
- * @remarks **Callers:** {@link main}. **Callees:** {@link loadCredentials}, `fetch`, {@link printAgentPlayIntegrationGuide}.
- */
 async function cmdCreate(): Promise<void> {
   const cred = await loadCredentials();
   if (cred === null) {
-    console.error("Run `agent-play login` first.");
+    console.error("Run `agent-play bootstrap-node` first.");
     process.exitCode = 1;
     return;
   }
@@ -302,7 +240,8 @@ async function cmdCreate(): Promise<void> {
     method: "POST",
     headers: {
       "content-type": "application/json",
-      authorization: `Bearer ${cred.token}`,
+      "x-node-id": cred.nodeId,
+      "x-node-passw": cred.passw,
     },
     body: JSON.stringify({ name }),
   });
@@ -330,19 +269,15 @@ async function cmdCreate(): Promise<void> {
   console.log("");
 }
 
-/**
- * Lists agents then DELETEs `/api/agents?id=` for user-picked id.
- * @remarks **Callers:** {@link main}. **Callees:** {@link loadCredentials}, `fetch`, readline.
- */
 async function cmdDelete(): Promise<void> {
   const cred = await loadCredentials();
   if (cred === null) {
-    console.error("Run `agent-play login` first.");
+    console.error("Run `agent-play bootstrap-node` first.");
     process.exitCode = 1;
     return;
   }
   const listRes = await fetch(`${cred.serverUrl}/api/agents`, {
-    headers: { authorization: `Bearer ${cred.token}` },
+    headers: { "x-node-id": cred.nodeId, "x-node-passw": cred.passw },
   });
   const listText = await listRes.text();
   if (!listRes.ok) {
@@ -385,7 +320,7 @@ async function cmdDelete(): Promise<void> {
     `${cred.serverUrl}/api/agents?id=${encodeURIComponent(pick)}`,
     {
       method: "DELETE",
-      headers: { authorization: `Bearer ${cred.token}` },
+      headers: { "x-node-id": cred.nodeId, "x-node-passw": cred.passw },
     }
   );
   const delText = await delRes.text();
@@ -398,30 +333,18 @@ async function cmdDelete(): Promise<void> {
   console.log(delJson.ok === true ? "Deleted." : "Not found.");
 }
 
-/**
- * Dispatches on `process.argv[2]` to command handlers.
- * @remarks **Callers:** top-level `void main()`. **Callees:** `cmdLogin`, `cmdLogout`, `cmdCreate`, `cmdCreateKey`, `cmdViewKeys`, `cmdDelete`.
- */
 async function main(): Promise<void> {
   const cmd = process.argv[2];
-  if (cmd === "login") {
-    await cmdLogin();
+  if (cmd === "bootstrap-node") {
+    await cmdBootstrapNode(process.argv.slice(3));
     return;
   }
-  if (cmd === "logout") {
-    await cmdLogout();
+  if (cmd === "clear-node-credentials") {
+    await cmdClearNodeCredentials();
     return;
   }
   if (cmd === "create") {
     await cmdCreate();
-    return;
-  }
-  if (cmd === "create-key" || cmd === "generate-key") {
-    await cmdCreateKey();
-    return;
-  }
-  if (cmd === "view-keys") {
-    await cmdViewKeys();
     return;
   }
   if (cmd === "delete" || cmd === "remove") {
@@ -429,7 +352,7 @@ async function main(): Promise<void> {
     return;
   }
   console.error(
-    "Usage: agent-play login | logout | create-key | view-keys | create | delete"
+    "Usage: agent-play bootstrap-node [--secret-file <path>] [--root-file <path>] | clear-node-credentials | create | delete"
   );
   process.exitCode = 1;
 }

@@ -120,7 +120,8 @@ export type LangChainAgentRegistration = {
 
 export type AddPlayerInput = PlatformAgentInformation & {
   agent: LangChainAgentRegistration;
-  apiKey?: string;
+  mainNodeId?: string;
+  password?: string;
   agentId: string;
 };
 
@@ -684,14 +685,15 @@ export class PlayWorld {
         let playerId = trimmedId;
 
         if (this.repository !== null) {
-          if (input.apiKey === undefined || input.apiKey.length === 0) {
+          if (input.mainNodeId === undefined || input.mainNodeId.length === 0) {
             throw new Error(
-              "addPlayer: register an agent first with `agent-play create` (after `agent-play login`), then pass the printed apiKey and agentId"
+              "addPlayer: mainNodeId is required when repository is configured"
             );
           }
-          const userId = await this.repository.verifyApiKeyForUser(input.apiKey);
-          if (userId === null) {
-            throw new Error("addPlayer: invalid apiKey");
+          if (input.password === undefined || input.password.length === 0) {
+            throw new Error(
+              "addPlayer: password is required when repository is configured"
+            );
           }
           const row = await this.repository.getAgent(trimmedId);
           if (row === null) {
@@ -699,10 +701,15 @@ export class PlayWorld {
               "addPlayer: unknown agentId; create an agent with `agent-play create` after `agent-play login`"
             );
           }
-          if (row.userId !== userId) {
-            throw new Error(
-              "addPlayer: agentId does not belong to this API key; use an agent id from your account"
-            );
+          if (row.nodeId !== input.mainNodeId) {
+            throw new Error("addPlayer: agent does not belong to mainNodeId");
+          }
+          const validPassword = await this.repository.verifyNodePassw(
+            input.mainNodeId,
+            input.password
+          );
+          if (!validPassword) {
+            throw new Error("addPlayer: invalid password");
           }
           stored = row;
           playerId = row.agentId;
@@ -748,6 +755,7 @@ export class PlayWorld {
 
         const row: PreviewWorldMapAgentOccupantJson = {
           kind: "agent",
+          nodeId: stored?.nodeId ?? input.mainNodeId,
           agentId: playerId,
           name: input.name,
           x: pos.x,

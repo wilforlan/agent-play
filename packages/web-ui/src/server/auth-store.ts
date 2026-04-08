@@ -72,6 +72,19 @@ export async function loginUser(
   return (await verifyPassword(password, ph)) ? { userId } : null;
 }
 
+export async function verifyUserPasswordById(
+  userId: string,
+  password: string
+): Promise<boolean> {
+  const redis = getRedis();
+  if (redis === null) return false;
+  const h = hostId();
+  const raw = await redis.hgetall(userKey(h, userId));
+  const ph = raw.passwordHash;
+  if (typeof ph !== "string" || ph.length === 0) return false;
+  return verifyPassword(password, ph);
+}
+
 export async function createSession(userId: string): Promise<string | null> {
   const redis = getRedis();
   if (redis === null) return null;

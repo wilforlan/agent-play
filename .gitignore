@@ -7,3 +7,4 @@ docs/api-reference
 .next
 dist
 packages/web-ui/content/docs
+packages/*/.root

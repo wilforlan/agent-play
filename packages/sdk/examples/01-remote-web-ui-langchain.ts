@@ -8,9 +8,9 @@
  * Prerequisites
  * - Start the app: `npm run dev -w @agent-play/web-ui` (from repo root). Optional: Redis for
  *   durable sessions; see docs for `REDIS_URL`.
- * - If the server uses registered agents (Redis + repository), run `agent-play login`,
- *   `agent-play create-key`, then `agent-play create`, then pass **`agentId`** and set
- *   **`AGENT_PLAY_API_KEY`** on **`RemotePlayWorld`** (see SDK `AddPlayerInput` and
+ * - If the server uses registered agents (Redis + repository), run `agent-play bootstrap-node`,
+ *   then `agent-play create`, then pass **`agentId`** and set
+ *   **`AGENT_PLAY_SECRET_FILE_PATH`** on **`RemotePlayWorld`** (see SDK `AddPlayerInput` and
  *   `RemotePlayWorldOptions` JSDoc).
  * - `OPENAI_API_KEY` is only needed if you extend this script to call the model; registration-only
  *   runs use a placeholder below.
@@ -18,7 +18,7 @@
  * Run (from `packages/sdk` or via `npm run example` at repo root):
  *   `tsx -r dotenv/config examples/01-remote-web-ui-langchain.ts`
  *
- * Env: `AGENT_PLAY_WEB_UI_URL`, `AGENT_PLAY_API_KEY`, `AGENT_PLAY_HOLD_SECONDS` (default 3600),
+ * Env: `AGENT_PLAY_WEB_UI_URL`, `AGENT_PLAY_SECRET_FILE_PATH`, `AGENT_PLAY_HOLD_SECONDS` (default 3600),
  * `AGENT_PLAY_AGENT_ID` when using a registered agent repository, optional `OPENAI_API_KEY`.
  */
 
@@ -59,10 +59,13 @@ const agent = createAgent({
 
 async function main() {
   const base = process.env.AGENT_PLAY_WEB_UI_URL ?? "http://127.0.0.1:3000";
-  const apiKey = process.env.AGENT_PLAY_API_KEY ?? "dev-placeholder";
+  const secretFilePath = process.env.AGENT_PLAY_SECRET_FILE_PATH;
+  if (secretFilePath === undefined || secretFilePath.length === 0) {
+    throw new Error("AGENT_PLAY_SECRET_FILE_PATH is required");
+  }
   const holdSeconds = Number(process.env.AGENT_PLAY_HOLD_SECONDS ?? 3600);
 
-  const world = new RemotePlayWorld({ baseUrl: base, apiKey });
+  const world = new RemotePlayWorld({ baseUrl: base, secretFilePath });
   world.onClose(() => {
     console.log("RemotePlayWorld closed.");
   });

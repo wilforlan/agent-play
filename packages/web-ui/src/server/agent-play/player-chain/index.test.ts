@@ -48,7 +48,7 @@ describe("player-chain index", () => {
         x: 0,
         y: 0,
       })
-    ).toBe("agent:x");
+    ).toBe("agent:__legacy__:x");
   });
 
   it("same occupants different order same merkle root", () => {
@@ -115,7 +115,10 @@ describe("player-chain index", () => {
     expect(diff.removedKeys).toEqual([]);
     expect(diff.updates).toHaveLength(2);
     const keys = diff.updates.map((u) => u.stableKey).sort();
-    expect(keys).toEqual([PLAYER_CHAIN_HEADER_STABLE_KEY, "agent:a"]);
+    expect(keys).toEqual([
+      PLAYER_CHAIN_HEADER_STABLE_KEY,
+      "agent:__legacy__:a",
+    ]);
   });
 
   it("diffPlayerChainLeaves reports header when session id changes genesis unchanged", () => {
@@ -171,7 +174,7 @@ describe("player-chain index", () => {
     expect(n).toBeDefined();
     if (n === undefined) return;
     expect(n.updatedAt).toBe("2026-01-01T00:00:00.000Z");
-    expect(n.nodes[0]?.stableKey).toBe("agent:a");
+    expect(n.nodes[0]?.stableKey).toBe("agent:__legacy__:a");
     expect(n.nodes[0]?.removed).toBe(true);
     expect(n.nodes[0]?.leafIndex).toBeGreaterThan(0);
   });

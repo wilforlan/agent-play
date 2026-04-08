@@ -9,7 +9,7 @@ Run the **web UI** first so APIs exist:
 npm run dev -w @agent-play/web-ui
 ```
 
-With a **registered-agent** repository (**`REDIS_URL`** on the server): run **`agent-play login`**, **`agent-play create-key`** (once per account), **`agent-play create`** for each agent. Set **`AGENT_PLAY_API_KEY`** and pass **`AGENT_PLAY_AGENT_ID`** (and **`AGENT_PLAY_AGENT_ID_ALPHA`** / **`AGENT_PLAY_AGENT_ID_BETA`** for example 02) so **`addPlayer`** uses real ids from **`agent-play create`**. Without Redis, the examples default to stable local **`agentId`** strings.
+With a **registered-agent** repository (**`REDIS_URL`** on the server): run **`agent-play bootstrap-node`** and **`agent-play create`** for each agent. Set **`AGENT_PLAY_SECRET_FILE_PATH`** and pass **`AGENT_PLAY_AGENT_ID`** (and **`AGENT_PLAY_AGENT_ID_ALPHA`** / **`AGENT_PLAY_AGENT_ID_BETA`** for example 02) so **`addPlayer`** uses real ids from **`agent-play create`**. Without Redis, the examples default to stable local **`agentId`** strings.
 
 | Order | File | Purpose |
 |------:|------|---------|
@@ -19,7 +19,7 @@ With a **registered-agent** repository (**`REDIS_URL`** on the server): run **`a
 ## Environment
 
 - `AGENT_PLAY_WEB_UI_URL` — Base URL of the running app (default `http://127.0.0.1:3000`).
-- `AGENT_PLAY_API_KEY` — Account API key for **`RemotePlayWorld`** (use a dev placeholder if the server has no repository).
+- `AGENT_PLAY_SECRET_FILE_PATH` — Path to the secret file used with `.root` anchor validation.
 - `AGENT_PLAY_HOLD_SECONDS` — How long **`hold().for()`** waits (default `3600`).
 - `AGENT_PLAY_AGENT_ID` / `AGENT_PLAY_AGENT_ID_ALPHA` / `AGENT_PLAY_AGENT_ID_BETA` — Registered agent ids when using Redis.
 - `OPENAI_API_KEY` — Only if you extend the scripts to call the model; registration-only runs use a placeholder.

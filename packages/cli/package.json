@@ -20,9 +20,11 @@
     "access": "public"
   },
   "scripts": {
-    "build": "tsup src/cli.ts --format esm --platform node --target node20 --out-dir dist --clean"
+    "build": "tsup src/cli.ts --format esm --platform node --target node20 --out-dir dist --clean --external @agent-play/node-tools && node ../../scripts/copy-root-file.mjs cli"
   },
-  "dependencies": {},
+  "dependencies": {
+    "@agent-play/node-tools": "^3.0.0"
+  },
   "devDependencies": {
     "@types/node": "^22.10.0",
     "tsup": "^8.5.1",

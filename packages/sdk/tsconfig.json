@@ -42,5 +42,8 @@
     "noUncheckedSideEffectImports": true,
     "moduleDetection": "force",
     "skipLibCheck": true,
+    "paths": {
+      "@agent-play/node-tools": ["../node-tools/src/index.ts"]
+    }
   }
 }

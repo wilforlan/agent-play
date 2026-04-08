@@ -67,11 +67,13 @@ export type PlatformAgentInformation = {
  * tools are indexed for the watch UI).
  *
  * **`agentId`** is required: use an id from **`agent-play create`** when the server uses a repository
- * (with **`apiKey`** from **`RemotePlayWorld`**), or any stable string for local dev without Redis.
+ * (with account **`password`** from **`RemotePlayWorld`**), or any stable string for local dev without Redis.
  */
 export type AddPlayerInput = PlatformAgentInformation & {
   /** Registration from {@link import("./platforms/langchain.js").langchainRegistration}. */
   agent: LangChainAgentRegistration;
+  /** Main node id that owns the agent (required on repository-backed servers). */
+  mainNodeId?: string;
   /** Registered agent id (or session-local id without Redis). */
   agentId: string;
 };
@@ -165,6 +167,7 @@ export type AgentPlayWorldMapBounds = {
  */
 export type AgentPlayWorldMapAgentOccupant = {
   kind: "agent";
+  nodeId?: string;
   agentId: string;
   name: string;
   x: number;

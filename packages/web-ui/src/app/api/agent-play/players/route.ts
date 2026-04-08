@@ -83,7 +83,10 @@ export async function POST(req: NextRequest) {
     return Response.json({ error: "invalid agent" }, { status: 400 });
   }
 
-  const apiKey = typeof body.apiKey === "string" ? body.apiKey : undefined;
+  const password =
+    typeof body.password === "string" ? body.password : undefined;
+  const mainNodeId =
+    typeof body.mainNodeId === "string" ? body.mainNodeId.trim() : undefined;
   const agentIdRaw = typeof body.agentId === "string" ? body.agentId.trim() : "";
   if (agentIdRaw.length === 0) {
     agentPlayVerbose("api", "players rejected", { reason: "missing agentId" });
@@ -98,7 +101,8 @@ export async function POST(req: NextRequest) {
       name,
       type,
       agent,
-      apiKey,
+      mainNodeId,
+      password,
       agentId,
     });
     return Response.json({

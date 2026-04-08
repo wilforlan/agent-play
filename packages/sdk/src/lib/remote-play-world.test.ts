@@ -1,9 +1,16 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { RemotePlayWorld } from "./remote-play-world.js";
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import {
+  deriveNodeIdFromPassword,
+  derivePasswordFromSecret,
+} from "@agent-play/node-tools";
 
 const BASE_URL = "http://127.0.0.1:3000";
 const SESSION_URL = `${BASE_URL}/api/agent-play/session`;
-const DEFAULT_API_KEY = "k";
+const DEFAULT_NODE_ID = "n1";
 
 function sessionResponse(): Response {
   return new Response(JSON.stringify({ sid: "sid-1" }), { status: 200 });
@@ -13,8 +20,22 @@ function notFound(): Response {
   return new Response("not found", { status: 404 });
 }
 
-function playWorld(apiKey: string = DEFAULT_API_KEY): RemotePlayWorld {
-  return new RemotePlayWorld({ baseUrl: BASE_URL, apiKey });
+function setupSecretFiles(secretText: string): { secretPath: string; rootPath: string } {
+  const dir = mkdtempSync(join(tmpdir(), "agent-play-sdk-"));
+  const secretPath = join(dir, "buffer.txt");
+  const rootPath = join(dir, ".root");
+  writeFileSync(secretPath, Buffer.from(secretText, "utf8"));
+  writeFileSync(rootPath, `${DEFAULT_NODE_ID}\n`, "utf8");
+  return { secretPath, rootPath };
+}
+
+function playWorld(secretText: string = "k"): RemotePlayWorld {
+  const { secretPath, rootPath } = setupSecretFiles(secretText);
+  return new RemotePlayWorld({
+    baseUrl: BASE_URL,
+    secretFilePath: secretPath,
+    rootFilePath: rootPath,
+  });
 }
 
 function sampleRegisteredAgent(agentId: string, name: string) {
@@ -34,14 +55,20 @@ describe("RemotePlayWorld", () => {
     vi.restoreAllMocks();
   });
 
-  it("throws when apiKey is missing or empty", () => {
-    expect(
-      () =>
-        new RemotePlayWorld({
-          baseUrl: BASE_URL,
-          apiKey: "",
-        })
-    ).toThrow(/apiKey/);
+  it("throws when secret file path is missing", () => {
+    expect(() => new RemotePlayWorld({ baseUrl: BASE_URL, secretFilePath: "" })).toThrow(
+      /secretFilePath/
+    );
+  });
+
+  it("loads node/password from secret file and root key", () => {
+    const { secretPath, rootPath } = setupSecretFiles("amber angle apple");
+    const world = new RemotePlayWorld({
+      baseUrl: BASE_URL,
+      secretFilePath: secretPath,
+      rootFilePath: rootPath,
+    });
+    expect(world).toBeInstanceOf(RemotePlayWorld);
   });
 
   it("connect reads session sid from the web UI", async () => {
@@ -64,7 +91,7 @@ describe("RemotePlayWorld", () => {
     await world.close();
   });
 
-  it("addPlayer posts to players route with sid and world apiKey", async () => {
+  it("addPlayer posts to players route with sid and world password", async () => {
     const fetchMock = vi.fn(
       async (url: string | URL, init?: RequestInit) => {
         const u = String(url);
@@ -73,10 +100,21 @@ describe("RemotePlayWorld", () => {
         }
         if (u.includes("/api/agent-play/players") && init?.method === "POST") {
           const body = JSON.parse(String(init.body)) as {
-            apiKey?: string;
+            password?: string;
+            mainNodeId?: string;
             agentId?: string;
           };
-          expect(body.apiKey).toBe("key");
+          const derivedPassword = derivePasswordFromSecret({
+            secretMaterial: Buffer.from("key", "utf8"),
+            rootKey: DEFAULT_NODE_ID,
+          });
+          expect(body.password).toBe(derivedPassword);
+          expect(body.mainNodeId).toBe(
+            deriveNodeIdFromPassword({
+              password: derivedPassword,
+              rootKey: DEFAULT_NODE_ID,
+            })
+          );
           expect(body.agentId).toBe("aid-1");
           return new Response(
             JSON.stringify({

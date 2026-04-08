@@ -3,7 +3,8 @@ import { getBuiltinAgentDefinitions } from "./builtin-langchain-agents.js";
 
 export type RegisterBuiltinAgentsOptions = {
   baseUrl: string;
-  apiKey: string;
+  secretFilePath: string;
+  rootFilePath?: string;
   /**
    * When true (default), skips `addPlayer` for built-ins whose `name` already appears on the snapshot.
    */
@@ -18,9 +19,12 @@ export async function registerBuiltinAgents(
   options: RegisterBuiltinAgentsOptions
 ): Promise<void> {
   const baseUrl = normalizeBaseUrl(options.baseUrl);
-  const apiKey = options.apiKey;
   const skipExisting = options.skipExistingByName !== false;
-  const world = new RemotePlayWorld({ baseUrl, apiKey });
+  const world = new RemotePlayWorld({
+    baseUrl,
+    secretFilePath: options.secretFilePath,
+    rootFilePath: options.rootFilePath,
+  });
   try {
     await world.connect();
     let existingNames = new Set<string>();

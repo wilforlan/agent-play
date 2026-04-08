@@ -1,0 +1,38 @@
+{
+  "name": "@agent-play/node-tools",
+  "version": "1.0.0",
+  "private": false,
+  "type": "module",
+  "description": "Node identity: passphrase generation, scrypt derivation, and validation for Agent Play.",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    ".root",
+    "README.md"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/wilforlan/agent-play.git",
+    "directory": "packages/node-tools"
+  },
+  "scripts": {
+    "build": "tsup && node ../../scripts/copy-root-file.mjs node-tools",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "tsup": "^8.5.1",
+    "typescript": "~5.9.3",
+    "vitest": "^4.1.1"
+  }
+}

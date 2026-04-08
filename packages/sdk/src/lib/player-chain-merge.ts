@@ -35,7 +35,11 @@ function stableOccupantSortKey(
     return `human:${occ.id}`;
   }
   if (occ.kind === "agent") {
-    return `agent:${occ.agentId}`;
+    const nodeId = occ.nodeId;
+    if (typeof nodeId !== "string" || nodeId.length === 0) {
+      throw new Error("stableOccupantSortKey: invalid agent nodeId");
+    }
+    return `agent:${nodeId}:${occ.agentId}`;
   }
   return `mcp:${occ.id}`;
 }

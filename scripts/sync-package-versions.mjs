@@ -8,6 +8,7 @@ const root = join(__dirname, "..");
 
 const PACKAGE_PATHS = [
   "package.json",
+  "packages/node-tools/package.json",
   "packages/sdk/package.json",
   "packages/cli/package.json",
   "packages/play-ui/package.json",
@@ -16,6 +17,9 @@ const PACKAGE_PATHS = [
 
 /** Maps npm scope name or short alias → path from repo root. */
 const WORKSPACE_TO_REL = {
+  "@agent-play/node-tools": "packages/node-tools/package.json",
+  "node-tools": "packages/node-tools/package.json",
+  nodetools: "packages/node-tools/package.json",
   "@agent-play/sdk": "packages/sdk/package.json",
   sdk: "packages/sdk/package.json",
   "@agent-play/cli": "packages/cli/package.json",

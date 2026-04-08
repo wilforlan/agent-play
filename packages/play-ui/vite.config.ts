@@ -12,7 +12,10 @@ export default defineConfig({
   root: ".",
   resolve: {
     alias: {
-      "@agent-play/sdk": path.resolve(previewUiDir, "../sdk/src/index.ts"),
+      "@agent-play/sdk/browser": path.resolve(
+        previewUiDir,
+        "../sdk/src/browser.ts"
+      ),
     },
   },
 });

@@ -29,6 +29,7 @@ function minimalSnapshot(sid: string, occupants: AgentPlaySnapshot["worldMap"]["
 const sampleAgent = (agentId: string, x = 0, y = 0) =>
   ({
     kind: "agent" as const,
+    nodeId: "__legacy__",
     agentId,
     name: "N",
     x,
@@ -70,7 +71,7 @@ describe("mergeSnapshotWithPlayerChainNode", () => {
     const row = sampleAgent("p", 3, 4);
     const next = mergeSnapshotWithPlayerChainNode(minimalSnapshot("s"), {
       kind: "occupant",
-      stableKey: "agent:p",
+      stableKey: "agent:__legacy__:p",
       removed: false,
       occupant: row,
     });
@@ -83,7 +84,7 @@ describe("mergeSnapshotWithPlayerChainNode", () => {
     const v2 = { ...v1, x: 9, y: 9 };
     const next = mergeSnapshotWithPlayerChainNode(minimalSnapshot("s", [v1]), {
       kind: "occupant",
-      stableKey: "agent:p",
+      stableKey: "agent:__legacy__:p",
       removed: false,
       occupant: v2,
     });
@@ -95,7 +96,7 @@ describe("mergeSnapshotWithPlayerChainNode", () => {
     const row = sampleAgent("p");
     const next = mergeSnapshotWithPlayerChainNode(minimalSnapshot("s", [row]), {
       kind: "occupant",
-      stableKey: "agent:p",
+      stableKey: "agent:__legacy__:p",
       removed: true,
     });
     expect(next.worldMap.occupants).toHaveLength(0);
@@ -104,7 +105,7 @@ describe("mergeSnapshotWithPlayerChainNode", () => {
   it("throws when occupant node has neither removed true nor false (defensive)", () => {
     const malformed = {
       kind: "occupant",
-      stableKey: "agent:p",
+      stableKey: "agent:__legacy__:p",
       removed: undefined,
     } as unknown as PlayerChainNodeResponse;
     expect(() =>

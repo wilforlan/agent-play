@@ -9,6 +9,12 @@ import type {
   RegisteredPlayer,
   PlayerChainNodeResponse,
 } from "../public-types.js";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+import {
+  deriveNodeIdFromPassword,
+  derivePasswordFromSecret,
+} from "@agent-play/node-tools";
 import {
   parseHumanOccupantRow,
   parseAgentOccupantRow,
@@ -23,17 +29,16 @@ import {
 
 export type RemotePlayWorldOptions = {
   baseUrl: string;
-  apiKey: string;
+  secretFilePath: string;
+  rootFilePath?: string;
   authToken?: string;
 };
 
-function formatMissingApiKeyError(): string {
+function formatMissingSecretFileError(): string {
   return [
-    "RemotePlayWorld: options.apiKey is required.",
+    "RemotePlayWorld: options.secretFilePath is required.",
     "",
-    "  Register an agent with `agent-play create` (after `agent-play login`) and use the printed API key.",
-    "  Pass it here so addPlayer can authenticate against the server repository when Redis is enabled.",
-    "  If the server has no agent repository (local dev), still pass a non-empty placeholder string.",
+    "  RemotePlayWorld now derives nodeId/password from secret file + .root.",
   ].join("\n");
 }
 
@@ -182,18 +187,32 @@ export type RemotePlayWorldHold = {
  */
 export class RemotePlayWorld {
   private readonly apiBase: string;
-  private readonly apiKey: string;
+  private readonly mainNodeId: string;
+  private readonly password: string;
   private readonly authToken: string | undefined;
   private sid: string | null = null;
   private closed = false;
   private readonly closeListeners = new Set<() => void>();
 
   constructor(options: RemotePlayWorldOptions) {
-    if (typeof options.apiKey !== "string" || options.apiKey.trim().length === 0) {
-      throw new Error(formatMissingApiKeyError());
+    if (options.secretFilePath.trim().length === 0) {
+      throw new Error(formatMissingSecretFileError());
     }
+    const rootPath =
+      typeof options.rootFilePath === "string" && options.rootFilePath.trim().length > 0
+        ? options.rootFilePath
+        : resolve(process.cwd(), ".root");
+    const expectedRoot = readFileSync(resolve(rootPath), "utf8").trim().toLowerCase();
+    const secretBuffer = readFileSync(resolve(options.secretFilePath));
     this.apiBase = normalizeBaseUrl(options.baseUrl);
-    this.apiKey = options.apiKey.trim();
+    this.password = derivePasswordFromSecret({
+      secretMaterial: secretBuffer,
+      rootKey: expectedRoot,
+    });
+    this.mainNodeId = deriveNodeIdFromPassword({
+      password: this.password,
+      rootKey: expectedRoot,
+    });
     this.authToken = options.authToken;
   }
 
@@ -401,7 +420,8 @@ export class RemotePlayWorld {
         name: input.name,
         type: input.type,
         agent: input.agent,
-        apiKey: this.apiKey,
+        mainNodeId: input.mainNodeId ?? this.mainNodeId,
+        password: this.password,
         agentId: input.agentId,
       }),
     });

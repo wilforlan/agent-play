@@ -1,23 +1,19 @@
 import type {
   AgentRepository,
-  ApiKeyMetadata,
   CreateAgentRecordInput,
   CreateAgentRecordResult,
-  CreateApiKeyResult,
+  CreateNodeResult,
+  NodeAuthRecord,
   StoredAgentRecord,
 } from "./agent-repository.js";
-import {
-  generatePlainApiKey,
-  hashApiKey,
-  lookupIndexFromPlainKey,
-  verifyApiKeyHash,
-} from "./api-key-crypto.js";
 import { randomUUID } from "node:crypto";
 import Redis from "ioredis";
+import { MAX_AGENTS_PER_ACCOUNT } from "./account-limits.js";
 import {
-  MAX_AGENTS_PER_ACCOUNT,
-  MAX_API_KEYS_PER_ACCOUNT,
-} from "./account-limits.js";
+  deriveNodeIdFromPassword,
+  loadRootKey,
+  validateNodePassword,
+} from "@agent-play/node-tools";
 
 const ZONE_FLAG_THRESHOLD = 100;
 
@@ -25,22 +21,18 @@ function agentKey(hostId: string, agentId: string): string {
   return `agent-play:${hostId}:agent:${agentId}`;
 }
 
-function lookupKey(hostId: string, lookupIndex: string): string {
-  return `agent-play:${hostId}:lookup:${lookupIndex}`;
+function userAgentsKey(hostId: string, nodeId: string): string {
+  return `agent-play:${hostId}:node:${nodeId}:agents`;
 }
 
-function userAgentsKey(hostId: string, userId: string): string {
-  return `agent-play:${hostId}:user:${userId}:agents`;
-}
-
-function userAccountApiKeyKey(hostId: string, userId: string): string {
-  return `agent-play:${hostId}:account:${userId}:apiKey`;
+function nodeAuthKey(hostId: string, nodeId: string): string {
+  return `agent-play:${hostId}:node:${nodeId}:auth`;
 }
 
 function recordToHash(rec: StoredAgentRecord): Record<string, string> {
   const o: Record<string, string> = {
     agentId: rec.agentId,
-    userId: rec.userId,
+    nodeId: rec.nodeId,
     name: rec.name,
     toolNames: JSON.stringify(rec.toolNames),
     zoneCount: String(rec.zoneCount),
@@ -49,24 +41,18 @@ function recordToHash(rec: StoredAgentRecord): Record<string, string> {
     createdAt: rec.createdAt,
     updatedAt: rec.updatedAt,
   };
-  if (rec.apiKeyHash !== undefined && rec.apiKeyHash.length > 0) {
-    o.apiKeyHash = rec.apiKeyHash;
-  }
-  if (rec.lookupIndex !== undefined && rec.lookupIndex.length > 0) {
-    o.lookupIndex = rec.lookupIndex;
-  }
   return o;
 }
 
 function hashToRecord(h: Record<string, string>): StoredAgentRecord | null {
   const agentId = h.agentId;
-  const userId = h.userId;
+  const nodeId = h.nodeId;
   const name = h.name;
   const toolNamesRaw = h.toolNames;
   if (
     agentId === undefined ||
-    userId === undefined ||
-    userId.length === 0 ||
+    nodeId === undefined ||
+    nodeId.length === 0 ||
     name === undefined ||
     toolNamesRaw === undefined
   ) {
@@ -81,21 +67,11 @@ function hashToRecord(h: Record<string, string>): StoredAgentRecord | null {
   } catch {
     return null;
   }
-  const apiKeyHash =
-    typeof h.apiKeyHash === "string" && h.apiKeyHash.length > 0
-      ? h.apiKeyHash
-      : undefined;
-  const lookupIndex =
-    typeof h.lookupIndex === "string" && h.lookupIndex.length > 0
-      ? h.lookupIndex
-      : undefined;
   return {
     agentId,
-    userId,
+    nodeId,
     name,
     toolNames,
-    apiKeyHash,
-    lookupIndex,
     zoneCount: Number(h.zoneCount ?? 0),
     yieldCount: Number(h.yieldCount ?? 0),
     flagged: h.flagged === "1",
@@ -104,75 +80,71 @@ function hashToRecord(h: Record<string, string>): StoredAgentRecord | null {
   };
 }
 
-function userKeyPrefix(userId: string): string {
-  return `u:${userId}`;
-}
-
-function parseUserIdFromLookupValue(raw: string): string | null {
-  if (raw.startsWith("u:")) {
-    return raw.slice(2);
-  }
-  return null;
-}
-
 export type RedisAgentRepositoryOptions = {
   redis: Redis;
   hostId: string;
+  rootKey: string;
 };
 
 export class RedisAgentRepository implements AgentRepository {
   private readonly redis: Redis;
   private readonly hostId: string;
+  private readonly rootKey: string;
 
   constructor(options: RedisAgentRepositoryOptions) {
     this.redis = options.redis;
     this.hostId = options.hostId;
+    this.rootKey = options.rootKey;
   }
 
   async close(): Promise<void> {
     await this.redis.quit();
   }
 
-  async createApiKey(userId: string): Promise<CreateApiKeyResult> {
-    const accKey = userAccountApiKeyKey(this.hostId, userId);
-    const exists = await this.redis.exists(accKey);
+  async createNode(passw: string): Promise<CreateNodeResult> {
+    const nodeId = deriveNodeIdFromPassword({
+      password: passw,
+      rootKey: this.rootKey,
+    });
+    const authKey = nodeAuthKey(this.hostId, nodeId);
+    const exists = await this.redis.exists(authKey);
     if (exists === 1) {
-      throw new Error(
-        "createApiKey: an API key already exists for this account; delete it or use key rotation when supported"
-      );
+      throw new Error("createNode: invalid node information");
     }
-    if (MAX_API_KEYS_PER_ACCOUNT < 1) {
-      throw new Error("createApiKey: API keys are disabled for this deployment");
-    }
-    const plainApiKey = generatePlainApiKey();
-    const apiKeyHash = await hashApiKey(plainApiKey);
-    const lookupIndex = lookupIndexFromPlainKey(plainApiKey);
     const createdAt = new Date().toISOString();
-    const pipe = this.redis.multi();
-    pipe.hset(accKey, "apiKeyHash", apiKeyHash);
-    pipe.hset(accKey, "lookupIndex", lookupIndex);
-    pipe.hset(accKey, "createdAt", createdAt);
-    pipe.set(lookupKey(this.hostId, lookupIndex), userKeyPrefix(userId));
-    await pipe.exec();
-    return { plainApiKey };
+    await this.redis.hset(authKey, {
+      nodeId,
+      createdAt,
+    });
+    return { nodeId };
   }
 
-  async getApiKeyMetadata(userId: string): Promise<ApiKeyMetadata> {
-    const accKey = userAccountApiKeyKey(this.hostId, userId);
-    const raw = await this.redis.hgetall(accKey);
-    if (Object.keys(raw).length === 0) {
-      return { hasKey: false };
+  async verifyNodePassw(nodeId: string, passw: string): Promise<boolean> {
+    const raw = await this.redis.hgetall(nodeAuthKey(this.hostId, nodeId));
+    if (Object.keys(raw).length === 0) return false;
+    return validateNodePassword({
+      nodeId,
+      password: passw,
+      rootKey: this.rootKey,
+    });
+  }
+
+  async getNode(nodeId: string): Promise<NodeAuthRecord | null> {
+    const raw = await this.redis.hgetall(nodeAuthKey(this.hostId, nodeId));
+    if (Object.keys(raw).length === 0) return null;
+    if (
+      typeof raw.createdAt !== "string"
+    ) {
+      return null;
     }
-    const createdAt =
-      typeof raw.createdAt === "string" ? raw.createdAt : undefined;
-    return { hasKey: true, createdAt };
+    return { nodeId, createdAt: raw.createdAt };
   }
 
   async createAgent(
     input: CreateAgentRecordInput
   ): Promise<CreateAgentRecordResult> {
     const ids = await this.redis.smembers(
-      userAgentsKey(this.hostId, input.userId)
+      userAgentsKey(this.hostId, input.nodeId)
     );
     if (ids.length >= MAX_AGENTS_PER_ACCOUNT) {
       throw new Error(
@@ -183,7 +155,7 @@ export class RedisAgentRepository implements AgentRepository {
     const now = new Date().toISOString();
     const rec: StoredAgentRecord = {
       agentId,
-      userId: input.userId,
+      nodeId: input.nodeId,
       name: input.name,
       toolNames: [...input.toolNames],
       zoneCount: 0,
@@ -195,44 +167,11 @@ export class RedisAgentRepository implements AgentRepository {
     const key = agentKey(this.hostId, agentId);
     const pipe = this.redis.multi();
     pipe.hset(key, recordToHash(rec));
-    pipe.sadd(userAgentsKey(this.hostId, input.userId), agentId);
+    pipe.sadd(userAgentsKey(this.hostId, input.nodeId), agentId);
     await pipe.exec();
     return { agentId };
   }
 
-  async verifyApiKeyForUser(
-    plainApiKey: string
-  ): Promise<string | null> {
-    const idx = lookupIndexFromPlainKey(plainApiKey);
-    const raw = await this.redis.get(lookupKey(this.hostId, idx));
-    if (raw === null || raw.length === 0) return null;
-    const userIdFromPrefix = parseUserIdFromLookupValue(raw);
-    if (userIdFromPrefix !== null) {
-      const acc = await this.redis.hgetall(
-        userAccountApiKeyKey(this.hostId, userIdFromPrefix)
-      );
-      if (Object.keys(acc).length === 0) return null;
-      const h = acc.apiKeyHash;
-      if (typeof h !== "string" || !(await verifyApiKeyHash(plainApiKey, h))) {
-        return null;
-      }
-      return userIdFromPrefix;
-    }
-    const agentId = raw;
-    const agentRaw = await this.redis.hgetall(agentKey(this.hostId, agentId));
-    if (Object.keys(agentRaw).length === 0) return null;
-    const rec = hashToRecord(agentRaw);
-    if (rec === null) return null;
-    if (
-      rec.apiKeyHash === undefined ||
-      rec.apiKeyHash.length === 0 ||
-      rec.lookupIndex === undefined
-    ) {
-      return null;
-    }
-    if (!(await verifyApiKeyHash(plainApiKey, rec.apiKeyHash))) return null;
-    return rec.userId;
-  }
 
   async getAgent(agentId: string): Promise<StoredAgentRecord | null> {
     const raw = await this.redis.hgetall(agentKey(this.hostId, agentId));
@@ -240,7 +179,7 @@ export class RedisAgentRepository implements AgentRepository {
     return hashToRecord(raw);
   }
 
-  async listAgentsForUser(userId: string): Promise<StoredAgentRecord[]> {
+  async listAgentsForNode(userId: string): Promise<StoredAgentRecord[]> {
     const ids = await this.redis.smembers(
       userAgentsKey(this.hostId, userId)
     );
@@ -259,10 +198,7 @@ export class RedisAgentRepository implements AgentRepository {
     if (rec === null) return false;
     const pipe = this.redis.multi();
     pipe.del(agentKey(this.hostId, agentId));
-    pipe.srem(userAgentsKey(this.hostId, rec.userId), agentId);
-    if (rec.lookupIndex !== undefined && rec.lookupIndex.length > 0) {
-      pipe.del(lookupKey(this.hostId, rec.lookupIndex));
-    }
+    pipe.srem(userAgentsKey(this.hostId, rec.nodeId), agentId);
     await pipe.exec();
     return true;
   }
@@ -292,11 +228,17 @@ export function createRedisAgentRepository(options: {
   redisUrl?: string;
   hostId: string;
   redis?: Redis;
+  rootKey?: string;
 }): RedisAgentRepository {
+  const rootKey =
+    typeof options.rootKey === "string" && options.rootKey.length > 0
+      ? options.rootKey
+      : loadRootKey();
   if (options.redis !== undefined) {
     return new RedisAgentRepository({
       redis: options.redis,
       hostId: options.hostId,
+      rootKey,
     });
   }
   const url = options.redisUrl;
@@ -304,5 +246,5 @@ export function createRedisAgentRepository(options: {
     throw new Error("createRedisAgentRepository: redisUrl or redis is required");
   }
   const redis = new Redis(url);
-  return new RedisAgentRepository({ redis, hostId: options.hostId });
+  return new RedisAgentRepository({ redis, hostId: options.hostId, rootKey });
 }

@@ -16,7 +16,8 @@
     "plugins": [{ "name": "next" }],
     "paths": {
       "@/*": ["./src/*"],
-      "@agent-play/sdk": ["../sdk/src/*"]
+      "@agent-play/sdk": ["../sdk/src/index.ts"],
+      "@agent-play/sdk/browser": ["../sdk/src/browser.ts"]
     }
   },
   "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],

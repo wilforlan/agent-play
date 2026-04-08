@@ -1,5 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { registerBuiltinAgents } from "./register-builtins.js";
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 function mockRegisteredAgent(name: string, agentId: string) {
   return {
@@ -13,6 +16,15 @@ function mockRegisteredAgent(name: string, agentId: string) {
 }
 
 describe("registerBuiltinAgents", () => {
+  function createSecretFixture(): { secretFilePath: string; rootFilePath: string } {
+    const dir = mkdtempSync(join(tmpdir(), "agent-play-agents-"));
+    const secretPath = join(dir, "buffer.txt");
+    const rootPath = join(dir, ".root");
+    writeFileSync(secretPath, "dev-password\n", "utf8");
+    writeFileSync(rootPath, "n1\n", "utf8");
+    return { secretFilePath: secretPath, rootFilePath: rootPath };
+  }
+
   afterEach(() => {
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
@@ -76,9 +88,11 @@ describe("registerBuiltinAgents", () => {
     );
     vi.stubGlobal("fetch", fetchMock);
 
+    const fixture = createSecretFixture();
     await registerBuiltinAgents({
       baseUrl: "http://127.0.0.1:3000",
-      apiKey: "dev-key",
+      secretFilePath: fixture.secretFilePath,
+      rootFilePath: fixture.rootFilePath,
     });
 
     expect(addPlayerCount).toBe(3);
@@ -144,9 +158,11 @@ describe("registerBuiltinAgents", () => {
     );
     vi.stubGlobal("fetch", fetchMock);
 
+    const fixture = createSecretFixture();
     await registerBuiltinAgents({
       baseUrl: "http://127.0.0.1:3000",
-      apiKey: "dev-key",
+      secretFilePath: fixture.secretFilePath,
+      rootFilePath: fixture.rootFilePath,
     });
 
     expect(addPlayerCount).toBe(0);

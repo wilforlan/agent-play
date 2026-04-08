@@ -1,6 +1,6 @@
 export type StoredAgentRecord = {
   agentId: string;
-  userId: string;
+  nodeId: string;
   name: string;
   toolNames: string[];
   zoneCount: number;
@@ -8,36 +8,34 @@ export type StoredAgentRecord = {
   flagged: boolean;
   createdAt: string;
   updatedAt: string;
-  apiKeyHash?: string;
-  lookupIndex?: string;
 };
 
 export type CreateAgentRecordInput = {
   name: string;
   toolNames: string[];
-  userId: string;
+  nodeId: string;
 };
 
 export type CreateAgentRecordResult = {
   agentId: string;
 };
 
-export type CreateApiKeyResult = {
-  plainApiKey: string;
+export type CreateNodeResult = {
+  nodeId: string;
 };
 
-export type ApiKeyMetadata = {
-  hasKey: boolean;
-  createdAt?: string;
+export type NodeAuthRecord = {
+  nodeId: string;
+  createdAt: string;
 };
 
 export type AgentRepository = {
-  createApiKey(userId: string): Promise<CreateApiKeyResult>;
-  getApiKeyMetadata(userId: string): Promise<ApiKeyMetadata>;
+  createNode(passw: string): Promise<CreateNodeResult>;
+  verifyNodePassw(nodeId: string, passw: string): Promise<boolean>;
+  getNode(nodeId: string): Promise<NodeAuthRecord | null>;
   createAgent(input: CreateAgentRecordInput): Promise<CreateAgentRecordResult>;
-  verifyApiKeyForUser(plainApiKey: string): Promise<string | null>;
   getAgent(agentId: string): Promise<StoredAgentRecord | null>;
-  listAgentsForUser(userId: string): Promise<StoredAgentRecord[]>;
+  listAgentsForNode(nodeId: string): Promise<StoredAgentRecord[]>;
   deleteAgent(agentId: string): Promise<boolean>;
   incrementZoneCount(agentId: string): Promise<StoredAgentRecord | null>;
   incrementYieldCount(agentId: string): Promise<StoredAgentRecord | null>;

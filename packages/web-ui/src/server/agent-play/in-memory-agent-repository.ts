@@ -1,76 +1,68 @@
 import type {
   AgentRepository,
-  ApiKeyMetadata,
   CreateAgentRecordInput,
   CreateAgentRecordResult,
-  CreateApiKeyResult,
+  CreateNodeResult,
+  NodeAuthRecord,
   StoredAgentRecord,
 } from "./agent-repository.js";
-import {
-  generatePlainApiKey,
-  hashApiKey,
-  lookupIndexFromPlainKey,
-  verifyApiKeyHash,
-} from "./api-key-crypto.js";
 import { randomUUID } from "node:crypto";
+import { MAX_AGENTS_PER_ACCOUNT } from "./account-limits.js";
 import {
-  MAX_AGENTS_PER_ACCOUNT,
-  MAX_API_KEYS_PER_ACCOUNT,
-} from "./account-limits.js";
+  deriveNodeIdFromPassword,
+  validateNodePassword,
+} from "@agent-play/node-tools";
 
 const ZONE_FLAG_THRESHOLD = 100;
 
-function userKeyPrefix(userId: string): string {
-  return `u:${userId}`;
-}
-
-function parseUserIdFromLookupValue(raw: string): string | null {
-  if (raw.startsWith("u:")) {
-    return raw.slice(2);
-  }
-  return null;
-}
-
 export class InMemoryAgentRepository implements AgentRepository {
   private readonly agents = new Map<string, StoredAgentRecord>();
-  private readonly lookup = new Map<string, string>();
-  private readonly userAccountKeys = new Map<
-    string,
-    { apiKeyHash: string; lookupIndex: string; createdAt: string }
-  >();
+  private readonly nodes = new Map<string, NodeAuthRecord>();
+  private readonly rootKey: string;
 
-  async createApiKey(userId: string): Promise<CreateApiKeyResult> {
-    const existing = this.userAccountKeys.get(userId);
-    if (existing !== undefined) {
-      throw new Error(
-        "createApiKey: an API key already exists for this account; delete it or use key rotation when supported"
-      );
+  constructor(options?: { rootKey?: string }) {
+    this.rootKey = options?.rootKey ?? "";
+    if (this.rootKey.length === 0) {
+      throw new Error("InMemoryAgentRepository: rootKey is required");
     }
-    if (MAX_API_KEYS_PER_ACCOUNT < 1) {
-      throw new Error("createApiKey: API keys are disabled for this deployment");
-    }
-    const plainApiKey = generatePlainApiKey();
-    const apiKeyHash = await hashApiKey(plainApiKey);
-    const lookupIndex = lookupIndexFromPlainKey(plainApiKey);
-    const createdAt = new Date().toISOString();
-    this.userAccountKeys.set(userId, { apiKeyHash, lookupIndex, createdAt });
-    this.lookup.set(lookupIndex, userKeyPrefix(userId));
-    return { plainApiKey };
   }
 
-  async getApiKeyMetadata(userId: string): Promise<ApiKeyMetadata> {
-    const row = this.userAccountKeys.get(userId);
-    if (row === undefined) {
-      return { hasKey: false };
+  async createNode(passw: string): Promise<CreateNodeResult> {
+    const nodeId = deriveNodeIdFromPassword({
+      password: passw,
+      rootKey: this.rootKey,
+    });
+    if (this.nodes.has(nodeId)) {
+      throw new Error("createNode: node already exists");
     }
-    return { hasKey: true, createdAt: row.createdAt };
+    const createdAt = new Date().toISOString();
+    this.nodes.set(nodeId, { nodeId, createdAt });
+    return { nodeId };
+  }
+
+  async verifyNodePassw(nodeId: string, passw: string): Promise<boolean> {
+    const node = this.nodes.get(nodeId);
+    if (node === undefined) return false;
+    return validateNodePassword({
+      nodeId,
+      password: passw,
+      rootKey: this.rootKey,
+    });
+  }
+
+  async getNode(nodeId: string): Promise<NodeAuthRecord | null> {
+    const n = this.nodes.get(nodeId);
+    return n === undefined ? null : { ...n };
   }
 
   async createAgent(
     input: CreateAgentRecordInput
   ): Promise<CreateAgentRecordResult> {
+    if (!this.nodes.has(input.nodeId)) {
+      throw new Error("createAgent: node does not exist");
+    }
     const existing = [...this.agents.values()].filter(
-      (a) => a.userId === input.userId
+      (a) => a.nodeId === input.nodeId
     );
     if (existing.length >= MAX_AGENTS_PER_ACCOUNT) {
       throw new Error(
@@ -81,7 +73,7 @@ export class InMemoryAgentRepository implements AgentRepository {
     const now = new Date().toISOString();
     const rec: StoredAgentRecord = {
       agentId,
-      userId: input.userId,
+      nodeId: input.nodeId,
       name: input.name,
       toolNames: [...input.toolNames],
       zoneCount: 0,
@@ -94,41 +86,14 @@ export class InMemoryAgentRepository implements AgentRepository {
     return { agentId };
   }
 
-  async verifyApiKeyForUser(
-    plainApiKey: string
-  ): Promise<string | null> {
-    const idx = lookupIndexFromPlainKey(plainApiKey);
-    const raw = this.lookup.get(idx);
-    if (raw === undefined) return null;
-    const fromUserPrefix = parseUserIdFromLookupValue(raw);
-    if (fromUserPrefix !== null) {
-      const row = this.userAccountKeys.get(fromUserPrefix);
-      if (row === undefined) return null;
-      if (!(await verifyApiKeyHash(plainApiKey, row.apiKeyHash))) return null;
-      return fromUserPrefix;
-    }
-    const agentId = raw;
-    const rec = this.agents.get(agentId);
-    if (rec === undefined) return null;
-    if (
-      rec.apiKeyHash === undefined ||
-      rec.apiKeyHash.length === 0 ||
-      rec.lookupIndex === undefined
-    ) {
-      return null;
-    }
-    if (!(await verifyApiKeyHash(plainApiKey, rec.apiKeyHash))) return null;
-    return rec.userId;
-  }
-
   async getAgent(agentId: string): Promise<StoredAgentRecord | null> {
     const r = this.agents.get(agentId);
     return r === undefined ? null : { ...r };
   }
 
-  async listAgentsForUser(userId: string): Promise<StoredAgentRecord[]> {
+  async listAgentsForNode(nodeId: string): Promise<StoredAgentRecord[]> {
     return [...this.agents.values()]
-      .filter((a) => a.userId === userId)
+      .filter((a) => a.nodeId === nodeId)
       .map((a) => ({ ...a }));
   }
 
@@ -136,9 +101,6 @@ export class InMemoryAgentRepository implements AgentRepository {
     const rec = this.agents.get(agentId);
     if (rec === undefined) return false;
     this.agents.delete(agentId);
-    if (rec.lookupIndex !== undefined && rec.lookupIndex.length > 0) {
-      this.lookup.delete(rec.lookupIndex);
-    }
     return true;
   }
 

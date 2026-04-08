@@ -9,12 +9,12 @@
  * Open the printed preview URL once: both avatars share the same world and session.
  *
  * Prerequisites: web-ui running (`npm run dev -w @agent-play/web-ui`). With Redis-backed agents,
- * run `agent-play login`, `agent-play create-key`, then `agent-play create` twice (max 2 agents
- * per account), pass each **`agentId`** on **`addPlayer`**, and set **`AGENT_PLAY_API_KEY`** on
- * **`RemotePlayWorld`** (one account key for both).
+ * run `agent-play bootstrap-node`, then `agent-play create` twice (max 2 agents
+ * per node), pass each **`agentId`** on **`addPlayer`**, and set **`AGENT_PLAY_SECRET_FILE_PATH`** on
+ * **`RemotePlayWorld`** (same secret file for both).
  *
  * Run: `tsx -r dotenv/config examples/02-remote-two-players-langchain.ts`
- * Env: `AGENT_PLAY_WEB_UI_URL`, `AGENT_PLAY_API_KEY`, `AGENT_PLAY_HOLD_SECONDS` (default 3600),
+ * Env: `AGENT_PLAY_WEB_UI_URL`, `AGENT_PLAY_SECRET_FILE_PATH`, `AGENT_PLAY_HOLD_SECONDS` (default 3600),
  * `AGENT_PLAY_AGENT_ID_ALPHA` / `AGENT_PLAY_AGENT_ID_BETA` when using a registered repository.
  */
 
@@ -80,10 +80,13 @@ const agentBeta = createAgent({
 
 async function main() {
   const base = process.env.AGENT_PLAY_WEB_UI_URL ?? "http://127.0.0.1:3000";
-  const apiKey = process.env.AGENT_PLAY_API_KEY ?? "dev-placeholder";
+  const secretFilePath = process.env.AGENT_PLAY_SECRET_FILE_PATH;
+  if (secretFilePath === undefined || secretFilePath.length === 0) {
+    throw new Error("AGENT_PLAY_SECRET_FILE_PATH is required");
+  }
   const holdSeconds = Number(process.env.AGENT_PLAY_HOLD_SECONDS ?? 3600);
 
-  const world = new RemotePlayWorld({ baseUrl: base, apiKey });
+  const world = new RemotePlayWorld({ baseUrl: base, secretFilePath });
   await world.connect();
 
   const agentIdA =

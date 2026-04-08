@@ -1,9 +1,8 @@
 import { NextRequest } from "next/server";
 import { agentPlayVerbose } from "@/server/agent-play/agent-play-debug";
 import { logAgentPlayApi } from "@/server/agent-play/log-agent-play-api";
-import { getPlayWorld } from "@/server/get-world";
+import { getPlayWorld, getRepository } from "@/server/get-world";
 import { validateAgentPlaySession } from "@/server/agent-play/session-validation";
-import { getUserIdFromBearer } from "@/server/auth-session";
 
 export async function POST(req: NextRequest) {
   logAgentPlayApi("POST mcp/register", req);
@@ -18,8 +17,16 @@ export async function POST(req: NextRequest) {
     return Response.json({ error: "invalid sid" }, { status: 403 });
   }
   const world = await getPlayWorld();
-  const userId = await getUserIdFromBearer(req);
-  if (userId === null) {
+  const repo = await getRepository();
+  if (repo === null) {
+    return Response.json({ error: "repository not configured" }, { status: 503 });
+  }
+  const nodeId = req.headers.get("x-node-id")?.trim() ?? "";
+  const passw = req.headers.get("x-node-passw") ?? "";
+  if (nodeId.length === 0 || passw.length === 0) {
+    return Response.json({ error: "unauthorized" }, { status: 401 });
+  }
+  if (!(await repo.verifyNodePassw(nodeId, passw))) {
     return Response.json({ error: "unauthorized" }, { status: 401 });
   }
   const body = (await req.json()) as { name?: unknown; url?: unknown };

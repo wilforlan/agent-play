@@ -3,13 +3,16 @@ import { InMemoryAgentRepository } from "./in-memory-agent-repository.js";
 import { PlayWorld } from "./play-world.js";
 
 describe("PlayWorld addPlayer with AgentRepository", () => {
-  it("requires account apiKey when repository is configured", async () => {
-    const repo = new InMemoryAgentRepository();
-    await repo.createApiKey("u1");
+  const TEST_ROOT_KEY = "fixture-root-key";
+  const PASSW = "amber angle apple";
+
+  it("requires account password when repository is configured", async () => {
+    const repo = new InMemoryAgentRepository({ rootKey: TEST_ROOT_KEY });
+    const { nodeId } = await repo.createNode(PASSW);
     await repo.createAgent({
       name: "r",
       toolNames: ["chat_tool"],
-      userId: "u1",
+      nodeId,
     });
     const w = new PlayWorld({ repository: repo });
     await w.start();
@@ -19,18 +22,19 @@ describe("PlayWorld addPlayer with AgentRepository", () => {
         name: "x",
         type: "langchain",
         agent: { type: "langchain", toolNames: ["chat_tool"] },
+        mainNodeId: nodeId,
         agentId: "any-id",
       })
-    ).rejects.toThrow(/apiKey/);
+    ).rejects.toThrow(/password/);
   });
 
   it("loads a registered agent when agentId belongs to the user", async () => {
-    const repo = new InMemoryAgentRepository();
-    const { plainApiKey } = await repo.createApiKey("u1");
+    const repo = new InMemoryAgentRepository({ rootKey: TEST_ROOT_KEY });
+    const { nodeId } = await repo.createNode(PASSW);
     const { agentId } = await repo.createAgent({
       name: "remote-demo",
       toolNames: ["chat_tool", "increment"],
-      userId: "u1",
+      nodeId,
     });
     const w = new PlayWorld({ repository: repo });
     await w.start();
@@ -39,19 +43,20 @@ describe("PlayWorld addPlayer with AgentRepository", () => {
       name: "remote-demo",
       type: "langchain",
       agent: { type: "langchain", toolNames: ["increment", "chat_tool"] },
-      apiKey: plainApiKey,
+      mainNodeId: nodeId,
+      password: PASSW,
       agentId,
     });
     expect(p.id).toBe(agentId);
   });
 
   it("accepts an existing repository row and session player id matches agentId", async () => {
-    const repo = new InMemoryAgentRepository();
-    const { plainApiKey } = await repo.createApiKey("u1");
+    const repo = new InMemoryAgentRepository({ rootKey: TEST_ROOT_KEY });
+    const { nodeId } = await repo.createNode(PASSW);
     const { agentId } = await repo.createAgent({
       name: "fresh",
       toolNames: ["chat_tool"],
-      userId: "u1",
+      nodeId,
     });
     const w = new PlayWorld({ repository: repo });
     await w.start();
@@ -60,7 +65,8 @@ describe("PlayWorld addPlayer with AgentRepository", () => {
       name: "fresh",
       type: "langchain",
       agent: { type: "langchain", toolNames: ["chat_tool"] },
-      apiKey: plainApiKey,
+      mainNodeId: nodeId,
+      password: PASSW,
       agentId,
     });
     const stored = await repo.getAgent(p.id);
@@ -69,13 +75,14 @@ describe("PlayWorld addPlayer with AgentRepository", () => {
     expect(stored?.toolNames).toEqual(["chat_tool"]);
   });
 
-  it("rejects agentId that does not belong to the api key user", async () => {
-    const repo = new InMemoryAgentRepository();
-    const { plainApiKey } = await repo.createApiKey("u1");
+  it("rejects agentId when password does not match that agent owner", async () => {
+    const repo = new InMemoryAgentRepository({ rootKey: TEST_ROOT_KEY });
+    const { nodeId: nodeA } = await repo.createNode(PASSW);
+    const { nodeId: nodeB } = await repo.createNode("orchid pearl river");
     const { agentId: otherAgent } = await repo.createAgent({
       name: "other",
       toolNames: ["chat_tool"],
-      userId: "u2",
+      nodeId: nodeB,
     });
 
     const w = new PlayWorld({ repository: repo });
@@ -86,19 +93,20 @@ describe("PlayWorld addPlayer with AgentRepository", () => {
         name: "x",
         type: "langchain",
         agent: { type: "langchain", toolNames: ["chat_tool"] },
-        apiKey: plainApiKey,
+        mainNodeId: nodeA,
+        password: PASSW,
         agentId: otherAgent,
       })
-    ).rejects.toThrow(/belong/);
+    ).rejects.toThrow(/does not belong to mainNodeId/);
   });
 
   it("accepts explicit agentId when it belongs to the user", async () => {
-    const repo = new InMemoryAgentRepository();
-    const { plainApiKey } = await repo.createApiKey("u1");
+    const repo = new InMemoryAgentRepository({ rootKey: TEST_ROOT_KEY });
+    const { nodeId } = await repo.createNode(PASSW);
     const { agentId } = await repo.createAgent({
       name: "r",
       toolNames: ["chat_tool"],
-      userId: "u1",
+      nodeId,
     });
     const w = new PlayWorld({ repository: repo });
     await w.start();
@@ -107,7 +115,8 @@ describe("PlayWorld addPlayer with AgentRepository", () => {
       name: "ok",
       type: "langchain",
       agent: { type: "langchain", toolNames: ["chat_tool"] },
-      apiKey: plainApiKey,
+      mainNodeId: nodeId,
+      password: PASSW,
       agentId,
     });
     expect(p.id).toBe(agentId);

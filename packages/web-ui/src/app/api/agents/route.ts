@@ -1,7 +1,6 @@
 import { NextRequest } from "next/server";
 import type { StoredAgentRecord } from "@/server/agent-play/agent-repository";
 import { getRepository } from "@/server/get-world";
-import { getUserIdFromBearer } from "@/server/auth-session";
 
 function publicAgent(a: StoredAgentRecord) {
   return {
@@ -17,26 +16,34 @@ function publicAgent(a: StoredAgentRecord) {
 }
 
 export async function GET(req: NextRequest) {
-  const userId = await getUserIdFromBearer(req);
-  if (userId === null) {
-    return Response.json({ error: "unauthorized" }, { status: 401 });
-  }
   const repo = await getRepository();
   if (repo === null) {
     return Response.json({ error: "repository not configured" }, { status: 503 });
   }
-  const agents = await repo.listAgentsForUser(userId);
+  const nodeId = req.headers.get("x-node-id")?.trim() ?? "";
+  const passw = req.headers.get("x-node-passw") ?? "";
+  if (nodeId.length === 0 || passw.length === 0) {
+    return Response.json({ error: "unauthorized" }, { status: 401 });
+  }
+  if (!(await repo.verifyNodePassw(nodeId, passw))) {
+    return Response.json({ error: "unauthorized" }, { status: 401 });
+  }
+  const agents = await repo.listAgentsForNode(nodeId);
   return Response.json({ agents: agents.map(publicAgent) });
 }
 
 export async function POST(req: NextRequest) {
-  const userId = await getUserIdFromBearer(req);
-  if (userId === null) {
-    return Response.json({ error: "unauthorized" }, { status: 401 });
-  }
   const repo = await getRepository();
   if (repo === null) {
     return Response.json({ error: "repository not configured" }, { status: 503 });
+  }
+  const nodeId = req.headers.get("x-node-id")?.trim() ?? "";
+  const passw = req.headers.get("x-node-passw") ?? "";
+  if (nodeId.length === 0 || passw.length === 0) {
+    return Response.json({ error: "unauthorized" }, { status: 401 });
+  }
+  if (!(await repo.verifyNodePassw(nodeId, passw))) {
+    return Response.json({ error: "unauthorized" }, { status: 401 });
   }
   const body = (await req.json()) as {
     name?: unknown;
@@ -55,7 +62,7 @@ export async function POST(req: NextRequest) {
     const result = await repo.createAgent({
       name: body.name,
       toolNames: [...effectiveToolNames],
-      userId,
+      nodeId,
     });
     return Response.json(result);
   } catch (err) {
@@ -65,8 +72,9 @@ export async function POST(req: NextRequest) {
 }
 
 export async function DELETE(req: NextRequest) {
-  const userId = await getUserIdFromBearer(req);
-  if (userId === null) {
+  const nodeId = req.headers.get("x-node-id")?.trim() ?? "";
+  const passw = req.headers.get("x-node-passw") ?? "";
+  if (nodeId.length === 0 || passw.length === 0) {
     return Response.json({ error: "unauthorized" }, { status: 401 });
   }
   const id = req.nextUrl.searchParams.get("id");
@@ -77,11 +85,14 @@ export async function DELETE(req: NextRequest) {
   if (repo === null) {
     return Response.json({ error: "repository not configured" }, { status: 503 });
   }
+  if (!(await repo.verifyNodePassw(nodeId, passw))) {
+    return Response.json({ error: "unauthorized" }, { status: 401 });
+  }
   const agent = await repo.getAgent(id);
   if (agent === null) {
     return Response.json({ ok: false });
   }
-  if (agent.userId !== userId) {
+  if (agent.nodeId !== nodeId) {
     return Response.json({ error: "forbidden" }, { status: 403 });
   }
   const ok = await repo.deleteAgent(id);

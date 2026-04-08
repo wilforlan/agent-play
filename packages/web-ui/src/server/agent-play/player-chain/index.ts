@@ -119,7 +119,7 @@ export type PlayerChainDigest = {
 };
 
 /**
- * Canonical stable key for an occupant row: `human:{id}`, `agent:{agentId}`, or `mcp:{id}`.
+ * Canonical stable key for an occupant row: `human:{id}`, `agent:{nodeId}:{agentId}`, or `mcp:{id}`.
  * Matches sort order for leaves after genesis and header.
  */
 export function stableOccupantSortKey(
@@ -129,7 +129,8 @@ export function stableOccupantSortKey(
     return `human:${occ.id}`;
   }
   if (occ.kind === "agent") {
-    return `agent:${occ.agentId}`;
+    const nodeId = occ.nodeId ?? "__legacy__";
+    return `agent:${nodeId}:${occ.agentId}`;
   }
   return `mcp:${occ.id}`;
 }

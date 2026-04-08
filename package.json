@@ -10,7 +10,8 @@
     "packages/*"
   ],
   "scripts": {
-    "build": "npm run build:sdk && npm run build:agents && npm run build:cli && npm run build:web-ui && npm run build:play-ui",
+    "build": "npm run build:node-tools && npm run build:sdk && npm run build:agents && npm run build:cli && npm run build:web-ui && npm run build:play-ui",
+    "build:node-tools": "npm run build -w @agent-play/node-tools",
     "build:sdk": "npm run build -w @agent-play/sdk",
     "build:agents": "npm run build -w @agent-play/agents",
     "build:web-ui": "npm run build -w @agent-play/web-ui",
@@ -26,6 +27,7 @@
     "deploy": "bash k8s/deploy.sh",
     "deploy:clean": "bash k8s/clean-cluster.sh",
     "version:packages": "node scripts/sync-package-versions.mjs",
+    "migrate:v2:node-auth": "node scripts/migrate-userid-to-nodeid.mjs",
     "setup:k8s-server": "bash k8s/setup.sh"
   },
   "engines": {
