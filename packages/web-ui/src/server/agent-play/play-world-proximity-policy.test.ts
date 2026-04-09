@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { PlayWorld } from "./play-world.js";
+import { TestSessionStore } from "./session-store.test-double.js";
 
 describe("PlayWorld proximity policy", () => {
   it("blocks human to human proximity communication", async () => {
-    const w = new PlayWorld();
+    const w = new PlayWorld({ sessionStore: new TestSessionStore() });
     await w.start();
     await expect(
       w.recordProximityAction({
@@ -15,7 +16,7 @@ describe("PlayWorld proximity policy", () => {
   });
 
   it("allows human to mcp chat and emits world interaction fanout", async () => {
-    const w = new PlayWorld();
+    const w = new PlayWorld({ sessionStore: new TestSessionStore() });
     await w.start();
     const mcpId = await w.registerMCP({ name: "Docs MCP", url: "https://mcp.example" });
     await expect(

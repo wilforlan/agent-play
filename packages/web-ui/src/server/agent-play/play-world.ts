@@ -21,8 +21,7 @@ import type {
   WorldInteractionRole,
 } from "./play-transport.js";
 import type { AgentRepository } from "./agent-repository.js";
-import type { WorldSessionStore } from "./world-session-store.js";
-import { MemorySessionStore } from "./memory-session-store.js";
+import type { SessionStore } from "./session-store.js";
 import {
   assertAgentToolContract,
   extractAssistToolNames,
@@ -44,7 +43,7 @@ import { computeFreeMapCell, occupiedKeysFromSnapshot } from "./grid-allocate.js
 import { buildPlayerChainFanoutNotify } from "./player-chain/index.js";
 import {
   emptySnapshot,
-  ensureSnapshotSid,
+  ensureWorldSnapshot,
   upsertAgentOccupant,
   removeOccupantsForPlayer,
 } from "./world-snapshot-helpers.js";
@@ -155,7 +154,7 @@ export type PlayWorldOptions = {
   playApiBase?: string;
   debug?: boolean;
   repository?: AgentRepository;
-  sessionStore?: WorldSessionStore;
+  sessionStore: SessionStore;
 };
 
 export const HUMAN_VIEWER_PLAYER_ID = "__human__";
@@ -184,15 +183,15 @@ const PROXIMITY_ACTION_LABEL: Record<ProximityActionKind, string> = {
 };
 
 export class PlayWorld {
-  private sessionId: string | null = null;
   private readonly bus = new InMemoryPlayBus();
   private httpTransport: HttpPlayTransport | null = null;
   private readonly repository: AgentRepository | null;
-  private readonly sessionStore: WorldSessionStore;
+  private readonly sessionStore: SessionStore;
+  private mainNodeId: string | null = null;
 
-  constructor(private readonly options: PlayWorldOptions = {}) {
+  constructor(private readonly options: PlayWorldOptions) {
     this.repository = options.repository ?? null;
-    this.sessionStore = options.sessionStore ?? new MemorySessionStore();
+    this.sessionStore = options.sessionStore;
   }
 
   async start(): Promise<void> {
@@ -202,26 +201,27 @@ export class PlayWorld {
         : {}
     );
     const sid = await this.sessionStore.loadOrCreateSessionId();
-    this.sessionId = sid;
+    this.mainNodeId = this.sessionStore.playerChainGenesis;
     agentPlayDebug("play-world", "start", { sessionId: sid });
     if (this.options.playApiBase !== undefined) {
       this.httpTransport = new HttpPlayTransport({
         baseUrl: this.options.playApiBase,
-        sessionId: sid,
+        sessionId: this.sessionStore.getSessionId(),
       });
     }
-  }
-
-  getSessionId(): string {
-    if (this.sessionId === null) {
-      throw new Error("PlayWorld.start() must be called before using the world");
+    const existingSnapshot = await this.sessionStore.getSnapshotJson();
+    if (existingSnapshot === null) {
+      const initialSnapshot = emptySnapshot(this.sessionStore.playerChainGenesis);
+      await this.sessionStore.persistSnapshot(initialSnapshot);
     }
-    return this.sessionId;
   }
 
   isSessionSid(sid: string): boolean {
-    if (this.sessionId === null) return false;
-    return sid.trim() === this.sessionId;
+    try {
+      return sid.trim() === this.sessionStore.getSessionId();
+    } catch {
+      return false;
+    }
   }
 
   private metadataFanout(): RedisFanoutItem[] {
@@ -238,20 +238,17 @@ export class PlayWorld {
   }
 
   async resetSession(): Promise<string> {
-    if (this.sessionId === null) {
-      throw new Error("PlayWorld.start() must be called before resetSession");
-    }
+    this.sessionStore.getSessionId();
     const newSid = randomUUID();
-    this.sessionId = newSid;
+    const prev = await this.sessionStore.getSnapshotJson();
+    await this.sessionStore.replaceSessionWithNewSid(newSid);
     if (this.options.playApiBase !== undefined) {
       this.httpTransport = new HttpPlayTransport({
         baseUrl: this.options.playApiBase,
-        sessionId: newSid,
+        sessionId: this.sessionStore.getSessionId(),
       });
     }
-    const prev = await this.sessionStore.getSnapshotJson();
-    await this.sessionStore.replaceSessionWithNewSid(newSid);
-    const snap = emptySnapshot(newSid);
+    const snap = emptySnapshot(this.sessionStore.playerChainGenesis);
     const { rev, merkleRootHex, merkleLeafCount } =
       await this.sessionStore.persistSnapshotReturningRev(snap);
     const playerChainNotify = buildPlayerChainFanoutNotify({
@@ -291,13 +288,10 @@ export class PlayWorld {
   }
 
   async getSnapshotJson(): Promise<PreviewSnapshotJson> {
-    const sid = this.getSessionId();
+    const mainNodeId = this.mainNodeId ?? this.sessionStore.playerChainGenesis;
     const raw = await this.sessionStore.getSnapshotJson();
     if (raw === null) {
-      return emptySnapshot(sid);
-    }
-    if (raw.sid !== sid) {
-      return emptySnapshot(sid);
+      return emptySnapshot(mainNodeId);
     }
     return raw;
   }
@@ -329,8 +323,30 @@ export class PlayWorld {
     const toRef = input.toPlayerId.includes(":")
       ? input.toPlayerId
       : `agent:${input.toPlayerId}`;
-    const fromOcc = byRef.get(fromRef);
-    const toOcc = byRef.get(toRef);
+    const fromOcc =
+      byRef.get(fromRef) ??
+      (fromRef === `human:${HUMAN_VIEWER_PLAYER_ID}`
+        ? {
+            kind: "human" as const,
+            id: HUMAN_VIEWER_PLAYER_ID,
+            name: "Viewer",
+            x: 0,
+            y: 0,
+            interactive: false,
+          }
+        : undefined);
+    const toOcc =
+      byRef.get(toRef) ??
+      (toRef === `human:${HUMAN_VIEWER_PLAYER_ID}`
+        ? {
+            kind: "human" as const,
+            id: HUMAN_VIEWER_PLAYER_ID,
+            name: "Viewer",
+            x: 0,
+            y: 0,
+            interactive: false,
+          }
+        : undefined);
     if (fromOcc === undefined) {
       throw new Error(
         `recordProximityAction: unknown fromPlayerId "${input.fromPlayerId}"`
@@ -421,10 +437,12 @@ export class PlayWorld {
 
   private async applyZoneIncrement(agentId: string): Promise<void> {
     await runStoredWorldMutation({
-      sid: this.getSessionId(),
       store: this.sessionStore,
       mutate: async (cached) => {
-        const base = ensureSnapshotSid(cached, this.getSessionId());
+        const base = ensureWorldSnapshot(
+          cached,
+          this.sessionStore.playerChainGenesis
+        );
         const occ = base.worldMap.occupants.find(
           (o): o is PreviewWorldMapAgentOccupantJson =>
             o.kind === "agent" && o.agentId === agentId
@@ -511,10 +529,12 @@ export class PlayWorld {
 
   private async applyYieldIncrement(agentId: string): Promise<void> {
     await runStoredWorldMutation({
-      sid: this.getSessionId(),
       store: this.sessionStore,
       mutate: async (cached) => {
-        const base = ensureSnapshotSid(cached, this.getSessionId());
+        const base = ensureWorldSnapshot(
+          cached,
+          this.sessionStore.playerChainGenesis
+        );
         const occ = base.worldMap.occupants.find(
           (o): o is PreviewWorldMapAgentOccupantJson =>
             o.kind === "agent" && o.agentId === agentId
@@ -665,7 +685,7 @@ export class PlayWorld {
   }
 
   async addPlayer(input: AddPlayerInput): Promise<RegisteredPlayer> {
-    const sid = this.getSessionId();
+    this.sessionStore.getSessionId();
     assertAgentToolContract(input.agent.toolNames);
     const trimmedId = input.agentId.trim();
     if (trimmedId.length === 0) {
@@ -677,42 +697,55 @@ export class PlayWorld {
     let registered: RegisteredPlayer | undefined;
 
     await runStoredWorldMutation({
-      sid,
       store: this.sessionStore,
       mutate: async (cached) => {
-        const base = ensureSnapshotSid(cached, sid);
+        const base = ensureWorldSnapshot(
+          cached,
+          this.sessionStore.playerChainGenesis
+        );
         let stored: StoredAgentRecord | null = null;
         let playerId = trimmedId;
 
         if (this.repository !== null) {
-          if (input.mainNodeId === undefined || input.mainNodeId.length === 0) {
-            throw new Error(
-              "addPlayer: mainNodeId is required when repository is configured"
-            );
-          }
           if (input.password === undefined || input.password.length === 0) {
             throw new Error(
               "addPlayer: password is required when repository is configured"
             );
           }
-          const row = await this.repository.getAgent(trimmedId);
-          if (row === null) {
+          const resolvedMainNodeId =
+            input.mainNodeId !== undefined && input.mainNodeId.length > 0
+              ? input.mainNodeId
+              : await this.repository.findAccountIdForAgentNode(trimmedId);
+          if (resolvedMainNodeId === null) {
             throw new Error(
-              "addPlayer: unknown agentId; create an agent with `agent-play create` after `agent-play login`"
+              "addPlayer: unable to resolve main node for agentId"
             );
           }
-          if (row.nodeId !== input.mainNodeId) {
-            throw new Error("addPlayer: agent does not belong to mainNodeId");
+          const row = await this.repository.getAgent(trimmedId);
+          if (row === null) {
+            const mainNode = await this.repository.getNode(resolvedMainNodeId);
+            const attachedAgentIds = mainNode?.agentNodeIds ?? [];
+            if (!attachedAgentIds.includes(trimmedId)) {
+              throw new Error(
+                "addPlayer: unknown agentId; create an agent node with `agent-play create-agent-node`"
+              );
+            }
+            stored = null;
+            playerId = trimmedId;
+          } else {
+            if (row.nodeId !== resolvedMainNodeId) {
+              throw new Error("addPlayer: agent does not belong to mainNodeId");
+            }
+            stored = row;
+            playerId = row.agentId;
           }
           const validPassword = await this.repository.verifyNodePassw(
-            input.mainNodeId,
+            resolvedMainNodeId,
             input.password
           );
           if (!validPassword) {
             throw new Error("addPlayer: invalid password");
           }
-          stored = row;
-          playerId = row.agentId;
         } else if (
           base.worldMap.occupants.some(
             (o) => o.kind === "agent" && o.agentId === playerId
@@ -747,6 +780,17 @@ export class PlayWorld {
                 yieldCount: 0,
                 flagged: false,
               };
+        const effectiveToolNames =
+          input.agent.toolNames.length > 0
+            ? input.agent.toolNames
+            : stored?.toolNames ?? [];
+        const summaryName =
+          input.name.trim().length > 0 ? input.name : (stored?.name ?? input.name);
+        const summaryForWorld: RegisteredAgentSummary = {
+          ...registeredSummary,
+          name: summaryName,
+          toolNames: [...effectiveToolNames],
+        };
 
         const assistList =
           input.agent.assistTools !== undefined
@@ -757,14 +801,14 @@ export class PlayWorld {
           kind: "agent",
           nodeId: stored?.nodeId ?? input.mainNodeId,
           agentId: playerId,
-          name: input.name,
+          name: summaryName,
           x: pos.x,
           y: pos.y,
           platform: input.type,
-          toolNames: [...input.agent.toolNames],
+          toolNames: [...effectiveToolNames],
           stationary: true,
-          assistToolNames: extractAssistToolNames(input.agent.toolNames),
-          hasChatTool: input.agent.toolNames.includes("chat_tool"),
+          assistToolNames: extractAssistToolNames(effectiveToolNames),
+          hasChatTool: effectiveToolNames.includes("chat_tool"),
         };
         if (assistList.length > 0) {
           row.assistTools = assistList;
@@ -786,15 +830,15 @@ export class PlayWorld {
 
         const player: PlayAgentInformation = {
           id: playerId,
-          name: input.name,
-          sid,
+          name: summaryName,
+          sid: this.sessionStore.getSessionId(),
           createdAt: new Date(),
           updatedAt: new Date(),
         };
         registered = {
           ...player,
           previewUrl: this.getPreviewUrl(),
-          registeredAgent: registeredSummary,
+          registeredAgent: summaryForWorld,
         };
 
         const added = { player: row };
@@ -804,7 +848,7 @@ export class PlayWorld {
         agentPlayDebug("play-world", "addPlayer", {
           playerId: player.id,
           name: player.name,
-          toolCount: input.agent.toolNames.length,
+          toolCount: effectiveToolNames.length,
         });
 
         return {
@@ -822,10 +866,12 @@ export class PlayWorld {
 
   async recordJourney(playerId: string, journey: Journey): Promise<void> {
     await runStoredWorldMutation({
-      sid: this.getSessionId(),
       store: this.sessionStore,
       mutate: async (cached) => {
-        const base = ensureSnapshotSid(cached, this.getSessionId());
+        const base = ensureWorldSnapshot(
+          cached,
+          this.sessionStore.playerChainGenesis
+        );
         const update = this.buildWorldJourneyUpdate(base, playerId, journey);
         const lastJson = serializeWorldJourneyUpdate(update);
         const next = patchAgentLastUpdate(base, playerId, lastJson);
@@ -882,10 +928,12 @@ export class PlayWorld {
 
   async removePlayer(id: string): Promise<void> {
     await runStoredWorldMutation({
-      sid: this.getSessionId(),
       store: this.sessionStore,
       mutate: async (cached) => {
-        const base = ensureSnapshotSid(cached, this.getSessionId());
+        const base = ensureWorldSnapshot(
+          cached,
+          this.sessionStore.playerChainGenesis
+        );
         const nextOccupants = removeOccupantsForPlayer(
           base.worldMap.occupants,
           id
@@ -903,10 +951,12 @@ export class PlayWorld {
   async registerMCP(options: { name: string; url?: string }): Promise<string> {
     let id = "";
     await runStoredWorldMutation({
-      sid: this.getSessionId(),
       store: this.sessionStore,
       mutate: async (cached) => {
-        const base = ensureSnapshotSid(cached, this.getSessionId());
+        const base = ensureWorldSnapshot(
+          cached,
+          this.sessionStore.playerChainGenesis
+        );
         if (base.worldMap.occupants.length >= MAX_WORLD_OCCUPANTS) {
           throw new Error(
             `registerMCP: world occupant limit reached (${MAX_WORLD_OCCUPANTS})`
@@ -947,7 +997,7 @@ export class PlayWorld {
       .map((o) => ({ id: o.id, name: o.name, ...(o.url ? { url: o.url } : {}) }));
   }
 
-  getSessionStore(): WorldSessionStore {
+  getSessionStore(): SessionStore {
     return this.sessionStore;
   }
 

@@ -20,6 +20,13 @@ describe("@agent-play/node-tools", () => {
     expect(a).toMatch(/^[0-9a-f]{64}$/);
   });
 
+  it("derives different node ids when root keys differ", () => {
+    const passw = "amber angle apple arch atlas aura autumn bamboo beacon birch blossom";
+    const a = deriveNodeIdFromPassword({ password: passw, rootKey: "root-a" });
+    const b = deriveNodeIdFromPassword({ password: passw, rootKey: "root-b" });
+    expect(a).not.toBe(b);
+  });
+
   it("validates passphrase against node id", () => {
     const passw = "amber angle apple arch atlas aura autumn bamboo beacon birch blossom";
     const nodeId = deriveNodeIdFromPassword({ password: passw, rootKey });
@@ -61,4 +68,5 @@ describe("@agent-play/node-tools", () => {
     expect(WORDLIST.length).toBe(3000);
     expect(new Set(WORDLIST).size).toBe(3000);
   });
+
 });

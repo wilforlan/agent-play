@@ -8,3 +8,4 @@ docs/api-reference
 dist
 packages/web-ui/content/docs
 packages/*/.root
+buffer.txt

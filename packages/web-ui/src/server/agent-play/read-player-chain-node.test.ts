@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { MemorySessionStore } from "./memory-session-store.js";
+import { TestSessionStore } from "./session-store.test-double.js";
 import {
   PLAYER_CHAIN_GENESIS_STABLE_KEY,
   PLAYER_CHAIN_HEADER_STABLE_KEY,
@@ -9,7 +9,7 @@ import { readPlayerChainNode } from "./read-player-chain-node.js";
 
 describe("readPlayerChainNode", () => {
   it("returns genesis and header slices and occupant rows from resolved snapshot", async () => {
-    const store = new MemorySessionStore();
+    const store = new TestSessionStore();
     const sid = await store.loadOrCreateSessionId();
     const occ = {
       kind: "agent" as const,

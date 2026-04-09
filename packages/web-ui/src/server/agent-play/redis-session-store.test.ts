@@ -96,6 +96,7 @@ describe("RedisSessionStore", () => {
     const sid = await store.loadOrCreateSessionId();
     expect(sid.length).toBeGreaterThan(10);
     expect(hash.get("sid")).toBe(sid);
+    expect(store.getSessionId()).toBe(sid);
   });
 
   it("isValidSession matches canonical sid in redis", async () => {

@@ -30,6 +30,14 @@ export function loadRootKey(rootFilePath?: string): string {
   return readFileSync(path, "utf8").trim().toLowerCase();
 }
 
+/**
+ * @deprecated Use rootKey-explicit validation with `validateNodePassword`.
+ */
+export function loadGenesisRootKeyFromBufferFile(bufferFilePath: string): string {
+  const sourceMaterial = readFileSync(resolve(bufferFilePath));
+  return deriveRootKeyFromSecret(sourceMaterial);
+}
+
 export function deriveRootKeyFromSecret(secretMaterial: Buffer): string {
   const dk = scryptSync(
     secretMaterial,
@@ -44,9 +52,10 @@ export function derivePasswordFromSecret(input: {
   secretMaterial: Buffer;
   rootKey: string;
 }): string {
+  const normalizedRootKey = input.rootKey.trim().toLowerCase();
   const dk = scryptSync(
     input.secretMaterial,
-    hashLabel(`agent-play:root-key:${input.rootKey}`),
+    hashLabel(`agent-play:password:v1:${normalizedRootKey}`),
     32,
     NODE_TOOLS_SCRYPT
   );
@@ -57,9 +66,10 @@ export function deriveNodeIdFromPassword(input: {
   password: string;
   rootKey: string;
 }): string {
+  const normalizedRootKey = input.rootKey.trim().toLowerCase();
   const dk = scryptSync(
     Buffer.from(input.password, "utf8"),
-    hashLabel(`agent-play:root-key:${input.rootKey}`),
+    hashLabel(`agent-play:node-id:v1:${normalizedRootKey}`),
     32,
     NODE_TOOLS_SCRYPT
   );
@@ -76,6 +86,44 @@ export function validateNodePassword(input: {
     rootKey: input.rootKey,
   });
   return expected === input.nodeId.trim().toLowerCase();
+}
+
+export function hashNodePassword(password: string): string {
+  return createHash("sha256")
+    .update(password.trim(), "utf8")
+    .digest("hex");
+}
+
+/**
+ * @deprecated Use rootKey-explicit validation with `validateNodePassword`.
+ */
+export function validateNodeDerivativeFromGenesisSecret(input: {
+  nodeId: string;
+  password: string;
+  genesisSecretMaterial: Buffer;
+}): boolean {
+  const rootKey = deriveRootKeyFromSecret(input.genesisSecretMaterial);
+  return validateNodePassword({
+    nodeId: input.nodeId,
+    password: input.password,
+    rootKey,
+  });
+}
+
+/**
+ * @deprecated Use rootKey-explicit validation with `validateNodePassword`.
+ */
+export function validateNodeDerivativeFromBufferFile(input: {
+  nodeId: string;
+  password: string;
+  bufferFilePath: string;
+}): boolean {
+  const rootKey = loadGenesisRootKeyFromBufferFile(input.bufferFilePath);
+  return validateNodePassword({
+    nodeId: input.nodeId,
+    password: input.password,
+    rootKey,
+  });
 }
 
 export function generateNodePassw(): string {

@@ -16,7 +16,7 @@ import type {
   PreviewWorldMapOccupantJson,
 } from "./preview-serialize.js";
 import { readResolvedSnapshot } from "./read-resolved-snapshot.js";
-import type { WorldSessionStore } from "./world-session-store.js";
+import type { SessionStore } from "./session-store.js";
 
 /** Discriminated union returned by {@link readPlayerChainNode} and the SDK RPC. */
 export type PlayerChainNodeResponse =
@@ -49,7 +49,7 @@ export type PlayerChainNodeResponse =
  */
 export async function readPlayerChainNode(options: {
   sid: string;
-  store: WorldSessionStore;
+  store: SessionStore;
   stableKey: string;
 }): Promise<PlayerChainNodeResponse | null> {
   const stableKey = options.stableKey.trim();

@@ -27,7 +27,11 @@
   },
   "scripts": {
     "build": "tsup && node ../../scripts/copy-root-file.mjs node-tools",
-    "test": "vitest run"
+    "test": "vitest run",
+    "validate-node": "node ./scripts/validate-node-derivative.mjs"
+  },
+  "dependencies": {
+    "ioredis": "^5.8.2"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",

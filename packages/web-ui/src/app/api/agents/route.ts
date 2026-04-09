@@ -32,43 +32,35 @@ export async function GET(req: NextRequest) {
   return Response.json({ agents: agents.map(publicAgent) });
 }
 
+/**
+ * @deprecated Use POST /api/nodes/agent-node. This endpoint no longer creates agents.
+ */
 export async function POST(req: NextRequest) {
-  const repo = await getRepository();
-  if (repo === null) {
-    return Response.json({ error: "repository not configured" }, { status: 503 });
-  }
   const nodeId = req.headers.get("x-node-id")?.trim() ?? "";
   const passw = req.headers.get("x-node-passw") ?? "";
   if (nodeId.length === 0 || passw.length === 0) {
     return Response.json({ error: "unauthorized" }, { status: 401 });
   }
+  const repo = await getRepository();
+  if (repo === null) {
+    return Response.json({ error: "repository not configured" }, { status: 503 });
+  }
   if (!(await repo.verifyNodePassw(nodeId, passw))) {
     return Response.json({ error: "unauthorized" }, { status: 401 });
   }
-  const body = (await req.json()) as {
-    name?: unknown;
-    toolNames?: unknown;
-  };
-  if (typeof body.name !== "string") {
-    return Response.json({ error: "invalid body" }, { status: 400 });
-  }
-  const rawTools = body.toolNames;
-  const toolNames = Array.isArray(rawTools)
-    ? rawTools.filter((x): x is string => typeof x === "string")
-    : [];
-  const effectiveToolNames =
-    toolNames.length > 0 ? toolNames : (["chat_tool"] as const);
-  try {
-    const result = await repo.createAgent({
-      name: body.name,
-      toolNames: [...effectiveToolNames],
-      nodeId,
-    });
-    return Response.json(result);
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    return Response.json({ error: msg }, { status: 400 });
-  }
+  return Response.json(
+    {
+      error:
+        "deprecated: POST /api/agents is removed. Use POST /api/nodes/agent-node and then world.addPlayer.",
+    },
+    {
+      status: 410,
+      headers: {
+        deprecation: "true",
+        sunset: "2026-06-30",
+      },
+    }
+  );
 }
 
 export async function DELETE(req: NextRequest) {

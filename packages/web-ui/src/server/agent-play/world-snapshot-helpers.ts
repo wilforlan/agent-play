@@ -5,31 +5,20 @@ import {
   type PreviewWorldMapOccupantJson,
 } from "./preview-serialize.js";
 
-export function emptySnapshot(sid: string): PreviewSnapshotJson {
+export function emptySnapshot(mainNodeId: string): PreviewSnapshotJson {
   return {
-    sid,
-    worldMap: buildSnapshotWorldMap([
-      {
-        kind: "human",
-        id: "__human__",
-        name: "You",
-        x: 0,
-        y: 0,
-        interactive: false,
-      },
-    ]),
+    sid: mainNodeId,
+    mainNodeId,
+    worldMap: buildSnapshotWorldMap([]),
   };
 }
 
-export function ensureSnapshotSid(
+export function ensureWorldSnapshot(
   cached: PreviewSnapshotJson | null,
-  sid: string
+  mainNodeId: string
 ): PreviewSnapshotJson {
   if (cached === null) {
-    return emptySnapshot(sid);
-  }
-  if (cached.sid !== sid) {
-    throw new Error("snapshot session id mismatch");
+    return emptySnapshot(mainNodeId);
   }
   return cached;
 }

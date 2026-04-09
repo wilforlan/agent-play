@@ -1,17 +1,15 @@
-import {
-  buildSnapshotWorldMap,
-  type PreviewSnapshotJson,
-} from "./preview-serialize.js";
-import type { WorldSessionStore } from "./world-session-store.js";
+import { type PreviewSnapshotJson } from "./preview-serialize.js";
+import type { SessionStore } from "./session-store.js";
+import { emptySnapshot } from "./world-snapshot-helpers.js";
 
 export async function readResolvedSnapshot(options: {
   sid: string;
-  store: WorldSessionStore;
+  store: SessionStore;
 }): Promise<PreviewSnapshotJson> {
-  const { sid, store } = options;
+  const { store } = options;
   const cached = await store.getSnapshotJson();
-  if (cached !== null && cached.sid === sid) {
+  if (cached !== null) {
     return cached;
   }
-  return { sid, worldMap: buildSnapshotWorldMap([]) };
+  return emptySnapshot(store.playerChainGenesis);
 }

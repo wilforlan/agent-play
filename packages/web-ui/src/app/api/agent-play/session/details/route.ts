@@ -23,7 +23,7 @@ export async function GET(req: NextRequest) {
   );
   const includeSnapshot = req.nextUrl.searchParams.get("includeSnapshot") === "1";
   const body: Record<string, unknown> = {
-    source: getRedisSessionStore() !== null ? "redis" : "memory",
+    source: "redis",
     meta,
     recentEvents: events,
   };

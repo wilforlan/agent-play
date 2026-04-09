@@ -1,11 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { PlayWorld } from "./play-world.js";
+import { TestSessionStore } from "./session-store.test-double.js";
 
 describe("PlayWorld resetSession", () => {
   it("clears players and rotates the session id", async () => {
-    const w = new PlayWorld();
+    const store = new TestSessionStore();
+    const w = new PlayWorld({ sessionStore: store });
     await w.start();
-    const before = w.getSessionId();
+    const before = store.getSessionId();
     await w.addPlayer({
       name: "a",
       type: "langchain",

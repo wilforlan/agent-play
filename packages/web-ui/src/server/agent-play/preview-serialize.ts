@@ -83,6 +83,7 @@ export type PreviewMcpRegistrationJson = {
 
 export type PreviewSnapshotJson = {
   sid: string;
+  mainNodeId?: string;
   worldMap: PreviewWorldMapJson;
   mcpServers?: PreviewMcpRegistrationJson[];
 };

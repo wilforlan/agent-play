@@ -2,8 +2,8 @@ import type { AgentRepository } from "@/server/agent-play/agent-repository";
 import { agentPlayVerbose } from "@/server/agent-play/agent-play-debug";
 import { createRedisAgentRepository } from "@/server/agent-play/redis-agent-repository";
 import { RedisSessionStore } from "@/server/agent-play/redis-session-store";
-import { MemorySessionStore } from "@/server/agent-play/memory-session-store";
-import type { WorldSessionStore } from "@/server/agent-play/world-session-store";
+import type { SessionStore } from "@/server/agent-play/session-store";
+import { loadSessionStore } from "@/server/agent-play/session-store-loader";
 import { attachSessionStoreEventHooks } from "@/server/agent-play/session-store-hooks";
 import { PlayWorld } from "@/server/agent-play/play-world";
 import Redis from "ioredis";
@@ -11,7 +11,7 @@ import Redis from "ioredis";
 let worldPromise: Promise<PlayWorld> | null = null;
 let repositoryInstance: AgentRepository | null | undefined;
 let sharedRedis: Redis | null = null;
-let sessionStoreInstance: WorldSessionStore | null = null;
+let sessionStoreInstance: SessionStore | null = null;
 
 function getSharedRedis(): Redis | null {
   const redisUrl = process.env.REDIS_URL;
@@ -24,7 +24,7 @@ function getSharedRedis(): Redis | null {
   return sharedRedis;
 }
 
-export function getSessionStore(): WorldSessionStore {
+export function getSessionStore(): SessionStore {
   if (sessionStoreInstance === null) {
     throw new Error("session store not initialized; await getPlayWorld() first");
   }
@@ -59,38 +59,34 @@ export async function getPlayWorld(): Promise<PlayWorld> {
         process.env.PLAY_PREVIEW_BASE_URL ??
         `https://agent-play.vercel.app`;
       const redis = getSharedRedis();
-      let repository: AgentRepository | undefined;
-      let store: WorldSessionStore;
-      if (redis !== null) {
-        agentPlayVerbose("get-world", "REDIS_URL present — shared Redis + session store", {
-          hostId,
-        });
-        repository = buildRepository(redis, hostId);
-        repositoryInstance = repository;
-        store = new RedisSessionStore({
-          redis,
-          hostId,
-          previewBaseUrl,
-        });
-      } else {
-        agentPlayVerbose("get-world", "no REDIS_URL — MemorySessionStore", {
-          hostId,
-        });
-        repositoryInstance = null;
-        store = new MemorySessionStore();
+      if (redis === null) {
+        throw new Error(
+          "REDIS_URL is required for Agent Play session storage. Set REDIS_URL in the environment."
+        );
       }
+      agentPlayVerbose("get-world", "REDIS_URL present — shared Redis + session store", {
+        hostId,
+      });
+      const repository = buildRepository(redis, hostId);
+      repositoryInstance = repository;
+      const store = loadSessionStore({
+        redis,
+        hostId,
+        previewBaseUrl,
+      });
       sessionStoreInstance = store;
       const w = new PlayWorld({
         previewBaseUrl,
-        repository: repository ?? undefined,
+        repository,
         sessionStore: store,
       });
       await w.start();
       agentPlayVerbose("get-world", "PlayWorld.start finished", {
-        sessionIdPrefix: `${w.getSessionId().slice(0, 8)}…`,
+        sessionIdPrefix: `${store.getSessionId().slice(0, 8)}…`,
         fanoutDelivery: store.fanoutDelivery,
       });
       attachSessionStoreEventHooks(w, store);
+      agentPlayVerbose("get-world", "attachSessionStoreEventHooks finished");
       return w;
     })();
   }

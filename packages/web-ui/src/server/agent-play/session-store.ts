@@ -21,22 +21,20 @@ export type PersistSnapshotRev = {
   merkleLeafCount: number;
 };
 
-/**
- * Attached to each `publishWorldFanout` call after a successful persist.
- * `playerChainNotify` carries stable keys for incremental client sync (see player-chain module).
- */
 export type WorldFanoutOptions = {
   merkleRootHex?: string;
   merkleLeafCount?: number;
   playerChainNotify?: PlayerChainFanoutNotify;
 };
 
-export type WorldSessionStore = {
+export type SessionStore = {
   readonly fanoutDelivery: "redis" | "local";
   readonly playerChainGenesis: string;
+  getSessionId(): string;
   loadOrCreateSessionId(): Promise<string>;
   isValidSession(sid: string): Promise<boolean>;
   replaceSessionWithNewSid(newSid: string): Promise<void>;
+  clearWorldSnapshot(): Promise<void>;
   getSnapshotJson(): Promise<PreviewSnapshotJson | null>;
   persistSnapshot(snapshot: PreviewSnapshotJson): Promise<void>;
   persistSnapshotReturningRev(

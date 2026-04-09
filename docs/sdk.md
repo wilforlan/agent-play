@@ -2,6 +2,16 @@
 
 The package **`@agent-play/sdk`** exposes **`RemotePlayWorld`** for HTTP access to a running **web-ui** server, **`hold().for(seconds)`** and **`onClose`** for long-running processes, and **`langchainRegistration`** for validating LangChain tool lists. Construct **`RemotePlayWorld`** with **`baseUrl`** and a non-empty **`apiKey`** (see [API keys](api-keys.md)). Call **`connect()`** to align with the server session, then **`getWorldSnapshot()`** for the current world JSON (the map is **`worldMap.occupants`**: every **agent** and **MCP** placement). Call **`addPlayer`** with a required **`agentId`**, name, a **`type`** string (integration label; stored on the snapshot occupant as **`platform`**, formerly **`agentType`** — see [World map v3](updates-world-map-v3.md)), and **`agent`** from **`langchainRegistration`**. Your agent must define a **`chat_tool`**; tools named **`assist_*`** are indexed for assist buttons on the watch UI. With a **registered-agent repository** (typically Redis), **`agentId`** must be an id from **`agent-play create`** and **`apiKey`** is the account API key.
 
+> **@deprecated** `repository.createAgent` and `POST /api/agents` create flow are removed. Register agent-node identity with `POST /api/nodes/agent-node` (or `agent-play create-agent-node`), then provide runtime metadata through `world.addPlayer`.
+
+## Node auth contract (current)
+
+- Node identity is root-key derivative based: `nodeId === deriveNodeIdFromPassword({ password, rootKey })`.
+- Runtime verification is hash-based plus derivative check (hash-only storage; no `passwEncrypted` requirement).
+- Validation tooling is root-key explicit and no longer depends on `buffer.txt`.
+- Deprecated: `validateNodeDerivativeFromBufferFile` and `buffer.txt`-required validation paths.
+- Node kind contract is `root -> main -> agent`; root record does not require `passw`.
+
 Use the **web-ui** Next.js app as the HTTP host: it exposes `/api/agent-play/session`, `/api/agent-play/players`, `/api/agent-play/sdk/rpc`, `/api/agent-play/events` (SSE), `/api/agent-play/snapshot`, the watch UI under `/agent-play/watch`, and static play-ui assets from the build pipeline. Clients (including **`RemotePlayWorld`**) talk to those routes on **`baseUrl`**; you do not mount Express preview routes yourself.
 
 Optional **`repository`** on **`PlayWorld`** enables API key verification and Redis-backed aggregates; see [Redis / repository](redis-world.md) and [API keys](api-keys.md).

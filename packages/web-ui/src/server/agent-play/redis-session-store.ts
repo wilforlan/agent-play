@@ -12,8 +12,9 @@ import { worldFanoutChannel } from "./redis-world-fanout.js";
 import type {
   PersistSnapshotRev,
   PublishedSessionMetadata,
+  SessionStore,
   WorldFanoutOptions,
-} from "./world-session-store.js";
+} from "./session-store.js";
 
 const EVENT_LOG_MAX = 200;
 
@@ -50,12 +51,13 @@ export type SessionEventLogEntry = {
   summary: string;
 };
 
-export class RedisSessionStore {
+export class RedisSessionStore implements SessionStore {
   readonly fanoutDelivery = "redis" as const;
   readonly playerChainGenesis: string;
   private readonly redis: Redis;
   private readonly hostId: string;
   private readonly previewBaseUrl: string | undefined;
+  private cachedSid: string | null = null;
 
   constructor(options: RedisSessionStoreOptions) {
     this.redis = options.redis;
@@ -63,6 +65,15 @@ export class RedisSessionStore {
     this.previewBaseUrl = options.previewBaseUrl;
     this.playerChainGenesis =
       options.playerChainGenesis ?? getPlayerChainGenesisSync();
+  }
+
+  getSessionId(): string {
+    if (this.cachedSid === null || this.cachedSid.length === 0) {
+      throw new Error(
+        "RedisSessionStore.getSessionId: loadOrCreateSessionId not completed"
+      );
+    }
+    return this.cachedSid;
   }
 
   private appendSnapshotAndGridToMulti(
@@ -115,6 +126,7 @@ export class RedisSessionStore {
         key,
         sidPrefix: `${sid.slice(0, 8)}…`,
       });
+      this.cachedSid = sid;
       return sid;
     }
     const newSid = randomUUID();
@@ -133,6 +145,7 @@ export class RedisSessionStore {
         key,
         sidPrefix: `${newSid.slice(0, 8)}…`,
       });
+      this.cachedSid = newSid;
       return newSid;
     }
     const winner = await this.redis.hget(key, "sid");
@@ -142,6 +155,7 @@ export class RedisSessionStore {
         hostId: this.hostId,
         sidPrefix: `${w.slice(0, 8)}…`,
       });
+      this.cachedSid = w;
       return w;
     }
     throw new Error("redis session: failed to allocate sid");
@@ -181,6 +195,24 @@ export class RedisSessionStore {
       fields.previewBaseUrl = this.previewBaseUrl;
     }
     await this.redis.hset(sh, fields);
+    this.cachedSid = newSid;
+  }
+
+  async clearWorldSnapshot(): Promise<void> {
+    const sessKey = sessionHashKey(this.hostId);
+    const chain = this.redis.multi();
+    chain.del(snapshotKey(this.hostId));
+    chain.del(gridOccupiedKey(this.hostId));
+    chain.del(playerChainLeavesKey(this.hostId));
+    chain.hdel(
+      sessKey,
+      "lastSnapshotAt",
+      "snapshotBytes",
+      "snapshotRev",
+      "merkleRootHex",
+      "merkleLeafCount"
+    );
+    await chain.exec();
   }
 
   async persistSnapshot(snapshot: PreviewSnapshotJson): Promise<void> {

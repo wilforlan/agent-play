@@ -7,17 +7,17 @@ import { dispatchWorldFanoutLocal } from "./world-fanout-subscriber.js";
 import type {
   PersistSnapshotRev,
   PublishedSessionMetadata,
+  SessionStore,
   WorldFanoutOptions,
-  WorldSessionStore,
-} from "./world-session-store.js";
+} from "./session-store.js";
 
 const EVENT_LOG_MAX = 200;
 
-export type MemorySessionStoreOptions = {
+export type TestSessionStoreOptions = {
   playerChainGenesis?: string;
 };
 
-export class MemorySessionStore implements WorldSessionStore {
+export class TestSessionStore implements SessionStore {
   readonly fanoutDelivery = "local" as const;
   readonly playerChainGenesis: string;
   private sid: string | null = null;
@@ -28,8 +28,18 @@ export class MemorySessionStore implements WorldSessionStore {
   private readonly eventLog: SessionEventLogEntry[] = [];
   private readonly settings: Record<string, string> = {};
 
-  constructor(options: MemorySessionStoreOptions = {}) {
-    this.playerChainGenesis = getPlayerChainGenesisSync();
+  constructor(options: TestSessionStoreOptions = {}) {
+    this.playerChainGenesis =
+      options.playerChainGenesis ?? getPlayerChainGenesisSync();
+  }
+
+  getSessionId(): string {
+    if (this.sid === null) {
+      throw new Error(
+        "TestSessionStore.getSessionId: loadOrCreateSessionId not completed"
+      );
+    }
+    return this.sid;
   }
 
   async loadOrCreateSessionId(): Promise<string> {
@@ -56,6 +66,13 @@ export class MemorySessionStore implements WorldSessionStore {
     for (const k of Object.keys(this.settings)) {
       delete this.settings[k];
     }
+  }
+
+  async clearWorldSnapshot(): Promise<void> {
+    this.snapshot = null;
+    this.rev = 0;
+    this.merkleRootHex = null;
+    this.merkleLeafCount = null;
   }
 
   async getSnapshotJson(): Promise<PreviewSnapshotJson | null> {

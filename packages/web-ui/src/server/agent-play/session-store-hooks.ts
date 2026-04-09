@@ -1,6 +1,6 @@
 import type { PlayWorld } from "./play-world.js";
 import type { SessionEventLogEntry } from "./redis-session-store.js";
-import type { WorldSessionStore } from "./world-session-store.js";
+import type { SessionStore } from "./session-store.js";
 import {
   PLAYER_ADDED_EVENT,
   WORLD_AGENT_SIGNAL_EVENT,
@@ -19,7 +19,7 @@ function summarizePayload(payload: unknown): string {
 
 export function attachSessionStoreEventHooks(
   world: PlayWorld,
-  store: WorldSessionStore
+  store: SessionStore
 ): void {
   const log = (type: string, payload: unknown): void => {
     const entry: SessionEventLogEntry = {

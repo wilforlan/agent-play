@@ -1,13 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { MemorySessionStore } from "./memory-session-store.js";
 import { PlayWorld } from "./play-world.js";
+import { TestSessionStore } from "./session-store.test-double.js";
 
 describe("PlayWorld snapshot via shared session store", () => {
   it("round-trips agents toolNames and session id through the store", async () => {
-    const store = new MemorySessionStore();
+    const store = new TestSessionStore();
     const w = new PlayWorld({ sessionStore: store });
     await w.start();
-    const sid = w.getSessionId();
+    const sid = store.getSessionId();
     await w.addPlayer({
       name: "Alpha",
       type: "langchain",
@@ -17,7 +17,8 @@ describe("PlayWorld snapshot via shared session store", () => {
     const snap = await store.getSnapshotJson();
     expect(snap).not.toBeNull();
     if (snap === null) return;
-    expect(snap.sid).toBe(sid);
+    expect(snap.sid).toBe(store.playerChainGenesis);
+    expect(snap.sid).not.toBe(sid);
     const occ = snap.worldMap.occupants.find((o) => o.kind === "agent");
     expect(occ?.kind).toBe("agent");
     if (occ?.kind === "agent") {
@@ -26,7 +27,35 @@ describe("PlayWorld snapshot via shared session store", () => {
 
     const w2 = new PlayWorld({ sessionStore: store });
     await w2.start();
-    expect(w2.getSessionId()).toBe(sid);
-    expect(await w2.getSnapshotJson()).toEqual(snap);
+    expect(store.getSessionId()).toBe(sid);
+    const restartedSnapshot = await w2.getSnapshotJson();
+    expect(restartedSnapshot.sid).toBe(store.playerChainGenesis);
+    expect(
+      restartedSnapshot.worldMap.occupants.filter((o) => o.kind === "agent")
+        .length
+    ).toBe(1);
+  });
+
+  it("keeps existing world snapshot at startup when already initialized", async () => {
+    const store = new TestSessionStore();
+    const sid = await store.loadOrCreateSessionId();
+    await store.persistSnapshot({
+      sid: "stale-snapshot-id",
+      worldMap: {
+        bounds: { minX: 0, minY: 0, maxX: 1, maxY: 1 },
+        occupants: [
+          { kind: "agent", agentId: "stale", name: "Stale", x: 0, y: 0 },
+        ],
+      },
+    });
+    const w = new PlayWorld({ sessionStore: store });
+    await w.start();
+    const snapshot = await w.getSnapshotJson();
+    expect(store.getSessionId()).toBe(sid);
+    expect(snapshot.sid).toBe("stale-snapshot-id");
+    expect(
+      snapshot.worldMap.occupants.filter((o) => o.kind === "agent").length
+    ).toBe(1);
+    expect(snapshot.worldMap.occupants.length).toBe(1);
   });
 });

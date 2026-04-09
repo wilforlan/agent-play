@@ -35,7 +35,7 @@ export async function POST(req: NextRequest) {
   try {
     if (body.op === "getWorldSnapshot") {
       const snap = await readResolvedSnapshot({
-        sid: world.getSessionId(),
+        sid: store.getSessionId(),
         store,
       });
       if (isAgentPlayVerboseEnabled()) {
@@ -51,7 +51,7 @@ export async function POST(req: NextRequest) {
         return Response.json({ error: "invalid payload" }, { status: 400 });
       }
       const node = await readPlayerChainNode({
-        sid: world.getSessionId(),
+        sid: store.getSessionId(),
         store,
         stableKey: p.stableKey.trim(),
       });

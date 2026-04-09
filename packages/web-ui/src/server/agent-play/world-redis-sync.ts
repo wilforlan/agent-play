@@ -1,7 +1,7 @@
 import { agentPlayVerbose } from "./agent-play-debug.js";
 import { buildPlayerChainFanoutNotify } from "./player-chain/index.js";
 import type { PreviewSnapshotJson } from "./preview-serialize.js";
-import type { WorldFanoutOptions, WorldSessionStore } from "./world-session-store.js";
+import type { WorldFanoutOptions, SessionStore } from "./session-store.js";
 
 export type RedisFanoutItem = {
   event: string;
@@ -20,7 +20,7 @@ export function runExclusiveRedisWorldIo<T>(fn: () => Promise<T>): Promise<T> {
 }
 
 export async function persistSnapshotAndFanout(
-  store: WorldSessionStore,
+  store: SessionStore,
   snapshot: PreviewSnapshotJson,
   fanout: RedisFanoutItem[]
 ): Promise<void> {
