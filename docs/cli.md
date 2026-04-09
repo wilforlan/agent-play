@@ -43,7 +43,7 @@ Node kinds are fixed: **`root` → `main` → `agent`**.
 
 | Action | Command | Notes |
 |--------|---------|--------|
-| Show genesis id, main node, and registered agents | **`inspect-node`** | **`GET /api/nodes`** with auth headers. |
+| Show genesis id, main node, agent node ids, and runtime agent rows | **`inspect-node`** | **`GET /api/nodes`**: **`mainNode.agentNodeIds`** (from **`create-agent-node`**) plus **`agentNodes`** (SDK **`StoredAgentRecord`** list, if any). |
 | List agents (SDK registrations) | **`list-agent-nodes`** | **`GET /api/agents`**. |
 | Remove one agent registration | **`delete-agent-node`** `[agent-id]` | **`DELETE /api/agents`**; can prompt if id omitted. |
 | Remove main node and cascade | **`delete-main-node`** | **`DELETE /api/nodes`**; requires typing your main node id; then consider **`clear-node-credentials`**. |

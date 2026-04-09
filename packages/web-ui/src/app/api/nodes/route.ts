@@ -5,6 +5,7 @@ import {
   parseCreateNodeBody,
 } from "@/server/agent-play/create-node-account";
 import { getRepository } from "@/server/get-world";
+import { toPublicMainNodeAuth } from "@/server/agent-play/public-node-auth";
 
 function publicAgent(a: StoredAgentRecord) {
   return {
@@ -42,7 +43,7 @@ export async function GET(req: NextRequest) {
   const agentNodes = await repository.listAgentsForNode(nodeId);
   return Response.json({
     genesisNodeId: repository.getGenesisNodeId(),
-    mainNode,
+    mainNode: toPublicMainNodeAuth(mainNode),
     agentNodes: agentNodes.map(publicAgent),
   });
 }

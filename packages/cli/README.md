@@ -45,7 +45,7 @@ For Redis-direct checks (ops/CI), use **`node-tools`** script **`scripts/validat
 | Command | Aliases | What it does |
 |--------|---------|----------------|
 | **`create-main-node`** | `bootstrap-node` | Sign up a **main** node: **`POST /api/nodes`** (no node headers), save **`~/.agent-play/credentials.json`**. Optional **`--root-file`**. |
-| **`inspect-node`** | — | **GET /api/nodes** — genesis id, your main node, agent nodes. |
+| **`inspect-node`** | — | **GET /api/nodes** — genesis id, main node, **agent node ids** (`create-agent-node`), and **runtime** agent rows (SDK metadata) if present. |
 | **`create-agent-node`** | `create` | **POST /api/nodes/agent-node** — new agent node under your main node. |
 | **`list-agent-nodes`** | `list` | **GET /api/agents** — lists registered agents. |
 | **`delete-agent-node`** | `delete`, `remove` | **DELETE /api/agents** — optional **`[agent-id]`**; if omitted, prompts. |

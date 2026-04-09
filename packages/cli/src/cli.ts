@@ -120,8 +120,60 @@ async function saveCredentials(c: Credentials): Promise<void> {
   );
 }
 
-function defaultServerUrl(): string {
-  return process.env.AGENT_PLAY_SERVER_URL ?? "http://127.0.0.1:3000";
+const BOOTSTRAP_ENVIRONMENTS = [
+  { id: "local-server", url: "http://127.0.0.1:3000" },
+  { id: "test-server", url: "https://test-agent-play.com" },
+  { id: "main-server", url: "https://agent-play.com" },
+] as const;
+
+function parseBootstrapEnvironmentAnswer(raw: string): string | null {
+  const t = raw.trim().toLowerCase();
+  if (t === "" || t === "1") {
+    return BOOTSTRAP_ENVIRONMENTS[0].url;
+  }
+  if (t === "2") {
+    return BOOTSTRAP_ENVIRONMENTS[1].url;
+  }
+  if (t === "3") {
+    return BOOTSTRAP_ENVIRONMENTS[2].url;
+  }
+  for (const e of BOOTSTRAP_ENVIRONMENTS) {
+    if (t === e.id) {
+      return e.url;
+    }
+  }
+  if (t === "local") {
+    return BOOTSTRAP_ENVIRONMENTS[0].url;
+  }
+  if (t === "test") {
+    return BOOTSTRAP_ENVIRONMENTS[1].url;
+  }
+  if (t === "main") {
+    return BOOTSTRAP_ENVIRONMENTS[2].url;
+  }
+  return null;
+}
+
+async function promptBootstrapEnvironment(
+  rl: ReturnType<typeof createInterface>
+): Promise<string> {
+  const lines = [
+    "Choose environment (sets server URL):",
+    `  1) ${BOOTSTRAP_ENVIRONMENTS[0].id}  → ${BOOTSTRAP_ENVIRONMENTS[0].url}`,
+    `  2) ${BOOTSTRAP_ENVIRONMENTS[1].id}   → ${BOOTSTRAP_ENVIRONMENTS[1].url}`,
+    `  3) ${BOOTSTRAP_ENVIRONMENTS[2].id}   → ${BOOTSTRAP_ENVIRONMENTS[2].url}`,
+    "Enter 1–3, or local-server / test-server / main-server [1]: ",
+  ].join("\n");
+  for (;;) {
+    const answer = await rl.question(lines);
+    const url = parseBootstrapEnvironmentAnswer(answer);
+    if (url !== null) {
+      return url.replace(/\/$/, "");
+    }
+    console.log(
+      "Invalid choice. Enter 1, 2, or 3, or one of: local-server, test-server, main-server."
+    );
+  }
 }
 
 function parseBootstrapNodeArgs(argv: string[]): BootstrapCliOpts {
@@ -232,12 +284,9 @@ async function registerNodeOnServer(
 async function cmdBootstrapNode(argv: string[]): Promise<void> {
   const opts = parseBootstrapNodeArgs(argv);
   const rl = createInterface({ input, output });
-  const serverUrl = (
-    (await rl.question(
-      `Server URL [${defaultServerUrl()}]: `
-    )).trim() || defaultServerUrl()
-  ).replace(/\/$/, "");
+  const serverUrl = await promptBootstrapEnvironment(rl);
   rl.close();
+  console.log(`Using server: ${serverUrl}`);
 
   const rootPath = resolveAgentPlayRootPath(opts);
   const rootKey = loadRootKey(rootPath);
@@ -412,13 +461,20 @@ async function cmdInspectNode(): Promise<void> {
     process.exitCode = 1;
     return;
   }
-  const mn = main as { nodeId?: unknown; createdAt?: unknown };
+  const mn = main as {
+    nodeId?: unknown;
+    createdAt?: unknown;
+    agentNodeIds?: unknown;
+  };
   if (typeof mn.nodeId !== "string" || typeof mn.createdAt !== "string") {
     console.error("Invalid inspect response.");
     process.exitCode = 1;
     return;
   }
-  const agentNodes = parseAgentRows(json.agentNodes);
+  const agentNodeIdsFromMain = Array.isArray(mn.agentNodeIds)
+    ? mn.agentNodeIds.filter((x): x is string => typeof x === "string")
+    : [];
+  const runtimeAgents = parseAgentRows(json.agentNodes);
   console.log("Platform genesis node id (from server .root / root key):");
   console.log(`  ${json.genesisNodeId}`);
   console.log("");
@@ -427,12 +483,23 @@ async function cmdInspectNode(): Promise<void> {
   console.log(`  createdAt: ${mn.createdAt}`);
   console.log("");
   console.log(
-    `Registered agent nodes under this main node (${String(agentNodes.length)}):`
+    `Agent node identities (create-agent-node) (${String(agentNodeIdsFromMain.length)}):`
   );
-  if (agentNodes.length === 0) {
+  if (agentNodeIdsFromMain.length === 0) {
     console.log("  (none)");
   } else {
-    agentNodes.forEach((a, i) => {
+    agentNodeIdsFromMain.forEach((id, i) => {
+      console.log(`  ${String(i + 1)}. ${id}`);
+    });
+  }
+  console.log("");
+  console.log(
+    `Runtime agents — SDK metadata (${String(runtimeAgents.length)}):`
+  );
+  if (runtimeAgents.length === 0) {
+    console.log("  (none)");
+  } else {
+    runtimeAgents.forEach((a, i) => {
       console.log(`  ${String(i + 1)}. ${a.agentId} — ${a.name}`);
     });
   }
