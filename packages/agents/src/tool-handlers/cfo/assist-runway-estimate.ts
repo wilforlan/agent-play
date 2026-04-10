@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { enrichAssistOutputWithOpenAI } from "../../lib/assist-openai-enrichment.js";
 
 const schema = z.object({
   cashOnHand: z.number(),
@@ -6,29 +7,25 @@ const schema = z.object({
   monthlyRevenue: z.number(),
 });
 
-export function executeAssistRunwayEstimate(args: Record<string, unknown>): {
-  mode: "assist";
-  toolName: "assist_runway_estimate";
-  summary: string;
-  keyAssumptions: string[];
-  recommendations: string[];
-  nextQuestions: string[];
-  metrics: {
-    netBurn: number;
-    runwayMonths: number | null;
-  };
-} {
+const SYSTEM = [
+  "You are a CFO assistant specializing in runway analysis.",
+  "JSON includes cash on hand, monthly burn, monthly revenue, net burn, and runway months (or null).",
+  "Produce concise HTML and plainSummary; highlight runway risk clearly.",
+].join(" ");
+
+export async function executeAssistRunwayEstimate(
+  args: Record<string, unknown>
+): Promise<Record<string, unknown>> {
   const p = schema.parse(args);
   const netBurn = p.monthlyBurn - p.monthlyRevenue;
-  const runwayMonths =
-    netBurn > 0 ? p.cashOnHand / netBurn : null;
+  const runwayMonths = netBurn > 0 ? p.cashOnHand / netBurn : null;
   const summary =
     runwayMonths === null
       ? netBurn <= 0
         ? `Net burn is ${netBurn.toFixed(0)} or lower; runway is not cash-constrained under these inputs.`
         : "Runway cannot be computed."
       : `Net burn ${netBurn.toFixed(0)} / month implies roughly ${runwayMonths.toFixed(1)} months of runway at current cash.`;
-  return {
+  const base: Record<string, unknown> = {
     mode: "assist",
     toolName: "assist_runway_estimate",
     summary,
@@ -50,5 +47,16 @@ export function executeAssistRunwayEstimate(args: Record<string, unknown>): {
       netBurn,
       runwayMonths,
     },
+  };
+  const { messageHtml, plainSummary } = await enrichAssistOutputWithOpenAI({
+    toolLabel: "assist_runway_estimate",
+    systemPrompt: SYSTEM,
+    structured: base,
+  });
+  return {
+    ...base,
+    summary: plainSummary,
+    message: plainSummary,
+    messageHtml,
   };
 }

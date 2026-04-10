@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { enrichAssistOutputWithOpenAI } from "../../lib/assist-openai-enrichment.js";
 
 const schema = z.object({
   currentTeamSize: z.number().int().nonnegative(),
@@ -6,24 +7,19 @@ const schema = z.object({
   averageMonthlyCostPerHire: z.number().nonnegative(),
 });
 
-export function executeAssistHiringPlanFinance(
+const SYSTEM = [
+  "You are a finance partner for hiring plans.",
+  "JSON includes team size, planned hires, incremental monthly cost, projected team size.",
+  "Produce HTML and plainSummary focused on cost impact and sequencing.",
+].join(" ");
+
+export async function executeAssistHiringPlanFinance(
   args: Record<string, unknown>
-): {
-  mode: "assist";
-  toolName: "assist_hiring_plan_finance";
-  summary: string;
-  keyAssumptions: string[];
-  recommendations: string[];
-  nextQuestions: string[];
-  metrics: {
-    incrementalMonthlyCost: number;
-    projectedTeamSize: number;
-  };
-} {
+): Promise<Record<string, unknown>> {
   const p = schema.parse(args);
   const incrementalMonthlyCost = p.plannedHires * p.averageMonthlyCostPerHire;
   const projectedTeamSize = p.currentTeamSize + p.plannedHires;
-  return {
+  const base: Record<string, unknown> = {
     mode: "assist",
     toolName: "assist_hiring_plan_finance",
     summary: `Planned hires add about ${incrementalMonthlyCost.toFixed(0)} in monthly loaded cost, taking the team from ${p.currentTeamSize} to ${projectedTeamSize} people.`,
@@ -45,5 +41,16 @@ export function executeAssistHiringPlanFinance(
       incrementalMonthlyCost,
       projectedTeamSize,
     },
+  };
+  const { messageHtml, plainSummary } = await enrichAssistOutputWithOpenAI({
+    toolLabel: "assist_hiring_plan_finance",
+    systemPrompt: SYSTEM,
+    structured: base,
+  });
+  return {
+    ...base,
+    summary: plainSummary,
+    message: plainSummary,
+    messageHtml,
   };
 }

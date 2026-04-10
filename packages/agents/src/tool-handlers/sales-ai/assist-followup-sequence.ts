@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { enrichAssistOutputWithOpenAI } from "../../lib/assist-openai-enrichment.js";
 
 const schema = z.object({
   audience: z.string(),
@@ -6,20 +7,18 @@ const schema = z.object({
   days: z.number().int().positive(),
 });
 
-export function executeAssistFollowupSequence(args: Record<string, unknown>): {
-  mode: "assist";
-  toolName: "assist_followup_sequence";
-  summary: string;
-  keyAssumptions: string[];
-  recommendations: string[];
-  nextQuestions: string[];
-  metrics: {
-    touchpoints: number;
-  };
-} {
+const SYSTEM = [
+  "You are a sales engagement strategist.",
+  "JSON includes audience, goal, days, and suggested touchpoint count.",
+  "Produce a multi-step follow-up plan in HTML and plainSummary.",
+].join(" ");
+
+export async function executeAssistFollowupSequence(
+  args: Record<string, unknown>
+): Promise<Record<string, unknown>> {
   const p = schema.parse(args);
   const touchpoints = Math.min(5, Math.max(3, Math.ceil(p.days / 3)));
-  return {
+  const base: Record<string, unknown> = {
     mode: "assist",
     toolName: "assist_followup_sequence",
     summary: `Across ${p.days} days for ${p.audience.trim()} with goal "${p.goal.trim()}", plan ${touchpoints} concise touches mixing value proof, a concrete ask, and a time-boxed next step.`,
@@ -38,5 +37,16 @@ export function executeAssistFollowupSequence(args: Record<string, unknown>): {
     metrics: {
       touchpoints,
     },
+  };
+  const { messageHtml, plainSummary } = await enrichAssistOutputWithOpenAI({
+    toolLabel: "assist_followup_sequence",
+    systemPrompt: SYSTEM,
+    structured: base,
+  });
+  return {
+    ...base,
+    summary: plainSummary,
+    message: plainSummary,
+    messageHtml,
   };
 }

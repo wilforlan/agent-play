@@ -238,7 +238,7 @@ export type RemotePlayWorldHold = {
 export type IntercomToolExecutor = (input: {
   toolName: string;
   args: Record<string, unknown>;
-}) => Record<string, unknown>;
+}) => Record<string, unknown> | Promise<Record<string, unknown>>;
 
 type SubscribeIntercomChatAgents = {
   /**
@@ -995,7 +995,9 @@ export class RemotePlayWorld {
                 resultPreview: this.truncateForLog(JSON.stringify(result)),
               });
             } else {
-              result = executeTool({ toolName, args });
+              result = await Promise.resolve(
+                executeTool({ toolName, args })
+              );
             }
             this.logTransport("intercom:executeTool:completed", {
               requestId: cmd.requestId,

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { enrichAssistOutputWithOpenAI } from "../../lib/assist-openai-enrichment.js";
 
 const schema = z.object({
   currentCash: z.number(),
@@ -7,18 +8,15 @@ const schema = z.object({
   months: z.number().int().positive(),
 });
 
-export function executeAssistCashflowForecast(args: Record<string, unknown>): {
-  mode: "assist";
-  toolName: "assist_cashflow_forecast";
-  summary: string;
-  keyAssumptions: string[];
-  recommendations: string[];
-  nextQuestions: string[];
-  metrics: {
-    netMonthlyFlow: number;
-    projectedEndingCash: number;
-  };
-} {
+const SYSTEM = [
+  "You are a CFO assistant focused on cash forecasting.",
+  "You receive JSON with cash, inflows, outflows, horizon months, net monthly flow, projected ending cash, and runway hints.",
+  "Return clear HTML and a plainSummary for founders.",
+].join(" ");
+
+export async function executeAssistCashflowForecast(
+  args: Record<string, unknown>
+): Promise<Record<string, unknown>> {
   const p = schema.parse(args);
   const netMonthlyFlow = p.monthlyInflow - p.monthlyOutflow;
   const projectedEndingCash = p.currentCash + netMonthlyFlow * p.months;
@@ -32,7 +30,7 @@ export function executeAssistCashflowForecast(args: Record<string, unknown>): {
       : netMonthlyFlow >= 0
         ? "Cash balance is projected to grow over the horizon."
         : "Burn is negative but runway cannot be computed without a positive cash balance.";
-  return {
+  const base: Record<string, unknown> = {
     mode: "assist",
     toolName: "assist_cashflow_forecast",
     summary: `Net monthly flow is ${netMonthlyFlow.toFixed(0)}; after ${p.months} month(s) ending cash lands near ${projectedEndingCash.toFixed(0)}. ${runwayLabel}`,
@@ -54,5 +52,16 @@ export function executeAssistCashflowForecast(args: Record<string, unknown>): {
       netMonthlyFlow,
       projectedEndingCash,
     },
+  };
+  const { messageHtml, plainSummary } = await enrichAssistOutputWithOpenAI({
+    toolLabel: "assist_cashflow_forecast",
+    systemPrompt: SYSTEM,
+    structured: base,
+  });
+  return {
+    ...base,
+    summary: plainSummary,
+    message: plainSummary,
+    messageHtml,
   };
 }

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { enrichAssistOutputWithOpenAI } from "../../lib/assist-openai-enrichment.js";
 
 const schema = z.object({
   monthlyRevenue: z.number(),
@@ -6,18 +7,15 @@ const schema = z.object({
   monthlyVariableCosts: z.number(),
 });
 
-export function executeAssistBuildBudget(args: Record<string, unknown>): {
-  mode: "assist";
-  toolName: "assist_build_budget";
-  summary: string;
-  keyAssumptions: string[];
-  recommendations: string[];
-  nextQuestions: string[];
-  metrics: {
-    netOperatingIncome: number;
-    operatingMarginPercent: number;
-  };
-} {
+const SYSTEM = [
+  "You are an expert startup CFO assistant.",
+  "You receive JSON with monthly revenue, fixed and variable costs, net operating income, operating margin %, and narrative lists.",
+  "Produce founder-friendly HTML and a short plainSummary. Keep HTML accessible: headings, short paragraphs, bullet lists.",
+].join(" ");
+
+export async function executeAssistBuildBudget(
+  args: Record<string, unknown>
+): Promise<Record<string, unknown>> {
   const p = schema.parse(args);
   const netOperatingIncome =
     p.monthlyRevenue - p.monthlyFixedCosts - p.monthlyVariableCosts;
@@ -29,7 +27,7 @@ export function executeAssistBuildBudget(args: Record<string, unknown>): {
       : operatingMarginPercent >= 0
         ? "positive but thin; prioritize cost levers or pricing tests"
         : "negative; runway risk without revenue lift or cost cuts";
-  return {
+  const base: Record<string, unknown> = {
     mode: "assist",
     toolName: "assist_build_budget",
     summary: `Net operating income is ${netOperatingIncome.toFixed(0)} per month (${operatingMarginPercent.toFixed(1)}% margin), which is ${marginLabel}.`,
@@ -51,5 +49,16 @@ export function executeAssistBuildBudget(args: Record<string, unknown>): {
       netOperatingIncome,
       operatingMarginPercent,
     },
+  };
+  const { messageHtml, plainSummary } = await enrichAssistOutputWithOpenAI({
+    toolLabel: "assist_build_budget",
+    systemPrompt: SYSTEM,
+    structured: base,
+  });
+  return {
+    ...base,
+    summary: plainSummary,
+    message: plainSummary,
+    messageHtml,
   };
 }

@@ -10,7 +10,7 @@ import { executeChatTool } from "./cfo/chat-tool.js";
 
 export type ToolCapabilityHandler = (
   args: Record<string, unknown>
-) => Record<string, unknown>;
+) => Record<string, unknown> | Promise<Record<string, unknown>>;
 
 const registry = new Map<string, ToolCapabilityHandler>([
   ["assist_build_budget", executeAssistBuildBudget],
@@ -29,7 +29,9 @@ export function resolveToolCapabilityHandler(
   if (toolName === "chat_tool") {
     return (args) => {
       const message = typeof args.text === "string" ? args.text : "";
-      return executeChatTool({ text: message });
+      return Promise.resolve(
+        executeChatTool({ text: message }) as Record<string, unknown>
+      );
     };
   }
   return registry.get(toolName) ?? null;

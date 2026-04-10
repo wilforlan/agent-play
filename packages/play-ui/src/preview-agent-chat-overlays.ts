@@ -118,6 +118,7 @@ export function createPreviewAgentChatOverlays(): {
   setLayout: (agentId: string, left: number, top: number) => void;
   applyDisplaySettings: () => void;
   setAssistSnapshot: (snapshot: AgentChatOverlaySnapshot) => void;
+  setProximityFocus: (agentId: string | null) => void;
 } {
   ensurePreviewChatStyles();
   ensureAgentChatOverlayStyles();
@@ -126,9 +127,23 @@ export function createPreviewAgentChatOverlays(): {
   layer.className = "preview-agent-chat-layer";
   applyAgentChatDisplayToLayer(layer, getAgentChatDisplaySettings());
 
+  let proximityFocusAgentId: string | null = null;
   const byId = new Map<string, CardEntry>();
   const setAssistSnapshot = (snapshot: AgentChatOverlaySnapshot): void => {
     void snapshot;
+  };
+
+  const applyCardVisibility = (agentId: string): void => {
+    const entry = byId.get(agentId);
+    if (entry === undefined) return;
+    const rows = getChatLogLinesForAgent(agentId);
+    if (rows.length === 0) {
+      entry.card.style.visibility = "hidden";
+      return;
+    }
+    const visible =
+      proximityFocusAgentId !== null && agentId === proximityFocusAgentId;
+    entry.card.style.visibility = visible ? "visible" : "hidden";
   };
 
   const syncAgentIds = (ids: readonly string[]): void => {
@@ -169,12 +184,12 @@ export function createPreviewAgentChatOverlays(): {
         ? rows[0].playerName
         : agentId;
     entry.card.setAttribute("aria-label", `Chat for ${label}`);
-    entry.card.style.visibility = "visible";
     entry.scroll.replaceChildren();
     for (const line of rows) {
       entry.scroll.append(createChatBubbleElement(line));
     }
     entry.scroll.scrollTop = entry.scroll.scrollHeight;
+    applyCardVisibility(agentId);
   };
 
   const refreshAll = (): void => {
@@ -194,6 +209,13 @@ export function createPreviewAgentChatOverlays(): {
     applyAgentChatDisplayToLayer(layer, getAgentChatDisplaySettings());
   };
 
+  const setProximityFocus = (agentId: string | null): void => {
+    proximityFocusAgentId = agentId;
+    for (const id of byId.keys()) {
+      applyCardVisibility(id);
+    }
+  };
+
   return {
     root: layer,
     syncAgentIds,
@@ -202,5 +224,6 @@ export function createPreviewAgentChatOverlays(): {
     setLayout,
     applyDisplaySettings,
     setAssistSnapshot,
+    setProximityFocus,
   };
 }

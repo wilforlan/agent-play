@@ -1233,6 +1233,7 @@ function onFrame(): void {
       proximityPromptEl.style.display = "none";
     }
   }
+  agentChatOverlays?.setProximityFocus(lastProximityPartnerId);
   if (getPreviewViewSettings().debugMode) {
     debugPanelUpdate?.();
   }

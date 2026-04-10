@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { enrichAssistOutputWithOpenAI } from "../../lib/assist-openai-enrichment.js";
 
 const schema = z.object({
   currentPrice: z.number(),
@@ -6,18 +7,15 @@ const schema = z.object({
   testPrices: z.array(z.number()).min(1),
 });
 
-export function executeAssistPricingScenarios(args: Record<string, unknown>): {
-  mode: "assist";
-  toolName: "assist_pricing_scenarios";
-  summary: string;
-  keyAssumptions: string[];
-  recommendations: string[];
-  nextQuestions: string[];
-  metrics: {
-    baselineMonthlyRevenue: number;
-    scenarioMonthlyRevenues: number[];
-  };
-} {
+const SYSTEM = [
+  "You are a pricing strategy assistant for B2B SaaS.",
+  "JSON includes baseline revenue, scenario revenues, and lift vs baseline.",
+  "Produce HTML comparing scenarios and plainSummary.",
+].join(" ");
+
+export async function executeAssistPricingScenarios(
+  args: Record<string, unknown>
+): Promise<Record<string, unknown>> {
   const p = schema.parse(args);
   const baselineMonthlyRevenue = p.currentPrice * p.expectedCustomers;
   const scenarioMonthlyRevenues = p.testPrices.map(
@@ -32,7 +30,7 @@ export function executeAssistPricingScenarios(args: Record<string, unknown>): {
       ? ((scenarioMonthlyRevenues[bestIdx] ?? 0) - baselineMonthlyRevenue) /
         baselineMonthlyRevenue
       : 0;
-  return {
+  const base: Record<string, unknown> = {
     mode: "assist",
     toolName: "assist_pricing_scenarios",
     summary: `Baseline monthly revenue at the current price is ${baselineMonthlyRevenue.toFixed(0)}. Among test prices, index ${bestIdx} yields the highest monthly revenue (${scenarioMonthlyRevenues[bestIdx]?.toFixed(0)}), about ${(liftVsBaseline * 100).toFixed(1)}% vs baseline at equal volume.`,
@@ -52,5 +50,16 @@ export function executeAssistPricingScenarios(args: Record<string, unknown>): {
       baselineMonthlyRevenue,
       scenarioMonthlyRevenues,
     },
+  };
+  const { messageHtml, plainSummary } = await enrichAssistOutputWithOpenAI({
+    toolLabel: "assist_pricing_scenarios",
+    systemPrompt: SYSTEM,
+    structured: base,
+  });
+  return {
+    ...base,
+    summary: plainSummary,
+    message: plainSummary,
+    messageHtml,
   };
 }

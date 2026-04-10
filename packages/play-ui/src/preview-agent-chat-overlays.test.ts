@@ -36,7 +36,7 @@ describe("createPreviewAgentChatOverlays", () => {
     expect(card.style.visibility).toBe("hidden");
   });
 
-  it("shows card when chat rows exist", () => {
+  it("hides card when chat rows exist but no proximity focus", () => {
     const overlays = createPreviewAgentChatOverlays();
     overlays.syncAgentIds(["agent-1"]);
     appendChatLogLine({
@@ -49,6 +49,41 @@ describe("createPreviewAgentChatOverlays", () => {
     const card = overlays.root.querySelector(
       ".preview-agent-chat-card"
     ) as HTMLElement;
+    expect(card.style.visibility).toBe("hidden");
+  });
+
+  it("shows card only for proximity-focused agent", () => {
+    const overlays = createPreviewAgentChatOverlays();
+    overlays.syncAgentIds(["agent-1"]);
+    appendChatLogLine({
+      agentId: "agent-1",
+      playerName: "Agent One",
+      role: "assistant",
+      text: "hello",
+    });
+    overlays.refreshPlayer("agent-1");
+    overlays.setProximityFocus("agent-1");
+    const card = overlays.root.querySelector(
+      ".preview-agent-chat-card"
+    ) as HTMLElement;
     expect(card.style.visibility).toBe("visible");
+  });
+
+  it("hides card when proximity focus clears", () => {
+    const overlays = createPreviewAgentChatOverlays();
+    overlays.syncAgentIds(["agent-1"]);
+    appendChatLogLine({
+      agentId: "agent-1",
+      playerName: "Agent One",
+      role: "assistant",
+      text: "hello",
+    });
+    overlays.refreshPlayer("agent-1");
+    overlays.setProximityFocus("agent-1");
+    overlays.setProximityFocus(null);
+    const card = overlays.root.querySelector(
+      ".preview-agent-chat-card"
+    ) as HTMLElement;
+    expect(card.style.visibility).toBe("hidden");
   });
 });

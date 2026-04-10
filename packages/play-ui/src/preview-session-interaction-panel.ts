@@ -162,6 +162,42 @@ function ensureStyles(): void {
   color: #86efac;
   white-space: pre-wrap;
 }
+.preview-session-interaction__assist-result {
+  display: grid;
+  gap: 10px;
+  margin-top: 8px;
+}
+.preview-session-interaction__assist-html {
+  font-size: 12px;
+  line-height: 1.45;
+  color: #e2e8f0;
+}
+.preview-session-interaction__assist-html .assist-html-root h3,
+.preview-session-interaction__assist-html .assist-html-root h2 {
+  font-size: 13px;
+  margin: 10px 0 6px;
+  color: #f1f5f9;
+}
+.preview-session-interaction__assist-html .assist-html-root ul {
+  margin: 6px 0 6px 1.1em;
+  padding: 0;
+}
+.preview-session-interaction__assist-json {
+  margin: 0;
+  padding: 10px;
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.85);
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  font-size: 10px;
+  line-height: 1.35;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: #cbd5e1;
+}
+.preview-session-interaction__assist-new-btn {
+  justify-self: start;
+}
 .preview-session-interaction__error-panel {
   display: grid;
   gap: 8px;
@@ -395,6 +431,13 @@ function formatIntercomResultText(payload: WorldIntercomEventPayload): string {
   return payload.status;
 }
 
+function escapeAssistPlainText(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
 export function createPreviewSessionInteractionPanel(options: {
   getSid: () => string | null;
   apiBase: string;
@@ -527,10 +570,15 @@ export function createPreviewSessionInteractionPanel(options: {
   let activeAgentId: string | null = null;
   let busy = false;
   let selectedTool: AssistToolDef | null = null;
+  let assistResultView: {
+    title: string;
+    html: string;
+    json: string;
+  } | null = null;
   let agentsById = new Map<string, SessionInteractionAgent>();
   const pendingByRequestId = new Map<
     string,
-    { mode: Mode; agentId: string }
+    { mode: Mode; agentId: string; toolName?: string }
   >();
 
   type ReplyWaitState = {
@@ -833,12 +881,41 @@ export function createPreviewSessionInteractionPanel(options: {
       btn.textContent = titleFromToolName(tool.name);
       btn.addEventListener("click", () => {
         selectedTool = tool;
+        assistResultView = null;
         result.textContent = "";
         renderAssist();
       });
       toolBar.append(btn);
     }
     body.append(toolBar);
+    if (assistResultView !== null) {
+      const wrap = document.createElement("div");
+      wrap.className = "preview-session-interaction__assist-result";
+      const resTitle = document.createElement("div");
+      resTitle.className = "preview-session-interaction__title";
+      resTitle.textContent = assistResultView.title;
+      const htmlBox = document.createElement("div");
+      htmlBox.className = "preview-session-interaction__assist-html";
+      htmlBox.innerHTML = assistResultView.html;
+      const jsonPre = document.createElement("pre");
+      jsonPre.className = "preview-session-interaction__assist-json";
+      jsonPre.textContent = assistResultView.json;
+      const newBtn = document.createElement("button");
+      newBtn.type = "button";
+      newBtn.className =
+        "preview-session-interaction__send-btn preview-session-interaction__assist-new-btn";
+      newBtn.textContent = "New assist";
+      newBtn.addEventListener("click", () => {
+        assistResultView = null;
+        selectedTool = null;
+        result.textContent = "";
+        render();
+      });
+      wrap.append(resTitle, htmlBox, jsonPre, newBtn);
+      body.append(wrap);
+      result.textContent = "";
+      return;
+    }
     if (
       replyWait !== null &&
       replyWait.mode === "assist" &&
@@ -966,6 +1043,7 @@ export function createPreviewSessionInteractionPanel(options: {
         return;
       }
       clearInteractionError();
+      assistResultView = null;
       const assistTool = selectedTool;
       const args = buildAssistArgsFromInputs({
         parameters: assistTool.parameters,
@@ -980,7 +1058,11 @@ export function createPreviewSessionInteractionPanel(options: {
         toPlayerId: activeAgentId,
         rpcUrl,
       });
-      pendingByRequestId.set(requestId, { mode: "assist", agentId: activeAgentId });
+      pendingByRequestId.set(requestId, {
+        mode: "assist",
+        agentId: activeAgentId,
+        toolName: assistTool.name,
+      });
       startReplyWait({
         requestId,
         mode: "assist",
@@ -1137,6 +1219,19 @@ export function createPreviewSessionInteractionPanel(options: {
           role: "assistant",
           text: formatIntercomResultText(payload),
         });
+      } else if (pending.mode === "assist") {
+        const r = payload.result ?? {};
+        const fallbackText = formatIntercomResultText(payload);
+        const html =
+          typeof r.messageHtml === "string" && r.messageHtml.trim().length > 0
+            ? r.messageHtml
+            : `<div class="assist-html-root"><pre>${escapeAssistPlainText(fallbackText)}</pre></div>`;
+        assistResultView = {
+          title: titleFromToolName(pending.toolName ?? "assist"),
+          html,
+          json: JSON.stringify(r, null, 2),
+        };
+        result.textContent = "";
       } else {
         result.textContent = formatIntercomResultText(payload);
       }
@@ -1188,6 +1283,7 @@ export function createPreviewSessionInteractionPanel(options: {
         const nextTools = activeAgentId === null ? [] : (agentsById.get(activeAgentId)?.assistTools ?? []);
         if (!nextTools.some((t) => t.name === selectedTool?.name)) {
           selectedTool = null;
+          assistResultView = null;
         }
       }
       render();
@@ -1203,6 +1299,7 @@ export function createPreviewSessionInteractionPanel(options: {
       }
       activeAgentId = agentId;
       selectedTool = null;
+      assistResultView = null;
       clearInteractionError();
       render();
     },

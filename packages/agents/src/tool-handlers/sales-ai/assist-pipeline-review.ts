@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { enrichAssistOutputWithOpenAI } from "../../lib/assist-openai-enrichment.js";
 
 const schema = z.object({
   leadCount: z.number().int().nonnegative(),
@@ -7,19 +8,15 @@ const schema = z.object({
   closedWonCount: z.number().int().nonnegative(),
 });
 
-export function executeAssistPipelineReview(args: Record<string, unknown>): {
-  mode: "assist";
-  toolName: "assist_pipeline_review";
-  summary: string;
-  keyAssumptions: string[];
-  recommendations: string[];
-  nextQuestions: string[];
-  metrics: {
-    qualificationRate: number;
-    proposalRate: number;
-    winRate: number;
-  };
-} {
+const SYSTEM = [
+  "You are a sales operations coach.",
+  "JSON includes funnel counts and qualification, proposal, win rates plus bottleneck narrative.",
+  "Produce actionable HTML and plainSummary.",
+].join(" ");
+
+export async function executeAssistPipelineReview(
+  args: Record<string, unknown>
+): Promise<Record<string, unknown>> {
   const p = schema.parse(args);
   const qualificationRate =
     p.leadCount > 0 ? p.qualifiedCount / p.leadCount : 0;
@@ -35,7 +32,7 @@ export function executeAssistPipelineReview(args: Record<string, unknown>): {
         : winRate < 0.2
           ? "late-stage win rate"
           : "balanced; look for velocity, not a single ratio";
-  return {
+  const base: Record<string, unknown> = {
     mode: "assist",
     toolName: "assist_pipeline_review",
     summary: `Qualification ${(qualificationRate * 100).toFixed(1)}%, proposal ${(proposalRate * 100).toFixed(1)}%, win ${(winRate * 100).toFixed(1)}%. The softest stage looks like ${bottleneck}.`,
@@ -58,5 +55,16 @@ export function executeAssistPipelineReview(args: Record<string, unknown>): {
       proposalRate,
       winRate,
     },
+  };
+  const { messageHtml, plainSummary } = await enrichAssistOutputWithOpenAI({
+    toolLabel: "assist_pipeline_review",
+    systemPrompt: SYSTEM,
+    structured: base,
+  });
+  return {
+    ...base,
+    summary: plainSummary,
+    message: plainSummary,
+    messageHtml,
   };
 }
