@@ -11,7 +11,11 @@
     "declaration": true,
     "declarationMap": true,
     "outDir": "dist",
-    "rootDir": "src"
+    "rootDir": "src",
+    "paths": {
+      "@agent-play/node-tools": ["../node-tools/src/index.ts"],
+      "@agent-play/sdk": ["../sdk/dist/index.d.ts"]
+    }
   },
   "include": ["src/**/*.ts"]
 }

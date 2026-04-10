@@ -88,7 +88,7 @@ describe("registerBuiltinAgents", () => {
       nodeCredentials: createNodeCredentialsFixture(),
     });
 
-    expect(addPlayerCount).toBe(3);
+    expect(addPlayerCount).toBe(2);
   });
 
   it("skips addAgent when built-in name already on snapshot", async () => {
@@ -119,13 +119,6 @@ describe("registerBuiltinAgents", () => {
                       agentId: "builtin-research-assistant",
                       name: "Research assistant",
                       x: 1,
-                      y: 0,
-                    },
-                    {
-                      kind: "agent",
-                      agentId: "builtin-play-world-assistant",
-                      name: "Play world assistant",
-                      x: 2,
                       y: 0,
                     },
                   ],

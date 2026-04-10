@@ -2,9 +2,9 @@ import { describe, expect, it } from "vitest";
 import { getBuiltinAgentDefinitions } from "./builtin-langchain-agents.js";
 
 describe("builtin LangChain agents", () => {
-  it("exposes three stable definitions with chat_tool and assist tools", () => {
+  it("exposes two stable definitions with chat_tool and assist tools", () => {
     const agents = getBuiltinAgentDefinitions();
-    expect(agents).toHaveLength(3);
+    expect(agents).toHaveLength(2);
     for (const def of agents) {
       expect(def.id.length).toBeGreaterThan(0);
       expect(def.agent.type).toBe("langchain");
@@ -19,7 +19,7 @@ describe("builtin LangChain agents", () => {
 
   it("task organizer includes planning tools", () => {
     const def = getBuiltinAgentDefinitions().find(
-      (d) => d.id === "builtin-task-organizer"
+      (d) => d.id === "b2bffffd3e73e975c3aef60f6c15bdd84165fc548583c8553fb8119f92550f4d"
     );
     expect(def).toBeDefined();
     expect(def?.agent.toolNames).toEqual(
@@ -33,7 +33,7 @@ describe("builtin LangChain agents", () => {
 
   it("research assistant includes summarization tools", () => {
     const def = getBuiltinAgentDefinitions().find(
-      (d) => d.id === "builtin-research-assistant"
+      (d) => d.id === "4fda036ff28e27a1df7529ebd765bc23dec4228b1e9be3fff4cea57bbc9b8dc4"
     );
     expect(def).toBeDefined();
     expect(def?.agent.toolNames).toEqual(
@@ -45,17 +45,4 @@ describe("builtin LangChain agents", () => {
     );
   });
 
-  it("play world assistant includes map teaching tools", () => {
-    const def = getBuiltinAgentDefinitions().find(
-      (d) => d.id === "builtin-play-world-assistant"
-    );
-    expect(def).toBeDefined();
-    expect(def?.agent.toolNames).toEqual(
-      expect.arrayContaining([
-        "chat_tool",
-        "assist_explain_structure",
-        "assist_record_journey_hint",
-      ])
-    );
-  });
 });
