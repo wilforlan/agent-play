@@ -15,7 +15,9 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@agent-play/agents": "file:../agents",
     "@agent-play/node-tools": "^1.0.0",
+    "@agent-play/intercom": "file:../intercom",
     "@agent-play/sdk": "^3.0.2",
     "dompurify": "^3.3.3",
     "ioredis": "^5.6.0",

@@ -2,8 +2,8 @@ import { langchainRegistration } from "@agent-play/sdk";
 import type { BuiltinAgentDefinition } from "./types.js";
 import { ChatOpenAI } from "@langchain/openai";
 import { createAgent } from "langchain";
-import { taskOrganizerTools } from "./toolkits/task-organizer-tools.js";
-import { researchTools } from "./toolkits/research-tools.js";
+import { cfoTools } from "./toolkits/cfo-tools.js";
+import { salesTools } from "./toolkits/sales-tools.js";
 
 function buildBuiltinAgentDefinitions(): BuiltinAgentDefinition[] {
   const demoModel = new ChatOpenAI({
@@ -11,34 +11,34 @@ function buildBuiltinAgentDefinitions(): BuiltinAgentDefinition[] {
     model: "gpt-4.1",
   });
 
-  const taskOrganizerLcAgent = createAgent({
-    name: "builtin-task-organizer",
+  const cfoLcAgent = createAgent({
+    name: "builtin-cfo-ai",
     model: demoModel,
-    tools: [...taskOrganizerTools],
+    tools: [...cfoTools],
     systemPrompt:
-      "You help organize tasks and schedules. Prefer assist_plan_day and assist_prioritize_tasks for structured requests.",
+      "You are CFO AI. Help founders understand budgets, runway, and pricing decisions with practical finance guidance. Prefer assist_build_budget, assist_cashflow_forecast, assist_runway_estimate, assist_pricing_scenarios, and assist_hiring_plan_finance for structured support.",
   });
 
-  const researchLcAgent = createAgent({
-    name: "builtin-research-assistant",
+  const salesLcAgent = createAgent({
+    name: "builtin-sales-ai",
     model: demoModel,
-    tools: [...researchTools],
+    tools: [...salesTools],
     systemPrompt:
-      "You support research workflows. Use assist_summarize_source and assist_find_citations when the user needs structured research help.",
+      "You are Sales AI. Help businesses improve pipeline quality, objection handling, and follow-up execution. Prefer assist_pipeline_review, assist_objection_handling, and assist_followup_sequence for structured support.",
   });
 
   return [
     {
       id: "b2bffffd3e73e975c3aef60f6c15bdd84165fc548583c8553fb8119f92550f4d",
-      name: "Task organizer assistant",
+      name: "CFO AI",
       type: "langchain",
-      agent: langchainRegistration(taskOrganizerLcAgent),
+      agent: langchainRegistration(cfoLcAgent),
     },
     {
       id: "4fda036ff28e27a1df7529ebd765bc23dec4228b1e9be3fff4cea57bbc9b8dc4",
-      name: "Research assistant",
+      name: "Sales AI",
       type: "langchain",
-      agent: langchainRegistration(researchLcAgent),
+      agent: langchainRegistration(salesLcAgent),
     },
   ];
 }

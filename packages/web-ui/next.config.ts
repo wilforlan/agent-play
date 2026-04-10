@@ -38,6 +38,10 @@ const nextConfig: NextConfig = {
         source: "/agent-play/assist-tool",
         destination: "/api/agent-play/assist-tool",
       },
+      {
+        source: "/agent-play/bootstrap",
+        destination: "/api/agent-play/bootstrap",
+      },
     ];
   },
 };

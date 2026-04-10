@@ -180,14 +180,14 @@ describe("registerBuiltinAgents", () => {
                     {
                       kind: "agent",
                       agentId: "builtin-task-organizer",
-                      name: "Task organizer assistant",
+                      name: "CFO AI",
                       x: 0,
                       y: 0,
                     },
                     {
                       kind: "agent",
                       agentId: "builtin-research-assistant",
-                      name: "Research assistant",
+                      name: "Sales AI",
                       x: 1,
                       y: 0,
                     },

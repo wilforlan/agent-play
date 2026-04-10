@@ -10,13 +10,15 @@
     "packages/*"
   ],
   "scripts": {
-    "build": "npm run build:node-tools && npm run build:sdk && npm run build:agents && npm run build:cli && npm run build:web-ui && npm run build:play-ui",
+    "build": "npm run build:node-tools && npm run build:intercom && npm run build:sdk && npm run build:agents && npm run build:cli && npm run build:web-ui && npm run build:play-ui",
+    "build:intercom": "npm run build -w @agent-play/intercom",
     "build:node-tools": "npm run build -w @agent-play/node-tools",
     "build:sdk": "npm run build -w @agent-play/sdk",
     "build:agents": "npm run build -w @agent-play/agents",
     "build:web-ui": "npm run build -w @agent-play/web-ui",
     "build:cli": "npm run build -w @agent-play/cli",
     "build:play-ui": "npm run build -w @agent-play/play-ui",
+    "build:wordlist": "node scripts/build-passphrase-wordlist.mjs",
     "docs:api": "typedoc --options typedoc.json && node -e \"require('fs').mkdirSync('docs/api-reference',{recursive:true}); require('fs').writeFileSync('docs/api-reference/.nojekyll','')\"",
     "start": "npm run dev -w @agent-play/web-ui",
     "start:builtins": "npm run start -w @agent-play/agents",

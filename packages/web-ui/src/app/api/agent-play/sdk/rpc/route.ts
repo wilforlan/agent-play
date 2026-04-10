@@ -9,6 +9,16 @@ import { readResolvedSnapshot } from "@/server/agent-play/read-resolved-snapshot
 import { readPlayerChainNode } from "@/server/agent-play/read-player-chain-node";
 import { getPlayWorld, getSessionStore } from "@/server/get-world";
 import { validateAgentPlaySession } from "@/server/agent-play/session-validation";
+import { handleIntercomCommand } from "@/server/agent-play/intercom/intercom-router";
+import { handleIntercomResponse } from "@/server/agent-play/intercom/handle-intercom-response";
+import {
+  CREATE_HUMAN_NODE_OP,
+  INTERCOM_COMMAND_OP,
+  INTERCOM_RESPONSE_OP,
+  parseCreateHumanNodePayload,
+} from "@/server/agent-play/intercom/shared-intercom";
+import { createNodeAccount } from "@/server/agent-play/create-node-account";
+import { getRepository } from "@/server/get-world";
 
 function requireSid(req: NextRequest): string | null {
   const raw = req.nextUrl.searchParams.get("sid");
@@ -72,6 +82,33 @@ export async function POST(req: NextRequest) {
     }
 
     switch (body.op) {
+      case CREATE_HUMAN_NODE_OP: {
+        const p = parseCreateHumanNodePayload(body.payload);
+        const repository = await getRepository();
+        if (repository === null) {
+          return Response.json({ error: "repository unavailable" }, { status: 503 });
+        }
+        const { nodeId } = await createNodeAccount(repository, {
+          kind: "main",
+          passw: p.passw,
+        });
+        return Response.json({ ok: true, nodeId });
+      }
+      case INTERCOM_COMMAND_OP: {
+        await handleIntercomCommand({
+          store,
+          world,
+          payload: body.payload,
+        });
+        return Response.json({ ok: true });
+      }
+      case INTERCOM_RESPONSE_OP: {
+        await handleIntercomResponse({
+          store,
+          payload: body.payload,
+        });
+        return Response.json({ ok: true });
+      }
       case "recordInteraction": {
         const p = body.payload as {
           playerId?: unknown;

@@ -12,7 +12,9 @@
     "types": ["vite/client"],
     "baseUrl": ".",
     "paths": {
-      "@agent-play/sdk/browser": ["../sdk/src/browser.ts"]
+      "@agent-play/sdk/browser": ["../sdk/src/browser.ts"],
+      "@agent-play/intercom": ["../intercom/src/index.ts"],
+      "@agent-play/node-tools": ["../node-tools/src/index.ts"]
     }
   },
   "include": ["src/**/*.ts", "vite.config.ts"]

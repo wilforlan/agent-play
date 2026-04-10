@@ -165,7 +165,7 @@ export function mountAssistPanel(options: {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
-          targetAgentId: options.agentId,
+          targetPlayerId: options.agentId,
           toolName,
           args,
         }),

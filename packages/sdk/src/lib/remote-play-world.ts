@@ -35,6 +35,12 @@ import {
   parsePlayerChainNodeRpcBody,
   sortNodeRefsForSerializedFetch,
 } from "./player-chain-merge.js";
+import {
+  INTERCOM_RESPONSE_OP,
+  type IntercomResponsePayload,
+  parseWorldIntercomEventPayload,
+  type WorldIntercomEventPayload,
+} from "@agent-play/intercom";
 
 /**
  * Root key (from `.root`) plus **human** passphrase as stored in **`~/.agent-play/credentials.json`**
@@ -216,6 +222,11 @@ function formatInvalidHoldSecondsError(): string {
 export type RemotePlayWorldHold = {
   for: (seconds: number) => Promise<void>;
 };
+
+export type IntercomToolExecutor = (input: {
+  toolName: string;
+  args: Record<string, unknown>;
+}) => Record<string, unknown>;
 
 /**
  * HTTP client for the Agent Play web UI: session, snapshot RPC, mutating RPC with `sid`, and optional SSE subscription.
@@ -494,6 +505,7 @@ export class RemotePlayWorld {
   subscribeWorldState(callbacks: {
     onSnapshot: (snapshot: AgentPlaySnapshot) => void;
     onError?: (err: Error) => void;
+    onIntercomEvent?: (payload: WorldIntercomEventPayload) => void;
   }): { close: () => void } {
     let closeSource: (() => void) | null = null;
     const task = (async () => {
@@ -519,6 +531,13 @@ export class RemotePlayWorld {
             data = JSON.parse(msg.data) as unknown;
           } catch {
             continue;
+          }
+          if (callbacks.onIntercomEvent) {
+            try {
+              callbacks.onIntercomEvent(parseWorldIntercomEventPayload(data));
+            } catch {
+              // not a world intercom payload
+            }
           }
           const notify = parsePlayerChainFanoutNotifyFromSsePayload(data);
           if (notify === undefined || notify.nodes.length === 0) {
@@ -673,6 +692,107 @@ export class RemotePlayWorld {
 
   async recordJourney(playerId: string, journey: Journey): Promise<void> {
     await this.rpc("recordJourney", { playerId, journey });
+  }
+
+  async sendIntercomResponse(payload: IntercomResponsePayload): Promise<void> {
+    const sid = this.getSessionId();
+    const url = `${this.apiBase}/api/agent-play/sdk/rpc?sid=${encodeURIComponent(sid)}`;
+    const res = await fetch(url, {
+      method: "POST",
+      headers: this.jsonHeaders(),
+      body: JSON.stringify({ op: INTERCOM_RESPONSE_OP, payload }),
+    });
+    if (!res.ok) {
+      const t = await res.text();
+      throw new Error(`intercomResponse: ${res.status} ${t}`);
+    }
+  }
+
+  subscribeIntercomCommands(options: {
+    playerId: string;
+    executeTool: IntercomToolExecutor;
+  }): { close: () => void } {
+    let closeSource: (() => void) | null = null;
+    const task = (async () => {
+      try {
+        const { createEventSource } = await import("eventsource-client");
+        const source = createEventSource({
+          url: `${this.apiBase}/api/agent-play/events?sid=${encodeURIComponent(
+            this.getSessionId()
+          )}`,
+          fetch: (input, init) => this.mergeAuthFetch(input, init),
+        });
+        closeSource = () => {
+          source.close();
+        };
+        for await (const msg of source) {
+          if (typeof msg.data !== "string") {
+            continue;
+          }
+          let data: unknown;
+          try {
+            data = JSON.parse(msg.data) as unknown;
+          } catch {
+            continue;
+          }
+          let inter: WorldIntercomEventPayload;
+          try {
+            inter = parseWorldIntercomEventPayload(data);
+          } catch {
+            continue;
+          }
+          if (inter.status !== "forwarded") {
+            continue;
+          }
+          const cmd = inter.command;
+          if (cmd === undefined) {
+            continue;
+          }
+          if (cmd.toPlayerId !== options.playerId) {
+            continue;
+          }
+          const toolName =
+            cmd.kind === "chat" ? "chat_tool" : cmd.toolName ?? "";
+          const args =
+            cmd.kind === "chat" ? { text: cmd.text ?? "" } : (cmd.args ?? {});
+          try {
+            const result = options.executeTool({ toolName, args });
+            await this.sendIntercomResponse({
+              requestId: cmd.requestId,
+              mainNodeId: cmd.mainNodeId,
+              toPlayerId: cmd.fromPlayerId,
+              fromPlayerId: cmd.toPlayerId,
+              kind: cmd.kind,
+              status: "completed",
+              toolName: cmd.toolName,
+              ts: new Date().toISOString(),
+              result,
+            });
+          } catch (err) {
+            const message = err instanceof Error ? err.message : String(err);
+            await this.sendIntercomResponse({
+              requestId: cmd.requestId,
+              mainNodeId: cmd.mainNodeId,
+              toPlayerId: cmd.fromPlayerId,
+              fromPlayerId: cmd.toPlayerId,
+              kind: cmd.kind,
+              status: "failed",
+              toolName: cmd.toolName,
+              error: message,
+              ts: new Date().toISOString(),
+            });
+          }
+        }
+      } catch {
+        // stream ended or reconnect handled by eventsource-client
+      }
+    })();
+    return {
+      close: () => {
+        closeSource?.();
+        void task;
+      },
+    };
   }
 
   async registerMcp(options: { name: string; url?: string }): Promise<string> {

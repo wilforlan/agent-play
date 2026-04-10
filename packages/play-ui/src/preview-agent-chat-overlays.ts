@@ -4,10 +4,7 @@ import {
   applyAgentChatDisplayToLayer,
   getAgentChatDisplaySettings,
 } from "./preview-chat-settings.js";
-import {
-  mountAssistPanel,
-  type AssistToolDef,
-} from "./preview-assist-ui.js";
+import type { AssistToolDef } from "./preview-assist-ui.js";
 
 const AGENT_STYLE_ID = "agent-play-preview-agent-chat-overlay-styles";
 
@@ -113,11 +110,7 @@ export type AgentChatOverlaySnapshot = {
   }>;
 };
 
-export function createPreviewAgentChatOverlays(options: {
-  getSid: () => string | null;
-  apiBase: string;
-  reloadSnapshot: () => void | Promise<void>;
-}): {
+export function createPreviewAgentChatOverlays(): {
   root: HTMLElement;
   syncAgentIds: (ids: readonly string[]) => void;
   refreshPlayer: (agentId: string) => void;
@@ -134,22 +127,8 @@ export function createPreviewAgentChatOverlays(options: {
   applyAgentChatDisplayToLayer(layer, getAgentChatDisplaySettings());
 
   const byId = new Map<string, CardEntry>();
-  const assistById = new Map<
-    string,
-    ReturnType<typeof mountAssistPanel>
-  >();
-  const assistCountById = new Map<string, number>();
-
   const setAssistSnapshot = (snapshot: AgentChatOverlaySnapshot): void => {
-    assistCountById.clear();
-    for (const p of snapshot.agents) {
-      const n = p.assistTools?.length ?? 0;
-      assistCountById.set(p.agentId, n);
-      const h = assistById.get(p.agentId);
-      if (h !== undefined) {
-        h.setTools(p.assistTools ?? []);
-      }
-    }
+    void snapshot;
   };
 
   const syncAgentIds = (ids: readonly string[]): void => {
@@ -161,9 +140,6 @@ export function createPreviewAgentChatOverlays(options: {
           layer.removeChild(entry.card);
         }
         byId.delete(id);
-        assistById.get(id)?.destroy();
-        assistById.delete(id);
-        assistCountById.delete(id);
       }
     }
     for (const id of ids) {
@@ -176,15 +152,6 @@ export function createPreviewAgentChatOverlays(options: {
       card.appendChild(scroll);
       layer.appendChild(card);
       byId.set(id, { card, scroll });
-      const assist = mountAssistPanel({
-        card,
-        agentId: id,
-        getSid: options.getSid,
-        apiBase: options.apiBase,
-        reloadSnapshot: options.reloadSnapshot,
-      });
-      assistById.set(id, assist);
-      assist.setTools([]);
     }
   };
 
@@ -192,8 +159,7 @@ export function createPreviewAgentChatOverlays(options: {
     const entry = byId.get(agentId);
     if (entry === undefined) return;
     const rows = getChatLogLinesForAgent(agentId);
-    const assistN = assistCountById.get(agentId) ?? 0;
-    if (rows.length === 0 && assistN === 0) {
+    if (rows.length === 0) {
       entry.scroll.replaceChildren();
       entry.card.style.visibility = "hidden";
       return;

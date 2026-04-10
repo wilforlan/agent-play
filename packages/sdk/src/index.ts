@@ -80,6 +80,7 @@ export {
 export { langchainRegistration } from "./platforms/langchain.js";
 export {
   RemotePlayWorld,
+  type IntercomToolExecutor,
   type RemotePlayWorldConnectOptions,
   type RemotePlayWorldHold,
   type RemotePlayWorldNodeCredentials,

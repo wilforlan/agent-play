@@ -48,9 +48,15 @@ import {
   ensurePreviewSessionId,
   getPreviewSessionIdSync,
 } from "./preview-session-id.js";
+import { ensureHumanNodeOnboarding } from "./preview-human-onboarding.js";
+import {
+  clearHumanCredentials,
+  getMainNodeIdForIntercom,
+} from "./preview-human-credentials.js";
 import { createPreviewAgentChatOverlays } from "./preview-agent-chat-overlays.js";
 import { ensurePreviewChatStyles } from "./preview-chat-panel.js";
 import { createPreviewChatSettingsPanel } from "./preview-chat-settings-panel.js";
+import { createPreviewSessionInteractionPanel } from "./preview-session-interaction-panel.js";
 import { createPreviewSessionProfilePanel } from "./preview-session-profile-panel.js";
 import { createPreviewSessionToolsPanel } from "./preview-session-tools-panel.js";
 import {
@@ -113,6 +119,7 @@ const ORIGIN_X = 24;
 const WORLD_BOTTOM_MARGIN = 14;
 const WORLD_INTERACTION_SSE = "world:interaction";
 const WORLD_AGENT_SIGNAL_SSE = "world:agent_signal";
+const WORLD_INTERCOM_SSE = "world:intercom";
 const HUMAN_VIEWER_PLAYER_ID = "__human__";
 const MAX_PLAYER_CHAIN_FETCH_STEPS = 102;
 const HOME_STAND_EPS = 0.26;
@@ -323,7 +330,8 @@ const arrowKeys = {
 };
 
 let lastProximityPartnerId: string | null = null;
-let proximityHintEl: HTMLDivElement | null = null;
+let proximityPromptEl: HTMLDivElement | null = null;
+let proximityLegendEl: HTMLDivElement | null = null;
 
 const playerWorldPos = new Map<string, { x: number; y: number }>();
 const waypointQueues = new Map<string, Array<{ x: number; y: number }>>();
@@ -370,8 +378,8 @@ async function sendProximityAction(
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        fromViewerId: HUMAN_VIEWER_PLAYER_ID,
-        toAgentId,
+        fromPlayerId: HUMAN_VIEWER_PLAYER_ID,
+        toPlayerId: toAgentId,
         action,
       }),
     });
@@ -408,6 +416,13 @@ function onDocumentKeyDown(e: KeyboardEvent): void {
   const act = proximityKeyToAction(e.key);
   if (act === null) return;
   e.preventDefault();
+  if (act === "assist" || act === "chat") {
+    sessionInteractionPanel?.setContext(partner);
+    sessionInteractionPanel?.setMode(act);
+    if (mobileSidePanelControls?.isMobileViewport() === true) {
+      mobileSidePanelControls.openRightPanel();
+    }
+  }
   void sendProximityAction(partner, act);
 }
 
@@ -439,6 +454,12 @@ let refreshPreviewChat: () => void = () => {};
 
 let agentChatOverlays: ReturnType<typeof createPreviewAgentChatOverlays> | null =
   null;
+let sessionInteractionPanel:
+  | ReturnType<typeof createPreviewSessionInteractionPanel>
+  | null = null;
+let mobileSidePanelControls:
+  | ReturnType<typeof attachMobileSidePanelControls>
+  | null = null;
 
 let pixiHandle: PixiPreviewHandle | null = null;
 let sceneRootContainer: Container | null = null;
@@ -496,6 +517,14 @@ function hydrateChatFromSnapshot(s: Snapshot): void {
       assistTools: p.assistTools,
     })),
   });
+  sessionInteractionPanel?.setAgents(
+    rows.map((p) => ({
+      agentId: p.agentId,
+      name: p.name,
+      assistTools: p.assistTools,
+    }))
+  );
+  sessionInteractionPanel?.refresh();
   refreshPreviewChat();
 }
 
@@ -723,6 +752,16 @@ function connectSse(sid: string): void {
           : "";
     if (lineAgentId.length === 0) return;
     pushInteractionToChat(lineAgentId, data.role, data.text, data.seq);
+  });
+  es.addEventListener(WORLD_INTERCOM_SSE, (ev) => {
+    const raw = (ev as MessageEvent).data as string;
+    let data: unknown;
+    try {
+      data = JSON.parse(raw) as unknown;
+    } catch {
+      return;
+    }
+    sessionInteractionPanel?.applyIntercomEvent(data);
   });
 }
 
@@ -1124,7 +1163,7 @@ function onFrame(): void {
       snapshot === null
         ? id
         : listAgentRows(snapshot).find((pl) => pl.agentId === id)?.name ?? id;
-    v.nameTag.text = displayName.slice(0, 14);
+    v.nameTag.text = displayName;
     v.nameTag.position.set(-v.nameTag.width / 2, box * 0.45);
     if (getPreviewViewSettings().showChatUi) {
       const chatDisplay = getAgentChatDisplaySettings();
@@ -1157,12 +1196,27 @@ function onFrame(): void {
   } else {
     lastProximityPartnerId = null;
   }
-  if (proximityHintEl !== null) {
+  if (proximityLegendEl !== null) {
     if (lastProximityPartnerId !== null) {
-      proximityHintEl.textContent = `Near ${playerDisplayName(lastProximityPartnerId)}. A Assist · C Chat · Z Zone · Y Yield`;
-      proximityHintEl.style.display = "block";
+      proximityLegendEl.textContent = `Near ${playerDisplayName(lastProximityPartnerId)}. A: for assist · C: for chat · Z: for zone · Y: for yield`;
     } else {
-      proximityHintEl.style.display = "none";
+      proximityLegendEl.textContent =
+        "Near another player: A: for assist · C: for chat · Z: for zone · Y: for yield";
+    }
+  }
+  if (proximityPromptEl !== null) {
+    if (lastProximityPartnerId !== null) {
+      const pos = playerWorldPos.get(lastProximityPartnerId);
+      if (pos !== undefined) {
+        const { cx, cy } = getAgentHeroAnchorScreen(lastProximityPartnerId, pos, box);
+        proximityPromptEl.style.display = "block";
+        proximityPromptEl.style.left = `${cx}px`;
+        proximityPromptEl.style.top = `${cy - box * 1.35}px`;
+      } else {
+        proximityPromptEl.style.display = "none";
+      }
+    } else {
+      proximityPromptEl.style.display = "none";
     }
   }
   if (getPreviewViewSettings().debugMode) {
@@ -1179,6 +1233,10 @@ export function bootstrap(): void {
   previewBootstrapLock = (async () => {
     const sid = await ensurePreviewSessionId();
     if (!sid) return;
+    await ensureHumanNodeOnboarding({
+      apiBase: API_BASE,
+      getSid: () => sid,
+    });
     if (previewBootstrapStarted) return;
     previewBootstrapStarted = true;
     const theme = getActiveSceneTheme();
@@ -1190,10 +1248,6 @@ export function bootstrap(): void {
     const shell = document.createElement("div");
     shell.className = "preview-shell";
     mount.appendChild(shell);
-
-    proximityHintEl = document.createElement("div");
-    proximityHintEl.className = "preview-proximity-hint";
-    shell.appendChild(proximityHintEl);
 
     const gamePanel = document.createElement("div");
     gamePanel.className = "preview-game-panel";
@@ -1264,14 +1318,7 @@ export function bootstrap(): void {
     rightCol.className = "preview-game-col preview-game-col--right";
     rightCol.id = "preview-side-right";
 
-    agentChatOverlays = createPreviewAgentChatOverlays({
-      getSid,
-      apiBase: API_BASE,
-      reloadSnapshot: () => {
-        const sid = getSid();
-        if (sid !== null) void loadSnapshot(sid);
-      },
-    });
+    agentChatOverlays = createPreviewAgentChatOverlays();
     refreshPreviewChat = () => {
       agentChatOverlays?.refreshAll();
     };
@@ -1282,7 +1329,8 @@ export function bootstrap(): void {
     const proximityLegend = document.createElement("div");
     proximityLegend.className = "preview-proximity-legend";
     proximityLegend.textContent =
-      "Near another player: A Assist · C Chat · Z Zone · Y Yield";
+      "Near another player: A: for assist · C: for chat · Z: for zone · Y: for yield";
+    proximityLegendEl = proximityLegend;
 
     const chatPanel = createPreviewChatSettingsPanel({
       embeddedInToolbar: true,
@@ -1294,8 +1342,27 @@ export function bootstrap(): void {
     const sessionProfilePanel = createPreviewSessionProfilePanel({
       onProfileApplied: () => {},
     });
+    sessionInteractionPanel = createPreviewSessionInteractionPanel({
+      getSid,
+      apiBase: API_BASE,
+      getMainNodeId: getMainNodeIdForIntercom,
+      reloadSnapshot: () => {
+        const sid = getSid();
+        if (sid !== null) void loadSnapshot(sid);
+      },
+      onHumanNodeLifecycle: async (action) => {
+        if (action === "replace") {
+          clearHumanCredentials();
+        }
+        await ensureHumanNodeOnboarding({
+          apiBase: API_BASE,
+          getSid: () => sid,
+        });
+        sessionInteractionPanel?.refresh();
+      },
+    });
 
-    controlStack.append(proximityLegend);
+    controlStack.append(proximityLegend, sessionInteractionPanel.element);
     rightCol.appendChild(controlStack);
 
     canvasStage.append(leftCol, centerCol, rightCol);
@@ -1303,7 +1370,7 @@ export function bootstrap(): void {
     gamePanel.appendChild(gameRow);
     shell.appendChild(gamePanel);
 
-    attachMobileSidePanelControls({
+    mobileSidePanelControls = attachMobileSidePanelControls({
       shell,
       toggleLeft,
       toggleRight,
@@ -1341,6 +1408,10 @@ export function bootstrap(): void {
     handle.app.stage.addChild(agentsLayer);
 
     canvasHost.appendChild(agentChatOverlays.root);
+    proximityPromptEl = document.createElement("div");
+    proximityPromptEl.className = "preview-proximity-prompt";
+    proximityPromptEl.textContent = "A: for assist\nC: for chat";
+    canvasHost.appendChild(proximityPromptEl);
 
     joystickHandle = createPreviewDebugJoystick({ parent: joystickWrap });
 

@@ -10,6 +10,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./browser": {
+      "types": "./dist/browser.d.ts",
+      "import": "./dist/browser.js"
     }
   },
   "files": [
@@ -31,6 +35,7 @@
     "validate-node": "node ./scripts/validate-node-derivative.mjs"
   },
   "dependencies": {
+    "@noble/hashes": "^1.8.0",
     "ioredis": "^5.8.2"
   },
   "devDependencies": {

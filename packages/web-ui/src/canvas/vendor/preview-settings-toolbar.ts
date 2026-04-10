@@ -159,21 +159,19 @@ body > .preview-shell {
   border: 1px solid rgba(148, 163, 184, 0.35);
   background: rgba(15, 23, 42, 0.72);
 }
-.preview-proximity-hint {
+.preview-proximity-prompt {
   display: none;
-  position: fixed;
-  bottom: 132px;
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 40;
-  max-width: min(520px, 92vw);
-  padding: 8px 14px;
-  border-radius: 10px;
-  font: 600 12px/1.35 system-ui, sans-serif;
-  color: #f8fafc;
-  background: rgba(15, 23, 42, 0.92);
-  border: 1px solid rgba(148, 163, 184, 0.4);
+  position: absolute;
+  z-index: 15;
+  transform: translate(-50%, -100%);
+  white-space: pre;
   text-align: center;
+  font: 600 10px/1.25 system-ui, sans-serif;
+  color: #e2e8f0;
+  background: rgba(15, 23, 42, 0.9);
+  border: 1px solid rgba(148, 163, 184, 0.45);
+  border-radius: 8px;
+  padding: 5px 8px;
   pointer-events: none;
 }
 .preview-bottom-bar {
@@ -341,10 +339,8 @@ body > .preview-shell {
     pointer-events: auto;
     flex: 0 0 auto;
   }
-  .preview-proximity-hint {
-    bottom: max(200px, 22dvh);
-    font-size: 11px;
-    padding: 7px 12px;
+  .preview-proximity-legend {
+    display: none;
   }
   .preview-bottom-bar {
     flex-direction: column;

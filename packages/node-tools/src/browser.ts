@@ -1,0 +1,15 @@
+export {
+  NODE_TOOLS_VERSION,
+  ROOT_DERIVATION_DOMAIN_LABEL,
+  NODE_TOOLS_SCRYPT,
+  type NodeCredential,
+  deriveRootKeyFromSecret,
+  derivePasswordFromSecret,
+  deriveNodeIdFromPassword,
+  validateNodePassword,
+  hashNodePassword,
+  normalizeNodePassphrase,
+  nodeCredentialsMaterialFromHumanPassphrase,
+  createNodeCredentialFromPassw,
+  createNodeCredentialFromSecret,
+} from "./derivation.js";

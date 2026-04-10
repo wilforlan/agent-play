@@ -10,7 +10,12 @@ export function attachMobileSidePanelControls(options: {
   toggleLeft: HTMLButtonElement;
   toggleRight: HTMLButtonElement;
   backdrop: HTMLButtonElement;
-}): void {
+}): {
+  openRightPanel: () => void;
+  openLeftPanel: () => void;
+  closePanels: () => void;
+  isMobileViewport: () => boolean;
+} {
   let sideOpen: SidePanelOpen = "none";
   const mq = window.matchMedia(WIDE_SCREEN_QUERY);
 
@@ -66,4 +71,21 @@ export function attachMobileSidePanelControls(options: {
   });
 
   apply();
+  return {
+    openRightPanel: () => {
+      if (mq.matches) return;
+      sideOpen = "right";
+      apply();
+    },
+    openLeftPanel: () => {
+      if (mq.matches) return;
+      sideOpen = "left";
+      apply();
+    },
+    closePanels: () => {
+      sideOpen = "none";
+      apply();
+    },
+    isMobileViewport: () => !mq.matches,
+  };
 }

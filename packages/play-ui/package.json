@@ -27,6 +27,8 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@agent-play/intercom": "^1.0.0",
+    "@agent-play/node-tools": "^1.0.0",
     "@agent-play/sdk": "3.0.2",
     "dompurify": "^3.3.3",
     "marked": "^17.0.5",

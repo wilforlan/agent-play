@@ -1,26 +1,27 @@
-import { createHash, randomBytes, scryptSync } from "node:crypto";
+import { randomBytes } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import {
+  deriveRootKeyFromSecret,
+  validateNodePassword,
+} from "./derivation.js";
 import { WORDLIST } from "./wordlist.js";
 
-export const NODE_TOOLS_VERSION = 1 as const;
-export const ROOT_DERIVATION_DOMAIN_LABEL = "agent-play:merkle-root:v3:scrypt-file";
-export const NODE_TOOLS_SCRYPT = {
-  N: 65536,
-  r: 8,
-  p: 1,
-  maxmem: 128 * 1024 * 1024,
-  keylen: 32,
-} as const;
-
-export type NodeCredential = {
-  nodeId: string;
-  passw: string;
-};
-
-function hashLabel(label: string): Buffer {
-  return createHash("sha256").update(label, "utf8").digest();
-}
+export {
+  NODE_TOOLS_VERSION,
+  ROOT_DERIVATION_DOMAIN_LABEL,
+  NODE_TOOLS_SCRYPT,
+  type NodeCredential,
+  deriveRootKeyFromSecret,
+  derivePasswordFromSecret,
+  deriveNodeIdFromPassword,
+  validateNodePassword,
+  hashNodePassword,
+  normalizeNodePassphrase,
+  nodeCredentialsMaterialFromHumanPassphrase,
+  createNodeCredentialFromPassw,
+  createNodeCredentialFromSecret,
+} from "./derivation.js";
 
 export function loadRootKey(rootFilePath?: string): string {
   const path =
@@ -35,77 +36,7 @@ export function loadRootKey(rootFilePath?: string): string {
  */
 export function loadGenesisRootKeyFromBufferFile(bufferFilePath: string): string {
   const sourceMaterial = readFileSync(resolve(bufferFilePath));
-  return deriveRootKeyFromSecret(sourceMaterial);
-}
-
-export function deriveRootKeyFromSecret(secretMaterial: Buffer): string {
-  const dk = scryptSync(
-    secretMaterial,
-    hashLabel(ROOT_DERIVATION_DOMAIN_LABEL),
-    NODE_TOOLS_SCRYPT.keylen,
-    NODE_TOOLS_SCRYPT
-  );
-  return dk.toString("hex");
-}
-
-export function derivePasswordFromSecret(input: {
-  secretMaterial: Buffer;
-  rootKey: string;
-}): string {
-  const normalizedRootKey = input.rootKey.trim().toLowerCase();
-  const dk = scryptSync(
-    input.secretMaterial,
-    hashLabel(`agent-play:password:v1:${normalizedRootKey}`),
-    32,
-    NODE_TOOLS_SCRYPT
-  );
-  return dk.toString("hex");
-}
-
-export function deriveNodeIdFromPassword(input: {
-  password: string;
-  rootKey: string;
-}): string {
-  const normalizedRootKey = input.rootKey.trim().toLowerCase();
-  const dk = scryptSync(
-    Buffer.from(input.password, "utf8"),
-    hashLabel(`agent-play:node-id:v1:${normalizedRootKey}`),
-    32,
-    NODE_TOOLS_SCRYPT
-  );
-  return dk.toString("hex");
-}
-
-export function validateNodePassword(input: {
-  nodeId: string;
-  password: string;
-  rootKey: string;
-}): boolean {
-  const expected = deriveNodeIdFromPassword({
-    password: input.password,
-    rootKey: input.rootKey,
-  });
-  return expected === input.nodeId.trim().toLowerCase();
-}
-
-export function hashNodePassword(password: string): string {
-  return createHash("sha256")
-    .update(password.trim(), "utf8")
-    .digest("hex");
-}
-
-export function normalizeNodePassphrase(passw: string): string {
-  return passw.trim().replace(/\s+/g, " ");
-}
-
-/**
- * Derivation password material for Node ID v1 from the **human** passphrase stored in **`credentials.json`**:
- * normalize whitespace, then **`hashNodePassword`** (SHA-256 hex). Matches **`agent-play create-main-node`**.
- */
-export function nodeCredentialsMaterialFromHumanPassphrase(
-  humanPassphrase: string
-): string {
-  return hashNodePassword(normalizeNodePassphrase(humanPassphrase));
+  return deriveRootKeyFromSecret(new Uint8Array(sourceMaterial));
 }
 
 /**
@@ -116,7 +47,9 @@ export function validateNodeDerivativeFromGenesisSecret(input: {
   password: string;
   genesisSecretMaterial: Buffer;
 }): boolean {
-  const rootKey = deriveRootKeyFromSecret(input.genesisSecretMaterial);
+  const rootKey = deriveRootKeyFromSecret(
+    new Uint8Array(input.genesisSecretMaterial)
+  );
   return validateNodePassword({
     nodeId: input.nodeId,
     password: input.password,
@@ -143,32 +76,6 @@ export function validateNodeDerivativeFromBufferFile(input: {
 export function generateNodePassw(): string {
   const bytes = randomBytes(10);
   return Array.from(bytes, (b) => WORDLIST[b % WORDLIST.length] ?? "amber").join(" ");
-}
-
-export function createNodeCredentialFromPassw(input: {
-  passw: string;
-  rootKey: string;
-}): NodeCredential {
-  const normalized = normalizeNodePassphrase(input.passw);
-  const nodeId = deriveNodeIdFromPassword({
-    password: normalized,
-    rootKey: input.rootKey,
-  });
-  return { nodeId, passw: normalized };
-}
-
-export function createNodeCredentialFromSecret(input: {
-  secretMaterial: Buffer;
-  rootKey: string;
-}): NodeCredential {
-  const passw = derivePasswordFromSecret({
-    secretMaterial: input.secretMaterial,
-    rootKey: input.rootKey,
-  });
-  return {
-    nodeId: deriveNodeIdFromPassword({ password: passw, rootKey: input.rootKey }),
-    passw,
-  };
 }
 
 export {
