@@ -172,6 +172,54 @@ export type PlayWorldOptions = {
 
 export const HUMAN_VIEWER_PLAYER_ID = "__human__";
 
+type OccupantRefIndexValue =
+  | PreviewWorldMapHumanOccupantJson
+  | PreviewWorldMapAgentOccupantJson
+  | PreviewWorldMapMcpOccupantJson;
+
+function buildOccupantRefIndex(
+  snap: PreviewSnapshotJson
+): Map<string, OccupantRefIndexValue> {
+  const byRef = new Map<string, OccupantRefIndexValue>();
+  for (const occ of snap.worldMap.occupants) {
+    if (occ.kind === "human") {
+      byRef.set(`human:${occ.id}`, occ);
+    } else if (occ.kind === "agent") {
+      byRef.set(`agent:${occ.agentId}`, occ);
+    } else {
+      byRef.set(`mcp:${occ.id}`, occ);
+    }
+  }
+  return byRef;
+}
+
+function resolveProximityFromPlayerRef(
+  fromRaw: string,
+  options: {
+    byRef: Map<string, OccupantRefIndexValue>;
+    snapshotMainNodeId: string | null;
+    chainGenesisHumanId: string;
+  }
+): string {
+  if (fromRaw.startsWith("human:") || fromRaw.startsWith("agent:")) {
+    return fromRaw;
+  }
+  const { byRef, snapshotMainNodeId, chainGenesisHumanId } = options;
+  if (fromRaw === HUMAN_VIEWER_PLAYER_ID) {
+    return `human:${HUMAN_VIEWER_PLAYER_ID}`;
+  }
+  if (byRef.has(`human:${fromRaw}`)) {
+    return `human:${fromRaw}`;
+  }
+  if (snapshotMainNodeId !== null && fromRaw === snapshotMainNodeId) {
+    return `human:${fromRaw}`;
+  }
+  if (fromRaw === chainGenesisHumanId) {
+    return `human:${fromRaw}`;
+  }
+  return `agent:${fromRaw}`;
+}
+
 export const MAX_WORLD_OCCUPANTS = 100;
 const PRESENCE_LEASE_TTL_SECONDS_DEFAULT = 45;
 const PRESENCE_SWEEP_INTERVAL_MS = 5_000;
@@ -329,25 +377,32 @@ export class PlayWorld {
     return raw;
   }
 
+  /**
+   * Maps a raw proximity actor id to a stable ref: `human:…` or `agent:…`.
+   * Used by the proximity-action API before {@link recordProximityAction}.
+   */
+  async normalizeProximityFromPlayerId(fromPlayerId: string): Promise<string> {
+    const trimmed = fromPlayerId.trim();
+    const snap = await this.getSnapshotJson();
+    const byRef = buildOccupantRefIndex(snap);
+    const snapshotMainNodeId =
+      typeof snap.mainNodeId === "string" && snap.mainNodeId.trim().length > 0
+        ? snap.mainNodeId.trim()
+        : null;
+    const chainGenesisHumanId =
+      this.mainNodeId ?? this.sessionStore.playerChainGenesis;
+    return resolveProximityFromPlayerRef(trimmed, {
+      byRef,
+      snapshotMainNodeId,
+      chainGenesisHumanId,
+    });
+  }
+
   async recordProximityAction(
     input: RecordProximityActionInput
   ): Promise<void> {
     const snap = await this.getSnapshotJson();
-    const byRef = new Map<
-      string,
-      | PreviewWorldMapHumanOccupantJson
-      | PreviewWorldMapAgentOccupantJson
-      | PreviewWorldMapMcpOccupantJson
-    >();
-    for (const occ of snap.worldMap.occupants) {
-      if (occ.kind === "human") {
-        byRef.set(`human:${occ.id}`, occ);
-      } else if (occ.kind === "agent") {
-        byRef.set(`agent:${occ.agentId}`, occ);
-      } else {
-        byRef.set(`mcp:${occ.id}`, occ);
-      }
-    }
+    const byRef = buildOccupantRefIndex(snap);
     const snapshotMainNodeId =
       typeof snap.mainNodeId === "string" && snap.mainNodeId.trim().length > 0
         ? snap.mainNodeId.trim()
@@ -355,18 +410,11 @@ export class PlayWorld {
     const chainGenesisHumanId =
       this.mainNodeId ?? this.sessionStore.playerChainGenesis;
     const fromRaw = input.fromPlayerId;
-    const fromRef =
-      fromRaw.startsWith("human:")
-        ? fromRaw
-        : fromRaw === HUMAN_VIEWER_PLAYER_ID
-          ? `human:${HUMAN_VIEWER_PLAYER_ID}`
-          : byRef.has(`human:${fromRaw}`)
-            ? `human:${fromRaw}`
-            : snapshotMainNodeId !== null && fromRaw === snapshotMainNodeId
-              ? `human:${fromRaw}`
-              : fromRaw === chainGenesisHumanId
-                ? `human:${fromRaw}`
-                : `agent:${fromRaw}`;
+    const fromRef = resolveProximityFromPlayerRef(fromRaw, {
+      byRef,
+      snapshotMainNodeId,
+      chainGenesisHumanId,
+    });
     const toRef = input.toPlayerId.includes(":")
       ? input.toPlayerId
       : `agent:${input.toPlayerId}`;
@@ -470,11 +518,11 @@ export class PlayWorld {
       const sig: WorldAgentSignalPayload = {
         playerId: toOcc.agentId,
         kind: input.action,
-        data: { fromPlayerId: input.fromPlayerId },
+        data: { fromPlayerId: fromRef },
       };
       this.emitAgentSignal(toOcc.agentId, {
         kind: input.action,
-        data: { fromPlayerId: input.fromPlayerId },
+        data: { fromPlayerId: fromRef },
       });
       const rev = await this.sessionStore.getSnapshotRev();
       await this.sessionStore.publishWorldFanout(rev, WORLD_AGENT_SIGNAL_EVENT, sig);

@@ -50,9 +50,12 @@ export async function POST(req: NextRequest) {
     return Response.json({ error: "invalid action" }, { status: 400 });
   }
   try {
+    const fromPlayerId = await world.normalizeProximityFromPlayerId(
+      body.fromPlayerId
+    );
     await world.recordProximityAction({
-      fromPlayerId: body.fromPlayerId,
-      toPlayerId: body.toPlayerId,
+      fromPlayerId,
+      toPlayerId: body.toPlayerId.trim(),
       action,
     });
   } catch (err) {

@@ -43,6 +43,38 @@ describe("PlayWorld proximity policy", () => {
     ).resolves.toBeUndefined();
   });
 
+  it("normalizeProximityFromPlayerId maps main node id to human: ref", async () => {
+    const genesis = "main-node-test-abc";
+    const store = new TestSessionStore({ playerChainGenesis: genesis });
+    const w = new PlayWorld({ sessionStore: store });
+    await w.start();
+    await expect(w.normalizeProximityFromPlayerId(genesis)).resolves.toBe(
+      `human:${genesis}`
+    );
+    await expect(w.normalizeProximityFromPlayerId(`  ${genesis}  `)).resolves.toBe(
+      `human:${genesis}`
+    );
+  });
+
+  it("normalizeProximityFromPlayerId maps bare agent id to agent: ref", async () => {
+    const w = new PlayWorld({ sessionStore: new TestSessionStore() });
+    await w.start();
+    await expect(
+      w.normalizeProximityFromPlayerId("registered-agent-99")
+    ).resolves.toBe("agent:registered-agent-99");
+  });
+
+  it("normalizeProximityFromPlayerId passes through human: and agent: refs", async () => {
+    const w = new PlayWorld({ sessionStore: new TestSessionStore() });
+    await w.start();
+    await expect(
+      w.normalizeProximityFromPlayerId("human:__human__")
+    ).resolves.toBe("human:__human__");
+    await expect(
+      w.normalizeProximityFromPlayerId("agent:some-id")
+    ).resolves.toBe("agent:some-id");
+  });
+
   it("accepts onboarded snapshot mainNodeId when it differs from player-chain genesis", async () => {
     const genesis = "short-genesis-id";
     const onboardedMain =
