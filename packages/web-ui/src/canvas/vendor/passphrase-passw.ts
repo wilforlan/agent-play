@@ -28,7 +28,7 @@ export function generateNodePassphraseWordCount(wordCount: number): string {
   const parts: string[] = [];
   for (let i = 0; i < wordCount; i += 1) {
     const bucket = BUCKETS[i % BUCKETS.length];
-    if (bucket.length === 0) {
+    if (bucket.length <= 0) {
       throw new Error("passphrase word bucket is empty");
     }
     const idx = secureRandomUintBelow(bucket.length);
