@@ -94,6 +94,20 @@ export function hashNodePassword(password: string): string {
     .digest("hex");
 }
 
+export function normalizeNodePassphrase(passw: string): string {
+  return passw.trim().replace(/\s+/g, " ");
+}
+
+/**
+ * Derivation password material for Node ID v1 from the **human** passphrase stored in **`credentials.json`**:
+ * normalize whitespace, then **`hashNodePassword`** (SHA-256 hex). Matches **`agent-play create-main-node`**.
+ */
+export function nodeCredentialsMaterialFromHumanPassphrase(
+  humanPassphrase: string
+): string {
+  return hashNodePassword(normalizeNodePassphrase(humanPassphrase));
+}
+
 /**
  * @deprecated Use rootKey-explicit validation with `validateNodePassword`.
  */
@@ -135,7 +149,7 @@ export function createNodeCredentialFromPassw(input: {
   passw: string;
   rootKey: string;
 }): NodeCredential {
-  const normalized = input.passw.trim().replace(/\s+/g, " ");
+  const normalized = normalizeNodePassphrase(input.passw);
   const nodeId = deriveNodeIdFromPassword({
     password: normalized,
     rootKey: input.rootKey,
@@ -156,3 +170,12 @@ export function createNodeCredentialFromSecret(input: {
     passw,
   };
 }
+
+export {
+  type AgentPlayAgentNodeEntry,
+  type AgentPlayCredentialsFile,
+  loadAgentPlayCredentialsFileFromPath,
+  loadAgentPlayCredentialsFileFromPathSync,
+  parseAgentPlayCredentialsJson,
+  resolveAgentPlayCredentialsPath,
+} from "./agent-play-credentials.js";

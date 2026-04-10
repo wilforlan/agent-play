@@ -5,6 +5,9 @@ import {
   deriveNodeIdFromPassword,
   derivePasswordFromSecret,
   generateNodePassw,
+  hashNodePassword,
+  nodeCredentialsMaterialFromHumanPassphrase,
+  normalizeNodePassphrase,
   validateNodePassword,
 } from "./index.js";
 import { WORDLIST } from "./wordlist.js";
@@ -67,6 +70,28 @@ describe("@agent-play/node-tools", () => {
   it("uses separate word list with 3000 entries", () => {
     expect(WORDLIST.length).toBe(3000);
     expect(new Set(WORDLIST).size).toBe(3000);
+  });
+
+  it("nodeCredentialsMaterialFromHumanPassphrase matches hashNodePassword on normalized phrase", () => {
+    const human = "  word1   word2  ";
+    const material = nodeCredentialsMaterialFromHumanPassphrase(human);
+    expect(material).toBe(
+      hashNodePassword(normalizeNodePassphrase(human))
+    );
+  });
+
+  it("deriveNodeIdFromPassword with material matches create-main-node style bootstrap", () => {
+    const generatedPassw = generateNodePassw();
+    const hashedPassw = hashNodePassword(generatedPassw);
+    const fromBootstrap = deriveNodeIdFromPassword({
+      password: hashedPassw,
+      rootKey,
+    });
+    const fromSdkHelper = deriveNodeIdFromPassword({
+      password: nodeCredentialsMaterialFromHumanPassphrase(generatedPassw),
+      rootKey,
+    });
+    expect(fromSdkHelper).toBe(fromBootstrap);
   });
 
 });

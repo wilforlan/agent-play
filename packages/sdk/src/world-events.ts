@@ -3,10 +3,33 @@
  *
  * @remarks **Emitters:** server `PlayWorld` and Redis fanout. **Consumers:** watch UI `EventSource`,
  * integration tests, and any host that forwards `POST` events.
+ *
+ * **Session vs world:** names prefixed with **`session:`** concern the HTTP/SDK session (`sid`) and
+ * transport; names prefixed with **`world:`** concern occupants, chat, and map-visible state.
  */
 import type { WorldInteractionRole } from "./public-types.js";
 
-/** Fired when `addPlayer` completes; payload includes snapshot row for the new player. */
+/** After `RemotePlayWorld.connect()` assigns a `sid` (and optional detail such as `sid`). */
+export const SESSION_CONNECTED_EVENT = "session:connected";
+
+/** RPC or transport rejected the session (e.g. 401/403); optional `detail.status`. */
+export const SESSION_INVALID_EVENT = "session:invalid";
+
+/** After `RemotePlayWorld.close()` completes teardown. */
+export const SESSION_CLOSED_EVENT = "session:closed";
+
+/** SSE subscription opened (optional; emitted when wired). */
+export const SESSION_SSE_OPEN_EVENT = "session:sse_open";
+
+/** SSE subscription error (optional; emitted when wired). */
+export const SESSION_SSE_ERROR_EVENT = "session:sse_error";
+
+export type RemotePlayWorldSessionEvent = {
+  name: string;
+  detail?: Record<string, unknown>;
+};
+
+/** Fired when `addAgent` / `addPlayer` completes; payload includes snapshot row for the new player. */
 export const PLAYER_ADDED_EVENT = "world:player_added";
 
 /** Fired for each new chat/interaction line. */

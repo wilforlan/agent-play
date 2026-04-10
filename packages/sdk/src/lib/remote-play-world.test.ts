@@ -1,15 +1,23 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { RemotePlayWorld } from "./remote-play-world.js";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+  RemotePlayWorld,
+  type RemotePlayWorldNodeCredentials,
+} from "./remote-play-world.js";
+import {
+  SESSION_CLOSED_EVENT,
+  SESSION_CONNECTED_EVENT,
+} from "../world-events.js";
+import {
   deriveNodeIdFromPassword,
-  derivePasswordFromSecret,
+  nodeCredentialsMaterialFromHumanPassphrase,
 } from "@agent-play/node-tools";
 
 const BASE_URL = "http://127.0.0.1:3000";
 const SESSION_URL = `${BASE_URL}/api/agent-play/session`;
+const VALIDATE_URL = `${BASE_URL}/api/nodes/validate`;
 const DEFAULT_NODE_ID = "n1";
 
 function sessionResponse(): Response {
@@ -20,22 +28,30 @@ function notFound(): Response {
   return new Response("not found", { status: 404 });
 }
 
-function setupSecretFiles(secretText: string): { secretPath: string; rootPath: string } {
-  const dir = mkdtempSync(join(tmpdir(), "agent-play-sdk-"));
-  const secretPath = join(dir, "buffer.txt");
-  const rootPath = join(dir, ".root");
-  writeFileSync(secretPath, Buffer.from(secretText, "utf8"));
-  writeFileSync(rootPath, `${DEFAULT_NODE_ID}\n`, "utf8");
-  return { secretPath, rootPath };
+function nodeCredentialsFromHumanPhrase(human: string): RemotePlayWorldNodeCredentials {
+  return {
+    rootKey: DEFAULT_NODE_ID,
+    passw: human,
+  };
 }
 
-function playWorld(secretText: string = "k"): RemotePlayWorld {
-  const { secretPath, rootPath } = setupSecretFiles(secretText);
+function playWorld(humanPassphrase: string = "k"): RemotePlayWorld {
   return new RemotePlayWorld({
     baseUrl: BASE_URL,
-    secretFilePath: secretPath,
-    rootFilePath: rootPath,
+    nodeCredentials: nodeCredentialsFromHumanPhrase(humanPassphrase),
   });
+}
+
+function expectedNodeAuthHeaders(humanPassphrase: string): Record<string, string> {
+  const material = nodeCredentialsMaterialFromHumanPassphrase(humanPassphrase);
+  const nodeId = deriveNodeIdFromPassword({
+    password: material,
+    rootKey: DEFAULT_NODE_ID,
+  });
+  return {
+    "x-node-id": nodeId,
+    "x-node-passw": material,
+  };
 }
 
 function sampleRegisteredAgent(agentId: string, name: string) {
@@ -55,20 +71,174 @@ describe("RemotePlayWorld", () => {
     vi.restoreAllMocks();
   });
 
-  it("throws when secret file path is missing", () => {
-    expect(() => new RemotePlayWorld({ baseUrl: BASE_URL, secretFilePath: "" })).toThrow(
-      /secretFilePath/
+  it("throws when nodeCredentials is missing", () => {
+    const prevPath = process.env.AGENT_PLAY_CREDENTIALS_PATH;
+    process.env.AGENT_PLAY_CREDENTIALS_PATH = join(
+      tmpdir(),
+      "missing-agent-play-credentials.json"
+    );
+    try {
+      expect(() => new RemotePlayWorld({ baseUrl: BASE_URL })).toThrow(/nodeCredentials/);
+    } finally {
+      if (prevPath === undefined) {
+        delete process.env.AGENT_PLAY_CREDENTIALS_PATH;
+      } else {
+        process.env.AGENT_PLAY_CREDENTIALS_PATH = prevPath;
+      }
+    }
+  });
+
+  it("loads baseUrl and node credentials from credentials.json when options are empty", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "agent-play-sdk-cred-"));
+    const rootKey = DEFAULT_NODE_ID;
+    const humanPassw = "amber angle apple arch atlas aura autumn bamboo beacon birch blossom";
+    const material = nodeCredentialsMaterialFromHumanPassphrase(humanPassw);
+    const nodeId = deriveNodeIdFromPassword({ password: material, rootKey });
+    const credentialsPath = join(dir, "credentials.json");
+    writeFileSync(join(dir, ".root"), `${rootKey}\n`, "utf8");
+    writeFileSync(
+      credentialsPath,
+      JSON.stringify({
+        serverUrl: BASE_URL,
+        nodeId,
+        passw: humanPassw,
+      }),
+      "utf8"
+    );
+    const prevPath = process.env.AGENT_PLAY_CREDENTIALS_PATH;
+    const prevCwd = process.cwd();
+    process.env.AGENT_PLAY_CREDENTIALS_PATH = credentialsPath;
+    process.chdir(dir);
+    try {
+      const fetchMock = vi.fn(async (url: string | URL) => {
+        const u = String(url);
+        if (u.endsWith("/api/agent-play/session")) {
+          return sessionResponse();
+        }
+        return notFound();
+      });
+      vi.stubGlobal("fetch", fetchMock);
+      const world = new RemotePlayWorld({});
+      await world.connect();
+      expect(fetchMock).toHaveBeenCalledWith(
+        SESSION_URL,
+        expect.objectContaining({ headers: expectedNodeAuthHeaders(humanPassw) })
+      );
+      await world.close();
+    } finally {
+      process.chdir(prevCwd);
+      if (prevPath === undefined) {
+        delete process.env.AGENT_PLAY_CREDENTIALS_PATH;
+      } else {
+        process.env.AGENT_PLAY_CREDENTIALS_PATH = prevPath;
+      }
+    }
+  });
+
+  it("connect validates then uses GET session when mainNodeId is provided", async () => {
+    const infoSpy = vi.spyOn(console, "info").mockImplementation(() => {});
+    const material = nodeCredentialsMaterialFromHumanPassphrase("key");
+    const derivedNodeId = deriveNodeIdFromPassword({
+      password: material,
+      rootKey: DEFAULT_NODE_ID,
+    });
+    const mainParentId = "main-account-node-1";
+    const fetchMock = vi.fn(async (url: string | URL, init?: RequestInit) => {
+      const u = String(url);
+      if (u.endsWith("/api/nodes/validate") && init?.method === "POST") {
+        const headers = init.headers as Record<string, string>;
+        expect(headers["x-node-id"]).toBe(derivedNodeId);
+        expect(headers["x-node-passw"]).toBe(material);
+        const body = JSON.parse(String(init.body)) as {
+          nodeId?: string;
+          rootKey?: string;
+          mainNodeId?: string;
+        };
+        expect(body.nodeId).toBe(derivedNodeId);
+        expect(body.rootKey).toBe(DEFAULT_NODE_ID);
+        expect(body.mainNodeId).toBe(mainParentId);
+        return new Response(JSON.stringify({ ok: true, nodeKind: "agent" }), { status: 200 });
+      }
+      if (u.endsWith("/api/agent-play/session")) {
+        return sessionResponse();
+      }
+      return notFound();
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const world = playWorld("key");
+    await world.connect({ mainNodeId: mainParentId });
+    expect(world.getSessionId()).toBe("sid-1");
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(VALIDATE_URL);
+    expect(fetchMock.mock.calls[1]?.[0]).toBe(SESSION_URL);
+    expect(infoSpy).toHaveBeenCalledWith(
+      "[agent-play] Node identity validated (agent)."
+    );
+    infoSpy.mockRestore();
+    await world.close();
+  });
+
+  it("connect uses world session when mainNodeId is omitted", async () => {
+    const fetchMock = vi.fn(async (url: string | URL) => {
+      const u = String(url);
+      if (u.endsWith("/api/agent-play/session")) {
+        return sessionResponse();
+      }
+      return notFound();
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const world = playWorld("key");
+    await world.connect();
+    expect(world.getSessionId()).toBe("sid-1");
+    expect(fetchMock).toHaveBeenCalledWith(
+      SESSION_URL,
+      expect.objectContaining({ headers: expectedNodeAuthHeaders("key") })
+    );
+    const validateCalls = fetchMock.mock.calls.filter((c) =>
+      String(c[0]).includes("/api/nodes/validate")
+    );
+    expect(validateCalls.length).toBe(0);
+    await world.close();
+  });
+
+  it("connect throws when node validation fails with mainNodeId", async () => {
+    const fetchMock = vi.fn(async (url: string | URL, init?: RequestInit) => {
+      const u = String(url);
+      if (u.endsWith("/api/nodes/validate") && init?.method === "POST") {
+        return new Response(
+          JSON.stringify({ ok: false, reason: "agent parent mismatch" }),
+          { status: 400 }
+        );
+      }
+      return notFound();
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const world = playWorld("key");
+    await expect(world.connect({ mainNodeId: "wrong-main" })).rejects.toThrow(
+      /agent parent mismatch/
     );
   });
 
-  it("loads node/password from secret file and root key", () => {
-    const { secretPath, rootPath } = setupSecretFiles("amber angle apple");
+  it("emits session connected then session closed when onSessionEvent is set", async () => {
+    const events: string[] = [];
+    const fetchMock = vi.fn(async (url: string | URL) => {
+      const u = String(url);
+      if (u.endsWith("/api/agent-play/session")) {
+        return sessionResponse();
+      }
+      return notFound();
+    });
+    vi.stubGlobal("fetch", fetchMock);
     const world = new RemotePlayWorld({
       baseUrl: BASE_URL,
-      secretFilePath: secretPath,
-      rootFilePath: rootPath,
+      nodeCredentials: nodeCredentialsFromHumanPhrase("k"),
+      onSessionEvent: (e) => {
+        events.push(e.name);
+      },
     });
-    expect(world).toBeInstanceOf(RemotePlayWorld);
+    await world.connect();
+    await world.close();
+    expect(events).toEqual([SESSION_CONNECTED_EVENT, SESSION_CLOSED_EVENT]);
   });
 
   it("connect reads session sid from the web UI", async () => {
@@ -86,17 +256,35 @@ describe("RemotePlayWorld", () => {
     expect(world.getSessionId()).toBe("sid-1");
     expect(fetchMock).toHaveBeenCalledWith(
       SESSION_URL,
-      expect.objectContaining({ headers: {} })
+      expect.objectContaining({ headers: expectedNodeAuthHeaders("k") })
     );
     await world.close();
   });
 
-  it("addPlayer posts to players route with sid and world password", async () => {
+  it("addAgent posts nodeId as agentId to players route with sid and world password", async () => {
     const fetchMock = vi.fn(
       async (url: string | URL, init?: RequestInit) => {
         const u = String(url);
         if (u.endsWith("/api/agent-play/session")) {
           return sessionResponse();
+        }
+        if (u.endsWith("/api/nodes/validate") && init?.method === "POST") {
+          const body = JSON.parse(String(init.body)) as {
+            nodeId?: string;
+            rootKey?: string;
+            mainNodeId?: string;
+          };
+          expect(body.nodeId).toBe("aid-1");
+          expect(body.rootKey).toBe(DEFAULT_NODE_ID);
+          expect(body.mainNodeId).toBe(
+            deriveNodeIdFromPassword({
+              password: nodeCredentialsMaterialFromHumanPassphrase("key"),
+              rootKey: DEFAULT_NODE_ID,
+            })
+          );
+          return new Response(JSON.stringify({ ok: true, nodeKind: "agent" }), {
+            status: 200,
+          });
         }
         if (u.includes("/api/agent-play/players") && init?.method === "POST") {
           const body = JSON.parse(String(init.body)) as {
@@ -104,14 +292,11 @@ describe("RemotePlayWorld", () => {
             mainNodeId?: string;
             agentId?: string;
           };
-          const derivedPassword = derivePasswordFromSecret({
-            secretMaterial: Buffer.from("key", "utf8"),
-            rootKey: DEFAULT_NODE_ID,
-          });
-          expect(body.password).toBe(derivedPassword);
+          const material = nodeCredentialsMaterialFromHumanPassphrase("key");
+          expect(body.password).toBe(material);
           expect(body.mainNodeId).toBe(
             deriveNodeIdFromPassword({
-              password: derivedPassword,
+              password: material,
               rootKey: DEFAULT_NODE_ID,
             })
           );
@@ -132,15 +317,90 @@ describe("RemotePlayWorld", () => {
 
     const world = playWorld("key");
     await world.connect();
-    const player = await world.addPlayer({
+    const player = await world.addAgent({
       name: "a",
       type: "langchain",
       agent: { type: "langchain", toolNames: ["chat_tool"] },
-      agentId: "aid-1",
+      nodeId: "aid-1",
     });
     expect(player.id).toBe("p1");
     expect(player.previewUrl).toBe(`${BASE_URL}/agent-play/watch`);
     expect(player.registeredAgent.agentId).toBe("aid-1");
+    await world.close();
+  });
+
+  it("addAgent throws when agent node validation fails", async () => {
+    const fetchMock = vi.fn(async (url: string | URL, init?: RequestInit) => {
+      const u = String(url);
+      if (u.endsWith("/api/agent-play/session")) {
+        return sessionResponse();
+      }
+      if (u.endsWith("/api/nodes/validate") && init?.method === "POST") {
+        return new Response(
+          JSON.stringify({ ok: false, reason: "unknown node id" }),
+          { status: 400 }
+        );
+      }
+      return notFound();
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const world = playWorld("key");
+    await world.connect();
+    await expect(
+      world.addAgent({
+        name: "a",
+        type: "langchain",
+        agent: { type: "langchain", toolNames: ["chat_tool"] },
+        nodeId: "aid-missing",
+      })
+    ).rejects.toThrow(/unknown node id/);
+    const playerCalls = fetchMock.mock.calls.filter((c) =>
+      String(c[0]).includes("/api/agent-play/players")
+    );
+    expect(playerCalls).toHaveLength(0);
+    await world.close();
+  });
+
+  it("addAgent ignores input.mainNodeId and always uses derived node id", async () => {
+    const fetchMock = vi.fn(async (url: string | URL, init?: RequestInit) => {
+      const u = String(url);
+      if (u.endsWith("/api/agent-play/session")) {
+        return sessionResponse();
+      }
+      if (u.endsWith("/api/nodes/validate") && init?.method === "POST") {
+        const body = JSON.parse(String(init.body)) as { mainNodeId?: string };
+        expect(body.mainNodeId).toBe(
+          deriveNodeIdFromPassword({
+            password: nodeCredentialsMaterialFromHumanPassphrase("key"),
+            rootKey: DEFAULT_NODE_ID,
+          })
+        );
+        return new Response(JSON.stringify({ ok: true, nodeKind: "agent" }), {
+          status: 200,
+        });
+      }
+      if (u.includes("/api/agent-play/players") && init?.method === "POST") {
+        return new Response(
+          JSON.stringify({
+            playerId: "p1",
+            previewUrl: `${BASE_URL}/agent-play/watch`,
+            registeredAgent: sampleRegisteredAgent("aid-1", "a"),
+          }),
+          { status: 200 }
+        );
+      }
+      return notFound();
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const world = playWorld("key");
+    await world.connect();
+    await world.addAgent({
+      name: "a",
+      type: "langchain",
+      agent: { type: "langchain", toolNames: ["chat_tool"] },
+      nodeId: "aid-1",
+      mainNodeId: "should-be-ignored",
+    });
     await world.close();
   });
 

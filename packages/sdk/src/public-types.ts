@@ -8,7 +8,7 @@ export type WorldInteractionRole = "user" | "assistant" | "tool";
 /**
  * Payload for {@link import("./lib/remote-play-world.js").RemotePlayWorld.recordInteraction}.
  *
- * @property playerId - Player id returned from `addPlayer`.
+ * @property playerId - Player id returned from `addAgent` / `addPlayer`.
  * @property role - Who "spoke" the line.
  * @property text - Plain text; may be truncated for display server-side.
  */
@@ -30,7 +30,7 @@ export type AssistToolSpec = {
 };
 
 /**
- * Serializable shape returned by {@link import("./platforms/langchain.js").langchainRegistration} for `addPlayer`.
+ * Serializable shape returned by {@link import("./platforms/langchain.js").langchainRegistration} for agent registration.
  *
  * @property type - Always `"langchain"` for this adapter.
  * @property toolNames - All tool names from the agent (must include `chat_tool`).
@@ -51,7 +51,7 @@ export type PlayAgentInformation = {
   updatedAt: Date;
 };
 
-/** Input fields for `addPlayer` before `agent` is attached. */
+/** Input fields for {@link AddAgentInput} / {@link AddPlayerInput} before `agent` is attached. */
 export type PlatformAgentInformation = {
   name: string;
   type: string;
@@ -61,7 +61,28 @@ export type PlatformAgentInformation = {
 };
 
 /**
+ * Register an automation agent in the world, tied to **agent node identity**.
+ *
+ * Use **`langchainRegistration(agent)`** for `agent` (requires a **`chat_tool`** tool; `assist_*`
+ * tools are indexed for the watch UI).
+ *
+ * **`nodeId`** is the **agent node id** (from **`agent-play create`** when the server uses a repository).
+ * It is sent on the wire as `agentId` for server compatibility; treating it as a node id makes the
+ * contract explicit for billing, validation, and event attribution.
+ */
+export type AddAgentInput = PlatformAgentInformation & {
+  /** Registration from {@link import("./platforms/langchain.js").langchainRegistration}. */
+  agent: LangChainAgentRegistration;
+  /** Main node id that owns the agent (required on repository-backed servers). */
+  mainNodeId?: string;
+  /** Agent node id — same value the server stores as registered `agentId`. */
+  nodeId: string;
+};
+
+/**
  * Register a player (agent) in the world.
+ *
+ * @deprecated Prefer {@link AddAgentInput} and `RemotePlayWorld.prototype.addAgent` for SDK and automation; use `nodeId` there instead of `agentId`.
  *
  * Use **`langchainRegistration(agent)`** for `agent` (requires a **`chat_tool`** tool; `assist_*`
  * tools are indexed for the watch UI).
@@ -91,7 +112,7 @@ export type YieldEventInfo = {
   at: string;
 };
 
-/** Repository-backed summary returned with `addPlayer` when the agent is (or maps to) a stored registration. */
+/** Repository-backed summary returned with `addAgent` when the agent is (or maps to) a stored registration. */
 export type RegisteredAgentSummary = {
   agentId: string;
   name: string;
@@ -101,7 +122,7 @@ export type RegisteredAgentSummary = {
   flagged: boolean;
 };
 
-/** Result of `addPlayer` including watch URL and registered-agent metadata from the server. */
+/** Result of `addAgent` / `addPlayer` including watch URL and registered-agent metadata from the server. */
 export type RegisteredPlayer = PlayAgentInformation & {
   previewUrl: string;
   registeredAgent: RegisteredAgentSummary;

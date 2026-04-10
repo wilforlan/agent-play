@@ -216,12 +216,23 @@ export class PlayWorld {
     }
   }
 
-  isSessionSid(sid: string): boolean {
+  async isSessionSid(sid: string): Promise<boolean> {
+    const trimmed = sid.trim();
+    if (trimmed.length === 0) {
+      return false;
+    }
     try {
-      return sid.trim() === this.sessionStore.getSessionId();
+      if (trimmed === this.sessionStore.getSessionId()) {
+        return true;
+      }
     } catch {
       return false;
     }
+    if (this.repository === null) {
+      return false;
+    }
+    const node = await this.repository.getNode(trimmed);
+    return node !== null && node.kind === "agent";
   }
 
   private metadataFanout(): RedisFanoutItem[] {

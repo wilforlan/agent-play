@@ -21,7 +21,7 @@ describe("PlayWorld resetSession", () => {
     ).toBeGreaterThan(0);
     const after = await w.resetSession();
     expect(after).not.toBe(before);
-    expect(w.isSessionSid(after)).toBe(true);
+    expect(await w.isSessionSid(after)).toBe(true);
     expect(
       (await w.getSnapshotJson()).worldMap.occupants.filter(
         (o) => o.kind === "agent"

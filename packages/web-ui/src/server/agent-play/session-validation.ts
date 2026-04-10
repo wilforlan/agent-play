@@ -1,5 +1,5 @@
 import { agentPlayVerbose } from "./agent-play-debug.js";
-import { getPlayWorld, getSessionStore } from "@/server/get-world";
+import { getPlayWorld } from "@/server/get-world";
 
 function normalizeSid(sid: string): string {
   return sid.trim();
@@ -13,9 +13,8 @@ export async function validateAgentPlaySession(sid: string): Promise<boolean> {
     });
     return false;
   }
-  await getPlayWorld();
-  const store = getSessionStore();
-  const ok = await store.isValidSession(normalized);
+  const world = await getPlayWorld();
+  const ok = await world.isSessionSid(normalized);
   agentPlayVerbose("session-validation", "validate", {
     normalizedLength: normalized.length,
     normalizedPrefix: `${normalized.slice(0, 8)}…`,

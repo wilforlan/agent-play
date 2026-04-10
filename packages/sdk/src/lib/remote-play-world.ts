@@ -1,4 +1,5 @@
 import type {
+  AddAgentInput,
   AddPlayerInput,
   AgentPlaySnapshot,
   AgentPlayWorldMap,
@@ -9,11 +10,18 @@ import type {
   RegisteredPlayer,
   PlayerChainNodeResponse,
 } from "../public-types.js";
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { agentPlayDebug } from "./agent-play-debug.js";
+import {
+  SESSION_CLOSED_EVENT,
+  SESSION_CONNECTED_EVENT,
+  type RemotePlayWorldSessionEvent,
+} from "../world-events.js";
 import {
   deriveNodeIdFromPassword,
-  derivePasswordFromSecret,
+  loadAgentPlayCredentialsFileFromPathSync,
+  loadRootKey,
+  nodeCredentialsMaterialFromHumanPassphrase,
+  resolveAgentPlayCredentialsPath,
 } from "@agent-play/node-tools";
 import {
   parseHumanOccupantRow,
@@ -27,19 +35,47 @@ import {
   sortNodeRefsForSerializedFetch,
 } from "./player-chain-merge.js";
 
-export type RemotePlayWorldOptions = {
-  baseUrl: string;
-  secretFilePath: string;
-  rootFilePath?: string;
-  authToken?: string;
+/**
+ * Root key (from `.root`) plus **human** passphrase as stored in **`~/.agent-play/credentials.json`**
+ * after **`agent-play create-main-node`**. Material for node id and wire auth is
+ * **`nodeCredentialsMaterialFromHumanPassphrase(passw)`** (SHA-256 hex; same as CLI **`hashNodePassword`**).
+ */
+export type RemotePlayWorldNodeCredentials = {
+  rootKey: string;
+  passw: string;
 };
 
-function formatMissingSecretFileError(): string {
+export type RemotePlayWorldOptions = {
+  baseUrl?: string;
+  /**
+   * `rootKey` from `.root` and **`passw`** human phrase from **`credentials.json`** (see **`loadAgentPlayCredentialsFileFromPathSync`** in **@agent-play/node-tools**).
+   */
+  nodeCredentials?: RemotePlayWorldNodeCredentials;
+  /** Called for session lifecycle events (`session:connected`, `session:closed`; see `world-events`). */
+  onSessionEvent?: (event: RemotePlayWorldSessionEvent) => void;
+};
+
+/** Options for {@link RemotePlayWorld.connect}. */
+export type RemotePlayWorldConnectOptions = {
+  /**
+   * Parent **main** node id. When set, `connect` runs `POST /api/nodes/validate` first, then `GET /api/agent-play/session`.
+   * When omitted, only `GET /api/agent-play/session` runs.
+   */
+  mainNodeId?: string;
+};
+
+function formatMissingCredentialsError(): string {
   return [
-    "RemotePlayWorld: options.secretFilePath is required.",
-    "",
-    "  RemotePlayWorld now derives nodeId/password from secret file + .root.",
-  ].join("\n");
+    "RemotePlayWorld: provide nodeCredentials: { rootKey, passw },",
+    "or run agent-play create-main-node so ~/.agent-play/credentials.json exists.",
+  ].join(" ");
+}
+
+function formatMissingBaseUrlError(): string {
+  return [
+    "RemotePlayWorld: baseUrl is missing.",
+    "Provide options.baseUrl, or ensure credentials.json contains serverUrl.",
+  ].join(" ");
 }
 
 function normalizeBaseUrl(url: string): string {
@@ -136,18 +172,18 @@ function parseAgentPlaySnapshot(snapshot: unknown): AgentPlaySnapshot {
 
 function parseRegisteredAgentSummary(raw: unknown): RegisteredAgentSummary {
   if (!isRecord(raw)) {
-    throw new Error("addPlayer: registeredAgent missing");
+    throw new Error("registerAgent: registeredAgent missing");
   }
   if (typeof raw.agentId !== "string" || typeof raw.name !== "string") {
-    throw new Error("addPlayer: registeredAgent.agentId and name required");
+    throw new Error("registerAgent: registeredAgent.agentId and name required");
   }
   if (!Array.isArray(raw.toolNames)) {
-    throw new Error("addPlayer: registeredAgent.toolNames must be an array");
+    throw new Error("registerAgent: registeredAgent.toolNames must be an array");
   }
   const toolNames: string[] = [];
   for (const t of raw.toolNames) {
     if (typeof t !== "string") {
-      throw new Error("addPlayer: registeredAgent.toolNames must be strings");
+      throw new Error("registerAgent: registeredAgent.toolNames must be strings");
     }
     toolNames.push(t);
   }
@@ -156,7 +192,7 @@ function parseRegisteredAgentSummary(raw: unknown): RegisteredAgentSummary {
     typeof raw.yieldCount !== "number" ||
     typeof raw.flagged !== "boolean"
   ) {
-    throw new Error("addPlayer: registeredAgent counters invalid");
+    throw new Error("registerAgent: registeredAgent counters invalid");
   }
   return {
     agentId: raw.agentId,
@@ -183,37 +219,62 @@ export type RemotePlayWorldHold = {
 /**
  * HTTP client for the Agent Play web UI: session, snapshot RPC, mutating RPC with `sid`, and optional SSE subscription.
  *
+ * Authenticates like the CLI: **`x-node-id`** (derived node id) and **`x-node-passw`** (hashed passphrase material) on every request.
+ *
+ * Register automation agents with {@link RemotePlayWorld.addAgent} (`nodeId` is the agent node id; the server stores it as `agentId`).
+ *
  * Incremental updates: {@link RemotePlayWorld.subscribeWorldState} listens for **`playerChainNotify`** in SSE `data`, then fetches each changed leaf via {@link RemotePlayWorld.getPlayerChainNode} and merges with {@link mergeSnapshotWithPlayerChainNode}.
  */
 export class RemotePlayWorld {
   private readonly apiBase: string;
-  private readonly mainNodeId: string;
+  private readonly rootKey: string;
+  /** Node id derived from hashed passphrase material + root (main or agent node id). */
+  private readonly derivedNodeId: string;
+  /** Hex password material (`hashNodePassword` on normalized human phrase); sent as `password` for repository addAgent. */
   private readonly password: string;
-  private readonly authToken: string | undefined;
+  private readonly onSessionEvent:
+    | ((event: RemotePlayWorldSessionEvent) => void)
+    | undefined;
   private sid: string | null = null;
   private closed = false;
   private readonly closeListeners = new Set<() => void>();
 
-  constructor(options: RemotePlayWorldOptions) {
-    if (options.secretFilePath.trim().length === 0) {
-      throw new Error(formatMissingSecretFileError());
+  constructor(options: RemotePlayWorldOptions = {}) {
+    const creds = loadAgentPlayCredentialsFileFromPathSync(
+      resolveAgentPlayCredentialsPath()
+    );
+    const resolvedBaseUrl = options.baseUrl ?? creds?.serverUrl;
+    if (resolvedBaseUrl === undefined || resolvedBaseUrl.trim().length === 0) {
+      throw new Error(formatMissingBaseUrlError());
     }
-    const rootPath =
-      typeof options.rootFilePath === "string" && options.rootFilePath.trim().length > 0
-        ? options.rootFilePath
-        : resolve(process.cwd(), ".root");
-    const expectedRoot = readFileSync(resolve(rootPath), "utf8").trim().toLowerCase();
-    const secretBuffer = readFileSync(resolve(options.secretFilePath));
-    this.apiBase = normalizeBaseUrl(options.baseUrl);
-    this.password = derivePasswordFromSecret({
-      secretMaterial: secretBuffer,
-      rootKey: expectedRoot,
-    });
-    this.mainNodeId = deriveNodeIdFromPassword({
-      password: this.password,
-      rootKey: expectedRoot,
-    });
-    this.authToken = options.authToken;
+    this.apiBase = normalizeBaseUrl(resolvedBaseUrl);
+    this.onSessionEvent = options.onSessionEvent;
+
+    const nc =
+      options.nodeCredentials ??
+      (creds === null ? undefined : { rootKey: loadRootKey(), passw: creds.passw });
+    if (
+      nc !== undefined &&
+      typeof nc.rootKey === "string" &&
+      nc.rootKey.trim().length > 0 &&
+      typeof nc.passw === "string" &&
+      nc.passw.length > 0
+    ) {
+      this.rootKey = nc.rootKey.trim().toLowerCase();
+      const material = nodeCredentialsMaterialFromHumanPassphrase(nc.passw);
+      this.password = material;
+      this.derivedNodeId = deriveNodeIdFromPassword({
+        password: material,
+        rootKey: this.rootKey,
+      });
+      return;
+    }
+
+    throw new Error(formatMissingCredentialsError());
+  }
+
+  private emitSessionEvent(event: RemotePlayWorldSessionEvent): void {
+    this.onSessionEvent?.(event);
   }
 
   onClose(handler: () => void): () => void {
@@ -238,8 +299,10 @@ export class RemotePlayWorld {
   }
 
   private authHeaders(): Record<string, string> {
-    if (this.authToken === undefined) return {};
-    return { Authorization: `Bearer ${this.authToken}` };
+    return {
+      "x-node-id": this.derivedNodeId,
+      "x-node-passw": this.password,
+    };
   }
 
   private jsonHeaders(): Record<string, string> {
@@ -261,7 +324,57 @@ export class RemotePlayWorld {
     return fetch(input, { ...init, headers });
   }
 
-  async connect(): Promise<void> {
+  private async validateNodeIdentity(options: {
+    nodeId: string;
+    mainNodeId: string | undefined;
+  }): Promise<{ nodeKind?: string }> {
+    const body: { nodeId: string; rootKey: string; mainNodeId?: string } = {
+      nodeId: options.nodeId,
+      rootKey: this.rootKey,
+    };
+    if (options.mainNodeId !== undefined && options.mainNodeId.trim().length > 0) {
+      body.mainNodeId = options.mainNodeId.trim();
+    }
+    const res = await fetch(`${this.apiBase}/api/nodes/validate`, {
+      method: "POST",
+      headers: this.jsonHeaders(),
+      body: JSON.stringify(body),
+    });
+    let json: unknown;
+    try {
+      json = (await res.json()) as unknown;
+    } catch {
+      throw new Error(`node validation failed: ${String(res.status)} invalid JSON`);
+    }
+    if (!isRecord(json) || json.ok !== true) {
+      const reason =
+        isRecord(json) && typeof json.reason === "string" ? json.reason : `HTTP ${String(res.status)}`;
+      throw new Error(`node validation failed: ${reason}`);
+    }
+    const nodeKind =
+      isRecord(json) && typeof json.nodeKind === "string" ? json.nodeKind : undefined;
+    agentPlayDebug("remote-play-world", "node identity validated", {
+      nodeKind,
+      derivedNodeIdPrefix: `${this.derivedNodeId.slice(0, 8)}…`,
+    });
+    return nodeKind !== undefined ? { nodeKind } : {};
+  }
+
+  /**
+   * Establishes the HTTP session via `GET /api/agent-play/session`. With {@link RemotePlayWorldConnectOptions.mainNodeId},
+   * validates node identity with `POST /api/nodes/validate` first.
+   */
+  async connect(options?: RemotePlayWorldConnectOptions): Promise<void> {
+    const mainNodeIdOpt = options?.mainNodeId?.trim();
+    if (mainNodeIdOpt !== undefined && mainNodeIdOpt.length > 0) {
+      const validation = await this.validateNodeIdentity({
+        nodeId: this.derivedNodeId,
+        mainNodeId: mainNodeIdOpt,
+      });
+      console.info(
+        `[agent-play] Node identity validated (${validation.nodeKind ?? "unknown"}).`
+      );
+    }
     const res = await fetch(`${this.apiBase}/api/agent-play/session`, {
       headers: this.authHeaders(),
     });
@@ -273,6 +386,10 @@ export class RemotePlayWorld {
       throw new Error("session: invalid response");
     }
     this.sid = json.sid;
+    this.emitSessionEvent({
+      name: SESSION_CONNECTED_EVENT,
+      detail: { sid: this.sid },
+    });
   }
 
   async close(): Promise<void> {
@@ -280,6 +397,7 @@ export class RemotePlayWorld {
       return;
     }
     this.closed = true;
+    this.emitSessionEvent({ name: SESSION_CLOSED_EVENT });
     for (const handler of Array.from(this.closeListeners)) {
       try {
         handler();
@@ -410,8 +528,25 @@ export class RemotePlayWorld {
     };
   }
 
-  async addPlayer(input: AddPlayerInput): Promise<RegisteredPlayer> {
+  /**
+   * Registers an automation agent using **agent node id** (`nodeId`), sent to the server as `agentId`.
+   */
+  async addAgent(input: AddAgentInput): Promise<RegisteredPlayer> {
     const sid = this.getSessionId();
+    const effectiveMainNodeId = this.derivedNodeId;
+    const validation = await this.validateNodeIdentity({
+      nodeId: input.nodeId,
+      mainNodeId: effectiveMainNodeId,
+    });
+    console.info(
+      [
+        "Agent Node Connection",
+        `  status   : validated`,
+        `  nodeId   : ${input.nodeId}`,
+        `  nodeKind : ${validation.nodeKind ?? "unknown"}`,
+        `  mainNode : ${effectiveMainNodeId}`,
+      ].join("\n")
+    );
     const url = `${this.apiBase}/api/agent-play/players?sid=${encodeURIComponent(sid)}`;
     const res = await fetch(url, {
       method: "POST",
@@ -420,28 +555,28 @@ export class RemotePlayWorld {
         name: input.name,
         type: input.type,
         agent: input.agent,
-        mainNodeId: input.mainNodeId ?? this.mainNodeId,
+        mainNodeId: effectiveMainNodeId,
         password: this.password,
-        agentId: input.agentId,
+        agentId: input.nodeId,
       }),
     });
     const bodyText = await res.text();
     if (!res.ok) {
-      throw new Error(`addPlayer: ${res.status} ${bodyText}`);
+      throw new Error(`addAgent: ${res.status} ${bodyText}`);
     }
     let body: unknown;
     try {
       body = JSON.parse(bodyText) as unknown;
     } catch {
-      throw new Error("addPlayer: invalid JSON");
+      throw new Error("addAgent: invalid JSON");
     }
     if (!isRecord(body)) {
-      throw new Error("addPlayer: invalid response shape");
+      throw new Error("addAgent: invalid response shape");
     }
     const playerId = body.playerId;
     const previewUrl = body.previewUrl;
     if (typeof playerId !== "string" || typeof previewUrl !== "string") {
-      throw new Error("addPlayer: missing playerId or previewUrl");
+      throw new Error("addAgent: missing playerId or previewUrl");
     }
     const registeredAgent = parseRegisteredAgentSummary(body.registeredAgent);
     const now = new Date();
@@ -454,6 +589,31 @@ export class RemotePlayWorld {
       previewUrl,
       registeredAgent,
     };
+  }
+
+  /**
+   * @deprecated Use {@link addAgent} with `nodeId` (agent node id) for integrations and automation.
+   */
+  async addPlayer(input: AddPlayerInput): Promise<RegisteredPlayer> {
+    const payload: AddAgentInput = {
+      name: input.name,
+      type: input.type,
+      agent: input.agent,
+      nodeId: input.agentId,
+    };
+    if (input.version !== undefined) {
+      payload.version = input.version;
+    }
+    if (input.createdAt !== undefined) {
+      payload.createdAt = input.createdAt;
+    }
+    if (input.updatedAt !== undefined) {
+      payload.updatedAt = input.updatedAt;
+    }
+    if (input.mainNodeId !== undefined) {
+      payload.mainNodeId = input.mainNodeId;
+    }
+    return this.addAgent(payload);
   }
 
   async recordInteraction(input: RecordInteractionInput): Promise<void> {

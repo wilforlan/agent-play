@@ -3,25 +3,36 @@
  *
  * Same architecture as example 01: **RemotePlayWorld** talks to **@agent-play/web-ui** over HTTP
  * (`/api/agent-play/session`, `/api/agent-play/players`, `/api/agent-play/sdk/rpc`). One session
- * (`sid`) holds multiple players; each `addPlayer` uses a required **`agentId`** (from **`agent-play create`** when
- * using a repository, or the example defaults locally).
+ * (`sid`) holds multiple players; each `addAgent` uses a required **`nodeId`** (agent node id from **`agent-play create`** when
+ * using a repository, or the example defaults locally). The server stores it as `agentId`, and the SDK validates the node id with
+ * `/api/nodes/validate` before calling `/api/agent-play/players`.
  *
  * Open the printed preview URL once: both avatars share the same world and session.
  *
  * Prerequisites: web-ui running (`npm run dev -w @agent-play/web-ui`). With Redis-backed agents,
  * run `agent-play bootstrap-node`, then `agent-play create` twice (max 2 agents
- * per node), pass each **`agentId`** on **`addPlayer`**, and set **`AGENT_PLAY_SECRET_FILE_PATH`** on
- * **`RemotePlayWorld`** (same secret file for both).
+ * per node), pass each agent **`nodeId`** on **`addAgent`**, and set **`AGENT_PLAY_ROOT_KEY`** /
+ * **`AGENT_PLAY_NODE_PASSW`** for **`RemotePlayWorld`** (same credentials for both registrations).
  *
  * Run: `tsx -r dotenv/config examples/02-remote-two-players-langchain.ts`
- * Env: `AGENT_PLAY_WEB_UI_URL`, `AGENT_PLAY_SECRET_FILE_PATH`, `AGENT_PLAY_HOLD_SECONDS` (default 3600),
- * `AGENT_PLAY_AGENT_ID_ALPHA` / `AGENT_PLAY_AGENT_ID_BETA` when using a registered repository.
+ * Env: default **`~/.agent-play/credentials.json`** (or `AGENT_PLAY_CREDENTIALS_PATH`), optional `AGENT_PLAY_WEB_UI_URL` /
+ * `AGENT_PLAY_ROOT_KEY` / `AGENT_PLAY_NODE_PASSW` overrides, `AGENT_PLAY_HOLD_SECONDS` (default 3600),
+ * `AGENT_PLAY_AGENT_NODE_ID_*` when using a registered repository.
  */
 
-import { RemotePlayWorld, langchainRegistration } from "../src/index.js";
+import {
+  RemotePlayWorld,
+  langchainRegistration,
+  loadAgentPlayCredentialsFileFromPathSync,
+  loadRootKey,
+  resolveAgentPlayCredentialsPath,
+} from "../src/index.js";
 import { createAgent, tool } from "langchain";
 import { ChatOpenAI } from "@langchain/openai";
 import { z } from "zod";
+
+const EXAMPLE_MAIN_NODE_ID =
+  "810be53fb0153087438401ecd63e72e56701d43307955d57af196ccae5cdbf81";
 
 const model = new ChatOpenAI({
   apiKey: process.env.OPENAI_API_KEY ?? "unused-registration-only",
@@ -79,32 +90,55 @@ const agentBeta = createAgent({
 });
 
 async function main() {
-  const base = process.env.AGENT_PLAY_WEB_UI_URL ?? "http://127.0.0.1:3000";
-  const secretFilePath = process.env.AGENT_PLAY_SECRET_FILE_PATH;
-  if (secretFilePath === undefined || secretFilePath.length === 0) {
-    throw new Error("AGENT_PLAY_SECRET_FILE_PATH is required");
+  const stored = loadAgentPlayCredentialsFileFromPathSync(
+    resolveAgentPlayCredentialsPath()
+  );
+  const rootKey =
+    process.env.AGENT_PLAY_ROOT_KEY?.trim() ??
+    (stored === null ? "" : loadRootKey());
+  const passw =
+    typeof process.env.AGENT_PLAY_NODE_PASSW === "string" &&
+    process.env.AGENT_PLAY_NODE_PASSW.length > 0
+      ? process.env.AGENT_PLAY_NODE_PASSW
+      : (stored?.passw ?? "");
+  const base = (
+    process.env.AGENT_PLAY_WEB_UI_URL ??
+    stored?.serverUrl ??
+    "http://127.0.0.1:3000"
+  ).replace(/\/$/, "");
+  if (rootKey.length === 0 || passw.length === 0) {
+    throw new Error(
+      "Missing credentials: run `agent-play create-main-node` or set AGENT_PLAY_ROOT_KEY + AGENT_PLAY_NODE_PASSW"
+    );
   }
   const holdSeconds = Number(process.env.AGENT_PLAY_HOLD_SECONDS ?? 3600);
 
-  const world = new RemotePlayWorld({ baseUrl: base, secretFilePath });
-  await world.connect();
+  const world = new RemotePlayWorld({
+    baseUrl: base,
+    nodeCredentials: { rootKey, passw },
+  });
+  await world.connect({ mainNodeId: EXAMPLE_MAIN_NODE_ID });
 
-  const agentIdA =
-    process.env.AGENT_PLAY_AGENT_ID_ALPHA?.trim() ?? "example-local-agent-alpha";
-  const agentIdB =
-    process.env.AGENT_PLAY_AGENT_ID_BETA?.trim() ?? "example-local-agent-beta";
+  const nodeIdA =
+    process.env.AGENT_PLAY_AGENT_NODE_ID_ALPHA?.trim() ??
+    process.env.AGENT_PLAY_AGENT_ID_ALPHA?.trim() ??
+    "example-local-agent-alpha";
+  const nodeIdB =
+    process.env.AGENT_PLAY_AGENT_NODE_ID_BETA?.trim() ??
+    process.env.AGENT_PLAY_AGENT_ID_BETA?.trim() ??
+    "example-local-agent-beta";
 
-  const playerA = await world.addPlayer({
+  const playerA = await world.addAgent({
     name: "alpha",
     type: "langchain",
     agent: langchainRegistration(agentAlpha),
-    agentId: agentIdA,
+    nodeId: nodeIdA,
   });
-  const playerB = await world.addPlayer({
+  const playerB = await world.addAgent({
     name: "beta",
     type: "langchain",
     agent: langchainRegistration(agentBeta),
-    agentId: agentIdB,
+    nodeId: nodeIdB,
   });
 
   console.log("Session id:", world.getSessionId());

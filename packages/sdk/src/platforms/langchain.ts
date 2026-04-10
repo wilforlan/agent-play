@@ -116,12 +116,12 @@ function extractToolsArray(agent: unknown): unknown[] | null {
 
 /**
  * Validates a LangChain-style agent exposes tools (including required `chat_tool`) and returns
- * a {@link LangChainAgentRegistration} for `addPlayer`.
+ * a {@link LangChainAgentRegistration} for `RemotePlayWorld.addAgent`.
  *
  * @param agent - Return value from `createAgent` (or equivalent) with a `tools` array.
  * @throws Error if tools are missing or `chat_tool` is not present.
  *
- * @remarks **Callers:** user code before `RemotePlayWorld.addPlayer`. **Callees:** {@link extractToolsArray},
+ * @remarks **Callers:** user code before `RemotePlayWorld.addAgent`. **Callees:** {@link extractToolsArray},
  * {@link formatMissingAgentToolsError}, {@link formatMissingChatToolError}, {@link describeTool}, {@link agentPlayDebug}.
  */
 export function langchainRegistration(

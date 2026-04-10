@@ -9,7 +9,7 @@ Run the **web UI** first so APIs exist:
 npm run dev -w @agent-play/web-ui
 ```
 
-With a **registered-agent** repository (**`REDIS_URL`** on the server): run **`agent-play bootstrap-node`** and **`agent-play create`** for each agent. Set **`AGENT_PLAY_SECRET_FILE_PATH`** and pass **`AGENT_PLAY_AGENT_ID`** (and **`AGENT_PLAY_AGENT_ID_ALPHA`** / **`AGENT_PLAY_AGENT_ID_BETA`** for example 02) so **`addPlayer`** uses real ids from **`agent-play create`**. Without Redis, the examples default to stable local **`agentId`** strings.
+With a **registered-agent** repository (**`REDIS_URL`** on the server): run **`agent-play bootstrap-node`** and **`agent-play create`** for each agent. Use **`~/.agent-play/credentials.json`** (from **`create-main-node`**) for **`passw`** and **`.root`** for **`rootKey`**, or set **`AGENT_PLAY_ROOT_KEY`** / **`AGENT_PLAY_NODE_PASSW`** to override. Pass **`AGENT_PLAY_AGENT_NODE_ID`** (or legacy **`AGENT_PLAY_AGENT_ID`**) and for example 02 **`AGENT_PLAY_AGENT_NODE_ID_ALPHA`** / **`_BETA`** so **`addAgent`** uses real agent node ids from **`agent-play create`**. Without Redis, the examples default to stable local **`nodeId`** strings.
 
 | Order | File | Purpose |
 |------:|------|---------|
@@ -18,10 +18,12 @@ With a **registered-agent** repository (**`REDIS_URL`** on the server): run **`a
 
 ## Environment
 
-- `AGENT_PLAY_WEB_UI_URL` — Base URL of the running app (default `http://127.0.0.1:3000`).
-- `AGENT_PLAY_SECRET_FILE_PATH` — Path to the secret file used with `.root` anchor validation.
+- `AGENT_PLAY_WEB_UI_URL` — Base URL of the running app (overrides **`serverUrl`** from credentials when set).
+- `AGENT_PLAY_CREDENTIALS_PATH` — Optional path to **`credentials.json`** (default **`~/.agent-play/credentials.json`**).
+- `AGENT_PLAY_ROOT_KEY` — Optional override: hex **`rootKey`** from **`.root`** (otherwise loaded via **`loadRootKey()`** when credentials exist).
+- `AGENT_PLAY_NODE_PASSW` — Optional override: human **`passw`** from the credentials file (otherwise read from that file).
 - `AGENT_PLAY_HOLD_SECONDS` — How long **`hold().for()`** waits (default `3600`).
-- `AGENT_PLAY_AGENT_ID` / `AGENT_PLAY_AGENT_ID_ALPHA` / `AGENT_PLAY_AGENT_ID_BETA` — Registered agent ids when using Redis.
+- `AGENT_PLAY_AGENT_NODE_ID` (or `AGENT_PLAY_AGENT_ID`) / `AGENT_PLAY_AGENT_NODE_ID_ALPHA` / `AGENT_PLAY_AGENT_NODE_ID_BETA` (or `AGENT_PLAY_AGENT_ID_*`) — Agent node ids when using Redis.
 - `OPENAI_API_KEY` — Only if you extend the scripts to call the model; registration-only runs use a placeholder.
 - `AGENT_PLAY_DEBUG=1` — Verbose SDK logging (see `configureAgentPlayDebug` in package exports).
 

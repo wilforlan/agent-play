@@ -1,25 +1,19 @@
 #!/usr/bin/env node
 import { existsSync } from "node:fs";
-import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
+import { mkdir, unlink, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
 import {
+  type AgentPlayCredentialsFile,
   createNodeCredentialFromPassw,
   deriveNodeIdFromPassword,
   generateNodePassw,
   hashNodePassword,
+  loadAgentPlayCredentialsFileFromPath,
   loadRootKey,
 } from "@agent-play/node-tools";
-
-type Credentials = {
-  serverUrl: string;
-  nodeId: string;
-  passw: string;
-  secretFilePath?: string;
-  agentNodes?: AgentNodeCredential[];
-};
 
 type BootstrapCliOpts = {
   rootFilePath?: string;
@@ -36,7 +30,7 @@ type ValidateAgentNodeOpts =
   | { mode: "all" }
   | { mode: "ids"; agentNodeIds: string[] };
 
-function nodeAuthHeaders(cred: Credentials): Record<string, string> {
+function nodeAuthHeaders(cred: AgentPlayCredentialsFile): Record<string, string> {
   return {
     "x-node-id": cred.nodeId,
     "x-node-passw": hashNodePassword(cred.passw),
@@ -62,55 +56,11 @@ function credentialsPath(): string {
   return join(homedir(), ".agent-play", "credentials.json");
 }
 
-async function loadCredentials(): Promise<Credentials | null> {
-  try {
-    const raw = await readFile(credentialsPath(), "utf8");
-    const json: unknown = JSON.parse(raw) as unknown;
-    if (typeof json !== "object" || json === null) return null;
-    const o = json as {
-      serverUrl?: unknown;
-      nodeId?: unknown;
-      passw?: unknown;
-      secretFilePath?: unknown;
-      agentNodes?: unknown;
-    };
-    if (
-      typeof o.serverUrl !== "string" ||
-      typeof o.nodeId !== "string" ||
-      typeof o.passw !== "string"
-    ) {
-      return null;
-    }
-    return {
-      serverUrl: o.serverUrl.replace(/\/$/, ""),
-      nodeId: o.nodeId,
-      passw: o.passw,
-      secretFilePath:
-        typeof o.secretFilePath === "string" ? o.secretFilePath : undefined,
-      agentNodes: Array.isArray(o.agentNodes)
-        ? o.agentNodes
-            .filter((row): row is AgentNodeCredential => {
-              if (typeof row !== "object" || row === null) return false;
-              const r = row as {
-                nodeId?: unknown;
-                passw?: unknown;
-                createdAt?: unknown;
-              };
-              return (
-                typeof r.nodeId === "string" &&
-                typeof r.passw === "string" &&
-                typeof r.createdAt === "string"
-              );
-            })
-            .map((row) => ({ ...row }))
-        : [],
-    };
-  } catch {
-    return null;
-  }
+async function loadCredentials(): Promise<AgentPlayCredentialsFile | null> {
+  return loadAgentPlayCredentialsFileFromPath(credentialsPath());
 }
 
-async function saveCredentials(c: Credentials): Promise<void> {
+async function saveCredentials(c: AgentPlayCredentialsFile): Promise<void> {
   const dir = join(homedir(), ".agent-play");
   await mkdir(dir, { recursive: true });
   await writeFile(
@@ -327,7 +277,9 @@ function printAgentPlayIntegrationGuide(): void {
   console.log("");
   console.log("How your agent appears on the play world");
   console.log("────────────────────────────────────────────");
-  console.log("  • Use node credentials with RemotePlayWorld secretFilePath.");
+  console.log(
+    "  • Use ~/.agent-play/credentials.json + .root with RemotePlayWorld({ nodeCredentials })."
+  );
   console.log(
     "  • LangChain: use langchainRegistration(agent) and pass agent.toolNames to addPlayer."
   );
@@ -338,7 +290,7 @@ function printAgentPlayIntegrationGuide(): void {
     "  • Structures on the map are derived from those tool names — keep them aligned with your real tools."
   );
   console.log(
-    "  • RemotePlayWorld({ secretFilePath }) and addPlayer({ ..., mainNodeId, agentId })."
+    "  • RemotePlayWorld({ nodeCredentials: { rootKey, passw } }) and addAgent({ nodeId, ... })."
   );
   console.log("");
 }
@@ -660,7 +612,7 @@ async function cmdDeleteMainNode(): Promise<void> {
 }
 
 async function validateNodeIdentityOnServer(options: {
-  cred: Credentials;
+  cred: AgentPlayCredentialsFile;
   rootKey: string;
   nodeId: string;
   mainNodeId?: string;

@@ -1,8 +1,8 @@
 # Agent Play SDK (Node.js)
 
-The package **`@agent-play/sdk`** exposes **`RemotePlayWorld`** for HTTP access to a running **web-ui** server, **`hold().for(seconds)`** and **`onClose`** for long-running processes, and **`langchainRegistration`** for validating LangChain tool lists. Construct **`RemotePlayWorld`** with **`baseUrl`** and a non-empty **`apiKey`** (see [API keys](api-keys.md)). Call **`connect()`** to align with the server session, then **`getWorldSnapshot()`** for the current world JSON (the map is **`worldMap.occupants`**: every **agent** and **MCP** placement). Call **`addPlayer`** with a required **`agentId`**, name, a **`type`** string (integration label; stored on the snapshot occupant as **`platform`**, formerly **`agentType`** — see [World map v3](updates-world-map-v3.md)), and **`agent`** from **`langchainRegistration`**. Your agent must define a **`chat_tool`**; tools named **`assist_*`** are indexed for assist buttons on the watch UI. With a **registered-agent repository** (typically Redis), **`agentId`** must be an id from **`agent-play create`** and **`apiKey`** is the account API key.
+The package **`@agent-play/sdk`** exposes **`RemotePlayWorld`** for HTTP access to a running **web-ui** server, **`hold().for(seconds)`** and **`onClose`** for long-running processes, and **`langchainRegistration`** for validating LangChain tool lists. Construct **`RemotePlayWorld`** with **`baseUrl`** and a non-empty **`apiKey`** (see [API keys](api-keys.md)). Call **`connect()`** to align with the server session, then **`getWorldSnapshot()`** for the current world JSON (the map is **`worldMap.occupants`**: every **agent** and **MCP** placement). Call **`addAgent`** with a required **`nodeId`** (the **agent node id**; sent to the server as `agentId` for compatibility), name, a **`type`** string (integration label; stored on the snapshot occupant as **`platform`**, formerly **`agentType`** — see [World map v3](updates-world-map-v3.md)), and **`agent`** from **`langchainRegistration`**. Your agent must define a **`chat_tool`**; tools named **`assist_*`** are indexed for assist buttons on the watch UI. With a **registered-agent repository** (typically Redis), **`nodeId`** must be an id from **`agent-play create`** and **`apiKey`** is the account API key. **`addPlayer`** remains as a deprecated alias that passes **`agentId`** through the same path.
 
-> **@deprecated** `repository.createAgent` and `POST /api/agents` create flow are removed. Register agent-node identity with `POST /api/nodes/agent-node` (or `agent-play create-agent-node`), then provide runtime metadata through `world.addPlayer`.
+> **@deprecated** `repository.createAgent` and `POST /api/agents` create flow are removed. Register agent-node identity with `POST /api/nodes/agent-node` (or `agent-play create-agent-node`), then provide runtime metadata through `world.addAgent` (or `addPlayer`).
 
 ## Node auth contract (current)
 
@@ -62,7 +62,7 @@ The web-ui **`GET /api/agent-play/events`** handler merges **`rev`**, **`merkleR
 
 ### Limits and compatibility
 
-- The server enforces at most **100** occupants (agents + MCP rows) per world; **`addPlayer`** and MCP registration fail when the cap is reached ([World map v3](updates-world-map-v3.md)).
+- The server enforces at most **100** occupants (agents + MCP rows) per world; **`addAgent`** / **`addPlayer`** and MCP registration fail when the cap is reached ([World map v3](updates-world-map-v3.md)).
 - **Breaking (server fanout):** Redis/pub-sub envelopes use **`playerChainNotify`** with node metadata, not the older digest-heavy **`playerChainDelta`**. Any out-of-tree consumer that parsed **`playerChainDelta`** must switch to **notify + `getPlayerChainNode`** (or keep using full **`getWorldSnapshot`** only).
 
 TypeDoc for this package lists every export; run **`npm run docs:api`** from the repo root ([API reference](api-reference.md)).

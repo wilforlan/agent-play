@@ -3,10 +3,12 @@ import { getBuiltinAgentDefinitions } from "./builtin-langchain-agents.js";
 
 export type RegisterBuiltinAgentsOptions = {
   baseUrl: string;
-  secretFilePath: string;
-  rootFilePath?: string;
   /**
-   * When true (default), skips `addPlayer` for built-ins whose `name` already appears on the snapshot.
+   * `rootKey` from `.root` and human **`passw`** from **`~/.agent-play/credentials.json`** (same as **`RemotePlayWorldNodeCredentials`**).
+   */
+  nodeCredentials: { rootKey: string; passw: string };
+  /**
+   * When true (default), skips `addAgent` for built-ins whose `name` already appears on the snapshot.
    */
   skipExistingByName?: boolean;
 };
@@ -22,8 +24,7 @@ export async function registerBuiltinAgents(
   const skipExisting = options.skipExistingByName !== false;
   const world = new RemotePlayWorld({
     baseUrl,
-    secretFilePath: options.secretFilePath,
-    rootFilePath: options.rootFilePath,
+    nodeCredentials: options.nodeCredentials,
   });
   try {
     await world.connect();
@@ -38,11 +39,11 @@ export async function registerBuiltinAgents(
     }
     for (const def of getBuiltinAgentDefinitions()) {
       if (existingNames.has(def.name)) continue;
-      await world.addPlayer({
+      await world.addAgent({
         name: def.name,
         type: def.type,
         agent: def.agent,
-        agentId: def.id,
+        nodeId: def.id,
       });
     }
   } finally {

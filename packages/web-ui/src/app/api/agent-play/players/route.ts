@@ -56,14 +56,10 @@ export async function POST(req: NextRequest) {
     return Response.json({ error: "missing sid" }, { status: 400 });
   }
   const sid = rawSid.trim();
+  const world = await getPlayWorld();
   if (!(await validateAgentPlaySession(sid))) {
     agentPlayVerbose("api", "players rejected", { reason: "invalid sid" });
     return Response.json({ error: "invalid sid" }, { status: 403 });
-  }
-  const world = await getPlayWorld();
-  if (!world.isSessionSid(sid)) {
-    agentPlayVerbose("api", "players rejected", { reason: "sid mismatch" });
-    return Response.json({ error: "session mismatch" }, { status: 403 });
   }
 
   let body: unknown;

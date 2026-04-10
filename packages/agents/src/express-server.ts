@@ -1,11 +1,16 @@
 import express from "express";
+import {
+  loadAgentPlayCredentialsFileFromPathSync,
+  loadRootKey,
+  resolveAgentPlayCredentialsPath,
+} from "@agent-play/node-tools";
 import { registerBuiltinAgents } from "./register-builtins.js";
 
 const sidecarPort = Number(process.env.AGENT_PLAY_BUILTINS_PORT ?? "3100");
 const webUiRaw = process.env.AGENT_PLAY_WEB_UI_URL ?? "http://127.0.0.1:3000";
 const webUiBaseUrl = webUiRaw.replace(/\/$/, "");
-const secretFilePath = process.env.AGENT_PLAY_SECRET_FILE_PATH;
-const rootFilePath = process.env.AGENT_PLAY_ROOT_FILE_PATH;
+const rootKeyEnv = process.env.AGENT_PLAY_ROOT_KEY?.trim();
+const passwEnv = process.env.AGENT_PLAY_NODE_PASSW;
 
 const app = express();
 
@@ -17,8 +22,23 @@ app.get("/health", (_req, res) => {
 });
 
 app.listen(sidecarPort, "127.0.0.1", () => {
-  if (typeof secretFilePath !== "string" || secretFilePath.length === 0) {
-    console.error("[agent-play/agents] AGENT_PLAY_SECRET_FILE_PATH is required");
+  const credFile = loadAgentPlayCredentialsFileFromPathSync(
+    resolveAgentPlayCredentialsPath()
+  );
+  const hasEnvCreds =
+    rootKeyEnv !== undefined &&
+    rootKeyEnv.length > 0 &&
+    typeof passwEnv === "string" &&
+    passwEnv.length > 0;
+  let nodeCredentials: { rootKey: string; passw: string };
+  if (hasEnvCreds) {
+    nodeCredentials = { rootKey: rootKeyEnv, passw: passwEnv };
+  } else if (credFile !== null) {
+    nodeCredentials = { rootKey: loadRootKey(), passw: credFile.passw };
+  } else {
+    console.error(
+      "[agent-play/agents] run `agent-play create-main-node` (~/.agent-play/credentials.json) or set AGENT_PLAY_ROOT_KEY + AGENT_PLAY_NODE_PASSW"
+    );
     process.exitCode = 1;
     return;
   }
@@ -27,8 +47,7 @@ app.listen(sidecarPort, "127.0.0.1", () => {
   );
   void registerBuiltinAgents({
     baseUrl: webUiBaseUrl,
-    secretFilePath,
-    rootFilePath,
+    nodeCredentials,
   })
     .then(() => {
       console.log("[agent-play/agents] built-in agents registered via SDK");

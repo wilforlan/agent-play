@@ -1,8 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { registerBuiltinAgents } from "./register-builtins.js";
-import { mkdtempSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 
 function mockRegisteredAgent(name: string, agentId: string) {
   return {
@@ -15,22 +12,20 @@ function mockRegisteredAgent(name: string, agentId: string) {
   };
 }
 
-describe("registerBuiltinAgents", () => {
-  function createSecretFixture(): { secretFilePath: string; rootFilePath: string } {
-    const dir = mkdtempSync(join(tmpdir(), "agent-play-agents-"));
-    const secretPath = join(dir, "buffer.txt");
-    const rootPath = join(dir, ".root");
-    writeFileSync(secretPath, "dev-password\n", "utf8");
-    writeFileSync(rootPath, "n1\n", "utf8");
-    return { secretFilePath: secretPath, rootFilePath: rootPath };
-  }
+function createNodeCredentialsFixture(): { rootKey: string; passw: string } {
+  return {
+    rootKey: "n1",
+    passw: "amber angle apple arch atlas aura autumn bamboo beacon birch blossom",
+  };
+}
 
+describe("registerBuiltinAgents", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
   });
 
-  it("uses connect, getWorldSnapshot, and addPlayer once per built-in when snapshot empty", async () => {
+  it("uses connect, getWorldSnapshot, and addAgent once per built-in when snapshot empty", async () => {
     let addPlayerCount = 0;
     const fetchMock = vi.fn(
       async (url: string | URL, init?: RequestInit) => {
@@ -88,17 +83,15 @@ describe("registerBuiltinAgents", () => {
     );
     vi.stubGlobal("fetch", fetchMock);
 
-    const fixture = createSecretFixture();
     await registerBuiltinAgents({
       baseUrl: "http://127.0.0.1:3000",
-      secretFilePath: fixture.secretFilePath,
-      rootFilePath: fixture.rootFilePath,
+      nodeCredentials: createNodeCredentialsFixture(),
     });
 
     expect(addPlayerCount).toBe(3);
   });
 
-  it("skips addPlayer when built-in name already on snapshot", async () => {
+  it("skips addAgent when built-in name already on snapshot", async () => {
     let addPlayerCount = 0;
     const fetchMock = vi.fn(
       async (url: string | URL, init?: RequestInit) => {
@@ -158,11 +151,9 @@ describe("registerBuiltinAgents", () => {
     );
     vi.stubGlobal("fetch", fetchMock);
 
-    const fixture = createSecretFixture();
     await registerBuiltinAgents({
       baseUrl: "http://127.0.0.1:3000",
-      secretFilePath: fixture.secretFilePath,
-      rootFilePath: fixture.rootFilePath,
+      nodeCredentials: createNodeCredentialsFixture(),
     });
 
     expect(addPlayerCount).toBe(0);
