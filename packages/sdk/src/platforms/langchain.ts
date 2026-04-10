@@ -6,7 +6,11 @@
  * `AssistToolSpec` rows from Zod schemas when available.
  */
 import { agentPlayDebug } from "../lib/agent-play-debug.js";
-import type { AssistToolSpec, LangChainAgentRegistration } from "../public-types.js";
+import type {
+  AssistToolFieldType,
+  AssistToolSpec,
+  LangChainAgentRegistration,
+} from "../public-types.js";
 
 /** Required tool name enforced by the watch UI contract. */
 const CHAT_TOOL = "chat_tool";
@@ -41,6 +45,60 @@ function formatMissingChatToolError(): string {
   ].join("\n");
 }
 
+type ZodDef = {
+  typeName?: string;
+  innerType?: unknown;
+  schema?: unknown;
+};
+
+function unwrapZodCell(cell: unknown): unknown {
+  let current: unknown = cell;
+  for (let depth = 0; depth < 32; depth++) {
+    if (current === null || typeof current !== "object") {
+      return current;
+    }
+    const def = (current as { _def?: ZodDef })._def;
+    if (!def || typeof def.typeName !== "string") {
+      return current;
+    }
+    const { typeName } = def;
+    if (
+      typeName === "ZodOptional" ||
+      typeName === "ZodNullable" ||
+      typeName === "ZodDefault"
+    ) {
+      const inner = def.innerType;
+      current =
+        inner !== null && typeof inner === "object" ? inner : undefined;
+      continue;
+    }
+    if (typeName === "ZodEffects") {
+      current = def.schema;
+      continue;
+    }
+    return current;
+  }
+  return current;
+}
+
+function fieldTypeFromZodCell(cell: unknown): AssistToolFieldType {
+  const base = unwrapZodCell(cell);
+  if (base === null || typeof base !== "object") {
+    return "string";
+  }
+  const typeName = (base as { _def?: { typeName?: string } })._def?.typeName;
+  if (typeName === "ZodNumber") {
+    return "number";
+  }
+  if (typeName === "ZodBoolean") {
+    return "boolean";
+  }
+  if (typeName === "ZodString") {
+    return "string";
+  }
+  return "string";
+}
+
 /**
  * Best-effort parameter shape from a Zod object schema’s `shape()` for UI hints.
  *
@@ -59,7 +117,10 @@ function parametersFromSchema(schema: unknown): Record<string, unknown> {
   const shape = z._def.shape();
   const out: Record<string, unknown> = {};
   for (const key of Object.keys(shape)) {
-    out[key] = { field: key };
+    out[key] = {
+      field: key,
+      fieldType: fieldTypeFromZodCell(shape[key]),
+    };
   }
   return out;
 }

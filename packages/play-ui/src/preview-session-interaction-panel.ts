@@ -10,6 +10,10 @@ import {
   readHumanCredentials,
 } from "./preview-human-credentials.js";
 import { logSessionInteraction } from "./preview-session-interaction-log.js";
+import {
+  buildAssistArgsFromInputs,
+  resolveAssistFieldType,
+} from "./preview-assist-coerce.js";
 
 const STYLE_ID = "agent-play-preview-session-interaction-styles";
 
@@ -70,7 +74,7 @@ function ensureStyles(): void {
 .preview-session-interaction__assist-desc { font-size: 11px; color: #bfdbfe; margin-bottom: 8px; }
 .preview-session-interaction__assist-form { display: grid; gap: 6px; }
 .preview-session-interaction__assist-form label { font-size: 11px; color: #cbd5e1; }
-.preview-session-interaction__assist-form input,
+.preview-session-interaction__assist-form input:not([type="checkbox"]),
 .preview-session-interaction__chat-input {
   width: 100%;
   box-sizing: border-box;
@@ -79,6 +83,11 @@ function ensureStyles(): void {
   padding: 8px;
   background: rgba(15, 23, 42, 0.9);
   color: #f8fafc;
+}
+.preview-session-interaction__assist-form input[type="checkbox"] {
+  width: auto;
+  margin-left: 8px;
+  vertical-align: middle;
 }
 .preview-session-interaction__send-btn {
   justify-self: end;
@@ -865,11 +874,28 @@ export function createPreviewSessionInteractionPanel(options: {
     const form = document.createElement("form");
     form.className = "preview-session-interaction__assist-form";
     const inputs = new Map<string, HTMLInputElement>();
-    for (const key of Object.keys(selectedTool.parameters).filter((k) => !k.startsWith("_"))) {
+    const paramKeys = Object.keys(selectedTool.parameters).filter(
+      (k) => !k.startsWith("_")
+    );
+    for (const key of paramKeys) {
+      const meta = selectedTool.parameters[key];
+      const fieldType = resolveAssistFieldType(meta);
       const label = document.createElement("label");
       label.textContent = key;
+      if (fieldType === "boolean") {
+        const input = document.createElement("input");
+        input.type = "checkbox";
+        input.name = key;
+        label.appendChild(input);
+        form.append(label);
+        inputs.set(key, input);
+        continue;
+      }
       const input = document.createElement("input");
-      input.type = "text";
+      input.type = fieldType === "number" ? "number" : "text";
+      if (fieldType === "number") {
+        input.step = "any";
+      }
       input.name = key;
       label.appendChild(input);
       form.append(label);
@@ -941,10 +967,11 @@ export function createPreviewSessionInteractionPanel(options: {
       }
       clearInteractionError();
       const assistTool = selectedTool;
-      const args: Record<string, unknown> = {};
-      for (const [key, inputEl] of inputs) {
-        args[key] = inputEl.value;
-      }
+      const args = buildAssistArgsFromInputs({
+        parameters: assistTool.parameters,
+        keys: paramKeys,
+        getInput: (key) => inputs.get(key),
+      });
       const requestId = crypto.randomUUID();
       const rpcUrl = `${options.apiBase}/sdk/rpc?sid=${encodeURIComponent(sid)}`;
       logSessionInteraction("assist:submit:request", "start", {

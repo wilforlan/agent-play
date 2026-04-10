@@ -44,13 +44,19 @@ const assistCashflowForecast = tool(
 );
 
 const assistRunwayEstimate = tool(
-  (_args: { currentCash: number; monthlyBurn: number }) => "runway_estimate_ready",
+  (_args: {
+    cashOnHand: number;
+    monthlyBurn: number;
+    monthlyRevenue: number;
+  }) => "runway_estimate_ready",
   {
     name: "assist_runway_estimate",
-    description: "Estimate runway from current cash and net monthly burn.",
+    description:
+      "Estimate runway from cash on hand, monthly burn, and monthly revenue (net burn = burn minus revenue).",
     schema: z.object({
-      currentCash: z.number(),
-      monthlyBurn: z.number().positive(),
+      cashOnHand: z.number(),
+      monthlyBurn: z.number(),
+      monthlyRevenue: z.number(),
     }),
   }
 );

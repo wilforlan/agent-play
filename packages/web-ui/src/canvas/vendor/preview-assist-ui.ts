@@ -1,3 +1,8 @@
+import {
+  buildAssistArgsFromInputs,
+  resolveAssistFieldType,
+} from "./preview-assist-coerce.js";
+
 const ASSIST_STYLE_ID = "agent-play-preview-assist-ui-styles";
 
 export type AssistToolDef = {
@@ -48,13 +53,18 @@ function ensureAssistStyles(): void {
   font: 600 8px system-ui, sans-serif;
   color: #334155;
 }
-.preview-assist-form input {
+.preview-assist-form input:not([type="checkbox"]) {
   font: 9px system-ui, sans-serif;
   padding: 3px 5px;
   border-radius: 4px;
   border: 1px solid #cbd5e1;
   width: 100%;
   box-sizing: border-box;
+}
+.preview-assist-form input[type="checkbox"] {
+  width: auto;
+  margin-left: 6px;
+  vertical-align: middle;
 }
 .preview-assist-form button[type="submit"] {
   font: 600 9px system-ui, sans-serif;
@@ -134,6 +144,7 @@ export function mountAssistPanel(options: {
   options.card.appendChild(formWrap);
 
   const inputsByKey = new Map<string, HTMLInputElement>();
+  let formTool: AssistToolDef | null = null;
 
   const setBusy = (busy: boolean): void => {
     strip.querySelectorAll("button").forEach((b) => {
@@ -146,6 +157,7 @@ export function mountAssistPanel(options: {
   };
 
   const closeForm = (): void => {
+    formTool = null;
     formWrap.classList.remove("preview-assist-form--open");
     formWrap.replaceChildren();
     inputsByKey.clear();
@@ -154,10 +166,16 @@ export function mountAssistPanel(options: {
   const submitAssist = async (toolName: string): Promise<void> => {
     const sid = options.getSid();
     if (sid === null) return;
-    const args: Record<string, unknown> = {};
-    for (const [k, input] of inputsByKey) {
-      args[k] = input.value;
+    const tool = formTool;
+    if (tool === null || tool.name !== toolName) {
+      return;
     }
+    const keys = parameterFieldKeys(tool.parameters);
+    const args = buildAssistArgsFromInputs({
+      parameters: tool.parameters,
+      keys,
+      getInput: (key) => inputsByKey.get(key),
+    });
     setBusy(true);
     try {
       const url = `${options.apiBase}/api/agent-play/assist-tool?sid=${encodeURIComponent(sid)}`;
@@ -182,6 +200,7 @@ export function mountAssistPanel(options: {
   };
 
   const openFormFor = (tool: AssistToolDef): void => {
+    formTool = tool;
     formWrap.classList.add("preview-assist-form--open");
     formWrap.replaceChildren();
     inputsByKey.clear();
@@ -190,8 +209,23 @@ export function mountAssistPanel(options: {
     for (const key of keys) {
       const lab = document.createElement("label");
       lab.textContent = key;
+      const meta = tool.parameters[key];
+      const fieldType = resolveAssistFieldType(meta);
+      if (fieldType === "boolean") {
+        const input = document.createElement("input");
+        input.type = "checkbox";
+        input.name = key;
+        input.autocomplete = "off";
+        lab.appendChild(input);
+        form.appendChild(lab);
+        inputsByKey.set(key, input);
+        continue;
+      }
       const input = document.createElement("input");
-      input.type = "text";
+      input.type = fieldType === "number" ? "number" : "text";
+      if (fieldType === "number") {
+        input.step = "any";
+      }
       input.name = key;
       input.autocomplete = "off";
       lab.appendChild(input);

@@ -25,6 +25,8 @@ export type {
   AgentPlayWorldMapAgentOccupant,
   AgentPlayWorldMapBounds,
   AgentPlayWorldMapMcpOccupant,
+  AssistToolFieldType,
+  AssistToolParameterSpec,
   AssistToolSpec,
   LangChainAgentRegistration,
   PlayerChainFanoutNotify,

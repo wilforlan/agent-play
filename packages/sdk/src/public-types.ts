@@ -18,10 +18,22 @@ export type RecordInteractionInput = {
   text: string;
 };
 
+/** How the watch UI should render and coerce a single assist tool argument. */
+export type AssistToolFieldType = "string" | "number" | "boolean";
+
+/**
+ * Per-parameter metadata for assist tools. Legacy snapshots may omit `fieldType`; the UI treats that as `"string"`.
+ */
+export type AssistToolParameterSpec = {
+  fieldType: AssistToolFieldType;
+  field?: string;
+};
+
 /**
  * Metadata for a tool whose name starts with `assist_`, shown as assist actions on the watch UI.
  *
- * @property parameters - Derived from Zod object `schema` when present; placeholder hints otherwise.
+ * @property parameters - Derived from Zod object `schema` when present: each key maps to
+ *   {@link AssistToolParameterSpec} with `fieldType` from schema introspection. May include `_note` when no schema shape exists.
  */
 export type AssistToolSpec = {
   name: string;

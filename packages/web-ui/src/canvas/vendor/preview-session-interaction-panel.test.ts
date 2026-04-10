@@ -67,6 +67,7 @@ describe("createPreviewSessionInteractionPanel", () => {
         fromPlayerId?: string;
         kind?: string;
         toolName?: string;
+        args?: Record<string, unknown>;
       };
     };
     expect(body.op).toBe("intercomCommand");
@@ -74,6 +75,56 @@ describe("createPreviewSessionInteractionPanel", () => {
     expect(body.payload?.fromPlayerId).toBe("main-node-1");
     expect(body.payload?.kind).toBe("assist");
     expect(body.payload?.toolName).toBe("assist_plan_day");
+    expect(body.payload?.args).toEqual({ task: "draft roadmap" });
+  });
+
+  it("coerces assist args to numbers when fieldType is number", async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ ok: true })));
+    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal("crypto", {
+      randomUUID: () => "req-num-uuid",
+    });
+    const panel = createPreviewSessionInteractionPanel({
+      getSid: () => "sid-1",
+      apiBase: "/api/agent-play",
+      getMainNodeId: () => "main-node-1",
+    });
+    panel.setAgents([
+      {
+        agentId: "agent-1",
+        name: "Agent 1",
+        assistTools: [
+          {
+            name: "assist_metrics",
+            description: "Metrics",
+            parameters: { amount: { fieldType: "number" as const, field: "amount" } },
+          },
+        ],
+      },
+    ]);
+    panel.setContext("agent-1");
+    panel.setMode("assist");
+    document.body.append(panel.element);
+    const toolBtn = panel.element.querySelector(
+      ".preview-session-interaction__assist-tool-btn"
+    ) as HTMLButtonElement;
+    toolBtn.click();
+    const input = panel.element.querySelector(
+      ".preview-session-interaction__assist-form input[name='amount']"
+    ) as HTMLInputElement;
+    expect(input.type).toBe("number");
+    input.value = "42.5";
+    const form = panel.element.querySelector(
+      ".preview-session-interaction__assist-form"
+    ) as HTMLFormElement;
+    form.dispatchEvent(new Event("submit", { cancelable: true, bubbles: true }));
+    await Promise.resolve();
+    expect(fetchMock).toHaveBeenCalled();
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const body = JSON.parse(String(init.body)) as {
+      payload?: { args?: Record<string, unknown> };
+    };
+    expect(body.payload?.args).toEqual({ amount: 42.5 });
   });
 
   it("replaces assist form with loading after submit while awaiting intercom", async () => {
