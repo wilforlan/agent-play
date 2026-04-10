@@ -4,7 +4,7 @@
  *
  * **Primary APIs**
  * - {@link import("./lib/remote-play-world.js").RemotePlayWorld} — HTTP client: **`nodeCredentials: { rootKey, passw }`** with human **`passw`** from **`~/.agent-play/credentials.json`** (see **@agent-play/node-tools** **`loadAgentPlayCredentialsFileFromPathSync`**), then `connect`, `getWorldSnapshot`, `addAgent` (preferred),
- *   `recordInteraction`, `recordJourney`, `registerMcp`, `hold`, `onClose`.
+ *   {@link import("./lib/remote-play-world.js").RemotePlayWorld#subscribeIntercomCommands `subscribeIntercomCommands`} (after each agent that should handle human intercom **`forwarded`** commands), `recordInteraction`, `recordJourney`, `registerMcp`, `hold`, `onClose`.
  * - {@link import("./platforms/langchain.js").langchainRegistration} — build `agent` payload for `addAgent`.
  * - {@link import("./lib/world-bounds.js").clampWorldPosition} / {@link import("./lib/world-bounds.js").WorldBounds} —
  *   shared bounds math for server and canvas.
@@ -86,7 +86,9 @@ export {
   type RemotePlayWorldLogging,
   type RemotePlayWorldNodeCredentials,
   type RemotePlayWorldOptions,
+  type SubscribeIntercomCommandsOptions,
 } from "./lib/remote-play-world.js";
+export { intercomResultRecordFromLangChainInvokeOutput } from "./lib/intercom-langchain-chat-result.js";
 export {
   mergeSnapshotWithPlayerChainNode,
   parsePlayerChainFanoutNotify,

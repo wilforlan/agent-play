@@ -2,6 +2,16 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
+
+vi.mock("eventsource-client", () => ({
+  createEventSource: () => ({
+    close: () => {},
+    async *[Symbol.asyncIterator]() {},
+  }),
+}));
+
+import { RemotePlayWorld } from "@agent-play/sdk";
+import { getBuiltinAgentDefinitions } from "./builtins/definitions.js";
 import { registerBuiltinAgents } from "./register-builtins.js";
 
 function mockRegisteredAgent(name: string, agentId: string) {
@@ -143,8 +153,12 @@ describe("registerBuiltinAgents", () => {
     expect(sawConnectValidation).toBe(true);
   });
 
-  it("skips addAgent when built-in name already on snapshot", async () => {
+  it("skips addAgent when built-in name already on snapshot but still subscribes intercom", async () => {
     setCredentialsFixture();
+    const defs = getBuiltinAgentDefinitions();
+    const subscribeSpy = vi
+      .spyOn(RemotePlayWorld.prototype, "subscribeIntercomCommands")
+      .mockReturnValue({ close: () => {} });
     let addPlayerCount = 0;
     let validateCount = 0;
     let sawConnectValidation = false;
@@ -179,15 +193,15 @@ describe("registerBuiltinAgents", () => {
                   occupants: [
                     {
                       kind: "agent",
-                      agentId: "builtin-task-organizer",
-                      name: "CFO AI",
+                      agentId: defs[0]?.id ?? "",
+                      name: defs[0]?.name ?? "CFO AI",
                       x: 0,
                       y: 0,
                     },
                     {
                       kind: "agent",
-                      agentId: "builtin-research-assistant",
-                      name: "Sales AI",
+                      agentId: defs[1]?.id ?? "",
+                      name: defs[1]?.name ?? "Sales AI",
                       x: 1,
                       y: 0,
                     },
@@ -222,5 +236,14 @@ describe("registerBuiltinAgents", () => {
     expect(addPlayerCount).toBe(0);
     expect(validateCount).toBe(1);
     expect(sawConnectValidation).toBe(true);
+    expect(subscribeSpy).toHaveBeenCalledTimes(1);
+    const subscribeArg = subscribeSpy.mock.calls[0]?.[0];
+    expect(subscribeArg).toMatchObject({
+      playerIds: [defs[0]?.id, defs[1]?.id],
+    });
+    expect(typeof subscribeArg?.executeTool).toBe("function");
+    expect(subscribeArg?.chatAgentsByPlayerId).toBeInstanceOf(Map);
+    expect(subscribeArg?.chatAgentsByPlayerId?.size).toBe(2);
+    subscribeSpy.mockRestore();
   });
 });

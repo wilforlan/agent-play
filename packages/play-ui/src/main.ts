@@ -372,13 +372,15 @@ async function sendProximityAction(
 ): Promise<void> {
   const sid = getSid();
   if (sid === null) return;
+  const fromPlayerId = getMainNodeIdForIntercom();
+  if (fromPlayerId === null) return;
   const url = `${API_BASE}/proximity-action?sid=${encodeURIComponent(sid)}`;
   try {
     const res = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        fromPlayerId: HUMAN_VIEWER_PLAYER_ID,
+        fromPlayerId,
         toPlayerId: toAgentId,
         action,
       }),

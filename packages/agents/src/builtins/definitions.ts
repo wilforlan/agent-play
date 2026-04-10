@@ -1,4 +1,3 @@
-import { langchainRegistration } from "@agent-play/sdk";
 import type { BuiltinAgentDefinition } from "./types.js";
 import { ChatOpenAI } from "@langchain/openai";
 import { createAgent } from "langchain";
@@ -6,10 +5,15 @@ import { cfoTools } from "./toolkits/cfo-tools.js";
 import { salesTools } from "./toolkits/sales-tools.js";
 
 function buildBuiltinAgentDefinitions(): BuiltinAgentDefinition[] {
+  const openaiApiKey = process.env.OPENAI_API_KEY;
+  if (!openaiApiKey) {
+    throw new Error("OPENAI_API_KEY is not set");
+  }
   const demoModel = new ChatOpenAI({
-    apiKey: process.env.OPENAI_API_KEY ?? "agent-play-builtin-unused",
+    apiKey: openaiApiKey,
     model: "gpt-4.1",
   });
+  console.log("@packages/agents - demo model loaded")
 
   const cfoLcAgent = createAgent({
     name: "builtin-cfo-ai",
@@ -32,13 +36,13 @@ function buildBuiltinAgentDefinitions(): BuiltinAgentDefinition[] {
       id: "b2bffffd3e73e975c3aef60f6c15bdd84165fc548583c8553fb8119f92550f4d",
       name: "CFO AI",
       type: "langchain",
-      agent: langchainRegistration(cfoLcAgent),
+      agent: cfoLcAgent,
     },
     {
       id: "4fda036ff28e27a1df7529ebd765bc23dec4228b1e9be3fff4cea57bbc9b8dc4",
       name: "Sales AI",
       type: "langchain",
-      agent: langchainRegistration(salesLcAgent),
+      agent: salesLcAgent,
     },
   ];
 }

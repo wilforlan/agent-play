@@ -35,12 +35,18 @@ import {
   parsePlayerChainNodeRpcBody,
   sortNodeRefsForSerializedFetch,
 } from "./player-chain-merge.js";
+import { HumanMessage } from "@langchain/core/messages";
 import {
   INTERCOM_RESPONSE_OP,
   type IntercomResponsePayload,
   parseWorldIntercomEventPayload,
   type WorldIntercomEventPayload,
+  WORLD_INTERCOM_EVENT,
 } from "@agent-play/intercom";
+import { intercomResultRecordFromLangChainInvokeOutput } from "./intercom-langchain-chat-result.js";
+
+const PLAYER_CONNECTION_HEARTBEAT_MAX_ATTEMPTS = 10;
+const PLAYER_CONNECTION_HEARTBEAT_RETRY_DELAY_MS = 10_000;
 
 /**
  * Root key (from `.root`) plus **human** passphrase as stored in **`~/.agent-play/credentials.json`**
@@ -234,6 +240,59 @@ export type IntercomToolExecutor = (input: {
   args: Record<string, unknown>;
 }) => Record<string, unknown>;
 
+type SubscribeIntercomChatAgents = {
+  /**
+   * Same LangChain agent instances passed to **`langchainRegistration`** (e.g. **`createAgent`** return values).
+   * For **`kind: chat`**, **`invoke({ messages: [HumanMessage(text)] })`** is called with **`.call(agent, input)`** (no wrapping).
+   */
+  chatAgentsByPlayerId?: ReadonlyMap<string, unknown>;
+};
+
+export type SubscribeIntercomCommandsOptions =
+  | ({ playerId: string; executeTool: IntercomToolExecutor } & SubscribeIntercomChatAgents)
+  | ({ playerIds: readonly string[]; executeTool: IntercomToolExecutor } &
+      SubscribeIntercomChatAgents);
+
+function getSseEventName(msg: unknown): string | undefined {
+  if (typeof msg !== "object" || msg === null) {
+    return undefined;
+  }
+  const m = msg as Record<string, unknown>;
+  if (typeof m.event === "string" && m.event.length > 0) {
+    return m.event;
+  }
+  if (typeof m.type === "string" && m.type.length > 0) {
+    return m.type;
+  }
+  return undefined;
+}
+
+function invokeLangChainChatAgent(
+  agent: unknown,
+  input: unknown
+): Promise<unknown> {
+  if (typeof agent !== "object" || agent === null) {
+    throw new Error("intercom: chat agent must be a non-null object");
+  }
+  const inv = (agent as { invoke?: unknown }).invoke;
+  if (typeof inv !== "function") {
+    throw new Error("intercom: chat agent must have invoke()");
+  }
+  return Promise.resolve(
+    (inv as (this: unknown, i: unknown) => unknown).call(agent, input)
+  );
+}
+
+function normalizeIntercomSubscribePlayerIds(
+  options: SubscribeIntercomCommandsOptions
+): Set<string> {
+  const raw =
+    "playerIds" in options ? [...options.playerIds] : [options.playerId];
+  return new Set(
+    raw.map((id) => id.trim()).filter((id) => id.length > 0)
+  );
+}
+
 /**
  * HTTP client for the Agent Play web UI: session, snapshot RPC, mutating RPC with `sid`, and optional SSE subscription.
  *
@@ -243,7 +302,9 @@ export type IntercomToolExecutor = (input: {
  *
  * Incremental updates: {@link RemotePlayWorld.subscribeWorldState} listens for **`playerChainNotify`** in SSE `data`, then fetches each changed leaf via {@link RemotePlayWorld.getPlayerChainNode} and merges with {@link mergeSnapshotWithPlayerChainNode}.
  *
- * Set **`logging: "on"`** to trace session events, SSE payloads, intercom **`forwarded`** matching (including **`toPlayerId_mismatch`**), and **`sendIntercomResponse`** HTTP results.
+ * Human→agent intercom (Assist/Chat from the watch UI) is delivered as SSE **`world:intercom`** payloads with status **`forwarded`**. Call {@link RemotePlayWorld.subscribeIntercomCommands} with **`playerId`** or **`playerIds`** (one SSE stream; routes **`forwarded`** commands by **`toPlayerId`**) so your process runs tools and posts **`intercomResponse`** via {@link RemotePlayWorld.sendIntercomResponse} (the subscription does this when **`executeTool`** resolves).
+ *
+ * Set **`logging: "on"`** to trace **`forwarded`** commands for subscribed ids and **`sendIntercomResponse`** HTTP results.
  */
 export class RemotePlayWorld {
   private readonly apiBase: string;
@@ -703,6 +764,16 @@ export class RemotePlayWorld {
         playerId,
         connectionId: bodyConnectionId,
         leaseTtlSeconds: bodyLeaseTtlSeconds,
+      }).catch((err: unknown) => {
+        const message = err instanceof Error ? err.message : String(err);
+        console.error("[agent-play:RemotePlayWorld] heartbeat:exhausted", {
+          playerId,
+          connectionId: bodyConnectionId,
+          leaseTtlSeconds: bodyLeaseTtlSeconds,
+          attempts: PLAYER_CONNECTION_HEARTBEAT_MAX_ATTEMPTS,
+          retryDelayMs: PLAYER_CONNECTION_HEARTBEAT_RETRY_DELAY_MS,
+          error: message,
+        });
       });
     }, 12_000);
     this.playerConnectionInfo.set(playerId, {
@@ -794,10 +865,26 @@ export class RemotePlayWorld {
     }
   }
 
-  subscribeIntercomCommands(options: {
-    playerId: string;
-    executeTool: IntercomToolExecutor;
-  }): { close: () => void } {
+  /**
+   * Subscribes to the session SSE stream and handles **`forwarded`** intercom commands whose **`toPlayerId`** is in **`playerId`** or **`playerIds`**, invoking **`executeTool`** and posting **`intercomResponse`** (**`completed`** / **`failed`**).
+   * Uses a **single** SSE connection when **`playerIds`** lists multiple automation agents (recommended for several agents in one process).
+   * Not invoked automatically by {@link RemotePlayWorld.addAgent}.
+   */
+  subscribeIntercomCommands(
+    options: SubscribeIntercomCommandsOptions
+  ): { close: () => void } {
+    const subscribed = normalizeIntercomSubscribePlayerIds(options);
+    const playerIdsSorted = [...subscribed].sort();
+    if (subscribed.size === 0) {
+      this.logTransport("subscribeIntercomCommands:skip", {
+        reason: "empty_player_ids",
+      });
+      return { close: () => {} };
+    }
+    this.logTransport("subscribeIntercomCommands:start", {
+      playerIds: playerIdsSorted,
+    });
+    const { executeTool, chatAgentsByPlayerId } = options;
     let closeSource: (() => void) | null = null;
     const task = (async () => {
       try {
@@ -807,7 +894,7 @@ export class RemotePlayWorld {
         )}`;
         this.logTransport("subscribeIntercomCommands:sse_open", {
           sseUrl,
-          subscribePlayerId: options.playerId,
+          subscribePlayerIds: playerIdsSorted,
         });
         const source = createEventSource({
           url: sseUrl,
@@ -817,32 +904,28 @@ export class RemotePlayWorld {
           source.close();
         };
         for await (const msg of source) {
-          const eventType =
-            typeof msg === "object" &&
-            msg !== null &&
-            "type" in msg &&
-            typeof (msg as { type?: unknown }).type === "string"
-              ? (msg as { type: string }).type
-              : "(no type)";
+          const sseEvent = getSseEventName(msg);
+          if (
+            sseEvent !== undefined &&
+            sseEvent !== WORLD_INTERCOM_EVENT
+          ) {
+            continue;
+          }
           if (typeof msg.data !== "string") {
+            const eventLabel = sseEvent ?? "(unset)";
             this.logTransport("sse:intercomCommands:skip", {
               reason: "data_not_string",
-              eventType,
+              sseEvent: eventLabel,
             });
             continue;
           }
-          this.logTransport("sse:intercomCommands:message", {
-            eventType,
-            dataLength: msg.data.length,
-            dataPreview: this.truncateForLog(msg.data),
-          });
           let data: unknown;
           try {
             data = JSON.parse(msg.data) as unknown;
           } catch {
             this.logTransport("sse:intercomCommands:parseJson", {
               reason: "invalid_json",
-              eventType,
+              sseEvent: sseEvent ?? "(unset)",
             });
             continue;
           }
@@ -850,24 +933,9 @@ export class RemotePlayWorld {
           try {
             inter = parseWorldIntercomEventPayload(data);
           } catch {
-            this.logTransport("sse:intercomCommands:skip", {
-              reason: "not_world_intercom_payload",
-            });
             continue;
           }
-          this.logTransport("sse:intercomCommands:intercom_event", {
-            status: inter.status,
-            requestId: inter.requestId,
-            kind: inter.kind,
-            channelKey: inter.channelKey,
-            hasCommand: inter.command !== undefined,
-          });
           if (inter.status !== "forwarded") {
-            this.logTransport("sse:intercomCommands:skip", {
-              reason: "status_not_forwarded",
-              status: inter.status,
-              requestId: inter.requestId,
-            });
             continue;
           }
           const cmd = inter.command;
@@ -878,23 +946,16 @@ export class RemotePlayWorld {
             });
             continue;
           }
-          this.logTransport("sse:intercomCommands:command", {
+          if (!subscribed.has(cmd.toPlayerId)) {
+            continue;
+          }
+          this.logTransport("sse:intercomCommands:forwarded", {
             requestId: cmd.requestId,
             fromPlayerId: cmd.fromPlayerId,
             toPlayerId: cmd.toPlayerId,
             kind: cmd.kind,
             toolName: cmd.toolName,
-            subscribePlayerId: options.playerId,
           });
-          if (cmd.toPlayerId !== options.playerId) {
-            this.logTransport("sse:intercomCommands:skip", {
-              reason: "toPlayerId_mismatch",
-              requestId: cmd.requestId,
-              expectedSubscribePlayerId: options.playerId,
-              commandToPlayerId: cmd.toPlayerId,
-            });
-            continue;
-          }
           const toolName =
             cmd.kind === "chat" ? "chat_tool" : cmd.toolName ?? "";
           const args =
@@ -905,7 +966,43 @@ export class RemotePlayWorld {
             argsPreview: this.truncateForLog(JSON.stringify(args)),
           });
           try {
-            const result = options.executeTool({ toolName, args });
+            this.logTransport("intercom:executeTool:started", {
+              requestId: cmd.requestId,
+              toolName,
+              argsPreview: this.truncateForLog(JSON.stringify(args)),
+            });
+            let result: Record<string, unknown>;
+            if (
+              cmd.kind === "chat" &&
+              chatAgentsByPlayerId !== undefined &&
+              chatAgentsByPlayerId.has(cmd.toPlayerId)
+            ) {
+              const lc = chatAgentsByPlayerId.get(cmd.toPlayerId);
+              if (lc === undefined) {
+                throw new Error("intercom: chatAgentsByPlayerId entry missing");
+              }
+              this.logTransport("intercom:langchain:invoke", {
+                requestId: cmd.requestId,
+                toPlayerId: cmd.toPlayerId,
+                textPreview: this.truncateForLog(cmd.text ?? ""),
+              });
+              const rawOut = await invokeLangChainChatAgent(lc, {
+                messages: [new HumanMessage(cmd.text ?? "")],
+              });
+              result = intercomResultRecordFromLangChainInvokeOutput(rawOut);
+              this.logTransport("intercom:langchain:invoke:completed", {
+                requestId: cmd.requestId,
+                resultPreview: this.truncateForLog(JSON.stringify(result)),
+              });
+            } else {
+              result = executeTool({ toolName, args });
+            }
+            this.logTransport("intercom:executeTool:completed", {
+              requestId: cmd.requestId,
+              toolName,
+              argsPreview: this.truncateForLog(JSON.stringify(args)),
+              resultPreview: this.truncateForLog(JSON.stringify(result)),
+            });
             await this.sendIntercomResponse({
               requestId: cmd.requestId,
               mainNodeId: cmd.mainNodeId,
@@ -943,7 +1040,9 @@ export class RemotePlayWorld {
     })();
     return {
       close: () => {
-        this.logTransport("subscribeIntercomCommands:close", {});
+        this.logTransport("subscribeIntercomCommands:close", {
+          playerIds: playerIdsSorted,
+        });
         closeSource?.();
         void task;
       },
@@ -999,18 +1098,74 @@ export class RemotePlayWorld {
   }): Promise<void> {
     const sid = this.getSessionId();
     const url = `${this.apiBase}/api/agent-play/players/heartbeat?sid=${encodeURIComponent(sid)}`;
-    const res = await fetch(url, {
-      method: "POST",
-      headers: this.jsonHeaders(),
-      body: JSON.stringify({
+    const bodyJson = JSON.stringify({
+      playerId: input.playerId,
+      connectionId: input.connectionId,
+      leaseTtlSeconds: input.leaseTtlSeconds,
+    });
+    let lastError: Error = new Error("heartbeat: no attempts completed");
+
+    for (let attempt = 1; attempt <= PLAYER_CONNECTION_HEARTBEAT_MAX_ATTEMPTS; attempt += 1) {
+      const attemptStartedAt = Date.now();
+      try {
+        const res = await fetch(url, {
+          method: "POST",
+          headers: this.jsonHeaders(),
+          body: bodyJson,
+        });
+        const text = await res.text();
+        if (res.ok) {
+          if (attempt > 1) {
+            console.info("[agent-play:RemotePlayWorld] heartbeat:retry_recovered", {
+              playerId: input.playerId,
+              connectionId: input.connectionId,
+              leaseTtlSeconds: input.leaseTtlSeconds,
+              sid,
+              url,
+              successfulAttempt: attempt,
+              attemptsUsed: attempt,
+              maxAttempts: PLAYER_CONNECTION_HEARTBEAT_MAX_ATTEMPTS,
+              durationMs: Date.now() - attemptStartedAt,
+            });
+          }
+          return;
+        }
+        lastError = new Error(`heartbeat: ${res.status} ${text}`);
+      } catch (err: unknown) {
+        lastError =
+          err instanceof Error ? err : new Error(String(err));
+      }
+
+      const willRetry = attempt < PLAYER_CONNECTION_HEARTBEAT_MAX_ATTEMPTS;
+      console.warn("[agent-play:RemotePlayWorld] heartbeat:attempt_failed", {
+        phase: "player_connection_lease_refresh",
         playerId: input.playerId,
         connectionId: input.connectionId,
         leaseTtlSeconds: input.leaseTtlSeconds,
-      }),
-    });
-    if (!res.ok) {
-      const text = await res.text();
-      throw new Error(`heartbeat: ${res.status} ${text}`);
+        sid,
+        url,
+        attempt,
+        maxAttempts: PLAYER_CONNECTION_HEARTBEAT_MAX_ATTEMPTS,
+        remainingAttemptsAfterThisFailure:
+          PLAYER_CONNECTION_HEARTBEAT_MAX_ATTEMPTS - attempt,
+        errorMessage: lastError.message,
+        requestBodyBytes: bodyJson.length,
+        attemptDurationMs: Date.now() - attemptStartedAt,
+        nextAction: willRetry
+          ? `sleep ${PLAYER_CONNECTION_HEARTBEAT_RETRY_DELAY_MS}ms then retry`
+          : "no more retries; will throw",
+        retryDelayMs: willRetry
+          ? PLAYER_CONNECTION_HEARTBEAT_RETRY_DELAY_MS
+          : 0,
+      });
+
+      if (!willRetry) {
+        throw lastError;
+      }
+
+      await new Promise<void>((resolve) => {
+        setTimeout(resolve, PLAYER_CONNECTION_HEARTBEAT_RETRY_DELAY_MS);
+      });
     }
   }
 

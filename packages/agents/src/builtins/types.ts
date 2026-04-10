@@ -14,5 +14,9 @@ export type BuiltinAgentDefinition = {
   id: string;
   name: string;
   type: "langchain";
-  agent: LangChainAgentRegistration;
+  /**
+   * Raw LangChain agent (e.g. `createAgent` result). Pass the same reference to **`langchainRegistration`**
+   * for `addAgent` and in **`chatAgentsByPlayerId`** for intercom **`invoke`**.
+   */
+  agent: unknown;
 };

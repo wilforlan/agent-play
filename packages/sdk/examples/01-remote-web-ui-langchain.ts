@@ -30,6 +30,7 @@
 
 import {
   RemotePlayWorld,
+  type IntercomToolExecutor,
   langchainRegistration,
   loadAgentPlayCredentialsFileFromPathSync,
   loadRootKey,
@@ -73,6 +74,22 @@ const agent = createAgent({
   systemPrompt: "Use increment when the user asks to bump a number.",
 });
 
+const executeIntercomTool: IntercomToolExecutor = ({ toolName, args }) => {
+  if (toolName === "chat_tool") {
+    const text = typeof args.text === "string" ? args.text : "";
+    return { message: `echo:${text}` };
+  }
+  if (toolName === "increment") {
+    const n = args.n;
+    const num = typeof n === "number" ? n : Number(n);
+    if (!Number.isFinite(num)) {
+      throw new Error("increment: n must be a finite number");
+    }
+    return { result: String(num + 1) };
+  }
+  throw new Error(`unknown tool for intercom: ${toolName}`);
+};
+
 async function main() {
   const stored = loadAgentPlayCredentialsFileFromPathSync(
     resolveAgentPlayCredentialsPath()
@@ -98,7 +115,9 @@ async function main() {
   const holdSeconds = Number(process.env.AGENT_PLAY_HOLD_SECONDS ?? 3600);
 
   const world = new RemotePlayWorld();
+  let closeIntercom: (() => void) | undefined;
   world.onClose(() => {
+    closeIntercom?.();
     console.log("RemotePlayWorld closed.");
   });
   await world.connect({ mainNodeId: EXAMPLE_MAIN_NODE_ID });
@@ -114,6 +133,11 @@ async function main() {
     agent: langchainRegistration(agent),
     nodeId: agentNodeId,
   });
+
+  closeIntercom = world.subscribeIntercomCommands({
+    playerId: player.id,
+    executeTool: executeIntercomTool,
+  }).close;
 
   console.log("Open the watch UI (session is server-side; UI resolves session via API):");
   console.log(player.previewUrl);

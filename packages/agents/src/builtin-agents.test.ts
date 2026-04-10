@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { langchainRegistration } from "@agent-play/sdk";
 import { getBuiltinAgentDefinitions } from "./builtin-langchain-agents.js";
 
 describe("builtin LangChain agents", () => {
@@ -7,12 +8,11 @@ describe("builtin LangChain agents", () => {
     expect(agents).toHaveLength(2);
     for (const def of agents) {
       expect(def.id.length).toBeGreaterThan(0);
-      expect(def.agent.type).toBe("langchain");
-      expect(def.agent.toolNames).toContain("chat_tool");
-      expect(
-        def.agent.toolNames.some((n) => n.startsWith("assist_"))
-      ).toBe(true);
-      const assistNames = def.agent.assistTools?.map((t) => t.name) ?? [];
+      const reg = langchainRegistration(def.agent);
+      expect(reg.type).toBe("langchain");
+      expect(reg.toolNames).toContain("chat_tool");
+      expect(reg.toolNames.some((n) => n.startsWith("assist_"))).toBe(true);
+      const assistNames = reg.assistTools?.map((t) => t.name) ?? [];
       expect(assistNames.length).toBeGreaterThan(0);
     }
   });
@@ -23,7 +23,8 @@ describe("builtin LangChain agents", () => {
     );
     expect(def).toBeDefined();
     expect(def?.name).toBe("CFO AI");
-    expect(def?.agent.toolNames).toEqual(
+    const reg = langchainRegistration(def!.agent);
+    expect(reg.toolNames).toEqual(
       expect.arrayContaining([
         "chat_tool",
         "assist_build_budget",
@@ -34,7 +35,7 @@ describe("builtin LangChain agents", () => {
       ])
     );
     const assistCount =
-      def?.agent.toolNames.filter((n) => n.startsWith("assist_")).length ?? 0;
+      reg.toolNames.filter((n) => n.startsWith("assist_")).length;
     expect(assistCount).toBe(5);
   });
 
@@ -44,7 +45,8 @@ describe("builtin LangChain agents", () => {
     );
     expect(def).toBeDefined();
     expect(def?.name).toBe("Sales AI");
-    expect(def?.agent.toolNames).toEqual(
+    const reg = langchainRegistration(def!.agent);
+    expect(reg.toolNames).toEqual(
       expect.arrayContaining([
         "chat_tool",
         "assist_pipeline_review",
@@ -53,7 +55,7 @@ describe("builtin LangChain agents", () => {
       ])
     );
     const assistCount =
-      def?.agent.toolNames.filter((n) => n.startsWith("assist_")).length ?? 0;
+      reg.toolNames.filter((n) => n.startsWith("assist_")).length;
     expect(assistCount).toBe(3);
   });
 

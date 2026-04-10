@@ -27,12 +27,19 @@ function ensureStyles(): void {
   s.id = STYLE_ID;
   s.textContent = `
 .preview-session-interaction {
+  flex: 1 1 auto;
+  min-height: 0;
+  box-sizing: border-box;
   padding: 12px;
+  padding-bottom: max(20px, calc(12px + env(safe-area-inset-bottom, 0px)));
   border-radius: 10px;
   border: 1px solid rgba(148, 163, 184, 0.35);
   background: rgba(15, 23, 42, 0.86);
   color: #e2e8f0;
   font-family: ui-sans-serif, system-ui, sans-serif;
+  overflow-x: hidden;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
 }
 .preview-session-interaction__title { font-size: 12px; font-weight: 700; margin-bottom: 8px; }
 .preview-session-interaction__target { font-size: 12px; color: #cbd5e1; margin-bottom: 8px; }
@@ -103,8 +110,6 @@ function ensureStyles(): void {
   100% { transform: translateX(350%); }
 }
 .preview-session-interaction__chat-log {
-  max-height: 220px;
-  overflow-y: auto;
   display: grid;
   gap: 6px;
   margin-bottom: 8px;

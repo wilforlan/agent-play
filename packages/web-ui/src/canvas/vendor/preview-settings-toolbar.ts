@@ -80,6 +80,7 @@ body > .preview-shell {
 }
 .preview-game-col {
   min-width: 0;
+  min-height: 0;
   display: flex;
   flex-direction: column;
 }
@@ -148,10 +149,13 @@ body > .preview-shell {
   gap: 10px;
   flex: 1;
   min-height: 0;
-  overflow-y: auto;
+  overflow: hidden;
   align-items: stretch;
+  padding-bottom: max(16px, env(safe-area-inset-bottom, 0px));
+  box-sizing: border-box;
 }
 .preview-proximity-legend {
+  flex-shrink: 0;
   font: 600 13px/1.45 system-ui, sans-serif;
   color: #cbd5e1;
   padding: 14px 16px;
@@ -277,6 +281,9 @@ body > .preview-shell {
     display: flex;
     flex-direction: column;
     min-height: 0;
+  }
+  .preview-canvas-stage .preview-control-stack {
+    padding-bottom: max(28px, calc(16px + env(safe-area-inset-bottom, 0px)));
   }
   .preview-canvas-stage .preview-game-col--right {
     right: 0;

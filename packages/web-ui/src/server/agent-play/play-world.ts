@@ -33,6 +33,7 @@ import {
   type PreviewWorldMapAgentOccupantJson,
   type PreviewWorldMapMcpOccupantJson,
   type PreviewWorldMapHumanOccupantJson,
+  type PreviewWorldMapOccupantJson,
   type WorldJourneyUpdateJson,
 } from "./preview-serialize.js";
 import type { RedisFanoutItem } from "./world-redis-sync.js";
@@ -87,6 +88,16 @@ function journeyPathFromCellAndJourney(
   return clampPathToBounds(pathRaw, bounds);
 }
 
+function snapshotWithOccupants(
+  base: PreviewSnapshotJson,
+  occupants: PreviewWorldMapOccupantJson[]
+): PreviewSnapshotJson {
+  return {
+    ...base,
+    worldMap: buildSnapshotWorldMap(occupants),
+  };
+}
+
 function patchAgentLastUpdate(
   base: PreviewSnapshotJson,
   playerId: string,
@@ -102,7 +113,7 @@ function patchAgentLastUpdate(
     }
     return o;
   });
-  return { sid: base.sid, worldMap: buildSnapshotWorldMap(occ) };
+  return snapshotWithOccupants(base, occ);
 }
 
 export type AssistToolSpec = {
@@ -337,26 +348,54 @@ export class PlayWorld {
         byRef.set(`mcp:${occ.id}`, occ);
       }
     }
-    const fromRef = input.fromPlayerId.startsWith("human:")
-      ? input.fromPlayerId
-      : input.fromPlayerId === HUMAN_VIEWER_PLAYER_ID
-        ? `human:${HUMAN_VIEWER_PLAYER_ID}`
-        : `agent:${input.fromPlayerId}`;
+    const snapshotMainNodeId =
+      typeof snap.mainNodeId === "string" && snap.mainNodeId.trim().length > 0
+        ? snap.mainNodeId.trim()
+        : null;
+    const chainGenesisHumanId =
+      this.mainNodeId ?? this.sessionStore.playerChainGenesis;
+    const fromRaw = input.fromPlayerId;
+    const fromRef =
+      fromRaw.startsWith("human:")
+        ? fromRaw
+        : fromRaw === HUMAN_VIEWER_PLAYER_ID
+          ? `human:${HUMAN_VIEWER_PLAYER_ID}`
+          : byRef.has(`human:${fromRaw}`)
+            ? `human:${fromRaw}`
+            : snapshotMainNodeId !== null && fromRaw === snapshotMainNodeId
+              ? `human:${fromRaw}`
+              : fromRaw === chainGenesisHumanId
+                ? `human:${fromRaw}`
+                : `agent:${fromRaw}`;
     const toRef = input.toPlayerId.includes(":")
       ? input.toPlayerId
       : `agent:${input.toPlayerId}`;
+    const syntheticViewerHuman = (
+      id: string
+    ): PreviewWorldMapHumanOccupantJson => ({
+      kind: "human",
+      id,
+      name: "Viewer",
+      x: 0,
+      y: 0,
+      interactive: false,
+    });
     const fromOcc =
       byRef.get(fromRef) ??
       (fromRef === `human:${HUMAN_VIEWER_PLAYER_ID}`
-        ? {
-            kind: "human" as const,
-            id: HUMAN_VIEWER_PLAYER_ID,
-            name: "Viewer",
-            x: 0,
-            y: 0,
-            interactive: false,
-          }
-        : undefined);
+        ? syntheticViewerHuman(HUMAN_VIEWER_PLAYER_ID)
+        : fromRef.startsWith("human:")
+          ? (() => {
+              const hid = fromRef.slice("human:".length);
+              if (
+                hid.length > 0 &&
+                (snapshotMainNodeId === hid || hid === chainGenesisHumanId)
+              ) {
+                return syntheticViewerHuman(hid);
+              }
+              return undefined;
+            })()
+          : undefined);
     const toOcc =
       byRef.get(toRef) ??
       (toRef === `human:${HUMAN_VIEWER_PLAYER_ID}`
@@ -483,10 +522,7 @@ export class PlayWorld {
             onZone: { zoneCount, flagged, at: atZ },
           };
           const nextOccupants = upsertAgentOccupant(base.worldMap.occupants, row);
-          const next: PreviewSnapshotJson = {
-            sid: base.sid,
-            worldMap: buildSnapshotWorldMap(nextOccupants),
-          };
+          const next = snapshotWithOccupants(base, nextOccupants);
           this.emitAgentSignal(agentId, { kind: "zone", data: { zoneCount, flagged } });
           return {
             next,
@@ -518,10 +554,7 @@ export class PlayWorld {
           },
         };
         const nextOccupants = upsertAgentOccupant(base.worldMap.occupants, row);
-        const next: PreviewSnapshotJson = {
-          sid: base.sid,
-          worldMap: buildSnapshotWorldMap(nextOccupants),
-        };
+        const next = snapshotWithOccupants(base, nextOccupants);
         this.emitAgentSignal(agentId, {
           kind: "zone",
           data: {
@@ -574,10 +607,7 @@ export class PlayWorld {
             onYield: { yieldCount, at: atY },
           };
           const nextOccupants = upsertAgentOccupant(base.worldMap.occupants, row);
-          const next: PreviewSnapshotJson = {
-            sid: base.sid,
-            worldMap: buildSnapshotWorldMap(nextOccupants),
-          };
+          const next = snapshotWithOccupants(base, nextOccupants);
           this.emitAgentSignal(agentId, { kind: "yield", data: { yieldCount } });
           return {
             next,
@@ -608,10 +638,7 @@ export class PlayWorld {
           },
         };
         const nextOccupants = upsertAgentOccupant(base.worldMap.occupants, row);
-        const next: PreviewSnapshotJson = {
-          sid: base.sid,
-          worldMap: buildSnapshotWorldMap(nextOccupants),
-        };
+        const next = snapshotWithOccupants(base, nextOccupants);
         this.emitAgentSignal(agentId, {
           kind: "yield",
           data: { yieldCount: nextStored.yieldCount },
@@ -845,10 +872,7 @@ export class PlayWorld {
           base.worldMap.occupants,
           row
         );
-        const next: PreviewSnapshotJson = {
-          sid: base.sid,
-          worldMap: buildSnapshotWorldMap(nextOccupants),
-        };
+        const next = snapshotWithOccupants(base, nextOccupants);
 
         const player: PlayAgentInformation = {
           id: playerId,
@@ -1001,10 +1025,7 @@ export class PlayWorld {
           base.worldMap.occupants,
           id
         );
-        const next: PreviewSnapshotJson = {
-          sid: base.sid,
-          worldMap: buildSnapshotWorldMap(nextOccupants),
-        };
+        const next = snapshotWithOccupants(base, nextOccupants);
         agentPlayDebug("play-world", "removePlayer", { playerId: id });
         return { next, fanout: this.metadataFanout() };
       },
@@ -1040,10 +1061,7 @@ export class PlayWorld {
           ...(options.url !== undefined ? { url: options.url } : {}),
         };
         const nextOccupants = [...base.worldMap.occupants, mcpOcc];
-        const next: PreviewSnapshotJson = {
-          sid: base.sid,
-          worldMap: buildSnapshotWorldMap(nextOccupants),
-        };
+        const next = snapshotWithOccupants(base, nextOccupants);
         agentPlayDebug("play-world", "registerMCP", { name: options.name });
         return { next, fanout: this.metadataFanout() };
       },

@@ -1,5 +1,8 @@
 import express from "express";
+import { loadAgentsPackageEnv } from "./load-agents-env.js";
 import { registerBuiltinAgents } from "./register-builtins.js";
+
+loadAgentsPackageEnv();
 
 const sidecarPort = Number(process.env.AGENT_PLAY_BUILTINS_PORT ?? "3100");
 const webUiRaw = process.env.AGENT_PLAY_WEB_UI_URL ?? "http://127.0.0.1:3000";

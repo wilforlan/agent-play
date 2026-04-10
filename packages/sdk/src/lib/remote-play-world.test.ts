@@ -437,6 +437,156 @@ describe("RemotePlayWorld", () => {
     vi.useRealTimers();
   });
 
+  it("heartbeat retries with 10s delay until success after transient failures", async () => {
+    vi.useFakeTimers();
+    let heartbeatTick: (() => void) | undefined;
+    const intervalSpy = vi
+      .spyOn(globalThis, "setInterval")
+      .mockImplementation((handler, timeout) => {
+        const ms = typeof timeout === "number" ? timeout : Number(timeout);
+        if (ms === 12_000 && typeof handler === "function") {
+          heartbeatTick = handler as () => void;
+        }
+        return 1 as unknown as ReturnType<typeof setInterval>;
+      });
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const infoSpy = vi.spyOn(console, "info").mockImplementation(() => {});
+    let heartbeatFetchCount = 0;
+    let failBudget = 2;
+    const fetchMock = vi.fn(async (url: string | URL, init?: RequestInit) => {
+      const u = String(url);
+      if (u.endsWith("/api/agent-play/session")) {
+        return sessionResponse();
+      }
+      if (u.endsWith("/api/nodes/validate") && init?.method === "POST") {
+        return new Response(JSON.stringify({ ok: true, nodeKind: "agent" }), {
+          status: 200,
+        });
+      }
+      if (u.includes("/api/agent-play/players/heartbeat") && init?.method === "POST") {
+        heartbeatFetchCount += 1;
+        if (failBudget > 0) {
+          failBudget -= 1;
+          return new Response("temp unavailable", { status: 503 });
+        }
+        return new Response(JSON.stringify({ ok: true }), { status: 200 });
+      }
+      if (u.includes("/api/agent-play/players/disconnect") && init?.method === "POST") {
+        return new Response(JSON.stringify({ ok: true }), { status: 200 });
+      }
+      if (u.includes("/api/agent-play/players") && init?.method === "POST") {
+        return new Response(
+          JSON.stringify({
+            playerId: "p1",
+            previewUrl: `${BASE_URL}/agent-play/watch`,
+            registeredAgent: sampleRegisteredAgent("aid-1", "a"),
+            connectionId: "conn-1",
+            leaseTtlSeconds: 45,
+          }),
+          { status: 200 }
+        );
+      }
+      return notFound();
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const world = playWorld("key");
+    await world.connect();
+    await world.addAgent({
+      name: "a",
+      type: "langchain",
+      agent: { type: "langchain", toolNames: ["chat_tool"] },
+      nodeId: "aid-1",
+    });
+    expect(heartbeatTick).toBeDefined();
+    heartbeatTick?.();
+    await vi.runAllTimersAsync();
+    expect(heartbeatFetchCount).toBe(3);
+    expect(warnSpy.mock.calls.length).toBeGreaterThanOrEqual(2);
+    expect(
+      infoSpy.mock.calls.some(
+        (c) =>
+          typeof c[0] === "string" &&
+          c[0].includes("heartbeat:retry_recovered")
+      )
+    ).toBe(true);
+    intervalSpy.mockRestore();
+    warnSpy.mockRestore();
+    infoSpy.mockRestore();
+    await world.close();
+    vi.useRealTimers();
+  });
+
+  it("heartbeat exhausts 10 attempts then logs exhausted error", async () => {
+    vi.useFakeTimers();
+    let heartbeatTick: (() => void) | undefined;
+    const intervalSpy = vi
+      .spyOn(globalThis, "setInterval")
+      .mockImplementation((handler, timeout) => {
+        const ms = typeof timeout === "number" ? timeout : Number(timeout);
+        if (ms === 12_000 && typeof handler === "function") {
+          heartbeatTick = handler as () => void;
+        }
+        return 1 as unknown as ReturnType<typeof setInterval>;
+      });
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    let heartbeatFetchCount = 0;
+    const fetchMock = vi.fn(async (url: string | URL, init?: RequestInit) => {
+      const u = String(url);
+      if (u.endsWith("/api/agent-play/session")) {
+        return sessionResponse();
+      }
+      if (u.endsWith("/api/nodes/validate") && init?.method === "POST") {
+        return new Response(JSON.stringify({ ok: true, nodeKind: "agent" }), {
+          status: 200,
+        });
+      }
+      if (u.includes("/api/agent-play/players/heartbeat") && init?.method === "POST") {
+        heartbeatFetchCount += 1;
+        return new Response("always fail", { status: 503 });
+      }
+      if (u.includes("/api/agent-play/players/disconnect") && init?.method === "POST") {
+        return new Response(JSON.stringify({ ok: true }), { status: 200 });
+      }
+      if (u.includes("/api/agent-play/players") && init?.method === "POST") {
+        return new Response(
+          JSON.stringify({
+            playerId: "p1",
+            previewUrl: `${BASE_URL}/agent-play/watch`,
+            registeredAgent: sampleRegisteredAgent("aid-1", "a"),
+            connectionId: "conn-1",
+            leaseTtlSeconds: 45,
+          }),
+          { status: 200 }
+        );
+      }
+      return notFound();
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const world = playWorld("key");
+    await world.connect();
+    await world.addAgent({
+      name: "a",
+      type: "langchain",
+      agent: { type: "langchain", toolNames: ["chat_tool"] },
+      nodeId: "aid-1",
+    });
+    expect(heartbeatTick).toBeDefined();
+    heartbeatTick?.();
+    await vi.runAllTimersAsync();
+    expect(heartbeatFetchCount).toBe(10);
+    expect(
+      errSpy.mock.calls.some(
+        (c) =>
+          typeof c[0] === "string" &&
+          c[0].includes("heartbeat:exhausted")
+      )
+    ).toBe(true);
+    intervalSpy.mockRestore();
+    errSpy.mockRestore();
+    await world.close();
+    vi.useRealTimers();
+  });
+
   it("addAgent ignores input.mainNodeId and always uses derived node id", async () => {
     const fetchMock = vi.fn(async (url: string | URL, init?: RequestInit) => {
       const u = String(url);
