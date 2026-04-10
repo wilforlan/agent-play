@@ -1,3 +1,7 @@
+/**
+ * @module @agent-play/play-ui/preview-chat-settings-panel
+ * preview chat settings panel — preview canvas module (Pixi + DOM).
+ */
 import type { AgentChatDisplaySettings } from "./preview-chat-settings.js";
 import {
   getAgentChatDisplaySettings,

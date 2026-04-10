@@ -1,3 +1,7 @@
+/**
+ * @module @agent-play/play-ui/preview-app-meta
+ * preview app meta — preview canvas module (Pixi + DOM).
+ */
 const DEFAULT_VERSION = "0.1.0";
 const DEFAULT_REPO_URL = "https://github.com/wilforlan/agent-play";
 

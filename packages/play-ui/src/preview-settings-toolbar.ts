@@ -1,3 +1,7 @@
+/**
+ * @module @agent-play/play-ui/preview-settings-toolbar
+ * preview settings toolbar — preview canvas module (Pixi + DOM).
+ */
 import { createPreviewAgentSettingsPanel } from "./preview-agent-settings-panel.js";
 import { getPreviewAppMeta } from "./preview-app-meta.js";
 import { ensurePreviewChatSettingsPanelStyles } from "./preview-chat-settings-panel.js";

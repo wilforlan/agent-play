@@ -1,6 +1,6 @@
 {
   "name": "@agent-play/node-tools",
-  "version": "1.0.0",
+  "version": "3.1.0",
   "private": false,
   "type": "module",
   "description": "Node identity: passphrase generation, scrypt derivation, and validation for Agent Play.",

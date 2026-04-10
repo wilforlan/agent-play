@@ -1,3 +1,7 @@
+/**
+ * @module @agent-play/play-ui/passphrase-passw
+ * passphrase passw — preview canvas module (Pixi + DOM).
+ */
 import {
   passphraseAdjectives,
   passphraseAdverbs,

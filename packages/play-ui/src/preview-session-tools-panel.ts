@@ -1,3 +1,7 @@
+/**
+ * @module @agent-play/play-ui/preview-session-tools-panel
+ * preview session tools panel — preview canvas module (Pixi + DOM).
+ */
 import {
   getPreviewSessionIdSync,
   persistPreviewSessionId,

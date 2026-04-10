@@ -1,3 +1,7 @@
+/**
+ * @module @agent-play/play-ui/scene-registry
+ * scene registry — preview canvas module (Pixi + DOM).
+ */
 export type SceneThemeId = "park" | "new_york" | "tokyo";
 
 export const ACTIVE_SCENE_THEME: SceneThemeId = "park";

@@ -1,10 +1,11 @@
 import express from "express";
+import { getBuiltinsListenOptions } from "./builtins-server-listen.js";
 import { loadAgentsPackageEnv } from "./load-agents-env.js";
 import { registerBuiltinAgents } from "./register-builtins.js";
 
 loadAgentsPackageEnv();
 
-const sidecarPort = Number(process.env.AGENT_PLAY_BUILTINS_PORT ?? "3100");
+const { host: listenHost, port: sidecarPort } = getBuiltinsListenOptions();
 const webUiRaw = process.env.AGENT_PLAY_WEB_UI_URL ?? "http://127.0.0.1:3000";
 const webUiBaseUrl = webUiRaw.replace(/\/$/, "");
 const mainNodeIdEnv = process.env.AGENT_PLAY_MAIN_NODE_ID?.trim();
@@ -18,9 +19,9 @@ app.get("/health", (_req, res) => {
   });
 });
 
-app.listen(sidecarPort, "127.0.0.1", () => {
+app.listen(sidecarPort, listenHost, () => {
   console.log(
-    `[agent-play/agents] sidecar http://127.0.0.1:${String(sidecarPort)}/health → registering built-ins against ${webUiBaseUrl}`
+    `[agent-play/agents] sidecar http://${listenHost}:${String(sidecarPort)}/health → registering built-ins against ${webUiBaseUrl}`
   );
   void registerBuiltinAgents({
     ...(mainNodeIdEnv !== undefined && mainNodeIdEnv.length > 0

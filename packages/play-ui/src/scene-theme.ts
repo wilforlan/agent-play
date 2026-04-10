@@ -1,3 +1,7 @@
+/**
+ * @module @agent-play/play-ui/scene-theme
+ * scene theme — preview canvas module (Pixi + DOM).
+ */
 import type { Container } from "pixi.js";
 import type { MultiversePalette } from "./multiverse-engine.js";
 import {

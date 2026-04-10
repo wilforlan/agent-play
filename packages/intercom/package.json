@@ -1,7 +1,8 @@
 {
   "name": "@agent-play/intercom",
-  "version": "1.0.0",
-  "private": true,
+  "version": "3.1.0",
+  "description": "Shared wire types, Zod parsers, and channel keys for Agent Play human–agent intercom (assist/chat). Consumed by @agent-play/sdk and browser bundles.",
+  "private": false,
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -12,8 +13,19 @@
     }
   },
   "files": [
-    "dist"
+    "dist",
+    "README.md"
   ],
+  "author": "Isaac Williams",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/wilforlan/agent-play.git",
+    "directory": "packages/intercom"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "build": "tsup",
     "test": "vitest run"

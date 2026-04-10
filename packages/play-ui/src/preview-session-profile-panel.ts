@@ -1,3 +1,7 @@
+/**
+ * @module @agent-play/play-ui/preview-session-profile-panel
+ * preview session profile panel — preview canvas module (Pixi + DOM).
+ */
 import {
   getPreviewViewSettings,
   setPreviewViewSettings,

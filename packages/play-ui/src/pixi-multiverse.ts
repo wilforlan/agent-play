@@ -1,3 +1,7 @@
+/**
+ * @module @agent-play/play-ui/pixi-multiverse
+ * pixi multiverse — preview canvas module (Pixi + DOM).
+ */
 import { Application } from "pixi.js";
 
 export type PixiPreviewHandle = {

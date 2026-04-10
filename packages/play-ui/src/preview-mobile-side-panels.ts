@@ -1,3 +1,7 @@
+/**
+ * @module @agent-play/play-ui/preview-mobile-side-panels
+ * preview mobile side panels — preview canvas module (Pixi + DOM).
+ */
 import {
   nextSidePanelState,
   type SidePanelOpen,

@@ -502,7 +502,9 @@ export class RemotePlayWorld {
     if (this.closed) {
       return;
     }
-    for (const [playerId, connection] of this.playerConnectionInfo.entries()) {
+    for (const [playerId, connection] of Array.from(
+      this.playerConnectionInfo.entries()
+    )) {
       clearInterval(connection.timer);
       try {
         await this.disconnectPlayerConnection({
@@ -874,7 +876,7 @@ export class RemotePlayWorld {
     options: SubscribeIntercomCommandsOptions
   ): { close: () => void } {
     const subscribed = normalizeIntercomSubscribePlayerIds(options);
-    const playerIdsSorted = [...subscribed].sort();
+    const playerIdsSorted = Array.from(subscribed).sort();
     if (subscribed.size === 0) {
       this.logTransport("subscribeIntercomCommands:skip", {
         reason: "empty_player_ids",

@@ -1,20 +1,17 @@
 /**
  * @packageDocumentation
- * Public entry for **@agent-play/sdk**.
+ * Public entry for **@agent-play/sdk** (Node.js and browser `browser` export).
  *
  * **Primary APIs**
- * - {@link import("./lib/remote-play-world.js").RemotePlayWorld} — HTTP client: **`nodeCredentials: { rootKey, passw }`** with human **`passw`** from **`~/.agent-play/credentials.json`** (see **@agent-play/node-tools** **`loadAgentPlayCredentialsFileFromPathSync`**), then `connect`, `getWorldSnapshot`, `addAgent` (preferred),
- *   {@link import("./lib/remote-play-world.js").RemotePlayWorld#subscribeIntercomCommands `subscribeIntercomCommands`} (after each agent that should handle human intercom **`forwarded`** commands), `recordInteraction`, `recordJourney`, `registerMcp`, `hold`, `onClose`.
- * - {@link import("./platforms/langchain.js").langchainRegistration} — build `agent` payload for `addAgent`.
- * - {@link import("./lib/world-bounds.js").clampWorldPosition} / {@link import("./lib/world-bounds.js").WorldBounds} —
- *   shared bounds math for server and canvas.
+ * - {@link RemotePlayWorld} — HTTP client: load **`nodeCredentials`** (`rootKey`, human **`passw`**) from **`~/.agent-play/credentials.json`** via **@agent-play/node-tools**, then **`connect`**, **`getWorldSnapshot`**, **`addAgent`**, **`subscribeIntercomCommands`** (for automation agents handling intercom **`forwarded`** commands), **`recordInteraction`**, **`recordJourney`**, **`registerMcp`**, **`hold`**, **`onClose`**.
+ * - {@link langchainRegistration} — build LangChain **`agent`** payloads for **`addAgent`**.
+ * - {@link clampWorldPosition}, {@link WorldBounds} — shared world bounds for server and canvas.
  *
- * **Events and types** — Re-exported from {@link import("./world-events.js")} and {@link import("./public-types.js")}.
+ * **Events** — Session and world events: {@link WORLD_INTERACTION_EVENT}, {@link SESSION_CONNECTED_EVENT}, and related symbols from this module.
  *
- * **Transport** — `RemotePlayWorld` uses `fetch`; optional {@link import("./lib/remote-play-world.js").RemotePlayWorld#subscribeWorldState}
- * uses SSE **`playerChainNotify`** plus {@link import("./lib/remote-play-world.js").RemotePlayWorld#getPlayerChainNode} for incremental merges.
+ * **Transport** — **`RemotePlayWorld`** uses `fetch`; **`subscribeWorldState`** consumes SSE **`playerChainNotify`** and **`getPlayerChainNode`** for incremental merges.
  *
- * **Breaking (server / wire)** — Fanout and SSE incremental payloads use **`playerChainNotify`** (node refs), not legacy **`playerChainDelta`** (per-leaf digests on the wire). Custom clients should migrate or fall back to **`getWorldSnapshot`** only.
+ * **Wire note** — Fanout and SSE use **`playerChainNotify`** (node references). Legacy **`playerChainDelta`**-style digests on the wire are not used; use **`getWorldSnapshot`** if you need a full snapshot only.
  */
 
 export type {

@@ -1,0 +1,24 @@
+# Standalone agents service only — point at an existing main Agent Play server (HTTP).
+# Requires `.root` in the build context (same as k8s/Dockerfile.agents).
+#
+#   export AGENT_PLAY_WEB_UI_URL=https://your-main-server.example
+#   docker compose -f docker-compose.agents.yml up --build
+#
+services:
+  agents:
+    build:
+      context: .
+      dockerfile: k8s/Dockerfile.agents
+    ports:
+      - "${AGENTS_PORT:-3100}:3100"
+    environment:
+      NODE_ENV: production
+      AGENT_PLAY_WEB_UI_URL: ${AGENT_PLAY_WEB_UI_URL:?Set AGENT_PLAY_WEB_UI_URL to your main server origin (e.g. https://play.example.com)}
+      AGENT_PLAY_BUILTINS_HOST: "0.0.0.0"
+      AGENT_PLAY_BUILTINS_PORT: "3100"
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      AGENT_PLAY_API_KEY: ${AGENT_PLAY_API_KEY:-}
+      AGENT_PLAY_ROOT_KEY: ${AGENT_PLAY_ROOT_KEY:-}
+      AGENT_PLAY_NODE_PASSW: ${AGENT_PLAY_NODE_PASSW:-}
+      AGENT_PLAY_MAIN_NODE_ID: ${AGENT_PLAY_MAIN_NODE_ID:-}
+    restart: unless-stopped

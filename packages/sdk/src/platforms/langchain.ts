@@ -1,6 +1,6 @@
 /**
  * LangChain adapter: derives tool names and assist metadata from a LangChain agent for
- * {@link import("../public-types.js").LangChainAgentRegistration}.
+ * {@link LangChainAgentRegistration}.
  *
  * @remarks **Primary export:** {@link langchainRegistration}. Private helpers build error strings and
  * `AssistToolSpec` rows from Zod schemas when available.
@@ -182,8 +182,7 @@ function extractToolsArray(agent: unknown): unknown[] | null {
  * @param agent - Return value from `createAgent` (or equivalent) with a `tools` array.
  * @throws Error if tools are missing or `chat_tool` is not present.
  *
- * @remarks **Callers:** user code before `RemotePlayWorld.addAgent`. **Callees:** {@link extractToolsArray},
- * {@link formatMissingAgentToolsError}, {@link formatMissingChatToolError}, {@link describeTool}, {@link agentPlayDebug}.
+ * @remarks **Callers:** user code before `RemotePlayWorld.addAgent`. **Callees:** internal validation helpers and {@link agentPlayDebug}.
  */
 export function langchainRegistration(
   agent: unknown

@@ -1,0 +1,32 @@
+# Build from repository root (requires `.root` in the build context for SDK/node-tools/agents copy steps):
+#   docker build -f k8s/Dockerfile.agents -t agent-play-agents .
+#
+# The process is HTTP-only toward the main Agent Play server (`AGENT_PLAY_WEB_UI_URL`);
+FROM node:20-bookworm-slim AS builder
+WORKDIR /app
+COPY k8s/package.agents-workspace.json ./package.json
+COPY packages/node-tools ./packages/node-tools
+COPY packages/intercom ./packages/intercom
+COPY packages/sdk ./packages/sdk
+COPY packages/agents ./packages/agents
+COPY scripts/copy-root-file.mjs ./scripts/copy-root-file.mjs
+COPY .root ./.root
+RUN npm install \
+  && npm install -D typescript@~5.9.3
+RUN npm run build -w @agent-play/node-tools \
+  && npm run build -w @agent-play/intercom \
+  && npm run build -w @agent-play/sdk \
+  && npm run build -w @agent-play/agents
+RUN npm prune --omit=dev
+
+FROM node:20-bookworm-slim AS runner
+WORKDIR /app
+ENV NODE_ENV=production
+ENV AGENT_PLAY_BUILTINS_HOST=0.0.0.0
+ENV AGENT_PLAY_BUILTINS_PORT=3100
+RUN addgroup --system --gid 1001 agentplay \
+  && adduser --system --uid 1001 --ingroup agentplay agentplay
+COPY --from=builder --chown=agentplay:agentplay /app /app
+USER agentplay
+EXPOSE 3100
+CMD ["node", "packages/agents/dist/express-server.js"]

@@ -1,3 +1,7 @@
+/**
+ * @module @agent-play/play-ui/preview-assist-ui
+ * preview assist ui — preview canvas module (Pixi + DOM).
+ */
 import {
   buildAssistArgsFromInputs,
   resolveAssistFieldType,

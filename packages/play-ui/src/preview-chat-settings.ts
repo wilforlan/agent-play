@@ -1,3 +1,7 @@
+/**
+ * @module @agent-play/play-ui/preview-chat-settings
+ * preview chat settings — preview canvas module (Pixi + DOM).
+ */
 const STORAGE_KEY = "agent-play-preview-chat-display-v1";
 
 export type AgentChatDisplaySettings = {

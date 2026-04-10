@@ -1,0 +1,52 @@
+# Full stack: Redis + main web UI + built-in agents (separate containers).
+# Configure secrets via a `.env` file in this directory (see docs/k8s/docker-compose.md).
+#
+#   docker compose up --build
+#
+services:
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    volumes:
+      - agent-play-redis-data:/data
+
+  web-ui:
+    build:
+      context: .
+      dockerfile: k8s/Dockerfile.web-ui
+    ports:
+      - "${WEB_UI_PORT:-8888}:8888"
+    environment:
+      NODE_ENV: production
+      PORT: "8888"
+      HOSTNAME: "0.0.0.0"
+      REDIS_URL: redis://redis:6379
+      PLAY_PREVIEW_BASE_URL: ${PLAY_PREVIEW_BASE_URL:-http://127.0.0.1:8888}
+      NEXT_PUBLIC_AGENT_PLAY_BASE: ${NEXT_PUBLIC_AGENT_PLAY_BASE:-/agent-play}
+      NEXT_PUBLIC_PLAY_API_BASE: ${NEXT_PUBLIC_PLAY_API_BASE:-/agent-play}
+    depends_on:
+      - redis
+    restart: unless-stopped
+
+  agents:
+    build:
+      context: .
+      dockerfile: k8s/Dockerfile.agents
+    ports:
+      - "${AGENTS_PORT:-3100}:3100"
+    environment:
+      NODE_ENV: production
+      AGENT_PLAY_WEB_UI_URL: ${AGENT_PLAY_WEB_UI_URL:-http://web-ui:8888}
+      AGENT_PLAY_BUILTINS_HOST: "0.0.0.0"
+      AGENT_PLAY_BUILTINS_PORT: "3100"
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      AGENT_PLAY_API_KEY: ${AGENT_PLAY_API_KEY:-}
+      AGENT_PLAY_ROOT_KEY: ${AGENT_PLAY_ROOT_KEY:-}
+      AGENT_PLAY_NODE_PASSW: ${AGENT_PLAY_NODE_PASSW:-}
+      AGENT_PLAY_MAIN_NODE_ID: ${AGENT_PLAY_MAIN_NODE_ID:-}
+    depends_on:
+      - web-ui
+    restart: unless-stopped
+
+volumes:
+  agent-play-redis-data:

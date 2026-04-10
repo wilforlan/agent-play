@@ -7,6 +7,10 @@
 | **`web-ui.yaml`** | **ConfigMap** (`PLAY_PREVIEW_BASE_URL`), web UI **Deployment**, **Service**. |
 | **`kustomization.yaml`** | Composes the above; sets apply namespace, image **`ghcr.io/wilforlan/agent-play-web-ui:<tag>`**, shared labels. |
 | **`Dockerfile.web-ui`** | Multi-stage image: monorepo install, `next build` for `@agent-play/web-ui`, `tsx server.ts` on port **8888**. |
+| **`Dockerfile.agents`** | Multi-stage image: builds **`@agent-play/node-tools`**, **`@agent-play/intercom`**, **`@agent-play/sdk`**, **`@agent-play/agents`**; runs **`express-server`** (health on **3100**, HTTP to main server only). |
+| **`package.agents-workspace.json`** | Minimal npm workspaces manifest used only by **`Dockerfile.agents`** (avoids copying the whole monorepo into the build context). |
+| **`../docker-compose.yml`** | **Redis + web-ui + agents** — three services; Redis and HTTP API stay on the main container, agents are decoupled. |
+| **`../docker-compose.agents.yml`** | **Agents only** — for a standalone host; set **`AGENT_PLAY_WEB_UI_URL`** to your deployed main server. |
 | **`build-push-web-ui.sh`** | Builds and pushes **`ghcr.io/wilforlan/agent-play-web-ui`** (override with `REGISTRY`). |
 | **`deploy.sh`** | Invoked via **`npm run deploy`** — apply/update, rollout status, rollback, history, restart, **`clean`**. Reads defaults from **`rollout-config.sh`**. |
 | **`clean-cluster.sh`** | **`kubectl delete -k k8s/`** with context + namespace confirmation (or **`--yes`**). Also **`npm run deploy:clean`**. |
@@ -95,6 +99,10 @@ If **`kubectl describe pod`** shows **`failed to authorize`** / **`403 Forbidden
 **Alternative:** In GitHub → **Packages** → **agent-play-web-ui** → **Package settings**, set visibility to **Public** so nodes can pull without a secret (leave the patch commented).
 
 **Tag:** `kustomization.yaml` **`newTag`** must match an image that exists on GHCR (run **`./k8s/build-push-web-ui.sh`** so the tag is updated and pushed).
+
+## Docker Compose
+
+See **[Docker Compose (main server + agents)](../docs/k8s/docker-compose.md)** for **`docker compose up`**, env vars, and standalone agents.
 
 ## Documentation
 

@@ -1,3 +1,7 @@
+/**
+ * @module @agent-play/play-ui/npc-puppet
+ * npc puppet — preview canvas module (Pixi + DOM).
+ */
 import { Graphics } from "pixi.js";
 import type { AvatarFacing } from "./avatar-anim.js";
 

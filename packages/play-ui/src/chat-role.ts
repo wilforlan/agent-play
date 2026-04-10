@@ -1,3 +1,7 @@
+/**
+ * @module @agent-play/play-ui/chat-role
+ * chat role — preview canvas module (Pixi + DOM).
+ */
 export function interactionRoleToBubbleClass(
   role: string
 ):

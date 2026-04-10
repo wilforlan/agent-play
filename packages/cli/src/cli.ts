@@ -1,4 +1,12 @@
 #!/usr/bin/env node
+/**
+ * @packageDocumentation
+ * **@agent-play/cli** — `agent-play` command-line tool for Node identity and repository operations.
+ *
+ * **Commands** (see `--help`): bootstrap node credentials, create main/agent nodes, validate agents,
+ * inspect nodes, and utilities that talk to the Agent Play server using **@agent-play/node-tools** for
+ * passphrases, **`hashNodePassword`**, and credential files under **`~/.agent-play/`**.
+ */
 import { existsSync } from "node:fs";
 import { mkdir, unlink, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";

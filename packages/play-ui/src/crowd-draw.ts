@@ -1,3 +1,7 @@
+/**
+ * @module @agent-play/play-ui/crowd-draw
+ * crowd draw — preview canvas module (Pixi + DOM).
+ */
 import { Container, Graphics } from "pixi.js";
 import type { CrowdClusterSpec } from "./crowd-layout.js";
 import {

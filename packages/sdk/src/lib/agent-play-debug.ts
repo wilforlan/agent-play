@@ -17,7 +17,7 @@ let configuredDebug: boolean | undefined;
 /**
  * Sets whether SDK debug logging is enabled regardless of `AGENT_PLAY_DEBUG`.
  *
- * @param opts.debug - `true` / `false` to force; omit to clear override.
+ * @param opts - Optional `{ debug }`: `true` / `false` forces logging; omit `debug` to clear override.
  *
  * @remarks **Callers:** tests and user code. **Callees:** none.
  */
@@ -45,7 +45,7 @@ export function isAgentPlayDebugEnabled(): boolean {
   return process.env.AGENT_PLAY_DEBUG === "1";
 }
 
-/** Max length of JSON detail string before truncation in {@link safeSerialize}. */
+/** Max length of JSON detail string before truncation in the internal `safeSerialize` helper. */
 const MAX_JSON_LENGTH = 2000;
 
 /**
@@ -80,9 +80,9 @@ function safeSerialize(detail: unknown): string {
  *
  * @param scope - Short label (e.g. `"langchain"`).
  * @param message - Human-readable message.
- * @param detail - Optional object serialized by {@link safeSerialize}.
+ * @param detail - Optional object serialized by the internal truncation helper (see source).
  *
- * @remarks **Callers:** {@link langchainRegistration} and other SDK modules. **Callees:** {@link isAgentPlayDebugEnabled}, {@link safeSerialize}.
+ * @remarks **Callers:** {@link langchainRegistration} and other SDK modules. **Callees:** {@link isAgentPlayDebugEnabled} and the internal serializer.
  */
 export function agentPlayDebug(
   scope: string,

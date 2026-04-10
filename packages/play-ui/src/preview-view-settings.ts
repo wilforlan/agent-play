@@ -1,3 +1,7 @@
+/**
+ * @module @agent-play/play-ui/preview-view-settings
+ * preview view settings — preview canvas module (Pixi + DOM).
+ */
 import type { SceneThemeId } from "./scene-registry.js";
 import { listSceneThemeIds } from "./scene-registry.js";
 

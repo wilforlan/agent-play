@@ -1,3 +1,7 @@
+/**
+ * @module @agent-play/play-ui/preview-debug-joystick
+ * preview debug joystick — preview canvas module (Pixi + DOM).
+ */
 const STYLE_ID = "agent-play-preview-debug-joystick-styles";
 
 const MAX_OFFSET_PX = 56;

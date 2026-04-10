@@ -1,10 +1,4 @@
 import { z } from "zod";
-import type {
-  CreateHumanNodePayload,
-  IntercomCommandPayload,
-  IntercomResponsePayload,
-  WorldIntercomEventPayload,
-} from "./contracts.js";
 
 const NonEmpty = z.string().trim().min(1);
 
@@ -82,6 +76,15 @@ const CreateHumanNodePayloadSchema = z
     passw: NonEmpty,
   })
   .strict();
+
+export type IntercomCommandPayload = z.infer<typeof IntercomCommandPayloadSchema>;
+export type WorldIntercomEventPayload = z.infer<
+  typeof WorldIntercomEventPayloadSchema
+>;
+export type IntercomResponsePayload = z.infer<
+  typeof IntercomResponsePayloadSchema
+>;
+export type CreateHumanNodePayload = z.infer<typeof CreateHumanNodePayloadSchema>;
 
 export function parseIntercomCommandPayload(
   payload: unknown

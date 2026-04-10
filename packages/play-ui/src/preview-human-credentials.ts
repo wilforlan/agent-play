@@ -1,3 +1,7 @@
+/**
+ * @module @agent-play/play-ui/preview-human-credentials
+ * preview human credentials — preview canvas module (Pixi + DOM).
+ */
 const STORAGE_KEY = "agent-play.humanCredentials";
 
 export type HumanCredentials = {

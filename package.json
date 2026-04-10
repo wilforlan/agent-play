@@ -1,6 +1,6 @@
 {
   "name": "agent-play",
-  "version": "3.0.0",
+  "version": "3.1.0",
   "private": true,
   "description": "Monorepo: Agent Play SDK for Node servers and deployable play UI.",
   "bin": {
@@ -30,7 +30,9 @@
     "deploy:clean": "bash k8s/clean-cluster.sh",
     "version:packages": "node scripts/sync-package-versions.mjs",
     "migrate:v2:node-auth": "node scripts/migrate-userid-to-nodeid.mjs",
-    "setup:k8s-server": "bash k8s/setup.sh"
+    "setup:k8s-server": "bash k8s/setup.sh",
+    "compose:up": "docker compose up --build",
+    "compose:agents": "docker compose -f docker-compose.agents.yml up --build"
   },
   "engines": {
     "node": ">=20"

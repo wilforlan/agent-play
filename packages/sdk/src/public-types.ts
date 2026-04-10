@@ -6,7 +6,7 @@
 export type WorldInteractionRole = "user" | "assistant" | "tool";
 
 /**
- * Payload for {@link import("./lib/remote-play-world.js").RemotePlayWorld.recordInteraction}.
+ * Payload for {@link RemotePlayWorld.recordInteraction}.
  *
  * @property playerId - Player id returned from `addAgent` / `addPlayer`.
  * @property role - Who "spoke" the line.
@@ -42,7 +42,7 @@ export type AssistToolSpec = {
 };
 
 /**
- * Serializable shape returned by {@link import("./platforms/langchain.js").langchainRegistration} for agent registration.
+ * Serializable shape returned by {@link langchainRegistration} for agent registration.
  *
  * @property type - Always `"langchain"` for this adapter.
  * @property toolNames - All tool names from the agent (must include `chat_tool`).
@@ -83,7 +83,7 @@ export type PlatformAgentInformation = {
  * contract explicit for billing, validation, and event attribution.
  */
 export type AddAgentInput = PlatformAgentInformation & {
-  /** Registration from {@link import("./platforms/langchain.js").langchainRegistration}. */
+  /** Registration from {@link langchainRegistration}. */
   agent: LangChainAgentRegistration;
   /** Main node id that owns the agent (required on repository-backed servers). */
   mainNodeId?: string;
@@ -103,7 +103,7 @@ export type AddAgentInput = PlatformAgentInformation & {
  * (with account **`password`** from **`RemotePlayWorld`**), or any stable string for local dev without Redis.
  */
 export type AddPlayerInput = PlatformAgentInformation & {
-  /** Registration from {@link import("./platforms/langchain.js").langchainRegistration}. */
+  /** Registration from {@link langchainRegistration}. */
   agent: LangChainAgentRegistration;
   /** Main node id that owns the agent (required on repository-backed servers). */
   mainNodeId?: string;
@@ -261,7 +261,7 @@ export type AgentPlayWorldMap = {
 };
 
 /**
- * Session snapshot from {@link import("./lib/remote-play-world.js").RemotePlayWorld.getWorldSnapshot}.
+ * Session snapshot from {@link RemotePlayWorld.getWorldSnapshot}.
  * Agents and MCP servers appear only under **`worldMap.occupants`** (no separate `players` list).
  */
 export type AgentPlaySnapshot = {

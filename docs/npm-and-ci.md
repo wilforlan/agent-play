@@ -4,11 +4,13 @@ Published package names:
 
 | Package | Description |
 |---------|-------------|
+| `@agent-play/node-tools` | Node identity: passphrase generation, scrypt derivation, credential file helpers. |
+| `@agent-play/intercom` | Wire types and Zod parsers for human–agent intercom (assist/chat); published **after** node-tools, **before** the SDK. |
 | `@agent-play/sdk` | Node SDK (`RemotePlayWorld`, LangChain registration, types). Build output: `dist/` (ESM + `.d.ts`) via `tsup`. |
 | `@agent-play/cli` | `agent-play` CLI binary (`dist/cli.js`). |
 | `@agent-play/play-ui` | Static Vite bundle (`dist/`) for the watch canvas; consume files under `node_modules/@agent-play/play-ui/dist/` or serve the folder behind your API. |
 
-All three are **public** scoped packages (`publishConfig.access: public`). Each package directory includes a **`README.md`** (listed in `files` where applicable) so the npm registry and `npm pack` show install and doc links.
+These are **public** scoped packages (`publishConfig.access: public`) where applicable. Each package directory includes a **`README.md`** (listed in `files` where applicable) so the npm registry and `npm pack` show install and doc links.
 
 ## Local build
 
@@ -42,7 +44,7 @@ npm run version:packages -- --workspace @agent-play/cli 1.4.0
 npm run version:packages -- -w web-ui minor
 ```
 
-Aliases: **`sdk`**, **`cli`**, **`play-ui`**, **`web-ui`**, **`root`** (root **`package.json`** only), or full names such as **`@agent-play/sdk`**.
+Aliases: **`node-tools`**, **`intercom`**, **`sdk`**, **`cli`**, **`play-ui`**, **`web-ui`**, **`root`** (root **`package.json`** only), or full names such as **`@agent-play/sdk`**.
 
 Implementation: [`scripts/sync-package-versions.mjs`](../scripts/sync-package-versions.mjs).
 
@@ -56,6 +58,8 @@ Implementation: [`scripts/sync-package-versions.mjs`](../scripts/sync-package-ve
 3. From the repo root, after `npm install` and builds:
 
 ```bash
+npm publish -w @agent-play/node-tools --access public
+npm publish -w @agent-play/intercom --access public
 npm publish -w @agent-play/sdk --access public
 npm publish -w @agent-play/cli --access public
 npm publish -w @agent-play/play-ui --access public
@@ -69,13 +73,13 @@ Workflow [`.github/workflows/publish-npm.yml`](../.github/workflows/publish-npm.
 
 Behavior:
 
-- **Single workflow** — One **`publish`** job runs **`npm ci`** once, then **build + publish** in dependency order: **`@agent-play/sdk`** → **`@agent-play/cli`** → **`@agent-play/play-ui`**. Each step runs only when that package is selected (see below). A failure in an earlier step stops later ones, so the SDK is published to npm before downstream packages in the same run.
-- **Path-based selection on `push`** — A **`changes`** job uses **`dorny/paths-filter`** so only packages with changes under `packages/sdk/**`, `packages/cli/**`, or `packages/play-ui/**` are built and published.
+- **Single workflow** — One **`publish`** job runs **`npm install`** once, then **build + publish** in dependency order: **`@agent-play/node-tools`** → **`@agent-play/intercom`** → **`@agent-play/sdk`** → **`@agent-play/cli`** → **`@agent-play/play-ui`**. Each step runs only when that package is selected (see below). Failures stop later steps in the same run.
+- **Path-based selection on `push`** — A **`changes`** job uses **`dorny/paths-filter`** so only packages with changes under `packages/node-tools/**`, `packages/intercom/**`, `packages/sdk/**`, `packages/cli/**`, or `packages/play-ui/**` are built and published.
 - **Manual runs** — **`workflow_dispatch`** exposes checkboxes to include or skip each package (defaults: all on).
 
 ## API documentation (TypeDoc)
 
-- **Source:** `typedoc.json` at the repo root documents **`@agent-play/sdk`** and **`@agent-play/cli`** entry points.
+- **Source:** `typedoc.json` at the repo root documents **`@agent-play/sdk`**, **`@agent-play/intercom`**, and **`@agent-play/cli`** entry points.
 - **Generate locally:** `npm run docs:api` writes HTML to `docs/api-reference/` (gitignored) and adds `.nojekyll` for GitHub Pages.
 - **GitHub Pages:** [`.github/workflows/pages.yml`](../.github/workflows/pages.yml) runs on pushes to **`main`**, runs `npm run docs:api`, and deploys the folder to **GitHub Pages**. Enable Pages in the repository settings (**Build and deployment** → **GitHub Actions**).
 
@@ -85,7 +89,7 @@ After the first successful deploy, the site URL is typically:
 
 Open `index.html` under the deployed root (TypeDoc default).
 
-**Play UI** — JSDoc/TSDoc lives in source (e.g. `packages/play-ui/src/main.ts` module overview). The generated site currently focuses on SDK + CLI; extend `typedoc.json` `entryPoints` if you add a dedicated library entry for play-ui.
+**Play UI** — JSDoc/TSDoc lives in source (`packages/play-ui/src/main.ts` and per-module `@module` headers). The generated API site focuses on SDK, intercom, and CLI; the play bundle is primarily documented in prose under [Play UI](play-ui.md).
 
 ## Related
 

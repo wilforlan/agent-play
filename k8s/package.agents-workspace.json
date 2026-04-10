@@ -1,0 +1,11 @@
+{
+  "name": "agent-play-agents-docker-build",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "packages/node-tools",
+    "packages/intercom",
+    "packages/sdk",
+    "packages/agents"
+  ]
+}
