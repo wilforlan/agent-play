@@ -126,6 +126,8 @@ export type RegisteredAgentSummary = {
 export type RegisteredPlayer = PlayAgentInformation & {
   previewUrl: string;
   registeredAgent: RegisteredAgentSummary;
+  connectionId?: string;
+  leaseTtlSeconds?: number;
 };
 
 /** First step of a journey: user message origin. */

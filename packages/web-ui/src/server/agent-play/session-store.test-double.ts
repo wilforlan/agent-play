@@ -5,6 +5,7 @@ import { getPlayerChainGenesisSync } from "./load-player-chain-genesis.js";
 import { buildPlayerChainFromSnapshot } from "./player-chain/index.js";
 import { dispatchWorldFanoutLocal } from "./world-fanout-subscriber.js";
 import type {
+  PresenceLease,
   PersistSnapshotRev,
   PublishedSessionMetadata,
   SessionStore,
@@ -27,6 +28,10 @@ export class TestSessionStore implements SessionStore {
   private merkleLeafCount: number | null = null;
   private readonly eventLog: SessionEventLogEntry[] = [];
   private readonly settings: Record<string, string> = {};
+  private readonly presenceLeases = new Map<
+    string,
+    PresenceLease & { expiresAtMs: number }
+  >();
 
   constructor(options: TestSessionStoreOptions = {}) {
     this.playerChainGenesis =
@@ -181,5 +186,84 @@ export class TestSessionStore implements SessionStore {
   async getRecentEventLog(limit: number): Promise<SessionEventLogEntry[]> {
     const n = Math.min(Math.max(limit, 1), EVENT_LOG_MAX);
     return this.eventLog.slice(0, n).map((e) => ({ ...e }));
+  }
+
+  private sweepPresence(nowMs: number): void {
+    for (const [playerId, lease] of this.presenceLeases.entries()) {
+      if (lease.expiresAtMs <= nowMs) {
+        this.presenceLeases.delete(playerId);
+      }
+    }
+  }
+
+  async upsertPresenceLease(input: {
+    playerId: string;
+    agentId: string;
+    sid: string;
+    connectionId: string;
+    ttlSeconds: number;
+  }): Promise<void> {
+    const nowMs = Date.now();
+    this.sweepPresence(nowMs);
+    this.presenceLeases.set(input.playerId, {
+      playerId: input.playerId,
+      agentId: input.agentId,
+      sid: input.sid,
+      connectionId: input.connectionId,
+      lastSeenAt: new Date(nowMs).toISOString(),
+      expiresAtMs: nowMs + Math.max(1, Math.floor(input.ttlSeconds)) * 1000,
+    });
+  }
+
+  async touchPresenceLease(input: {
+    playerId: string;
+    connectionId: string;
+    ttlSeconds: number;
+  }): Promise<boolean> {
+    const nowMs = Date.now();
+    this.sweepPresence(nowMs);
+    const lease = this.presenceLeases.get(input.playerId);
+    if (lease === undefined) {
+      return false;
+    }
+    if (lease.connectionId !== input.connectionId) {
+      return false;
+    }
+    this.presenceLeases.set(input.playerId, {
+      ...lease,
+      lastSeenAt: new Date(nowMs).toISOString(),
+      expiresAtMs: nowMs + Math.max(1, Math.floor(input.ttlSeconds)) * 1000,
+    });
+    return true;
+  }
+
+  async removePresenceLease(input: {
+    playerId: string;
+    connectionId?: string;
+  }): Promise<void> {
+    if (input.connectionId === undefined || input.connectionId.length === 0) {
+      this.presenceLeases.delete(input.playerId);
+      return;
+    }
+    const lease = this.presenceLeases.get(input.playerId);
+    if (lease !== undefined && lease.connectionId === input.connectionId) {
+      this.presenceLeases.delete(input.playerId);
+    }
+  }
+
+  async hasPresenceLease(playerId: string): Promise<boolean> {
+    this.sweepPresence(Date.now());
+    return this.presenceLeases.has(playerId);
+  }
+
+  async listPresenceLeases(): Promise<PresenceLease[]> {
+    this.sweepPresence(Date.now());
+    return Array.from(this.presenceLeases.values()).map((lease) => ({
+      playerId: lease.playerId,
+      agentId: lease.agentId,
+      sid: lease.sid,
+      connectionId: lease.connectionId,
+      lastSeenAt: lease.lastSeenAt,
+    }));
   }
 }

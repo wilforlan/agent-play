@@ -4,8 +4,15 @@ import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const target = process.argv[2];
-if (target !== "sdk" && target !== "cli" && target !== "node-tools") {
-  console.error("Usage: node scripts/copy-root-file.mjs <sdk|cli|node-tools>");
+if (
+  target !== "sdk" &&
+  target !== "cli" &&
+  target !== "node-tools" &&
+  target !== "agents"
+) {
+  console.error(
+    "Usage: node scripts/copy-root-file.mjs <sdk|cli|node-tools|agents>"
+  );
   process.exit(1);
 }
 

@@ -10,6 +10,7 @@ import {
 } from "./player-chain/index.js";
 import { worldFanoutChannel } from "./redis-world-fanout.js";
 import type {
+  PresenceLease,
   PersistSnapshotRev,
   PublishedSessionMetadata,
   SessionStore,
@@ -36,6 +37,10 @@ function settingsHashKey(hostId: string): string {
 
 function gridOccupiedKey(hostId: string): string {
   return `agent-play:${hostId}:session:grid:occupied`;
+}
+
+function presenceLeaseKey(hostId: string, playerId: string): string {
+  return `agent-play:${hostId}:presence:${playerId}`;
 }
 
 export type RedisSessionStoreOptions = {
@@ -372,6 +377,149 @@ export class RedisSessionStore implements SessionStore {
             type: o.type,
             at: o.at,
             summary: o.summary,
+          });
+        }
+      } catch {
+        continue;
+      }
+    }
+    return out;
+  }
+
+  async upsertPresenceLease(input: {
+    playerId: string;
+    agentId: string;
+    sid: string;
+    connectionId: string;
+    ttlSeconds: number;
+  }): Promise<void> {
+    const now = new Date().toISOString();
+    const key = presenceLeaseKey(this.hostId, input.playerId);
+    const ttlSeconds = Math.max(1, Math.floor(input.ttlSeconds));
+    await this.redis.set(
+      key,
+      JSON.stringify({
+        playerId: input.playerId,
+        agentId: input.agentId,
+        sid: input.sid,
+        connectionId: input.connectionId,
+        lastSeenAt: now,
+      }),
+      "EX",
+      ttlSeconds
+    );
+  }
+
+  async touchPresenceLease(input: {
+    playerId: string;
+    connectionId: string;
+    ttlSeconds: number;
+  }): Promise<boolean> {
+    const key = presenceLeaseKey(this.hostId, input.playerId);
+    const raw = await this.redis.get(key);
+    if (raw === null || raw.length === 0) {
+      return false;
+    }
+    let parsed: {
+      playerId?: unknown;
+      agentId?: unknown;
+      sid?: unknown;
+      connectionId?: unknown;
+      lastSeenAt?: unknown;
+    };
+    try {
+      parsed = JSON.parse(raw) as {
+        playerId?: unknown;
+        agentId?: unknown;
+        sid?: unknown;
+        connectionId?: unknown;
+        lastSeenAt?: unknown;
+      };
+    } catch {
+      await this.redis.del(key);
+      return false;
+    }
+    if (typeof parsed.connectionId !== "string") {
+      await this.redis.del(key);
+      return false;
+    }
+    if (parsed.connectionId !== input.connectionId) {
+      return false;
+    }
+    const ttlSeconds = Math.max(1, Math.floor(input.ttlSeconds));
+    await this.redis.set(
+      key,
+      JSON.stringify({
+        playerId:
+          typeof parsed.playerId === "string" ? parsed.playerId : input.playerId,
+        agentId: typeof parsed.agentId === "string" ? parsed.agentId : "",
+        sid: typeof parsed.sid === "string" ? parsed.sid : this.getSessionId(),
+        connectionId: parsed.connectionId,
+        lastSeenAt: new Date().toISOString(),
+      }),
+      "EX",
+      ttlSeconds
+    );
+    return true;
+  }
+
+  async removePresenceLease(input: {
+    playerId: string;
+    connectionId?: string;
+  }): Promise<void> {
+    const key = presenceLeaseKey(this.hostId, input.playerId);
+    if (input.connectionId === undefined || input.connectionId.length === 0) {
+      await this.redis.del(key);
+      return;
+    }
+    const raw = await this.redis.get(key);
+    if (raw === null || raw.length === 0) return;
+    try {
+      const parsed = JSON.parse(raw) as { connectionId?: unknown };
+      if (
+        typeof parsed.connectionId === "string" &&
+        parsed.connectionId === input.connectionId
+      ) {
+        await this.redis.del(key);
+      }
+    } catch {
+      await this.redis.del(key);
+    }
+  }
+
+  async hasPresenceLease(playerId: string): Promise<boolean> {
+    const exists = await this.redis.exists(presenceLeaseKey(this.hostId, playerId));
+    return exists === 1;
+  }
+
+  async listPresenceLeases(): Promise<PresenceLease[]> {
+    const keys = await this.redis.keys(`agent-play:${this.hostId}:presence:*`);
+    if (keys.length === 0) return [];
+    const raws = await this.redis.mget(...keys);
+    const out: PresenceLease[] = [];
+    for (const raw of raws) {
+      if (raw === null || raw.length === 0) continue;
+      try {
+        const parsed = JSON.parse(raw) as {
+          playerId?: unknown;
+          agentId?: unknown;
+          sid?: unknown;
+          connectionId?: unknown;
+          lastSeenAt?: unknown;
+        };
+        if (
+          typeof parsed.playerId === "string" &&
+          typeof parsed.agentId === "string" &&
+          typeof parsed.sid === "string" &&
+          typeof parsed.connectionId === "string" &&
+          typeof parsed.lastSeenAt === "string"
+        ) {
+          out.push({
+            playerId: parsed.playerId,
+            agentId: parsed.agentId,
+            sid: parsed.sid,
+            connectionId: parsed.connectionId,
+            lastSeenAt: parsed.lastSeenAt,
           });
         }
       } catch {

@@ -27,6 +27,14 @@ export type WorldFanoutOptions = {
   playerChainNotify?: PlayerChainFanoutNotify;
 };
 
+export type PresenceLease = {
+  playerId: string;
+  agentId: string;
+  sid: string;
+  connectionId: string;
+  lastSeenAt: string;
+};
+
 export type SessionStore = {
   readonly fanoutDelivery: "redis" | "local";
   readonly playerChainGenesis: string;
@@ -51,4 +59,22 @@ export type SessionStore = {
   appendEventLog(entry: SessionEventLogEntry): Promise<void>;
   getPublishedMetadata(): Promise<PublishedSessionMetadata>;
   getRecentEventLog(limit: number): Promise<SessionEventLogEntry[]>;
+  upsertPresenceLease(input: {
+    playerId: string;
+    agentId: string;
+    sid: string;
+    connectionId: string;
+    ttlSeconds: number;
+  }): Promise<void>;
+  touchPresenceLease(input: {
+    playerId: string;
+    connectionId: string;
+    ttlSeconds: number;
+  }): Promise<boolean>;
+  removePresenceLease(input: {
+    playerId: string;
+    connectionId?: string;
+  }): Promise<void>;
+  hasPresenceLease(playerId: string): Promise<boolean>;
+  listPresenceLeases(): Promise<PresenceLease[]>;
 };

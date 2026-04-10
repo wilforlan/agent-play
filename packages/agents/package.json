@@ -13,8 +13,13 @@
     },
     "./express-server": "./dist/express-server.js"
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "scripts": {
+    "prebuild": "node ./scripts/copy-root.mjs",
+    "prestart": "node ./scripts/copy-root.mjs",
+    "copy-root": "node ./scripts/copy-root.mjs",
     "build": "tsup",
     "start": "node ./dist/express-server.js",
     "test": "vitest run"

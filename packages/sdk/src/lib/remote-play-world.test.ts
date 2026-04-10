@@ -361,6 +361,58 @@ describe("RemotePlayWorld", () => {
     await world.close();
   });
 
+  it("addAgent starts heartbeat and close sends disconnect", async () => {
+    vi.useFakeTimers();
+    let heartbeatCount = 0;
+    let disconnectCount = 0;
+    const fetchMock = vi.fn(async (url: string | URL, init?: RequestInit) => {
+      const u = String(url);
+      if (u.endsWith("/api/agent-play/session")) {
+        return sessionResponse();
+      }
+      if (u.endsWith("/api/nodes/validate") && init?.method === "POST") {
+        return new Response(JSON.stringify({ ok: true, nodeKind: "agent" }), {
+          status: 200,
+        });
+      }
+      if (u.includes("/api/agent-play/players/heartbeat") && init?.method === "POST") {
+        heartbeatCount += 1;
+        return new Response(JSON.stringify({ ok: true }), { status: 200 });
+      }
+      if (u.includes("/api/agent-play/players/disconnect") && init?.method === "POST") {
+        disconnectCount += 1;
+        return new Response(JSON.stringify({ ok: true }), { status: 200 });
+      }
+      if (u.includes("/api/agent-play/players") && init?.method === "POST") {
+        return new Response(
+          JSON.stringify({
+            playerId: "p1",
+            previewUrl: `${BASE_URL}/agent-play/watch`,
+            registeredAgent: sampleRegisteredAgent("aid-1", "a"),
+            connectionId: "conn-1",
+            leaseTtlSeconds: 45,
+          }),
+          { status: 200 }
+        );
+      }
+      return notFound();
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const world = playWorld("key");
+    await world.connect();
+    await world.addAgent({
+      name: "a",
+      type: "langchain",
+      agent: { type: "langchain", toolNames: ["chat_tool"] },
+      nodeId: "aid-1",
+    });
+    await vi.advanceTimersByTimeAsync(24_000);
+    expect(heartbeatCount).toBeGreaterThan(0);
+    await world.close();
+    expect(disconnectCount).toBe(1);
+    vi.useRealTimers();
+  });
+
   it("addAgent ignores input.mainNodeId and always uses derived node id", async () => {
     const fetchMock = vi.fn(async (url: string | URL, init?: RequestInit) => {
       const u = String(url);

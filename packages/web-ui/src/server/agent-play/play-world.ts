@@ -122,6 +122,8 @@ export type AddPlayerInput = PlatformAgentInformation & {
   mainNodeId?: string;
   password?: string;
   agentId: string;
+  connectionId?: string;
+  leaseTtlSeconds?: number;
 };
 
 export type RegisteredAgentSummary = {
@@ -160,6 +162,8 @@ export type PlayWorldOptions = {
 export const HUMAN_VIEWER_PLAYER_ID = "__human__";
 
 export const MAX_WORLD_OCCUPANTS = 100;
+const PRESENCE_LEASE_TTL_SECONDS_DEFAULT = 45;
+const PRESENCE_SWEEP_INTERVAL_MS = 5_000;
 
 export type RecordInteractionInput = {
   playerId: string;
@@ -188,6 +192,7 @@ export class PlayWorld {
   private readonly repository: AgentRepository | null;
   private readonly sessionStore: SessionStore;
   private mainNodeId: string | null = null;
+  private presenceSweepTimer: ReturnType<typeof setInterval> | null = null;
 
   constructor(private readonly options: PlayWorldOptions) {
     this.repository = options.repository ?? null;
@@ -213,6 +218,12 @@ export class PlayWorld {
     if (existingSnapshot === null) {
       const initialSnapshot = emptySnapshot(this.sessionStore.playerChainGenesis);
       await this.sessionStore.persistSnapshot(initialSnapshot);
+    }
+    if (this.presenceSweepTimer === null) {
+      this.presenceSweepTimer = setInterval(() => {
+        void this.sweepStaleAgentOccupants();
+      }, PRESENCE_SWEEP_INTERVAL_MS);
+      this.presenceSweepTimer.unref?.();
     }
   }
 
@@ -872,7 +883,47 @@ export class PlayWorld {
     if (registered === undefined) {
       throw new Error("addPlayer failed");
     }
+    if (
+      input.connectionId !== undefined &&
+      input.connectionId.length > 0
+    ) {
+      await this.sessionStore.upsertPresenceLease({
+        playerId: registered.id,
+        agentId: input.agentId,
+        sid: registered.sid,
+        connectionId: input.connectionId,
+        ttlSeconds:
+          input.leaseTtlSeconds ?? PRESENCE_LEASE_TTL_SECONDS_DEFAULT,
+      });
+    }
     return registered;
+  }
+
+  async heartbeatPlayerConnection(input: {
+    playerId: string;
+    connectionId: string;
+    leaseTtlSeconds?: number;
+  }): Promise<void> {
+    const ok = await this.sessionStore.touchPresenceLease({
+      playerId: input.playerId,
+      connectionId: input.connectionId,
+      ttlSeconds:
+        input.leaseTtlSeconds ?? PRESENCE_LEASE_TTL_SECONDS_DEFAULT,
+    });
+    if (!ok) {
+      throw new Error("heartbeat: unknown or stale connection");
+    }
+  }
+
+  async disconnectPlayerConnection(input: {
+    playerId: string;
+    connectionId: string;
+  }): Promise<void> {
+    await this.sessionStore.removePresenceLease({
+      playerId: input.playerId,
+      connectionId: input.connectionId,
+    });
+    await this.removePlayer(input.playerId);
   }
 
   async recordJourney(playerId: string, journey: Journey): Promise<void> {
@@ -938,6 +989,7 @@ export class PlayWorld {
   }
 
   async removePlayer(id: string): Promise<void> {
+    await this.sessionStore.removePresenceLease({ playerId: id });
     await runStoredWorldMutation({
       store: this.sessionStore,
       mutate: async (cached) => {
@@ -1010,6 +1062,21 @@ export class PlayWorld {
 
   getSessionStore(): SessionStore {
     return this.sessionStore;
+  }
+
+  private async sweepStaleAgentOccupants(): Promise<void> {
+    const snapshot = await this.getSnapshotJson();
+    const staleAgentIds: string[] = [];
+    for (const occ of snapshot.worldMap.occupants) {
+      if (occ.kind !== "agent") continue;
+      const hasLease = await this.sessionStore.hasPresenceLease(occ.agentId);
+      if (!hasLease) {
+        staleAgentIds.push(occ.agentId);
+      }
+    }
+    for (const agentId of staleAgentIds) {
+      await this.removePlayer(agentId);
+    }
   }
 
   private forwardHttp(event: string, payload: unknown): Promise<void> {

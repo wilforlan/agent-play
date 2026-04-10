@@ -16,6 +16,7 @@ import {
   SESSION_CONNECTED_EVENT,
   type RemotePlayWorldSessionEvent,
 } from "../world-events.js";
+import { randomUUID } from "node:crypto";
 import {
   deriveNodeIdFromPassword,
   loadAgentPlayCredentialsFileFromPathSync,
@@ -238,6 +239,10 @@ export class RemotePlayWorld {
   private sid: string | null = null;
   private closed = false;
   private readonly closeListeners = new Set<() => void>();
+  private readonly playerConnectionInfo = new Map<
+    string,
+    { connectionId: string; leaseTtlSeconds: number; timer: ReturnType<typeof setInterval> }
+  >();
 
   constructor(options: RemotePlayWorldOptions = {}) {
     const creds = loadAgentPlayCredentialsFileFromPathSync(
@@ -396,6 +401,18 @@ export class RemotePlayWorld {
     if (this.closed) {
       return;
     }
+    for (const [playerId, connection] of this.playerConnectionInfo.entries()) {
+      clearInterval(connection.timer);
+      try {
+        await this.disconnectPlayerConnection({
+          playerId,
+          connectionId: connection.connectionId,
+        });
+      } catch {
+        // ignore disconnect errors during close
+      }
+    }
+    this.playerConnectionInfo.clear();
     this.closed = true;
     this.emitSessionEvent({ name: SESSION_CLOSED_EVENT });
     for (const handler of Array.from(this.closeListeners)) {
@@ -548,6 +565,8 @@ export class RemotePlayWorld {
       ].join("\n")
     );
     const url = `${this.apiBase}/api/agent-play/players?sid=${encodeURIComponent(sid)}`;
+    const connectionId = randomUUID();
+    const leaseTtlSeconds = 45;
     const res = await fetch(url, {
       method: "POST",
       headers: this.jsonHeaders(),
@@ -558,6 +577,8 @@ export class RemotePlayWorld {
         mainNodeId: effectiveMainNodeId,
         password: this.password,
         agentId: input.nodeId,
+        connectionId,
+        leaseTtlSeconds,
       }),
     });
     const bodyText = await res.text();
@@ -579,6 +600,30 @@ export class RemotePlayWorld {
       throw new Error("addAgent: missing playerId or previewUrl");
     }
     const registeredAgent = parseRegisteredAgentSummary(body.registeredAgent);
+    const bodyConnectionId =
+      typeof body.connectionId === "string" && body.connectionId.length > 0
+        ? body.connectionId
+        : connectionId;
+    const bodyLeaseTtlSeconds =
+      typeof body.leaseTtlSeconds === "number" && Number.isFinite(body.leaseTtlSeconds)
+        ? body.leaseTtlSeconds
+        : leaseTtlSeconds;
+    const existingConnection = this.playerConnectionInfo.get(playerId);
+    if (existingConnection !== undefined) {
+      clearInterval(existingConnection.timer);
+    }
+    const timer = setInterval(() => {
+      void this.heartbeatPlayerConnection({
+        playerId,
+        connectionId: bodyConnectionId,
+        leaseTtlSeconds: bodyLeaseTtlSeconds,
+      });
+    }, 12_000);
+    this.playerConnectionInfo.set(playerId, {
+      connectionId: bodyConnectionId,
+      leaseTtlSeconds: bodyLeaseTtlSeconds,
+      timer,
+    });
     const now = new Date();
     return {
       id: playerId,
@@ -588,6 +633,8 @@ export class RemotePlayWorld {
       updatedAt: now,
       previewUrl,
       registeredAgent,
+      connectionId: bodyConnectionId,
+      leaseTtlSeconds: bodyLeaseTtlSeconds,
     };
   }
 
@@ -668,5 +715,43 @@ export class RemotePlayWorld {
       const t = await res.text();
       throw new Error(`rpc ${op}: ${res.status} ${t}`);
     }
+  }
+
+  private async heartbeatPlayerConnection(input: {
+    playerId: string;
+    connectionId: string;
+    leaseTtlSeconds: number;
+  }): Promise<void> {
+    const sid = this.getSessionId();
+    const url = `${this.apiBase}/api/agent-play/players/heartbeat?sid=${encodeURIComponent(sid)}`;
+    const res = await fetch(url, {
+      method: "POST",
+      headers: this.jsonHeaders(),
+      body: JSON.stringify({
+        playerId: input.playerId,
+        connectionId: input.connectionId,
+        leaseTtlSeconds: input.leaseTtlSeconds,
+      }),
+    });
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(`heartbeat: ${res.status} ${text}`);
+    }
+  }
+
+  private async disconnectPlayerConnection(input: {
+    playerId: string;
+    connectionId: string;
+  }): Promise<void> {
+    const sid = this.getSessionId();
+    const url = `${this.apiBase}/api/agent-play/players/disconnect?sid=${encodeURIComponent(sid)}`;
+    await fetch(url, {
+      method: "POST",
+      headers: this.jsonHeaders(),
+      body: JSON.stringify({
+        playerId: input.playerId,
+        connectionId: input.connectionId,
+      }),
+    });
   }
 }

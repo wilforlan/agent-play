@@ -83,6 +83,14 @@ export async function POST(req: NextRequest) {
     typeof body.password === "string" ? body.password : undefined;
   const mainNodeId =
     typeof body.mainNodeId === "string" ? body.mainNodeId.trim() : undefined;
+  const connectionId =
+    typeof body.connectionId === "string" ? body.connectionId.trim() : undefined;
+  const leaseTtlSecondsRaw =
+    typeof body.leaseTtlSeconds === "number" ? body.leaseTtlSeconds : undefined;
+  const leaseTtlSeconds =
+    leaseTtlSecondsRaw !== undefined && Number.isFinite(leaseTtlSecondsRaw)
+      ? leaseTtlSecondsRaw
+      : undefined;
   const agentIdRaw = typeof body.agentId === "string" ? body.agentId.trim() : "";
   if (agentIdRaw.length === 0) {
     agentPlayVerbose("api", "players rejected", { reason: "missing agentId" });
@@ -100,11 +108,15 @@ export async function POST(req: NextRequest) {
       mainNodeId,
       password,
       agentId,
+      connectionId,
+      leaseTtlSeconds,
     });
     return Response.json({
       playerId: registered.id,
       previewUrl: registered.previewUrl,
       registeredAgent: registered.registeredAgent,
+      connectionId: connectionId ?? null,
+      leaseTtlSeconds: leaseTtlSeconds ?? null,
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);

@@ -1,4 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 import { registerBuiltinAgents } from "./register-builtins.js";
 
 function mockRegisteredAgent(name: string, agentId: string) {
@@ -12,24 +15,69 @@ function mockRegisteredAgent(name: string, agentId: string) {
   };
 }
 
-function createNodeCredentialsFixture(): { rootKey: string; passw: string } {
-  return {
-    rootKey: "n1",
-    passw: "amber angle apple arch atlas aura autumn bamboo beacon birch blossom",
-  };
-}
-
 describe("registerBuiltinAgents", () => {
+  const originalCredentialsPath = process.env.AGENT_PLAY_CREDENTIALS_PATH;
+  const tempDirs: string[] = [];
+
   afterEach(() => {
+    while (tempDirs.length > 0) {
+      const dir = tempDirs.pop();
+      if (dir !== undefined) {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    }
+    if (originalCredentialsPath === undefined) {
+      delete process.env.AGENT_PLAY_CREDENTIALS_PATH;
+    } else {
+      process.env.AGENT_PLAY_CREDENTIALS_PATH = originalCredentialsPath;
+    }
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
   });
 
-  it("uses connect, getWorldSnapshot, and addAgent once per built-in when snapshot empty", async () => {
+  function setCredentialsFixture(): void {
+    const dir = mkdtempSync(join(tmpdir(), "agent-play-register-builtins-"));
+    const filePath = join(dir, "credentials.json");
+    writeFileSync(
+      filePath,
+      JSON.stringify({
+        serverUrl: "http://127.0.0.1:3000",
+        nodeId:
+          "87b6637b010478e48a83a8d445041ae4df5d607df7932153cdfee5c601e8e39e",
+        passw:
+          "amber angle apple arch atlas aura autumn bamboo beacon birch blossom",
+      }),
+      "utf8"
+    );
+    process.env.AGENT_PLAY_CREDENTIALS_PATH = filePath;
+    tempDirs.push(dir);
+  }
+
+  it("returns world and registers built-ins when snapshot empty", async () => {
+    setCredentialsFixture();
     let addPlayerCount = 0;
+    let validateCount = 0;
+    let sawConnectValidation = false;
     const fetchMock = vi.fn(
       async (url: string | URL, init?: RequestInit) => {
         const u = String(url);
+        if (u.endsWith("/api/nodes/validate") && init?.method === "POST") {
+          validateCount += 1;
+          const body = JSON.parse(String(init.body)) as {
+            nodeId?: string;
+            mainNodeId?: string;
+          };
+          expect(typeof body.nodeId).toBe("string");
+          if (
+            body.mainNodeId ===
+            "87b6637b010478e48a83a8d445041ae4df5d607df7932153cdfee5c601e8e39e"
+          ) {
+            sawConnectValidation = true;
+          }
+          return new Response(JSON.stringify({ ok: true, nodeKind: "agent" }), {
+            status: 200,
+          });
+        }
         if (u.endsWith("/api/agent-play/session")) {
           return new Response(JSON.stringify({ sid: "sid-z" }), { status: 200 });
         }
@@ -50,7 +98,10 @@ describe("registerBuiltinAgents", () => {
             );
           }
         }
-        if (u.includes("/api/agent-play/players") && init?.method === "POST") {
+        if (
+          new URL(u).pathname === "/api/agent-play/players" &&
+          init?.method === "POST"
+        ) {
           addPlayerCount += 1;
           const body = JSON.parse(String(init.body)) as {
             name?: string;
@@ -83,19 +134,38 @@ describe("registerBuiltinAgents", () => {
     );
     vi.stubGlobal("fetch", fetchMock);
 
-    await registerBuiltinAgents({
-      baseUrl: "http://127.0.0.1:3000",
-      nodeCredentials: createNodeCredentialsFixture(),
-    });
+    const world = await registerBuiltinAgents();
 
+    expect(world).toBeDefined();
+    expect(typeof world.hold).toBe("function");
     expect(addPlayerCount).toBe(2);
+    expect(validateCount).toBe(3);
+    expect(sawConnectValidation).toBe(true);
   });
 
   it("skips addAgent when built-in name already on snapshot", async () => {
+    setCredentialsFixture();
     let addPlayerCount = 0;
+    let validateCount = 0;
+    let sawConnectValidation = false;
     const fetchMock = vi.fn(
       async (url: string | URL, init?: RequestInit) => {
         const u = String(url);
+        if (u.endsWith("/api/nodes/validate") && init?.method === "POST") {
+          validateCount += 1;
+          const body = JSON.parse(String(init.body)) as {
+            mainNodeId?: string;
+          };
+          if (
+            body.mainNodeId ===
+            "87b6637b010478e48a83a8d445041ae4df5d607df7932153cdfee5c601e8e39e"
+          ) {
+            sawConnectValidation = true;
+          }
+          return new Response(JSON.stringify({ ok: true, nodeKind: "agent" }), {
+            status: 200,
+          });
+        }
         if (u.endsWith("/api/agent-play/session")) {
           return new Response(JSON.stringify({ sid: "sid-z" }), { status: 200 });
         }
@@ -128,7 +198,10 @@ describe("registerBuiltinAgents", () => {
             { status: 200 }
           );
         }
-        if (u.includes("/api/agent-play/players") && init?.method === "POST") {
+        if (
+          new URL(u).pathname === "/api/agent-play/players" &&
+          init?.method === "POST"
+        ) {
           addPlayerCount += 1;
           return new Response(
             JSON.stringify({
@@ -144,11 +217,10 @@ describe("registerBuiltinAgents", () => {
     );
     vi.stubGlobal("fetch", fetchMock);
 
-    await registerBuiltinAgents({
-      baseUrl: "http://127.0.0.1:3000",
-      nodeCredentials: createNodeCredentialsFixture(),
-    });
+    await registerBuiltinAgents();
 
     expect(addPlayerCount).toBe(0);
+    expect(validateCount).toBe(1);
+    expect(sawConnectValidation).toBe(true);
   });
 });
