@@ -261,11 +261,11 @@ type StructureVisual = {
 };
 
 /**
- * Reads `?sid=` from the page URL (required for API calls).
- * @remarks **Callers:** {@link bootstrap}, {@link loadSnapshot}, {@link connectSse}. **Callees:** `URLSearchParams`.
+ * Resolves the preview session id: sessionStorage (from prior bootstrap), then `?sid=` on the URL.
+ * @remarks Must match {@link ensurePreviewSessionId} / {@link getPreviewSessionIdSync} so assist/chat RPCs see the same sid as snapshot loads.
  */
 function getSid(): string | null {
-  return new URLSearchParams(location.search).get("sid");
+  return getPreviewSessionIdSync();
 }
 
 let mapMinX = 0;
@@ -411,7 +411,9 @@ function onDocumentKeyDown(e: KeyboardEvent): void {
     return;
   }
   if (inField || e.repeat) return;
-  const partner = lastProximityPartnerId;
+  const partner = registeredAgentPartnerForProximityOrNull(
+    lastProximityPartnerId
+  );
   if (partner === null || partner === HUMAN_VIEWER_PLAYER_ID) return;
   const act = proximityKeyToAction(e.key);
   if (act === null) return;
@@ -481,6 +483,14 @@ function playerDisplayName(playerId: string): string {
     listAgentRows(snapshot).find((p) => p.agentId === playerId)?.name ??
     playerId
   );
+}
+
+function registeredAgentPartnerForProximityOrNull(
+  candidateId: string | null
+): string | null {
+  if (candidateId === null || snapshot === null) return null;
+  const rows = listAgentRows(snapshot);
+  return rows.some((r) => r.agentId === candidateId) ? candidateId : null;
 }
 
 /**
@@ -1188,10 +1198,12 @@ function onFrame(): void {
     primaryPid !== null &&
     (snapshot === null ? 0 : listAgentRows(snapshot).length) >= 1
   ) {
+    const allowedPartners = new Set(aliveIds);
     lastProximityPartnerId = findNearestProximityPartner({
       primaryId: primaryPid,
       positions: playerWorldPos,
       radius: DEFAULT_PROXIMITY_RADIUS,
+      allowedPartnerIds: allowedPartners,
     });
   } else {
     lastProximityPartnerId = null;

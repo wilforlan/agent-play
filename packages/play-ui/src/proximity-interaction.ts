@@ -4,13 +4,16 @@ export function findNearestProximityPartner(options: {
   primaryId: string;
   positions: ReadonlyMap<string, { x: number; y: number }>;
   radius: number;
+  allowedPartnerIds?: ReadonlySet<string>;
 }): string | null {
   const self = options.positions.get(options.primaryId);
   if (self === undefined) return null;
+  const allow = options.allowedPartnerIds;
   let bestId: string | null = null;
   let bestDist = Infinity;
   for (const [id, pos] of options.positions) {
     if (id === options.primaryId) continue;
+    if (allow !== undefined && !allow.has(id)) continue;
     const d = Math.hypot(pos.x - self.x, pos.y - self.y);
     if (d <= options.radius && d < bestDist) {
       bestDist = d;

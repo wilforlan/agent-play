@@ -4,12 +4,21 @@ export type IntercomChannelParts = {
 };
 
 export function encodeHumanStableKeyForIntercom(humanNodeId: string): string {
-  return JSON.stringify({ __genesis__: humanNodeId });
+  return humanNodeId.trim();
+}
+
+function agentIdSegmentForIntercomChannel(agentStableKey: string): string {
+  const t = agentStableKey.trim();
+  if (t.startsWith("agent:")) {
+    return t.slice("agent:".length);
+  }
+  return t;
 }
 
 export function buildIntercomChannelKey(parts: IntercomChannelParts): string {
   const human = encodeHumanStableKeyForIntercom(parts.humanNodeId);
-  return `intercom:human:${human}:agent:${parts.agentStableKey}`;
+  const agentId = agentIdSegmentForIntercomChannel(parts.agentStableKey);
+  return `intercom:human:${human}:agent:${agentId}`;
 }
 
 export function agentStableKeyFromToPlayerId(toPlayerId: string): string {

@@ -67,7 +67,7 @@ describe("intercom contracts", () => {
       kind: "assist",
       status: "forwarded",
       ts: new Date().toISOString(),
-      channelKey: "intercom:human:{\"__genesis__\":\"m\"}:agent:agent:a1",
+      channelKey: "intercom:human:m:agent:a1",
       command: cmd,
     });
     expect(payload.status).toBe("forwarded");

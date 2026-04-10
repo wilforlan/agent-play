@@ -58,10 +58,16 @@ describe("createPreviewSessionInteractionPanel", () => {
     const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     const body = JSON.parse(String(init.body)) as {
       op?: string;
-      payload?: { toPlayerId?: string; kind?: string; toolName?: string };
+      payload?: {
+        toPlayerId?: string;
+        fromPlayerId?: string;
+        kind?: string;
+        toolName?: string;
+      };
     };
     expect(body.op).toBe("intercomCommand");
     expect(body.payload?.toPlayerId).toBe("agent-1");
+    expect(body.payload?.fromPlayerId).toBe("main-node-1");
     expect(body.payload?.kind).toBe("assist");
     expect(body.payload?.toolName).toBe("assist_plan_day");
   });
@@ -110,6 +116,36 @@ describe("createPreviewSessionInteractionPanel", () => {
     nodeBtn.click();
     await Promise.resolve();
     expect(onHumanNodeLifecycle).toHaveBeenCalledWith("setup");
+  });
+
+  it("shows error panel when chat submit is blocked by missing sid", () => {
+    const panel = createPreviewSessionInteractionPanel({
+      getSid: () => null,
+      apiBase: "/api/agent-play",
+      getMainNodeId: () => "main-node-1",
+      reloadSnapshot: () => {},
+    });
+    panel.setAgents([{ agentId: "agent-1", name: "Agent 1" }]);
+    panel.setContext("agent-1");
+    panel.setMode("chat");
+    document.body.append(panel.element);
+    const input = panel.element.querySelector(
+      ".preview-session-interaction__chat-input"
+    ) as HTMLInputElement;
+    input.value = "hello";
+    const form = panel.element.querySelector(
+      ".preview-session-interaction__chat-compose"
+    ) as HTMLFormElement;
+    form.dispatchEvent(new Event("submit", { cancelable: true, bubbles: true }));
+    const errPanel = panel.element.querySelector(
+      ".preview-session-interaction__error-panel"
+    ) as HTMLElement;
+    expect(errPanel.hidden).toBe(false);
+    expect(errPanel.textContent).toMatch(/session id/i);
+    const pre = panel.element.querySelector(
+      ".preview-session-interaction__error-pre"
+    );
+    expect(pre?.textContent).toContain("sid_null");
   });
 
   it("calls onHumanNodeLifecycle with replace after danger confirmation", async () => {

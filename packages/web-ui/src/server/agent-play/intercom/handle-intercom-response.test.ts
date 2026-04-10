@@ -14,7 +14,7 @@ describe("handleIntercomResponse", () => {
       payload: {
         requestId: "r1",
         mainNodeId: "m1",
-        toPlayerId: "__human__",
+        toPlayerId: "m1",
         fromPlayerId: "agent-p1",
         kind: "chat",
         status: "completed",

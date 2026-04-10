@@ -20,7 +20,7 @@ describe("dispatchIntercomCommand", () => {
       payload: {
         requestId: "req-1",
         mainNodeId: "main-1",
-        fromPlayerId: "__human__",
+        fromPlayerId: "main-1",
         toPlayerId: "agent-1",
         kind: "chat",
         text: "hello",
@@ -58,7 +58,7 @@ describe("dispatchIntercomCommand", () => {
         payload: {
           requestId: "req-2",
           mainNodeId: "main-1",
-          fromPlayerId: "__human__",
+          fromPlayerId: "main-1",
           toPlayerId: "agent-1",
           kind: "chat",
           text: "hello",

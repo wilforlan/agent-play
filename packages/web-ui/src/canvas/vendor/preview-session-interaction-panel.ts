@@ -9,6 +9,7 @@ import {
   formatCredentialCreatedAt,
   readHumanCredentials,
 } from "./preview-human-credentials.js";
+import { logSessionInteraction } from "./preview-session-interaction-log.js";
 
 const STYLE_ID = "agent-play-preview-session-interaction-styles";
 
@@ -136,6 +137,56 @@ function ensureStyles(): void {
   font-size: 11px;
   color: #86efac;
   white-space: pre-wrap;
+}
+.preview-session-interaction__error-panel {
+  display: grid;
+  gap: 8px;
+  margin-top: 8px;
+  padding: 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(248, 113, 113, 0.45);
+  background: rgba(127, 29, 29, 0.35);
+  color: #fecaca;
+  font-size: 12px;
+  line-height: 1.4;
+}
+.preview-session-interaction__error-panel[hidden] {
+  display: none !important;
+}
+.preview-session-interaction__error-headline {
+  font-weight: 600;
+  color: #fecaca;
+}
+.preview-session-interaction__error-dismiss {
+  justify-self: start;
+  border-radius: 6px;
+  padding: 4px 10px;
+  font-size: 11px;
+  cursor: pointer;
+  border: 1px solid rgba(248, 113, 113, 0.55);
+  background: rgba(15, 23, 42, 0.5);
+  color: #fecaca;
+}
+.preview-session-interaction__error-debug {
+  font-size: 11px;
+  color: #cbd5e1;
+}
+.preview-session-interaction__error-debug summary {
+  cursor: pointer;
+  color: #94a3b8;
+  user-select: none;
+}
+.preview-session-interaction__error-pre {
+  margin: 8px 0 0 0;
+  padding: 8px;
+  border-radius: 6px;
+  background: rgba(15, 23, 42, 0.85);
+  color: #e2e8f0;
+  font-size: 10px;
+  line-height: 1.35;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 .preview-session-interaction__node-info {
   margin-bottom: 10px;
@@ -313,7 +364,6 @@ export function createPreviewSessionInteractionPanel(options: {
   apiBase: string;
   reloadSnapshot: () => void | Promise<void>;
   getMainNodeId: () => string | null;
-  getHumanPlayerId?: () => string;
   onHumanNodeLifecycle?: (action: "replace" | "setup") => void | Promise<void>;
 }): {
   element: HTMLElement;
@@ -324,7 +374,6 @@ export function createPreviewSessionInteractionPanel(options: {
   applyIntercomEvent: (raw: unknown) => void;
 } {
   ensureStyles();
-  const humanId = options.getHumanPlayerId ?? (() => "__human__");
   const root = document.createElement("section");
   root.className = "preview-session-interaction";
   const title = document.createElement("div");
@@ -417,9 +466,27 @@ export function createPreviewSessionInteractionPanel(options: {
   progress.append(document.createElement("div"));
 
   const body = document.createElement("div");
+  const errorPanel = document.createElement("div");
+  errorPanel.className = "preview-session-interaction__error-panel";
+  errorPanel.hidden = true;
+  const errorHeadline = document.createElement("div");
+  errorHeadline.className = "preview-session-interaction__error-headline";
+  const errorDismiss = document.createElement("button");
+  errorDismiss.type = "button";
+  errorDismiss.dataset.sessionErrorDismiss = "1";
+  errorDismiss.className = "preview-session-interaction__error-dismiss";
+  errorDismiss.textContent = "Dismiss";
+  const errorDebug = document.createElement("details");
+  errorDebug.className = "preview-session-interaction__error-debug";
+  const errorDebugSummary = document.createElement("summary");
+  errorDebugSummary.textContent = "Technical details";
+  const errorPre = document.createElement("pre");
+  errorPre.className = "preview-session-interaction__error-pre";
+  errorDebug.append(errorDebugSummary, errorPre);
+  errorPanel.append(errorHeadline, errorDismiss, errorDebug);
   const result = document.createElement("div");
   result.className = "preview-session-interaction__result";
-  root.append(title, nodeInfo, target, modes, progress, body, result);
+  root.append(title, nodeInfo, target, modes, progress, body, errorPanel, result);
 
   let mode: Mode = "assist";
   let activeAgentId: string | null = null;
@@ -431,10 +498,50 @@ export function createPreviewSessionInteractionPanel(options: {
     { mode: Mode; agentId: string }
   >();
 
+  type InteractionErrorState = {
+    headline: string;
+    technical: Record<string, unknown>;
+  };
+  let interactionError: InteractionErrorState | null = null;
+
+  const syncErrorPanel = (): void => {
+    if (interactionError === null) {
+      errorPanel.hidden = true;
+      errorHeadline.textContent = "";
+      errorPre.textContent = "";
+      return;
+    }
+    errorPanel.hidden = false;
+    errorHeadline.textContent = interactionError.headline;
+    errorPre.textContent = JSON.stringify(interactionError.technical, null, 2);
+  };
+
+  const setInteractionError = (
+    headline: string,
+    technical: Record<string, unknown>
+  ): void => {
+    interactionError = { headline, technical };
+    syncErrorPanel();
+  };
+
+  const clearInteractionError = (): void => {
+    interactionError = null;
+    syncErrorPanel();
+  };
+
+  errorDismiss.addEventListener("click", () => {
+    logSessionInteraction("errorPanel:dismiss", "event", {});
+    clearInteractionError();
+  });
+
   const setBusy = (next: boolean): void => {
     busy = next;
     progress.setAttribute("data-on", busy ? "1" : "0");
-    root.querySelectorAll("button:not([data-node-ui]),input").forEach((el) => {
+    root
+      .querySelectorAll(
+        "button:not([data-node-ui]):not([data-session-error-dismiss]),input"
+      )
+      .forEach((el) => {
       if (el instanceof HTMLButtonElement || el instanceof HTMLInputElement) {
         el.disabled = busy;
       }
@@ -477,17 +584,71 @@ export function createPreviewSessionInteractionPanel(options: {
     compose.append(input, send);
     compose.addEventListener("submit", (e) => {
       e.preventDefault();
-      if (activeAgentId === null) return;
-      const text = input.value.trim();
-      if (text.length === 0) return;
-      const sid = options.getSid();
-      if (sid === null) return;
-      const mainNodeId = options.getMainNodeId();
-      if (mainNodeId === null) {
-        result.textContent = "Main node id missing. Complete human onboarding.";
+      logSessionInteraction("chat:submit:precheck", "start", {
+        activeAgentId,
+        textLength: input.value.trim().length,
+      });
+      if (activeAgentId === null) {
+        logSessionInteraction("chat:submit", "skip", {
+          reason: "active_agent_missing",
+        });
+        setInteractionError("Cannot send: no agent is selected as the chat target.", {
+          step: "chat:submit",
+          reason: "activeAgentId_null",
+          mode: "chat",
+        });
         return;
       }
+      const text = input.value.trim();
+      if (text.length === 0) {
+        logSessionInteraction("chat:submit", "skip", {
+          reason: "empty_message",
+          agentId: activeAgentId,
+        });
+        return;
+      }
+      const sid = options.getSid();
+      if (sid === null) {
+        logSessionInteraction("chat:submit", "skip", {
+          reason: "sid_missing",
+          agentId: activeAgentId,
+        });
+        setInteractionError(
+          "Cannot send: session id is missing. Reload the page or open the preview URL with a valid sid.",
+          {
+            step: "chat:submit",
+            reason: "sid_null",
+            apiBase: options.apiBase,
+          }
+        );
+        return;
+      }
+      const mainNodeId = options.getMainNodeId();
+      if (mainNodeId === null) {
+        logSessionInteraction("chat:submit", "skip", {
+          reason: "main_node_id_missing",
+          agentId: activeAgentId,
+          sid,
+        });
+        setInteractionError(
+          "Cannot send: main node id is missing. Complete human onboarding in this browser.",
+          {
+            step: "chat:submit",
+            reason: "mainNodeId_null",
+            sid,
+          }
+        );
+        result.textContent = "";
+        return;
+      }
+      clearInteractionError();
       const requestId = crypto.randomUUID();
+      const rpcUrl = `${options.apiBase}/sdk/rpc?sid=${encodeURIComponent(sid)}`;
+      logSessionInteraction("chat:submit:request", "start", {
+        requestId,
+        toPlayerId: activeAgentId,
+        rpcUrl,
+      });
       pendingByRequestId.set(requestId, { mode: "chat", agentId: activeAgentId });
       appendChatLogLine({
         agentId: activeAgentId,
@@ -498,7 +659,7 @@ export function createPreviewSessionInteractionPanel(options: {
       input.value = "";
       setBusy(true);
       result.textContent = `${requestId}: pending`;
-      void fetch(`${options.apiBase}/sdk/rpc?sid=${encodeURIComponent(sid)}`, {
+      void fetch(rpcUrl, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
@@ -506,7 +667,7 @@ export function createPreviewSessionInteractionPanel(options: {
           payload: {
             requestId,
             mainNodeId,
-            fromPlayerId: humanId(),
+            fromPlayerId: mainNodeId,
             toPlayerId: activeAgentId,
             kind: "chat",
             text,
@@ -515,13 +676,33 @@ export function createPreviewSessionInteractionPanel(options: {
       })
         .then(async (res) => {
           if (!res.ok) {
-            throw new Error(await res.text());
+            const bodyText = await res.text();
+            logSessionInteraction("chat:submit", "error", {
+              requestId,
+              httpStatus: res.status,
+              bodyPreview: bodyText.slice(0, 500),
+            });
+            throw new Error(bodyText);
           }
+          logSessionInteraction("chat:submit", "success", {
+            requestId,
+            httpStatus: res.status,
+          });
           await Promise.resolve(options.reloadSnapshot());
         })
         .catch((err: unknown) => {
           const m = err instanceof Error ? err.message : String(err);
+          logSessionInteraction("chat:submit", "error", {
+            requestId,
+            message: m,
+          });
           result.textContent = m;
+          setInteractionError("Chat request failed.", {
+            step: "chat:fetch_or_reload",
+            requestId,
+            message: m,
+            rpcUrl,
+          });
           pendingByRequestId.delete(requestId);
         })
         .finally(() => {
@@ -592,23 +773,81 @@ export function createPreviewSessionInteractionPanel(options: {
     form.append(send);
     form.addEventListener("submit", (e) => {
       e.preventDefault();
-      if (activeAgentId === null || selectedTool === null) return;
-      const sid = options.getSid();
-      if (sid === null) return;
-      const mainNodeId = options.getMainNodeId();
-      if (mainNodeId === null) {
-        result.textContent = "Main node id missing. Complete human onboarding.";
+      logSessionInteraction("assist:submit:precheck", "start", {
+        activeAgentId,
+        toolName: selectedTool?.name ?? null,
+      });
+      if (activeAgentId === null || selectedTool === null) {
+        logSessionInteraction("assist:submit", "skip", {
+          reason: "active_agent_or_tool_missing",
+          hasAgent: activeAgentId !== null,
+          hasTool: selectedTool !== null,
+        });
+        setInteractionError(
+          "Cannot run assist: no agent or no tool is selected.",
+          {
+            step: "assist:submit",
+            reason: "activeAgentId_or_selectedTool_null",
+            hasAgent: activeAgentId !== null,
+            hasTool: selectedTool !== null,
+          }
+        );
         return;
       }
+      const sid = options.getSid();
+      if (sid === null) {
+        logSessionInteraction("assist:submit", "skip", {
+          reason: "sid_missing",
+          toolName: selectedTool.name,
+        });
+        setInteractionError(
+          "Cannot send: session id is missing. Reload the page or open the preview URL with a valid sid.",
+          {
+            step: "assist:submit",
+            reason: "sid_null",
+            toolName: selectedTool.name,
+            apiBase: options.apiBase,
+          }
+        );
+        return;
+      }
+      const mainNodeId = options.getMainNodeId();
+      if (mainNodeId === null) {
+        logSessionInteraction("assist:submit", "skip", {
+          reason: "main_node_id_missing",
+          toolName: selectedTool.name,
+          sid,
+        });
+        setInteractionError(
+          "Cannot send: main node id is missing. Complete human onboarding in this browser.",
+          {
+            step: "assist:submit",
+            reason: "mainNodeId_null",
+            toolName: selectedTool.name,
+            sid,
+          }
+        );
+        result.textContent = "";
+        return;
+      }
+      clearInteractionError();
+      const assistTool = selectedTool;
       const args: Record<string, unknown> = {};
-      for (const [key, input] of inputs) {
-        args[key] = input.value;
+      for (const [key, inputEl] of inputs) {
+        args[key] = inputEl.value;
       }
       const requestId = crypto.randomUUID();
+      const rpcUrl = `${options.apiBase}/sdk/rpc?sid=${encodeURIComponent(sid)}`;
+      logSessionInteraction("assist:submit:request", "start", {
+        requestId,
+        toolName: assistTool.name,
+        toPlayerId: activeAgentId,
+        rpcUrl,
+      });
       pendingByRequestId.set(requestId, { mode: "assist", agentId: activeAgentId });
       setBusy(true);
       result.textContent = `${requestId}: pending`;
-      void fetch(`${options.apiBase}/sdk/rpc?sid=${encodeURIComponent(sid)}`, {
+      void fetch(rpcUrl, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
@@ -616,23 +855,44 @@ export function createPreviewSessionInteractionPanel(options: {
           payload: {
             requestId,
             mainNodeId,
-            fromPlayerId: humanId(),
+            fromPlayerId: mainNodeId,
             toPlayerId: activeAgentId,
             kind: "assist",
-            toolName: selectedTool.name,
+            toolName: assistTool.name,
             args,
           },
         }),
       })
         .then(async (res) => {
           if (!res.ok) {
-            throw new Error(await res.text());
+            const bodyText = await res.text();
+            logSessionInteraction("assist:submit", "error", {
+              requestId,
+              httpStatus: res.status,
+              bodyPreview: bodyText.slice(0, 500),
+            });
+            throw new Error(bodyText);
           }
+          logSessionInteraction("assist:submit", "success", {
+            requestId,
+            httpStatus: res.status,
+          });
           await Promise.resolve(options.reloadSnapshot());
         })
         .catch((err: unknown) => {
           const m = err instanceof Error ? err.message : String(err);
+          logSessionInteraction("assist:submit", "error", {
+            requestId,
+            message: m,
+          });
           result.textContent = m;
+          setInteractionError("Assist request failed.", {
+            step: "assist:fetch_or_reload",
+            requestId,
+            toolName: assistTool.name,
+            message: m,
+            rpcUrl,
+          });
           pendingByRequestId.delete(requestId);
         })
         .finally(() => {
@@ -661,13 +921,32 @@ export function createPreviewSessionInteractionPanel(options: {
     let payload: WorldIntercomEventPayload;
     try {
       payload = parseWorldIntercomEventPayload(raw);
-    } catch {
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      logSessionInteraction("intercom:sse", "error", {
+        reason: "parse_failed",
+        message,
+      });
+      setInteractionError("Received an event that could not be parsed as intercom.", {
+        step: "intercom:parse",
+        reason: "parseWorldIntercomEventPayload_threw",
+        message,
+      });
       result.textContent = "Received non-intercom SSE payload.";
       return;
     }
+    logSessionInteraction("intercom:sse", "event", {
+      requestId: payload.requestId,
+      status: payload.status,
+    });
     const rid = payload.requestId;
     const pending = pendingByRequestId.get(rid);
     if (pending === undefined) {
+      logSessionInteraction("intercom:sse", "skip", {
+        reason: "request_not_pending",
+        requestId: rid,
+        status: payload.status,
+      });
       result.textContent = [
         result.textContent,
         `[diagnostic] ${payload.status} ${rid}`,
@@ -685,6 +964,7 @@ export function createPreviewSessionInteractionPanel(options: {
       return;
     }
     if (payload.status === "completed") {
+      clearInteractionError();
       if (pending.mode === "chat" && activeAgentId === pending.agentId) {
         appendChatLogLine({
           agentId: pending.agentId,
@@ -700,7 +980,21 @@ export function createPreviewSessionInteractionPanel(options: {
       return;
     }
     if (payload.status === "failed") {
-      result.textContent = `${rid}: ${payload.error ?? "failed"}`;
+      const errText = payload.error ?? "failed";
+      logSessionInteraction("intercom:sse", "error", {
+        requestId: rid,
+        status: "failed",
+        error: errText,
+      });
+      result.textContent = `${rid}: ${errText}`;
+      setInteractionError("Intercom reported failure for this request.", {
+        step: "intercom:payload",
+        requestId: rid,
+        status: payload.status,
+        error: errText,
+        mode: pending.mode,
+        agentId: pending.agentId,
+      });
       pendingByRequestId.delete(rid);
     }
   };
@@ -731,8 +1025,12 @@ export function createPreviewSessionInteractionPanel(options: {
       render();
     },
     setContext: (agentId) => {
+      logSessionInteraction("panel:setContext", "event", {
+        agentId,
+      });
       activeAgentId = agentId;
       selectedTool = null;
+      clearInteractionError();
       render();
     },
     setMode: (nextMode) => {

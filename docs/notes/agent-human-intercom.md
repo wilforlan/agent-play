@@ -14,15 +14,15 @@ This note describes how chat and assist traffic flows between the browser human 
 - One reusable **human node** per human after explicit consent.
 - Browser flow: consent modal, `createHumanNode` RPC with `{ consent: true, passw }`, server persists via `createNodeAccount` when a repository is available.
 - Credentials: `sessionStorage` (`agent-play.humanCredentials`) plus optional `credentials.json` download; passphrase shown once in onboarding.
-- `mainNodeId` in `intercomCommand` must match this node id.
+- `mainNodeId` in `intercomCommand` must match this node id. Use the same value for `fromPlayerId` (not `__human__`) so the agent’s `intercomResponse` targets the human node and the watch UI receives completions.
 
 ## Channel keys
 
 Canonical pair for addressing:
 
-- Human side: `encodeHumanStableKeyForIntercom(humanNodeId)` → JSON `{"__genesis__":"<humanNodeId>"}`.
-- Agent side: `agentstableKeyFromToPlayerId(toPlayerId)` → `agent:<id>` when bare ids are used.
-- `buildIntercomChannelKey({ humanNodeId, agentStableKey })` → `intercom:human:...:agent:...`.
+- Human side: `encodeHumanStableKeyForIntercom(humanNodeId)` → trimmed main node id (genesis hash string).
+- Agent side: `agentStableKeyFromToPlayerId(toPlayerId)` → `agent:<id>` when bare ids are used; the channel key uses one `agent:` segment with the id after stripping a leading `agent:` from the stable key.
+- `buildIntercomChannelKey({ humanNodeId, agentStableKey })` → `intercom:human:<humanNodeId>:agent:<agentId>`.
 
 `openOrReuseIntercomChannel` tracks lifecycle in-process for the server runtime.
 
@@ -49,7 +49,7 @@ Completion comes from the SDK via `intercomResponse`, which publishes `stream` /
   "payload": {
     "requestId": "uuid",
     "mainNodeId": "…",
-    "fromPlayerId": "__human__",
+    "fromPlayerId": "<mainNodeId>",
     "toPlayerId": "agent-player-id",
     "kind": "chat|assist",
     "toolName": "assist_cashflow_forecast",
@@ -71,7 +71,7 @@ Includes `status: "forwarded"`, `channelKey`, and `command` (original payload).
   "payload": {
     "requestId": "uuid",
     "mainNodeId": "…",
-    "toPlayerId": "__human__",
+    "toPlayerId": "<mainNodeId>",
     "fromPlayerId": "agent-player-id",
     "kind": "assist",
     "status": "completed|failed|stream",

@@ -61,6 +61,37 @@ describe("findNearestProximityPartner", () => {
       })
     ).toBe("p3");
   });
+
+  it("when allowedPartnerIds is set, ignores positions not in the allowlist", () => {
+    const positions = new Map([
+      ["p1", { x: 0, y: 0 }],
+      ["stale", { x: 0.05, y: 0 }],
+      ["p2", { x: 0.3, y: 0 }],
+    ]);
+    expect(
+      findNearestProximityPartner({
+        primaryId: "p1",
+        positions,
+        radius: DEFAULT_PROXIMITY_RADIUS,
+        allowedPartnerIds: new Set(["p2"]),
+      })
+    ).toBe("p2");
+  });
+
+  it("when allowedPartnerIds excludes all in-range partners, returns null", () => {
+    const positions = new Map([
+      ["p1", { x: 0, y: 0 }],
+      ["p2", { x: 0.3, y: 0 }],
+    ]);
+    expect(
+      findNearestProximityPartner({
+        primaryId: "p1",
+        positions,
+        radius: DEFAULT_PROXIMITY_RADIUS,
+        allowedPartnerIds: new Set(["other"]),
+      })
+    ).toBe(null);
+  });
 });
 
 describe("proximityKeyToAction", () => {
