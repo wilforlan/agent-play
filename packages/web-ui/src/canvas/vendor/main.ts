@@ -1358,10 +1358,6 @@ export function bootstrap(): void {
       getSid,
       apiBase: API_BASE,
       getMainNodeId: getMainNodeIdForIntercom,
-      reloadSnapshot: () => {
-        const sid = getSid();
-        if (sid !== null) void loadSnapshot(sid);
-      },
       onHumanNodeLifecycle: async (action) => {
         if (action === "replace") {
           clearHumanCredentials();

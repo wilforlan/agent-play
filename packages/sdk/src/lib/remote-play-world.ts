@@ -52,6 +52,8 @@ export type RemotePlayWorldNodeCredentials = {
   passw: string;
 };
 
+export type RemotePlayWorldLogging = "off" | "on";
+
 export type RemotePlayWorldOptions = {
   baseUrl?: string;
   /**
@@ -60,6 +62,10 @@ export type RemotePlayWorldOptions = {
   nodeCredentials?: RemotePlayWorldNodeCredentials;
   /** Called for session lifecycle events (`session:connected`, `session:closed`; see `world-events`). */
   onSessionEvent?: (event: RemotePlayWorldSessionEvent) => void;
+  /**
+   * When **`"on"`**, prints **`console.info`** lines for session events, SSE messages, intercom command matching/skips, and **`sendIntercomResponse`** payloads (for request tracing). Default **`"off"`**.
+   */
+  logging?: RemotePlayWorldLogging;
 };
 
 /** Options for {@link RemotePlayWorld.connect}. */
@@ -236,6 +242,8 @@ export type IntercomToolExecutor = (input: {
  * Register automation agents with {@link RemotePlayWorld.addAgent} (`nodeId` is the agent node id; the server stores it as `agentId`).
  *
  * Incremental updates: {@link RemotePlayWorld.subscribeWorldState} listens for **`playerChainNotify`** in SSE `data`, then fetches each changed leaf via {@link RemotePlayWorld.getPlayerChainNode} and merges with {@link mergeSnapshotWithPlayerChainNode}.
+ *
+ * Set **`logging: "on"`** to trace session events, SSE payloads, intercom **`forwarded`** matching (including **`toPlayerId_mismatch`**), and **`sendIntercomResponse`** HTTP results.
  */
 export class RemotePlayWorld {
   private readonly apiBase: string;
@@ -247,6 +255,7 @@ export class RemotePlayWorld {
   private readonly onSessionEvent:
     | ((event: RemotePlayWorldSessionEvent) => void)
     | undefined;
+  private readonly transportLog: boolean;
   private sid: string | null = null;
   private closed = false;
   private readonly closeListeners = new Set<() => void>();
@@ -265,6 +274,7 @@ export class RemotePlayWorld {
     }
     this.apiBase = normalizeBaseUrl(resolvedBaseUrl);
     this.onSessionEvent = options.onSessionEvent;
+    this.transportLog = options.logging === "on";
 
     const nc =
       options.nodeCredentials ??
@@ -289,7 +299,22 @@ export class RemotePlayWorld {
     throw new Error(formatMissingCredentialsError());
   }
 
+  private logTransport(event: string, detail: Record<string, unknown>): void {
+    if (!this.transportLog) {
+      return;
+    }
+    console.info(`[agent-play:RemotePlayWorld] ${event}`, detail);
+  }
+
+  private truncateForLog(value: string, max = 1600): string {
+    return value.length <= max ? value : `${value.slice(0, max)}…`;
+  }
+
   private emitSessionEvent(event: RemotePlayWorldSessionEvent): void {
+    this.logTransport("session:event", {
+      name: event.name,
+      detail: event.detail ?? {},
+    });
     this.onSessionEvent?.(event);
   }
 
@@ -402,6 +427,10 @@ export class RemotePlayWorld {
       throw new Error("session: invalid response");
     }
     this.sid = json.sid;
+    this.logTransport("connect:session", {
+      sid: this.sid,
+      apiBase: this.apiBase,
+    });
     this.emitSessionEvent({
       name: SESSION_CONNECTED_EVENT,
       detail: { sid: this.sid },
@@ -513,36 +542,71 @@ export class RemotePlayWorld {
         const { createEventSource } = await import("eventsource-client");
         let snapshot = await this.getWorldSnapshot();
         callbacks.onSnapshot(snapshot);
+        const sseUrl = `${this.apiBase}/api/agent-play/events?sid=${encodeURIComponent(
+          this.getSessionId()
+        )}`;
+        this.logTransport("subscribeWorldState:sse_open", { sseUrl });
         const source = createEventSource({
-          url: `${this.apiBase}/api/agent-play/events?sid=${encodeURIComponent(
-            this.getSessionId()
-          )}`,
+          url: sseUrl,
           fetch: (input, init) => this.mergeAuthFetch(input, init),
         });
         closeSource = () => {
           source.close();
         };
         for await (const msg of source) {
+          const eventType =
+            typeof msg === "object" &&
+            msg !== null &&
+            "type" in msg &&
+            typeof (msg as { type?: unknown }).type === "string"
+              ? (msg as { type: string }).type
+              : "(no type)";
           if (typeof msg.data !== "string") {
+            this.logTransport("sse:worldState:skip", {
+              reason: "data_not_string",
+              eventType,
+            });
             continue;
           }
+          this.logTransport("sse:worldState:message", {
+            eventType,
+            dataLength: msg.data.length,
+            dataPreview: this.truncateForLog(msg.data),
+          });
           let data: unknown;
           try {
             data = JSON.parse(msg.data) as unknown;
           } catch {
+            this.logTransport("sse:worldState:parseJson", {
+              reason: "invalid_json",
+              eventType,
+            });
             continue;
           }
           if (callbacks.onIntercomEvent) {
             try {
-              callbacks.onIntercomEvent(parseWorldIntercomEventPayload(data));
+              const inter = parseWorldIntercomEventPayload(data);
+              this.logTransport("sse:worldState:intercom", {
+                status: inter.status,
+                requestId: inter.requestId,
+                kind: inter.kind,
+                channelKey: inter.channelKey,
+              });
+              callbacks.onIntercomEvent(inter);
             } catch {
-              // not a world intercom payload
+              this.logTransport("sse:worldState:intercom", {
+                reason: "not_world_intercom_payload",
+              });
             }
           }
           const notify = parsePlayerChainFanoutNotifyFromSsePayload(data);
           if (notify === undefined || notify.nodes.length === 0) {
             continue;
           }
+          this.logTransport("sse:worldState:playerChainNotify", {
+            nodeCount: notify.nodes.length,
+            stableKeys: notify.nodes.map((n) => n.stableKey),
+          });
           const ordered = sortNodeRefsForSerializedFetch(notify.nodes);
           for (const ref of ordered) {
             const node = await this.getPlayerChainNode(ref.stableKey);
@@ -551,13 +615,16 @@ export class RemotePlayWorld {
           callbacks.onSnapshot(snapshot);
         }
       } catch (e) {
-        callbacks.onError?.(
-          e instanceof Error ? e : new Error(String(e))
-        );
+        const err = e instanceof Error ? e : new Error(String(e));
+        this.logTransport("sse:worldState:error", {
+          message: err.message,
+        });
+        callbacks.onError?.(err);
       }
     })();
     return {
       close: () => {
+        this.logTransport("subscribeWorldState:close", {});
         closeSource?.();
         void task;
       },
@@ -697,14 +764,33 @@ export class RemotePlayWorld {
   async sendIntercomResponse(payload: IntercomResponsePayload): Promise<void> {
     const sid = this.getSessionId();
     const url = `${this.apiBase}/api/agent-play/sdk/rpc?sid=${encodeURIComponent(sid)}`;
+    this.logTransport("intercom:sendResponse:request", {
+      url,
+      requestId: payload.requestId,
+      toPlayerId: payload.toPlayerId,
+      fromPlayerId: payload.fromPlayerId,
+      kind: payload.kind,
+      status: payload.status,
+      toolName: payload.toolName,
+      error: payload.error,
+      resultPreview:
+        payload.result !== undefined
+          ? this.truncateForLog(JSON.stringify(payload.result))
+          : undefined,
+    });
     const res = await fetch(url, {
       method: "POST",
       headers: this.jsonHeaders(),
       body: JSON.stringify({ op: INTERCOM_RESPONSE_OP, payload }),
     });
+    const okText = await res.text();
+    this.logTransport("intercom:sendResponse:http", {
+      requestId: payload.requestId,
+      httpStatus: res.status,
+      bodyPreview: this.truncateForLog(okText),
+    });
     if (!res.ok) {
-      const t = await res.text();
-      throw new Error(`intercomResponse: ${res.status} ${t}`);
+      throw new Error(`intercomResponse: ${res.status} ${okText}`);
     }
   }
 
@@ -716,45 +802,108 @@ export class RemotePlayWorld {
     const task = (async () => {
       try {
         const { createEventSource } = await import("eventsource-client");
+        const sseUrl = `${this.apiBase}/api/agent-play/events?sid=${encodeURIComponent(
+          this.getSessionId()
+        )}`;
+        this.logTransport("subscribeIntercomCommands:sse_open", {
+          sseUrl,
+          subscribePlayerId: options.playerId,
+        });
         const source = createEventSource({
-          url: `${this.apiBase}/api/agent-play/events?sid=${encodeURIComponent(
-            this.getSessionId()
-          )}`,
+          url: sseUrl,
           fetch: (input, init) => this.mergeAuthFetch(input, init),
         });
         closeSource = () => {
           source.close();
         };
         for await (const msg of source) {
+          const eventType =
+            typeof msg === "object" &&
+            msg !== null &&
+            "type" in msg &&
+            typeof (msg as { type?: unknown }).type === "string"
+              ? (msg as { type: string }).type
+              : "(no type)";
           if (typeof msg.data !== "string") {
+            this.logTransport("sse:intercomCommands:skip", {
+              reason: "data_not_string",
+              eventType,
+            });
             continue;
           }
+          this.logTransport("sse:intercomCommands:message", {
+            eventType,
+            dataLength: msg.data.length,
+            dataPreview: this.truncateForLog(msg.data),
+          });
           let data: unknown;
           try {
             data = JSON.parse(msg.data) as unknown;
           } catch {
+            this.logTransport("sse:intercomCommands:parseJson", {
+              reason: "invalid_json",
+              eventType,
+            });
             continue;
           }
           let inter: WorldIntercomEventPayload;
           try {
             inter = parseWorldIntercomEventPayload(data);
           } catch {
+            this.logTransport("sse:intercomCommands:skip", {
+              reason: "not_world_intercom_payload",
+            });
             continue;
           }
+          this.logTransport("sse:intercomCommands:intercom_event", {
+            status: inter.status,
+            requestId: inter.requestId,
+            kind: inter.kind,
+            channelKey: inter.channelKey,
+            hasCommand: inter.command !== undefined,
+          });
           if (inter.status !== "forwarded") {
+            this.logTransport("sse:intercomCommands:skip", {
+              reason: "status_not_forwarded",
+              status: inter.status,
+              requestId: inter.requestId,
+            });
             continue;
           }
           const cmd = inter.command;
           if (cmd === undefined) {
+            this.logTransport("sse:intercomCommands:skip", {
+              reason: "missing_command",
+              requestId: inter.requestId,
+            });
             continue;
           }
+          this.logTransport("sse:intercomCommands:command", {
+            requestId: cmd.requestId,
+            fromPlayerId: cmd.fromPlayerId,
+            toPlayerId: cmd.toPlayerId,
+            kind: cmd.kind,
+            toolName: cmd.toolName,
+            subscribePlayerId: options.playerId,
+          });
           if (cmd.toPlayerId !== options.playerId) {
+            this.logTransport("sse:intercomCommands:skip", {
+              reason: "toPlayerId_mismatch",
+              requestId: cmd.requestId,
+              expectedSubscribePlayerId: options.playerId,
+              commandToPlayerId: cmd.toPlayerId,
+            });
             continue;
           }
           const toolName =
             cmd.kind === "chat" ? "chat_tool" : cmd.toolName ?? "";
           const args =
             cmd.kind === "chat" ? { text: cmd.text ?? "" } : (cmd.args ?? {});
+          this.logTransport("intercom:executeTool", {
+            requestId: cmd.requestId,
+            toolName,
+            argsPreview: this.truncateForLog(JSON.stringify(args)),
+          });
           try {
             const result = options.executeTool({ toolName, args });
             await this.sendIntercomResponse({
@@ -770,6 +919,10 @@ export class RemotePlayWorld {
             });
           } catch (err) {
             const message = err instanceof Error ? err.message : String(err);
+            this.logTransport("intercom:executeTool:error", {
+              requestId: cmd.requestId,
+              message,
+            });
             await this.sendIntercomResponse({
               requestId: cmd.requestId,
               mainNodeId: cmd.mainNodeId,
@@ -783,12 +936,14 @@ export class RemotePlayWorld {
             });
           }
         }
-      } catch {
-        // stream ended or reconnect handled by eventsource-client
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        this.logTransport("sse:intercomCommands:stream_error", { message });
       }
     })();
     return {
       close: () => {
+        this.logTransport("subscribeIntercomCommands:close", {});
         closeSource?.();
         void task;
       },

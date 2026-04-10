@@ -241,6 +241,30 @@ describe("RemotePlayWorld", () => {
     expect(events).toEqual([SESSION_CONNECTED_EVENT, SESSION_CLOSED_EVENT]);
   });
 
+  it("prints RemotePlayWorld transport logs when logging is on", async () => {
+    const infoSpy = vi.spyOn(console, "info").mockImplementation(() => {});
+    const fetchMock = vi.fn(async (url: string | URL) => {
+      const u = String(url);
+      if (u.endsWith("/api/agent-play/session")) {
+        return sessionResponse();
+      }
+      return notFound();
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const world = new RemotePlayWorld({
+      baseUrl: BASE_URL,
+      nodeCredentials: nodeCredentialsFromHumanPhrase("k"),
+      logging: "on",
+    });
+    await world.connect();
+    const transportLogs = infoSpy.mock.calls.filter((c) =>
+      String(c[0]).includes("[agent-play:RemotePlayWorld]")
+    );
+    expect(transportLogs.length).toBeGreaterThan(0);
+    infoSpy.mockRestore();
+    await world.close();
+  });
+
   it("connect reads session sid from the web UI", async () => {
     const fetchMock = vi.fn(async (url: string | URL) => {
       const u = String(url);

@@ -83,6 +83,7 @@ export {
   type IntercomToolExecutor,
   type RemotePlayWorldConnectOptions,
   type RemotePlayWorldHold,
+  type RemotePlayWorldLogging,
   type RemotePlayWorldNodeCredentials,
   type RemotePlayWorldOptions,
 } from "./lib/remote-play-world.js";

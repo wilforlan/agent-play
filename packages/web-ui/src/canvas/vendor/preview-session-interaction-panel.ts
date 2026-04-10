@@ -132,6 +132,16 @@ function ensureStyles(): void {
   align-items: center;
 }
 .preview-session-interaction__empty { font-size: 11px; color: #94a3b8; }
+.preview-session-interaction__reply-loading {
+  margin-top: 8px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(96, 165, 250, 0.4);
+  background: rgba(30, 58, 138, 0.35);
+  color: #bfdbfe;
+  font-size: 12px;
+  line-height: 1.4;
+}
 .preview-session-interaction__result {
   margin-top: 8px;
   font-size: 11px;
@@ -341,6 +351,18 @@ function titleFromToolName(toolName: string): string {
     .join(" ");
 }
 
+const DEFAULT_INTERCOM_REPLY_TIMEOUT_MS = 30_000;
+
+function intercomEventMatchesHumanAgentReply(
+  payload: WorldIntercomEventPayload,
+  mainNodeId: string,
+  activeAgentId: string
+): boolean {
+  return (
+    payload.toPlayerId === mainNodeId && payload.fromPlayerId === activeAgentId
+  );
+}
+
 function formatIntercomResultText(payload: WorldIntercomEventPayload): string {
   if (payload.status === "failed") {
     return payload.error ?? "failed";
@@ -362,7 +384,6 @@ function formatIntercomResultText(payload: WorldIntercomEventPayload): string {
 export function createPreviewSessionInteractionPanel(options: {
   getSid: () => string | null;
   apiBase: string;
-  reloadSnapshot: () => void | Promise<void>;
   getMainNodeId: () => string | null;
   onHumanNodeLifecycle?: (action: "replace" | "setup") => void | Promise<void>;
 }): {
@@ -498,6 +519,58 @@ export function createPreviewSessionInteractionPanel(options: {
     { mode: Mode; agentId: string }
   >();
 
+  type ReplyWaitState = {
+    requestId: string;
+    mode: Mode;
+    agentId: string;
+    mainNodeId: string;
+    timeoutId: ReturnType<typeof setTimeout>;
+  };
+  let replyWait: ReplyWaitState | null = null;
+
+  const clearReplyWaitState = (): void => {
+    if (replyWait === null) {
+      return;
+    }
+    clearTimeout(replyWait.timeoutId);
+    replyWait = null;
+  };
+
+  const startReplyWait = (o: {
+    requestId: string;
+    mode: Mode;
+    agentId: string;
+    mainNodeId: string;
+  }): void => {
+    clearReplyWaitState();
+    const timeoutId = setTimeout(() => {
+      if (replyWait === null || replyWait.requestId !== o.requestId) {
+        return;
+      }
+      const rid = replyWait.requestId;
+      clearReplyWaitState();
+      pendingByRequestId.delete(rid);
+      setBusy(false);
+      setInteractionError("Sorry — request timed out.", {
+        step: "intercom:reply_timeout",
+        reason: "timeout_ms",
+        timeoutMs: DEFAULT_INTERCOM_REPLY_TIMEOUT_MS,
+        requestId: rid,
+      });
+      result.textContent = "Sorry, failed: timeout.";
+      render();
+    }, DEFAULT_INTERCOM_REPLY_TIMEOUT_MS);
+    replyWait = { ...o, timeoutId };
+  };
+
+  const createReplyLoadingEl = (): HTMLDivElement => {
+    const el = document.createElement("div");
+    el.className = "preview-session-interaction__reply-loading";
+    el.setAttribute("role", "status");
+    el.textContent = "Waiting for response…";
+    return el;
+  };
+
   type InteractionErrorState = {
     headline: string;
     technical: Record<string, unknown>;
@@ -570,6 +643,14 @@ export function createPreviewSessionInteractionPanel(options: {
       bubble.className = `preview-session-interaction__bubble ${isUser ? "preview-session-interaction__bubble--left" : "preview-session-interaction__bubble--right"}`;
       bubble.textContent = line.text;
       log.append(bubble);
+    }
+    if (
+      replyWait !== null &&
+      replyWait.mode === "chat" &&
+      replyWait.agentId === activeAgentId
+    ) {
+      body.append(log, createReplyLoadingEl());
+      return;
     }
     const compose = document.createElement("form");
     compose.className = "preview-session-interaction__chat-compose";
@@ -657,8 +738,15 @@ export function createPreviewSessionInteractionPanel(options: {
         text,
       });
       input.value = "";
+      startReplyWait({
+        requestId,
+        mode: "chat",
+        agentId: activeAgentId,
+        mainNodeId,
+      });
       setBusy(true);
       result.textContent = `${requestId}: pending`;
+      render();
       void fetch(rpcUrl, {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -688,7 +776,6 @@ export function createPreviewSessionInteractionPanel(options: {
             requestId,
             httpStatus: res.status,
           });
-          await Promise.resolve(options.reloadSnapshot());
         })
         .catch((err: unknown) => {
           const m = err instanceof Error ? err.message : String(err);
@@ -696,27 +783,24 @@ export function createPreviewSessionInteractionPanel(options: {
             requestId,
             message: m,
           });
+          clearReplyWaitState();
           result.textContent = m;
           setInteractionError("Chat request failed.", {
-            step: "chat:fetch_or_reload",
+            step: "chat:fetch",
             requestId,
             message: m,
             rpcUrl,
           });
           pendingByRequestId.delete(requestId);
-        })
-        .finally(() => {
           setBusy(false);
-          renderChat();
+          render();
         });
-      renderChat();
     });
     body.append(log, compose);
   };
 
   const renderAssist = (): void => {
     body.replaceChildren();
-    result.textContent = "";
     if (activeAgentId === null) {
       const empty = document.createElement("div");
       empty.className = "preview-session-interaction__empty";
@@ -735,12 +819,32 @@ export function createPreviewSessionInteractionPanel(options: {
       btn.textContent = titleFromToolName(tool.name);
       btn.addEventListener("click", () => {
         selectedTool = tool;
+        result.textContent = "";
         renderAssist();
       });
       toolBar.append(btn);
     }
     body.append(toolBar);
+    if (
+      replyWait !== null &&
+      replyWait.mode === "assist" &&
+      replyWait.agentId === activeAgentId
+    ) {
+      if (selectedTool !== null) {
+        const headingWait = document.createElement("div");
+        headingWait.className = "preview-session-interaction__title";
+        headingWait.textContent = titleFromToolName(selectedTool.name);
+        const descWait = document.createElement("div");
+        descWait.className = "preview-session-interaction__assist-desc";
+        descWait.textContent = selectedTool.description || selectedTool.name;
+        body.append(headingWait, descWait, createReplyLoadingEl());
+      } else {
+        body.append(createReplyLoadingEl());
+      }
+      return;
+    }
     if (selectedTool === null) {
+      result.textContent = "";
       const empty = document.createElement("div");
       empty.className = "preview-session-interaction__empty";
       empty.textContent = "Choose an assist tool to begin.";
@@ -845,8 +949,15 @@ export function createPreviewSessionInteractionPanel(options: {
         rpcUrl,
       });
       pendingByRequestId.set(requestId, { mode: "assist", agentId: activeAgentId });
+      startReplyWait({
+        requestId,
+        mode: "assist",
+        agentId: activeAgentId,
+        mainNodeId,
+      });
       setBusy(true);
       result.textContent = `${requestId}: pending`;
+      render();
       void fetch(rpcUrl, {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -877,7 +988,6 @@ export function createPreviewSessionInteractionPanel(options: {
             requestId,
             httpStatus: res.status,
           });
-          await Promise.resolve(options.reloadSnapshot());
         })
         .catch((err: unknown) => {
           const m = err instanceof Error ? err.message : String(err);
@@ -885,18 +995,18 @@ export function createPreviewSessionInteractionPanel(options: {
             requestId,
             message: m,
           });
+          clearReplyWaitState();
           result.textContent = m;
           setInteractionError("Assist request failed.", {
-            step: "assist:fetch_or_reload",
+            step: "assist:fetch",
             requestId,
             toolName: assistTool.name,
             message: m,
             rpcUrl,
           });
           pendingByRequestId.delete(requestId);
-        })
-        .finally(() => {
           setBusy(false);
+          render();
         });
     });
     body.append(heading, desc, form);
@@ -955,6 +1065,27 @@ export function createPreviewSessionInteractionPanel(options: {
         .join("\n");
       return;
     }
+    const mn = options.getMainNodeId();
+    if (mn === null) {
+      logSessionInteraction("intercom:sse", "skip", {
+        reason: "mainNodeId_null",
+        requestId: rid,
+        status: payload.status,
+      });
+      return;
+    }
+    if (!intercomEventMatchesHumanAgentReply(payload, mn, pending.agentId)) {
+      logSessionInteraction("intercom:sse", "skip", {
+        reason: "route_mismatch",
+        requestId: rid,
+        status: payload.status,
+        toPlayerId: payload.toPlayerId,
+        fromPlayerId: payload.fromPlayerId,
+        expectedTo: mn,
+        expectedFrom: pending.agentId,
+      });
+      return;
+    }
     if (payload.status === "started" || payload.status === "forwarded") {
       result.textContent = `${rid}: ${payload.status}`;
       return;
@@ -964,6 +1095,8 @@ export function createPreviewSessionInteractionPanel(options: {
       return;
     }
     if (payload.status === "completed") {
+      clearReplyWaitState();
+      setBusy(false);
       clearInteractionError();
       if (pending.mode === "chat" && activeAgentId === pending.agentId) {
         appendChatLogLine({
@@ -972,14 +1105,16 @@ export function createPreviewSessionInteractionPanel(options: {
           role: "assistant",
           text: formatIntercomResultText(payload),
         });
-        render();
       } else {
         result.textContent = formatIntercomResultText(payload);
       }
       pendingByRequestId.delete(rid);
+      render();
       return;
     }
     if (payload.status === "failed") {
+      clearReplyWaitState();
+      setBusy(false);
       const errText = payload.error ?? "failed";
       logSessionInteraction("intercom:sse", "error", {
         requestId: rid,
@@ -996,6 +1131,7 @@ export function createPreviewSessionInteractionPanel(options: {
         agentId: pending.agentId,
       });
       pendingByRequestId.delete(rid);
+      render();
     }
   };
 
@@ -1028,6 +1164,11 @@ export function createPreviewSessionInteractionPanel(options: {
       logSessionInteraction("panel:setContext", "event", {
         agentId,
       });
+      if (replyWait !== null && replyWait.agentId !== agentId) {
+        pendingByRequestId.delete(replyWait.requestId);
+        clearReplyWaitState();
+        setBusy(false);
+      }
       activeAgentId = agentId;
       selectedTool = null;
       clearInteractionError();
