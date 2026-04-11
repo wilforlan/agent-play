@@ -1,0 +1,156 @@
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.page {
+  min-height: 100vh;
+  background: linear-gradient(180deg, #0f172a 0%, #1e293b 100%);
+  color: #f1f5f9;
+  font-family: ui-sans-serif, system-ui, sans-serif;
+}
+
+.inner {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 32px 20px 48px;
+}
+
+.header {
+  margin-bottom: 28px;
+}
+
+.title {
+  font-size: 1.75rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  margin: 0 0 8px;
+}
+
+.lede {
+  margin: 0;
+  color: #94a3b8;
+  font-size: 1rem;
+  line-height: 1.5;
+  max-width: 52ch;
+}
+
+.nav {
+  margin-top: 16px;
+}
+
+.nav a {
+  color: #818cf8;
+  text-decoration: none;
+  font-weight: 500;
+}
+
+.nav a:hover {
+  text-decoration: underline;
+}
+
+.grid {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  margin-bottom: 32px;
+}
+
+.card {
+  background: rgba(30, 41, 59, 0.85);
+  border: 1px solid #334155;
+  border-radius: 12px;
+  padding: 18px 16px;
+}
+
+.cardTitle {
+  margin: 0 0 4px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #94a3b8;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.cardValue {
+  margin: 0;
+  font-size: 1.85rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: #f8fafc;
+}
+
+.cardHint {
+  margin: 8px 0 0;
+  font-size: 0.8rem;
+  line-height: 1.4;
+  color: #64748b;
+}
+
+.section {
+  margin-bottom: 36px;
+}
+
+.sectionTitle {
+  margin: 0 0 6px;
+  font-size: 1.15rem;
+  font-weight: 600;
+}
+
+.sectionNote {
+  margin: 0 0 16px;
+  font-size: 0.875rem;
+  color: #94a3b8;
+  max-width: 65ch;
+  line-height: 1.45;
+}
+
+.chartWrap {
+  width: 100%;
+  height: 320px;
+}
+
+.chartRow {
+  display: grid;
+  gap: 24px;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  align-items: stretch;
+}
+
+.unavailable {
+  padding: 24px;
+  border-radius: 12px;
+  background: #450a0a;
+  border: 1px solid #7f1d1d;
+  color: #fecaca;
+}
+
+.unavailableTitle {
+  margin: 0 0 8px;
+  font-size: 1.1rem;
+  font-weight: 600;
+}
+
+.unavailable p {
+  margin: 0;
+  line-height: 1.5;
+}
+
+.meta {
+  margin-top: 40px;
+  padding-top: 20px;
+  border-top: 1px solid #334155;
+  font-size: 0.75rem;
+  color: #64748b;
+}
+
+.meta p {
+  margin: 4px 0;
+}

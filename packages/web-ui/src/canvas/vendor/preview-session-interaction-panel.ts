@@ -49,7 +49,47 @@ function ensureStyles(): void {
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
 }
-.preview-session-interaction__title { font-size: 12px; font-weight: 700; margin-bottom: 8px; }
+.preview-session-interaction__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+  flex-shrink: 0;
+}
+.preview-session-interaction__title { font-size: 12px; font-weight: 700; margin: 0; flex: 1; min-width: 0; }
+.preview-session-interaction__close {
+  flex: 0 0 auto;
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  min-height: 44px;
+  margin: 0;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+  border: 1px solid rgba(148, 163, 184, 0.45);
+  background: rgba(30, 41, 59, 0.95);
+  color: #cbd5e1;
+  cursor: pointer;
+  box-sizing: border-box;
+}
+.preview-session-interaction__close:hover {
+  background: rgba(51, 65, 85, 0.95);
+  border-color: rgba(129, 140, 248, 0.55);
+  color: #f1f5f9;
+}
+.preview-session-interaction__close:focus-visible {
+  outline: 2px solid rgba(129, 140, 248, 0.85);
+  outline-offset: 2px;
+}
+.preview-session-interaction__close-icon {
+  width: 20px;
+  height: 20px;
+  display: block;
+}
 .preview-session-interaction__target { font-size: 12px; color: #cbd5e1; margin-bottom: 8px; }
 .preview-session-interaction__modes { display: flex; gap: 8px; margin-bottom: 8px; }
 .preview-session-interaction__mode-btn {
@@ -447,6 +487,7 @@ export function createPreviewSessionInteractionPanel(options: {
   apiBase: string;
   getMainNodeId: () => string | null;
   onHumanNodeLifecycle?: (action: "replace" | "setup") => void | Promise<void>;
+  onClosePanel?: () => void;
 }): {
   element: HTMLElement;
   setAgents: (agents: readonly SessionInteractionAgent[]) => void;
@@ -458,9 +499,31 @@ export function createPreviewSessionInteractionPanel(options: {
   ensureStyles();
   const root = document.createElement("section");
   root.className = "preview-session-interaction";
+  const header = document.createElement("div");
+  header.className = "preview-session-interaction__header";
   const title = document.createElement("div");
   title.className = "preview-session-interaction__title";
   title.textContent = "Human Agent Interaction";
+  const closeBtn = document.createElement("button");
+  closeBtn.type = "button";
+  closeBtn.className = "preview-session-interaction__close";
+  closeBtn.setAttribute("aria-label", "Close panel");
+  const closeIcon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  closeIcon.setAttribute("class", "preview-session-interaction__close-icon");
+  closeIcon.setAttribute("viewBox", "0 0 24 24");
+  closeIcon.setAttribute("aria-hidden", "true");
+  const closePath = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  closePath.setAttribute("d", "M18 6L6 18M6 6l12 12");
+  closePath.setAttribute("fill", "none");
+  closePath.setAttribute("stroke", "currentColor");
+  closePath.setAttribute("stroke-width", "2");
+  closePath.setAttribute("stroke-linecap", "round");
+  closeIcon.appendChild(closePath);
+  closeBtn.appendChild(closeIcon);
+  closeBtn.addEventListener("click", () => {
+    options.onClosePanel?.();
+  });
+  header.append(title, closeBtn);
 
   const nodeInfo = document.createElement("div");
   nodeInfo.className = "preview-session-interaction__node-info";
@@ -568,7 +631,7 @@ export function createPreviewSessionInteractionPanel(options: {
   errorPanel.append(errorHeadline, errorDismiss, errorDebug);
   const result = document.createElement("div");
   result.className = "preview-session-interaction__result";
-  root.append(title, nodeInfo, target, modes, progress, body, errorPanel, result);
+  root.append(header, nodeInfo, target, modes, progress, body, errorPanel, result);
 
   let mode: Mode = "assist";
   let activeAgentId: string | null = null;

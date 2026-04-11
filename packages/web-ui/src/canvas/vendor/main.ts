@@ -1384,6 +1384,9 @@ export function bootstrap(): void {
         });
         sessionInteractionPanel?.refresh();
       },
+      onClosePanel: () => {
+        mobileSidePanelControls?.closePanels();
+      },
     });
 
     controlStack.append(proximityLegend, sessionInteractionPanel.element);
