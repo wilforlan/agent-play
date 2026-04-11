@@ -72,6 +72,38 @@ function ensureOnboardingStyles(): void {
   color: #cbd5e1;
   border-color: rgba(148, 163, 184, 0.45);
 }
+.human-onboard-actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.85;
+}
+.human-onboard-btn-wrap {
+  position: relative;
+  display: inline-flex;
+}
+.human-onboard-btn-loading {
+  display: none;
+  position: absolute;
+  inset: 0;
+  align-items: center;
+  justify-content: center;
+  background: rgba(15, 23, 42, 0.72);
+  border-radius: 8px;
+  pointer-events: none;
+}
+.human-onboard-btn-wrap.is-loading .human-onboard-btn-loading {
+  display: flex;
+}
+.human-onboard-spinner {
+  width: 22px;
+  height: 22px;
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: human-onboard-spin 0.65s linear infinite;
+}
+@keyframes human-onboard-spin {
+  to { transform: rotate(360deg); }
+}
 .human-onboard-error { font-size: 11px; color: #fca5a5; }
 `;
   document.head.append(s);
@@ -118,14 +150,23 @@ export async function ensureHumanNodeOnboarding(
     err.className = "human-onboard-error";
     const actions = document.createElement("div");
     actions.className = "human-onboard-actions";
+    const createBtnWrap = document.createElement("div");
+    createBtnWrap.className = "human-onboard-btn-wrap";
     const createBtn = document.createElement("button");
     createBtn.type = "button";
     createBtn.textContent = "Create main node";
+    const createLoading = document.createElement("div");
+    createLoading.className = "human-onboard-btn-loading";
+    createLoading.setAttribute("aria-hidden", "true");
+    const createSpinner = document.createElement("div");
+    createSpinner.className = "human-onboard-spinner";
+    createLoading.appendChild(createSpinner);
+    createBtnWrap.append(createBtn, createLoading);
     const skipBtn = document.createElement("button");
     skipBtn.type = "button";
     skipBtn.className = "secondary";
     skipBtn.textContent = "Skip (limited intercom)";
-    actions.append(skipBtn, createBtn);
+    actions.append(skipBtn, createBtnWrap);
     card.append(heading, copy, consentLabel, phraseLabel, phraseArea, err, actions);
     overlay.append(card);
     document.body.append(overlay);
@@ -152,7 +193,14 @@ export async function ensureHumanNodeOnboarding(
         err.textContent = "Session not ready.";
         return;
       }
+      const setCreating = (busy: boolean): void => {
+        createBtn.disabled = busy;
+        skipBtn.disabled = busy;
+        createBtn.setAttribute("aria-busy", busy ? "true" : "false");
+        createBtnWrap.classList.toggle("is-loading", busy);
+      };
       void (async () => {
+        setCreating(true);
         try {
           const rootKey = await resolveAgentPlayRootKeyForBrowser({
             apiBase: options.apiBase,
@@ -215,6 +263,7 @@ export async function ensureHumanNodeOnboarding(
         } catch (e) {
           err.textContent =
             e instanceof Error ? e.message : "createHumanNode failed";
+          setCreating(false);
         }
       })();
     });

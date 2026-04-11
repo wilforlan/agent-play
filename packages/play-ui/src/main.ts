@@ -1440,8 +1440,6 @@ export function bootstrap(): void {
     proximityTouchPadHandle = createPreviewProximityTouchControls({
       parent: canvasHost,
       getBoundsElement: () => canvasHost,
-      isMobileViewport: () =>
-        mobileSidePanelControls?.isMobileViewport() === true,
       getCanAct: () => {
         const partner = registeredAgentPartnerForProximityOrNull(
           lastProximityPartnerId

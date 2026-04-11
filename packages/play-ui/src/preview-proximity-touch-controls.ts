@@ -1,12 +1,11 @@
 /**
  * @module @agent-play/play-ui/preview-proximity-touch-controls
- * Draggable Assist (A) and Chat (C) controls for viewports without a keyboard.
+ * Draggable Assist (A) and Chat (C) controls over the canvas.
  */
 
 export type CreatePreviewProximityTouchControlsOptions = {
   parent: HTMLElement;
   getBoundsElement: () => HTMLElement;
-  isMobileViewport: () => boolean;
   getCanAct: () => boolean;
   onAssist: () => void;
   onChat: () => void;
@@ -66,13 +65,7 @@ export function createPreviewProximityTouchControls(
     btnChat.disabled = !can;
   };
 
-  const applyVisibility = (): void => {
-    const mobile = options.isMobileViewport();
-    root.classList.toggle("preview-proximity-touch-pad--hidden", !mobile);
-  };
-
   const refresh = (): void => {
-    applyVisibility();
     applyInteractable();
   };
 

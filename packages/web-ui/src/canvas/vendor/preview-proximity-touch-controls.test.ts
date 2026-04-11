@@ -25,7 +25,6 @@ describe("createPreviewProximityTouchControls", () => {
     const { root } = createPreviewProximityTouchControls({
       parent,
       getBoundsElement: () => parent,
-      isMobileViewport: () => true,
       getCanAct: () => true,
       onAssist,
       onChat,
@@ -42,7 +41,6 @@ describe("createPreviewProximityTouchControls", () => {
     const { root } = createPreviewProximityTouchControls({
       parent,
       getBoundsElement: () => parent,
-      isMobileViewport: () => true,
       getCanAct: () => true,
       onAssist,
       onChat,
@@ -59,7 +57,6 @@ describe("createPreviewProximityTouchControls", () => {
     const { root } = createPreviewProximityTouchControls({
       parent,
       getBoundsElement: () => parent,
-      isMobileViewport: () => true,
       getCanAct: () => false,
       onAssist,
       onChat,
@@ -78,21 +75,14 @@ describe("createPreviewProximityTouchControls", () => {
     expect(onChat).not.toHaveBeenCalled();
   });
 
-  it("hides the pad when not mobile viewport and shows after refresh when mobile", () => {
-    let mobile = false;
-    const { root, refresh } = createPreviewProximityTouchControls({
+  it("keeps the pad visible regardless of viewport", () => {
+    const { root } = createPreviewProximityTouchControls({
       parent,
       getBoundsElement: () => parent,
-      isMobileViewport: () => mobile,
       getCanAct: () => true,
       onAssist,
       onChat,
     });
-    expect(root.classList.contains("preview-proximity-touch-pad--hidden")).toBe(
-      true
-    );
-    mobile = true;
-    refresh();
     expect(root.classList.contains("preview-proximity-touch-pad--hidden")).toBe(
       false
     );
@@ -103,7 +93,6 @@ describe("createPreviewProximityTouchControls", () => {
     const { root, refresh } = createPreviewProximityTouchControls({
       parent,
       getBoundsElement: () => parent,
-      isMobileViewport: () => true,
       getCanAct: () => canAct,
       onAssist,
       onChat,

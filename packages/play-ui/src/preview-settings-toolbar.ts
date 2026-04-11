@@ -201,9 +201,6 @@ body > .preview-shell {
   box-sizing: border-box;
   max-width: calc(100% - 16px);
 }
-.preview-proximity-touch-pad--hidden {
-  display: none !important;
-}
 .preview-proximity-touch-pad__drag {
   flex: 0 0 auto;
   width: 28px;
