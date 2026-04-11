@@ -30,6 +30,11 @@ export function getPlayerChainGenesisSync(): string {
   if (cached !== undefined) {
     return cached;
   }
+  const envValue = process.env.AGENT_PLAY_ROOT_NODE_ID?.trim();
+  if (envValue !== undefined && envValue.length > 0) {
+    cached = envValue;
+    return cached;
+  }
   const path = resolveRootFilePath();
   cached = readFileSync(path, "utf8").trim();
   return cached;

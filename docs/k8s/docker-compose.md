@@ -24,11 +24,11 @@ The agents image sets **`HOME=/home/agentplay`** and creates **`/home/agentplay/
 Before `docker compose up`:
 
 1. Copy your CLI file next to `docker-compose.yml`: `cp ~/.agent-play/credentials.json ./agent-play-credentials.json`.
-2. Edit **`serverUrl`** so it matches how **this container** reaches the web UI:
-   - **Full stack:** use the Compose service name, e.g. **`http://web-ui:8888`** (not `http://127.0.0.1:3000` unless that resolves inside the container).
-   - **Standalone agents:** use your real deployed origin, e.g. **`https://play.example.com`**.
+2. Set **`AGENT_PLAY_WEB_UI_URL`** (or rely on the default in `docker-compose.yml`) so the agents container reaches the web UI by **Compose DNS**, e.g. **`http://web-ui:8888`**. That value is passed as **`baseUrl`** to **`RemotePlayWorld`** and overrides **`serverUrl`** from **`credentials.json`** for HTTP. You can still edit **`serverUrl`** in the file for consistency; auth fields are unchanged.
+   - **Full stack:** default is **`http://web-ui:8888`** (override with **`AGENT_PLAY_WEB_UI_URL`** if your service name or port differs).
+   - **Standalone agents:** set **`AGENT_PLAY_WEB_UI_URL`** to your deployed origin, e.g. **`https://play.example.com`** (required by `docker-compose.agents.yml`).
 
-`RemotePlayWorld` does **not** use `AGENT_PLAY_WEB_UI_URL` for HTTP; the health endpoint and startup log show the same **`serverUrl`** read from the file when it loads (with a localhost default only if the file is missing).
+The **`/health`** endpoint and startup log prefer **`AGENT_PLAY_WEB_UI_URL`** when set; otherwise they use **`serverUrl`** from the mounted file, then **`http://127.0.0.1:3000`** if the file is missing.
 
 ## Full stack (one host)
 
@@ -36,17 +36,18 @@ From the repository root:
 
 ```bash
 cp ~/.agent-play/credentials.json ./agent-play-credentials.json
-# Set serverUrl to http://web-ui:8888 (or your stack’s web UI URL)
+# Optional: AGENT_PLAY_WEB_UI_URL=http://web-ui:8888 (default in docker-compose.yml)
 docker compose up --build
 ```
 
 - **Web UI:** `http://localhost:8888` (or `WEB_UI_PORT`).
-- **Agents health:** `http://localhost:3100/health` (`target` mirrors **`serverUrl`** from the mounted credentials file).
+- **Agents health:** `http://localhost:3100/health` (`target` prefers **`AGENT_PLAY_WEB_UI_URL`**, then **`serverUrl`** from credentials).
 
 Other optional variables in a **`.env`** file next to `docker-compose.yml`:
 
 | Variable | Purpose |
 |----------|---------|
+| `AGENT_PLAY_WEB_UI_URL` | Base URL for **`RemotePlayWorld`** and health **`target`** inside the stack (default **`http://web-ui:8888`**) |
 | `OPENAI_API_KEY` | Built-in LangChain agents |
 | `AGENT_PLAY_API_KEY` | If the repository requires an API key for registration |
 | `AGENT_PLAY_MAIN_NODE_ID` | Optional override for `connect({ mainNodeId })` |
@@ -56,9 +57,11 @@ Other optional variables in a **`.env`** file next to `docker-compose.yml`:
 
 ```bash
 cp ~/.agent-play/credentials.json ./agent-play-credentials.json
-# Set serverUrl to your deployed main server origin
+export AGENT_PLAY_WEB_UI_URL=https://your-main-server.example
 docker compose -f docker-compose.agents.yml up --build
 ```
+
+`AGENT_PLAY_WEB_UI_URL` must be set to the origin the container can reach (Compose validates this).
 
 ## Listen address (containers)
 

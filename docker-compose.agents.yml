@@ -2,7 +2,7 @@
 # Requires `.root` in the build context (same as k8s/Dockerfile.agents).
 #
 #   cp ~/.agent-play/credentials.json ./agent-play-credentials.json
-#   # Edit serverUrl to your deployed origin (e.g. https://play.example.com)
+#   export AGENT_PLAY_WEB_UI_URL=https://your-server.example  # overrides credentials serverUrl for HTTP
 #   docker compose -f docker-compose.agents.yml up --build
 #
 services:
@@ -15,6 +15,7 @@ services:
     environment:
       NODE_ENV: production
       HOME: /home/agentplay
+      AGENT_PLAY_WEB_UI_URL: ${AGENT_PLAY_WEB_UI_URL:?Set to your main server URL reachable from this container}
       AGENT_PLAY_BUILTINS_HOST: "0.0.0.0"
       AGENT_PLAY_BUILTINS_PORT: "3100"
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}

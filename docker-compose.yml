@@ -1,6 +1,7 @@
 # Full stack: Redis + main web UI + built-in agents (separate containers).
-# Agents: copy ~/.agent-play/credentials.json → ./agent-play-credentials.json (repo root), set serverUrl to
-# http://web-ui:8888. It is mounted at ~/.agent-play/credentials.json in the container (HOME=/home/agentplay).
+# Agents: mount credentials at ~/.agent-play/credentials.json; set AGENT_PLAY_WEB_UI_URL so RemotePlayWorld
+# uses http://web-ui:8888 (Docker DNS) instead of localhost from the copied file. Copy from host:
+# cp ~/.agent-play/credentials.json ./agent-play-credentials.json
 # Override host file with AGENT_PLAY_CREDENTIALS_HOST_FILE. See docs/k8s/docker-compose.md.
 #
 #   docker compose up --build
@@ -39,6 +40,7 @@ services:
     environment:
       NODE_ENV: production
       HOME: /home/agentplay
+      AGENT_PLAY_WEB_UI_URL: ${AGENT_PLAY_WEB_UI_URL:-http://web-ui:8888}
       AGENT_PLAY_BUILTINS_HOST: "0.0.0.0"
       AGENT_PLAY_BUILTINS_PORT: "3100"
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}

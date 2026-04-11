@@ -3,6 +3,7 @@ import { langchainRegistration, RemotePlayWorld } from "@agent-play/sdk";
 import type { BuiltinAgentDefinition } from "../builtins/types.js";
 import { getBuiltinAgentDefinitions } from "../builtins/definitions.js";
 import { executeToolCapability } from "../tool-handlers/execute-tool-capability.js";
+import { resolveAgentsRemotePlayWorldOptions } from "../resolve-agents-remote-play-world-options.js";
 
 function resolveSkippedBuiltinPlayerId(
   snap: AgentPlaySnapshot,
@@ -40,7 +41,10 @@ export async function registerBuiltinAgents(
 ): Promise<RemotePlayWorld> {
   const skipExisting = options.skipExistingByName !== false;
   const mainNodeId = options.mainNodeId?.trim() || DEFAULT_MAIN_NODE_ID;
-  const world = new RemotePlayWorld({ logging: "on" });
+  const world = new RemotePlayWorld({
+    logging: "on",
+    ...resolveAgentsRemotePlayWorldOptions(),
+  });
   await world.connect({ mainNodeId });
   const snap = await world.getWorldSnapshot();
   let existingNames = new Set<string>();

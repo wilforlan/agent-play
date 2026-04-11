@@ -15,12 +15,12 @@ const mainNodeIdEnv = process.env.AGENT_PLAY_MAIN_NODE_ID?.trim();
 const credentialsForDisplay = loadAgentPlayCredentialsFileFromPathSync(
   resolveAgentPlayCredentialsPath()
 );
+const envWebUi = process.env.AGENT_PLAY_WEB_UI_URL?.trim();
 const registrationTarget =
-  credentialsForDisplay?.serverUrl ??
-  (process.env.AGENT_PLAY_WEB_UI_URL ?? "http://127.0.0.1:3000").replace(
-    /\/$/,
-    ""
-  );
+  (envWebUi !== undefined && envWebUi.length > 0
+    ? envWebUi
+    : credentialsForDisplay?.serverUrl ?? "http://127.0.0.1:3000"
+  ).replace(/\/$/, "");
 
 const app = express();
 
