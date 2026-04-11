@@ -10,7 +10,7 @@
 | **`Dockerfile.agents`** | Multi-stage image: builds **`@agent-play/node-tools`**, **`@agent-play/intercom`**, **`@agent-play/sdk`**, **`@agent-play/agents`**; runs **`express-server`** (health on **3100**, HTTP to main server only). |
 | **`package.agents-workspace.json`** | Minimal npm workspaces manifest used only by **`Dockerfile.agents`** (avoids copying the whole monorepo into the build context). |
 | **`../docker-compose.yml`** | **Redis + web-ui + agents** — three services; Redis and HTTP API stay on the main container, agents are decoupled. |
-| **`../docker-compose.agents.yml`** | **Agents only** — for a standalone host; set **`AGENT_PLAY_WEB_UI_URL`** to your deployed main server. |
+| **`../docker-compose.agents.yml`** | **Agents only** — mount **`credentials.json`**; set **`serverUrl`** in the file to your deployed main server. |
 | **`build-push-web-ui.sh`** | Builds and pushes **`ghcr.io/wilforlan/agent-play-web-ui`** (override with `REGISTRY`). |
 | **`deploy.sh`** | Invoked via **`npm run deploy`** — apply/update, rollout status, rollback, history, restart, **`clean`**. Reads defaults from **`rollout-config.sh`**. |
 | **`clean-cluster.sh`** | **`kubectl delete -k k8s/`** with context + namespace confirmation (or **`--yes`**). Also **`npm run deploy:clean`**. |

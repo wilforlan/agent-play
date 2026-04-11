@@ -1,5 +1,6 @@
 # Full stack: Redis + main web UI + built-in agents (separate containers).
-# Configure secrets via a `.env` file in this directory (see docs/k8s/docker-compose.md).
+# Agents require ./credentials.json (or AGENT_PLAY_CREDENTIALS_HOST_FILE) — copy from ~/.agent-play/credentials.json
+# and set serverUrl to http://web-ui:8888. See docs/k8s/docker-compose.md.
 #
 #   docker compose up --build
 #
@@ -36,14 +37,14 @@ services:
       - "${AGENTS_PORT:-3100}:3100"
     environment:
       NODE_ENV: production
-      AGENT_PLAY_WEB_UI_URL: ${AGENT_PLAY_WEB_UI_URL:-http://web-ui:8888}
+      AGENT_PLAY_CREDENTIALS_PATH: /config/agent-play-credentials.json
       AGENT_PLAY_BUILTINS_HOST: "0.0.0.0"
       AGENT_PLAY_BUILTINS_PORT: "3100"
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       AGENT_PLAY_API_KEY: ${AGENT_PLAY_API_KEY:-}
-      AGENT_PLAY_ROOT_KEY: ${AGENT_PLAY_ROOT_KEY:-}
-      AGENT_PLAY_NODE_PASSW: ${AGENT_PLAY_NODE_PASSW:-}
       AGENT_PLAY_MAIN_NODE_ID: ${AGENT_PLAY_MAIN_NODE_ID:-}
+    volumes:
+      - ${AGENT_PLAY_CREDENTIALS_HOST_FILE:-./credentials.json}:/config/agent-play-credentials.json:ro
     depends_on:
       - web-ui
     restart: unless-stopped

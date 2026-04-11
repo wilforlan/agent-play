@@ -17,7 +17,7 @@ Monorepo **3.1.0** aligns published packages (**@agent-play/node-tools**, **@age
 ## Built-in agents and tooling (`packages/agents`)
 
 - **Assist tools** — Expanded handlers (e.g. sales/CFO assist), **OpenAI enrichment** for tool results, async tool execution paths, and UI-friendly loading/result presentation in the web stack.
-- **Docker Compose** — **Agents** image and compose files so the **main server** (web UI + Redis) and **agents** process run on **separate containers**, connected only by **`AGENT_PLAY_WEB_UI_URL`** (HTTP).
+- **Docker Compose** — **Agents** image and compose files so the **main server** (web UI + Redis) and **agents** process run on **separate containers**; the agents container uses a bind-mounted **`credentials.json`** (`serverUrl` + node credentials for HTTP to the main server).
 
 ## Play UI (`@agent-play/play-ui`)
 
