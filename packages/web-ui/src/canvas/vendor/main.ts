@@ -1438,7 +1438,7 @@ export function bootstrap(): void {
     canvasHost.appendChild(proximityPromptEl);
 
     proximityTouchPadHandle = createPreviewProximityTouchControls({
-      parent: canvasHost,
+      parent: canvasWrap,
       getBoundsElement: () => canvasHost,
       getCanAct: () => {
         const partner = registeredAgentPartnerForProximityOrNull(

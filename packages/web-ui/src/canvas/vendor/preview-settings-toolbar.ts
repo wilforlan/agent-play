@@ -128,6 +128,7 @@ body > .preview-shell {
   justify-content: center;
   align-items: flex-start;
   width: 100%;
+  position: relative;
 }
 .preview-joystick-wrap {
   flex: 0 0 auto;
@@ -184,10 +185,15 @@ body > .preview-shell {
 }
 .preview-proximity-touch-pad {
   position: absolute;
-  z-index: 22;
-  left: 50%;
+  z-index: 50;
+  left: 0;
+  right: 0;
   top: max(6px, env(safe-area-inset-top, 0px));
-  transform: translateX(-50%);
+  width: fit-content;
+  max-width: calc(100% - 12px);
+  margin-left: auto;
+  margin-right: auto;
+  transform: none;
   display: flex;
   flex-direction: row;
   align-items: stretch;
@@ -199,7 +205,6 @@ body > .preview-shell {
   box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
   pointer-events: auto;
   box-sizing: border-box;
-  max-width: calc(100% - 16px);
 }
 .preview-proximity-touch-pad__drag {
   flex: 0 0 auto;
@@ -396,7 +401,7 @@ body > .preview-shell {
   .preview-canvas-stage .preview-game-col--center {
     position: absolute;
     inset: 0;
-    z-index: 1;
+    z-index: 25;
     align-items: stretch;
     justify-content: flex-start;
   }
@@ -406,6 +411,13 @@ body > .preview-shell {
     width: 100%;
     align-items: center;
     justify-content: center;
+    position: relative;
+    z-index: 21;
+    isolation: isolate;
+  }
+  .preview-joystick-wrap {
+    position: relative;
+    z-index: 21;
   }
   .preview-mobile-side-backdrop {
     display: block;
@@ -495,6 +507,29 @@ body > .preview-shell {
 @media (max-width: 480px) {
   .preview-menu-bar {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .preview-proximity-touch-pad {
+    max-width: calc(100vw - 24px);
+    padding: 5px 6px;
+    gap: 4px;
+  }
+  .preview-proximity-touch-pad__drag {
+    width: 22px;
+    min-height: 46px;
+  }
+  .preview-proximity-touch-pad__buttons {
+    gap: 6px;
+  }
+  .preview-proximity-touch-pad__key {
+    min-width: 56px;
+    min-height: 46px;
+    padding: 4px 8px;
+  }
+  .preview-proximity-touch-pad__key-letter {
+    font-size: 1rem;
+  }
+  .preview-proximity-touch-pad__key-sub {
+    font-size: 0.5625rem;
   }
 }
 .preview-app-footer {
