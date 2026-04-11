@@ -9,12 +9,12 @@ import {
   passphraseVerbs,
 } from "./passphrase-wordlist-data.js";
 
-const BUCKETS = [
+const BUCKETS: readonly (readonly string[])[] = [
   passphraseAdverbs,
   passphraseAdjectives,
   passphraseVerbs,
   passphraseNouns,
-] as const;
+];
 
 function secureRandomUintBelow(max: number): number {
   if (max <= 0) {
