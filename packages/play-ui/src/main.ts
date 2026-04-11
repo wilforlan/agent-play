@@ -80,6 +80,7 @@ import {
   ensurePreviewLayoutStyles,
 } from "./preview-settings-toolbar.js";
 import { getPreviewViewSettings } from "./preview-view-settings.js";
+import { createSkyDecorLayer } from "./sky-decor.js";
 import { ENABLE_CROWD_LAYER, getActiveSceneTheme } from "./scene-theme.js";
 import {
   drawHomeStructure,
@@ -480,6 +481,7 @@ let mobileSidePanelControls:
 let pixiHandle: PixiPreviewHandle | null = null;
 let sceneRootContainer: Container | null = null;
 let crowdLayerContainer: Container | null = null;
+let skyDecor: ReturnType<typeof createSkyDecorLayer> | null = null;
 let debugPanelUpdate: (() => void) | null = null;
 let debugMountEl: HTMLElement | null = null;
 let joystickHandle: ReturnType<typeof createPreviewDebugJoystick> | null = null;
@@ -1064,6 +1066,7 @@ function rebuildSceneForTheme(): void {
     crowdLayerContainer = buildCrowdLayer(crowdClusters);
     appStage.addChildAt(crowdLayerContainer, 1);
   }
+  skyDecor?.setBounds(VIEW_W, VIEW_H, theme.grassBandTopRatio);
 }
 
 function onTick(dt: number): void {
@@ -1158,6 +1161,7 @@ function onTick(dt: number): void {
     movingByPlayer.set(id, motion.isMoving);
     lastTickWorldPos.set(id, { ...next });
   }
+  skyDecor?.tick(dt);
 }
 
 function onFrame(): void {
@@ -1431,6 +1435,18 @@ export function bootstrap(): void {
       crowdLayerContainer = buildCrowdLayer(crowdClusters);
       handle.app.stage.addChild(crowdLayerContainer);
     }
+    skyDecor = createSkyDecorLayer({
+      width: VIEW_W,
+      height: VIEW_H,
+      grassBandTopRatio: theme.grassBandTopRatio,
+    });
+    handle.app.stage.addChild(skyDecor.container);
+    const motionQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const syncSkyMotion = (): void => {
+      skyDecor?.setReducedMotion(motionQuery.matches);
+    };
+    syncSkyMotion();
+    motionQuery.addEventListener("change", syncSkyMotion);
     handle.app.stage.addChild(worldLayer);
     handle.app.stage.addChild(agentsLayer);
 
