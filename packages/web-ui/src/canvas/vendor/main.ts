@@ -74,6 +74,7 @@ import {
 import { createPreviewDebugPanel } from "./preview-debug-panel.js";
 import { createPixiPreview, type PixiPreviewHandle } from "./pixi-multiverse.js";
 import { attachMobileSidePanelControls } from "./preview-mobile-side-panels.js";
+import { createPreviewProximityTouchControls } from "./preview-proximity-touch-controls.js";
 import {
   createPreviewBottomBar,
   ensurePreviewLayoutStyles,
@@ -332,6 +333,7 @@ const arrowKeys = {
 let lastProximityPartnerId: string | null = null;
 let proximityPromptEl: HTMLDivElement | null = null;
 let proximityLegendEl: HTMLDivElement | null = null;
+let proximityTouchPadHandle: { refresh: () => void } | null = null;
 
 const playerWorldPos = new Map<string, { x: number; y: number }>();
 const waypointQueues = new Map<string, Array<{ x: number; y: number }>>();
@@ -391,6 +393,19 @@ async function sendProximityAction(
   }
 }
 
+function triggerProximityAssistOrChat(action: "assist" | "chat"): void {
+  const partner = registeredAgentPartnerForProximityOrNull(
+    lastProximityPartnerId
+  );
+  if (partner === null || partner === HUMAN_VIEWER_PLAYER_ID) return;
+  sessionInteractionPanel?.setContext(partner);
+  sessionInteractionPanel?.setMode(action);
+  if (mobileSidePanelControls?.isMobileViewport() === true) {
+    mobileSidePanelControls.openRightPanel();
+  }
+  void sendProximityAction(partner, action);
+}
+
 /**
  * Routes arrow keys to movement and letter keys to proximity when an agent partner is targeted.
  * @remarks **Callers:** `document` listener from {@link bootstrap}. **Callees:** {@link setArrowKey}, {@link sendProximityAction}.
@@ -421,11 +436,8 @@ function onDocumentKeyDown(e: KeyboardEvent): void {
   if (act === null) return;
   e.preventDefault();
   if (act === "assist" || act === "chat") {
-    sessionInteractionPanel?.setContext(partner);
-    sessionInteractionPanel?.setMode(act);
-    if (mobileSidePanelControls?.isMobileViewport() === true) {
-      mobileSidePanelControls.openRightPanel();
-    }
+    triggerProximityAssistOrChat(act);
+    return;
   }
   void sendProximityAction(partner, act);
 }
@@ -1234,6 +1246,7 @@ function onFrame(): void {
     }
   }
   agentChatOverlays?.setProximityFocus(lastProximityPartnerId);
+  proximityTouchPadHandle?.refresh();
   if (getPreviewViewSettings().debugMode) {
     debugPanelUpdate?.();
   }
@@ -1423,6 +1436,25 @@ export function bootstrap(): void {
     proximityPromptEl.className = "preview-proximity-prompt";
     proximityPromptEl.textContent = "A: for assist\nC: for chat";
     canvasHost.appendChild(proximityPromptEl);
+
+    proximityTouchPadHandle = createPreviewProximityTouchControls({
+      parent: canvasHost,
+      getBoundsElement: () => canvasHost,
+      isMobileViewport: () =>
+        mobileSidePanelControls?.isMobileViewport() === true,
+      getCanAct: () => {
+        const partner = registeredAgentPartnerForProximityOrNull(
+          lastProximityPartnerId
+        );
+        return partner !== null && partner !== HUMAN_VIEWER_PLAYER_ID;
+      },
+      onAssist: () => {
+        triggerProximityAssistOrChat("assist");
+      },
+      onChat: () => {
+        triggerProximityAssistOrChat("chat");
+      },
+    });
 
     joystickHandle = createPreviewDebugJoystick({ parent: joystickWrap });
 

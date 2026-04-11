@@ -182,6 +182,102 @@ body > .preview-shell {
   padding: 5px 8px;
   pointer-events: none;
 }
+.preview-proximity-touch-pad {
+  position: absolute;
+  z-index: 22;
+  left: 50%;
+  top: max(6px, env(safe-area-inset-top, 0px));
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+  gap: 6px;
+  padding: 6px 8px;
+  border-radius: 14px;
+  border: 1px solid rgba(148, 163, 184, 0.45);
+  background: rgba(15, 23, 42, 0.88);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+  pointer-events: auto;
+  box-sizing: border-box;
+  max-width: calc(100% - 16px);
+}
+.preview-proximity-touch-pad--hidden {
+  display: none !important;
+}
+.preview-proximity-touch-pad__drag {
+  flex: 0 0 auto;
+  width: 28px;
+  min-height: 52px;
+  margin: 0;
+  padding: 0;
+  border: none;
+  border-radius: 8px;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+  background: rgba(51, 65, 85, 0.85);
+  color: #94a3b8;
+  font-size: 14px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.preview-proximity-touch-pad__drag:active {
+  cursor: grabbing;
+}
+.preview-proximity-touch-pad__drag:focus-visible {
+  outline: 2px solid rgba(129, 140, 248, 0.85);
+  outline-offset: 2px;
+}
+.preview-proximity-touch-pad__buttons {
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+  gap: 10px;
+}
+.preview-proximity-touch-pad__key {
+  flex: 0 0 auto;
+  min-width: 72px;
+  min-height: 52px;
+  margin: 0;
+  padding: 6px 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  border-radius: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.4);
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  cursor: pointer;
+  touch-action: manipulation;
+  color: #f1f5f9;
+  background: rgba(30, 41, 59, 0.95);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+.preview-proximity-touch-pad__key:disabled {
+  opacity: 0.38;
+  cursor: not-allowed;
+}
+.preview-proximity-touch-pad__key--assist:focus-visible,
+.preview-proximity-touch-pad__key--chat:focus-visible {
+  outline: 2px solid rgba(129, 140, 248, 0.85);
+  outline-offset: 2px;
+}
+.preview-proximity-touch-pad__key-letter {
+  font-size: 1.125rem;
+  font-weight: 800;
+  line-height: 1;
+}
+.preview-proximity-touch-pad__key-sub {
+  font-size: 0.625rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #94a3b8;
+  line-height: 1.1;
+}
 .preview-bottom-bar {
   flex: 0 0 auto;
   display: flex;
@@ -335,20 +431,7 @@ body > .preview-shell {
     pointer-events: auto;
   }
   .preview-mobile-side-toggles {
-    display: flex;
-    position: absolute;
-    bottom: max(8px, env(safe-area-inset-bottom));
-    left: max(8px, env(safe-area-inset-left));
-    right: max(8px, env(safe-area-inset-right));
-    z-index: 40;
-    justify-content: space-between;
-    align-items: flex-end;
-    gap: 10px;
-    pointer-events: none;
-  }
-  .preview-mobile-side-toggles .preview-mobile-side-toggle {
-    pointer-events: auto;
-    flex: 0 0 auto;
+    display: none;
   }
   .preview-proximity-legend {
     display: none;
