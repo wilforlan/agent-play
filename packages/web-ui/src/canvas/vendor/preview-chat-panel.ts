@@ -1,3 +1,7 @@
+/**
+ * @module @agent-play/play-ui/preview-chat-panel
+ * preview chat panel — preview canvas module (Pixi + DOM).
+ */
 import { renderChatMarkdown } from "./chat-markdown.js";
 import { interactionRoleToBubbleClass } from "./chat-role.js";
 import type { ChatLine } from "./preview-chat-log.js";

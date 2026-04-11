@@ -1,3 +1,7 @@
+/**
+ * @module @agent-play/play-ui/preview-agent-play-root-key
+ * preview agent play root key — preview canvas module (Pixi + DOM).
+ */
 export type ResolveAgentPlayRootKeyOptions = {
   apiBase: string;
 };

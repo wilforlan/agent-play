@@ -17,7 +17,8 @@ ARG NEXT_PUBLIC_AGENT_PLAY_BASE=/agent-play
 ARG NEXT_PUBLIC_PLAY_API_BASE=/agent-play
 ENV NEXT_PUBLIC_AGENT_PLAY_BASE=$NEXT_PUBLIC_AGENT_PLAY_BASE
 ENV NEXT_PUBLIC_PLAY_API_BASE=$NEXT_PUBLIC_PLAY_API_BASE
-RUN npx next build
+# `npm run build` runs prebuild, `next build`, and postbuild (copies `.root` into `.next/`).
+RUN npm run build
 RUN npm prune --omit=dev
 
 FROM node:20-bookworm-slim AS runner

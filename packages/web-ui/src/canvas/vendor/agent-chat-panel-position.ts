@@ -1,3 +1,7 @@
+/**
+ * @module @agent-play/play-ui/agent-chat-panel-position
+ * agent chat panel position — preview canvas module (Pixi + DOM).
+ */
 export type AgentChatPanelLayoutOptions = {
   anchorScreenX: number;
   anchorScreenY: number;

@@ -1,3 +1,7 @@
+/**
+ * @module @agent-play/play-ui/preview-session-interaction-log
+ * preview session interaction log — preview canvas module (Pixi + DOM).
+ */
 const PREFIX = "[agent-play:session-interaction]";
 
 export type SessionInteractionLogPhase =

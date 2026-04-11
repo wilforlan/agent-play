@@ -1,3 +1,7 @@
+/**
+ * @module @agent-play/play-ui/preview-session-interaction-panel
+ * preview session interaction panel — preview canvas module (Pixi + DOM).
+ */
 import {
   INTERCOM_COMMAND_OP,
   parseWorldIntercomEventPayload,

@@ -1,3 +1,7 @@
+/**
+ * @module @agent-play/play-ui/multiverse-engine
+ * multiverse engine — preview canvas module (Pixi + DOM).
+ */
 export type MultiversePalette = {
   background: string;
   grid: string;

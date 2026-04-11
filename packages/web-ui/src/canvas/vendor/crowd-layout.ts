@@ -1,3 +1,7 @@
+/**
+ * @module @agent-play/play-ui/crowd-layout
+ * crowd layout — preview canvas module (Pixi + DOM).
+ */
 export type CrowdDogMode = "none" | "held" | "feet";
 
 export type CrowdPersonSpec = {

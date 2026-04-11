@@ -1,3 +1,7 @@
+/**
+ * @module @agent-play/play-ui/proximity-interaction
+ * proximity interaction — preview canvas module (Pixi + DOM).
+ */
 export const DEFAULT_PROXIMITY_RADIUS = 0.72;
 
 export function findNearestProximityPartner(options: {

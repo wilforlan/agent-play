@@ -1,3 +1,7 @@
+/**
+ * @module @agent-play/play-ui/scene-backgrounds
+ * scene backgrounds — preview canvas module (Pixi + DOM).
+ */
 import { Container, Graphics } from "pixi.js";
 
 function mulberry32(seed: number): () => number {

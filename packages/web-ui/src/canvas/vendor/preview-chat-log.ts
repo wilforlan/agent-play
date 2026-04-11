@@ -1,3 +1,7 @@
+/**
+ * @module @agent-play/play-ui/preview-chat-log
+ * preview chat log — preview canvas module (Pixi + DOM).
+ */
 export type ChatLine = {
   agentId: string;
   playerName: string;

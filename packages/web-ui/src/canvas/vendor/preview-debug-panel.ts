@@ -1,3 +1,7 @@
+/**
+ * @module @agent-play/play-ui/preview-debug-panel
+ * preview debug panel — preview canvas module (Pixi + DOM).
+ */
 export type PreviewDebugAgentRow = {
   playerId: string;
   name: string;

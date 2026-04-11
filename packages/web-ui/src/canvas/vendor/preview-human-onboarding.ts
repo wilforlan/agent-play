@@ -1,3 +1,7 @@
+/**
+ * @module @agent-play/play-ui/preview-human-onboarding
+ * preview human onboarding — preview canvas module (Pixi + DOM).
+ */
 import { CREATE_HUMAN_NODE_OP } from "@agent-play/intercom";
 import {
   deriveNodeIdFromPassword,

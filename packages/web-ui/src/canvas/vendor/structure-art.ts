@@ -1,3 +1,7 @@
+/**
+ * @module @agent-play/play-ui/structure-art
+ * structure art — preview canvas module (Pixi + DOM).
+ */
 import { Graphics } from "pixi.js";
 
 export type HousePalette = {

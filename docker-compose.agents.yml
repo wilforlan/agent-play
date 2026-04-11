@@ -1,7 +1,7 @@
 # Standalone agents service — mount CLI credentials.json (serverUrl must reach your main server).
 # Requires `.root` in the build context (same as k8s/Dockerfile.agents).
 #
-#   cp ~/.agent-play/credentials.json ./credentials.json
+#   cp ~/.agent-play/credentials.json ./agent-play-credentials.json
 #   # Edit serverUrl to your deployed origin (e.g. https://play.example.com)
 #   docker compose -f docker-compose.agents.yml up --build
 #
@@ -14,12 +14,12 @@ services:
       - "${AGENTS_PORT:-3100}:3100"
     environment:
       NODE_ENV: production
-      AGENT_PLAY_CREDENTIALS_PATH: /config/agent-play-credentials.json
+      HOME: /home/agentplay
       AGENT_PLAY_BUILTINS_HOST: "0.0.0.0"
       AGENT_PLAY_BUILTINS_PORT: "3100"
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       AGENT_PLAY_API_KEY: ${AGENT_PLAY_API_KEY:-}
       AGENT_PLAY_MAIN_NODE_ID: ${AGENT_PLAY_MAIN_NODE_ID:-}
     volumes:
-      - ${AGENT_PLAY_CREDENTIALS_HOST_FILE:-./credentials.json}:/config/agent-play-credentials.json:ro
+      - ${AGENT_PLAY_CREDENTIALS_HOST_FILE:-./agent-play-credentials.json}:/home/agentplay/.agent-play/credentials.json:ro
     restart: unless-stopped

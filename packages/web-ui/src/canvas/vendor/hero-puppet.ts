@@ -1,3 +1,7 @@
+/**
+ * @module @agent-play/play-ui/hero-puppet
+ * hero puppet — preview canvas module (Pixi + DOM).
+ */
 import { Graphics } from "pixi.js";
 import type { AvatarFacing } from "./avatar-anim.js";
 

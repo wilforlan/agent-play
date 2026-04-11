@@ -1,3 +1,7 @@
+/**
+ * @module @agent-play/play-ui/chat-markdown
+ * chat markdown — preview canvas module (Pixi + DOM).
+ */
 import DOMPurify from "dompurify";
 import { marked } from "marked";
 

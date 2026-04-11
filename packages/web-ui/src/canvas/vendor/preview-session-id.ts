@@ -1,3 +1,7 @@
+/**
+ * @module @agent-play/play-ui/preview-session-id
+ * preview session id — preview canvas module (Pixi + DOM).
+ */
 export const PREVIEW_SESSION_STORAGE_KEY = "agent-play.sessionId";
 
 export function persistPreviewSessionId(sid: string): void {

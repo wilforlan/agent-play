@@ -1,5 +1,7 @@
 node_modules
 .env
+agent-play-credentials.json
+*/**/agent-play-credentials.json
 .env.local
 packages/*/.env.local
 docs/api-reference

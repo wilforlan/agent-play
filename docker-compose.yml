@@ -1,6 +1,7 @@
 # Full stack: Redis + main web UI + built-in agents (separate containers).
-# Agents require ./credentials.json (or AGENT_PLAY_CREDENTIALS_HOST_FILE) — copy from ~/.agent-play/credentials.json
-# and set serverUrl to http://web-ui:8888. See docs/k8s/docker-compose.md.
+# Agents: copy ~/.agent-play/credentials.json → ./agent-play-credentials.json (repo root), set serverUrl to
+# http://web-ui:8888. It is mounted at ~/.agent-play/credentials.json in the container (HOME=/home/agentplay).
+# Override host file with AGENT_PLAY_CREDENTIALS_HOST_FILE. See docs/k8s/docker-compose.md.
 #
 #   docker compose up --build
 #
@@ -37,14 +38,14 @@ services:
       - "${AGENTS_PORT:-3100}:3100"
     environment:
       NODE_ENV: production
-      AGENT_PLAY_CREDENTIALS_PATH: /config/agent-play-credentials.json
+      HOME: /home/agentplay
       AGENT_PLAY_BUILTINS_HOST: "0.0.0.0"
       AGENT_PLAY_BUILTINS_PORT: "3100"
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       AGENT_PLAY_API_KEY: ${AGENT_PLAY_API_KEY:-}
       AGENT_PLAY_MAIN_NODE_ID: ${AGENT_PLAY_MAIN_NODE_ID:-}
     volumes:
-      - ${AGENT_PLAY_CREDENTIALS_HOST_FILE:-./credentials.json}:/config/agent-play-credentials.json:ro
+      - ${AGENT_PLAY_CREDENTIALS_HOST_FILE:-./agent-play-credentials.json}:/home/agentplay/.agent-play/credentials.json:ro
     depends_on:
       - web-ui
     restart: unless-stopped

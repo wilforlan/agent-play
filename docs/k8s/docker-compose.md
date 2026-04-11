@@ -13,17 +13,17 @@ Building the agents image requires a **`.root`** file in the repository root (sa
 
 ## Credentials for the agents container (required)
 
-The SDK resolves **`baseUrl`** from **`serverUrl`** in the same JSON file the CLI uses: **`~/.agent-play/credentials.json`**, or whatever path you set in **`AGENT_PLAY_CREDENTIALS_PATH`**.
+The CLI writes **`~/.agent-play/credentials.json`** on the host. The SDK’s default path (when **`AGENT_PLAY_CREDENTIALS_PATH`** is unset) is **`join(homedir(), ".agent-play", "credentials.json")`**.
 
-**Docker:** bind-mount that file into the container and set **`AGENT_PLAY_CREDENTIALS_PATH`** to the in-container path. The Compose files default to:
+The agents image sets **`HOME=/home/agentplay`** and creates **`/home/agentplay/.agent-play/`**. Compose bind-mounts your copy of the file to the **same logical path** inside the container so **`resolveAgentPlayCredentialsPath()`** is unchanged—no env override:
 
-| Host path (override with `AGENT_PLAY_CREDENTIALS_HOST_FILE`) | Container path |
-|---------------------------------------------------------------|----------------|
-| `./credentials.json` | `/config/agent-play-credentials.json` |
+| Host path (override with `AGENT_PLAY_CREDENTIALS_HOST_FILE`) | Path inside container (same as `~/.agent-play/credentials.json` for user `agentplay`) |
+|---------------------------------------------------------------|----------------------------------------------------------------------------------------|
+| `./agent-play-credentials.json` | `/home/agentplay/.agent-play/credentials.json` |
 
 Before `docker compose up`:
 
-1. Copy your CLI file: e.g. `cp ~/.agent-play/credentials.json ./credentials.json` next to `docker-compose.yml`.
+1. Copy your CLI file next to `docker-compose.yml`: `cp ~/.agent-play/credentials.json ./agent-play-credentials.json`.
 2. Edit **`serverUrl`** so it matches how **this container** reaches the web UI:
    - **Full stack:** use the Compose service name, e.g. **`http://web-ui:8888`** (not `http://127.0.0.1:3000` unless that resolves inside the container).
    - **Standalone agents:** use your real deployed origin, e.g. **`https://play.example.com`**.
@@ -35,7 +35,7 @@ Before `docker compose up`:
 From the repository root:
 
 ```bash
-cp ~/.agent-play/credentials.json ./credentials.json
+cp ~/.agent-play/credentials.json ./agent-play-credentials.json
 # Set serverUrl to http://web-ui:8888 (or your stack’s web UI URL)
 docker compose up --build
 ```
@@ -55,7 +55,7 @@ Other optional variables in a **`.env`** file next to `docker-compose.yml`:
 ## Agents only (standalone server)
 
 ```bash
-cp ~/.agent-play/credentials.json ./credentials.json
+cp ~/.agent-play/credentials.json ./agent-play-credentials.json
 # Set serverUrl to your deployed main server origin
 docker compose -f docker-compose.agents.yml up --build
 ```

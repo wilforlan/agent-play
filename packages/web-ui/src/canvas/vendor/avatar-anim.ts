@@ -1,3 +1,7 @@
+/**
+ * @module @agent-play/play-ui/avatar-anim
+ * avatar anim — preview canvas module (Pixi + DOM).
+ */
 export type AvatarFacing = "left" | "right";
 
 export type AvatarMotion = {

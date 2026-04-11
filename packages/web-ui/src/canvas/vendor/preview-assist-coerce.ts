@@ -1,3 +1,7 @@
+/**
+ * @module @agent-play/play-ui/preview-assist-coerce
+ * preview assist coerce — preview canvas module (Pixi + DOM).
+ */
 export type AssistToolFieldType = "string" | "number" | "boolean";
 
 export function resolveAssistFieldType(metadata: unknown): AssistToolFieldType {

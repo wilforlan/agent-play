@@ -1,3 +1,7 @@
+/**
+ * @module @agent-play/play-ui/preview-agent-chat-overlays
+ * preview agent chat overlays — preview canvas module (Pixi + DOM).
+ */
 import { createChatBubbleElement, ensurePreviewChatStyles } from "./preview-chat-panel.js";
 import { getChatLogLinesForAgent } from "./preview-chat-log.js";
 import {

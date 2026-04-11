@@ -1,3 +1,7 @@
+/**
+ * @module @agent-play/play-ui/preview-agent-settings-panel
+ * preview agent settings panel — preview canvas module (Pixi + DOM).
+ */
 import {
   getPreviewViewSettings,
   setPreviewViewSettings,
