@@ -5,6 +5,48 @@ export type WorldCameraClampRect = {
   bottom: number;
 };
 
+export function computeWorldRootScrollRect(options: {
+  originX: number;
+  worldOriginScreenY: number;
+  cellScale: number;
+  mapMinX: number;
+  mapMinY: number;
+  mapMaxX: number;
+  mapMaxY: number;
+}): WorldCameraClampRect {
+  const {
+    originX,
+    worldOriginScreenY,
+    cellScale,
+    mapMinX,
+    mapMinY,
+    mapMaxX,
+    mapMaxY,
+  } = options;
+
+  const at = (wx: number, wy: number) => ({
+    x: originX + (wx - mapMinX) * cellScale,
+    y: worldOriginScreenY + (mapMaxY - wy) * cellScale,
+  });
+
+  const corners = [
+    at(mapMinX, mapMinY),
+    at(mapMinX, mapMaxY),
+    at(mapMaxX, mapMinY),
+    at(mapMaxX, mapMaxY),
+  ];
+
+  const xs = corners.map((c) => c.x);
+  const ys = corners.map((c) => c.y);
+
+  return {
+    left: Math.min(...xs),
+    right: Math.max(...xs),
+    top: Math.min(...ys),
+    bottom: Math.max(...ys),
+  };
+}
+
 export function clampCameraToWorldRect(options: {
   camX: number;
   camY: number;

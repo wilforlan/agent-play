@@ -91,6 +91,7 @@ import {
 import { buildParkWorldBackdrop } from "./scene-backgrounds.js";
 import {
   clampCameraToWorldRect,
+  computeWorldRootScrollRect,
   type WorldCameraClampRect,
 } from "./world-nav-math.js";
 import type { AvatarFacing } from "./avatar-anim.js";
@@ -349,22 +350,15 @@ function getCameraClampRect(): WorldCameraClampRect {
   if (gridBounds === null) {
     return { left: 0, top: 0, right: VIEW_W, bottom: VIEW_H };
   }
-  const pad = 1;
-  const cols = Math.max(
-    1,
-    Math.ceil(gridBounds.maxX - gridBounds.minX + 2 * pad)
-  );
-  const rows = Math.max(
-    1,
-    Math.ceil(gridBounds.maxY - gridBounds.minY + 2 * pad)
-  );
-  const gy0 = worldOriginScreenY;
-  return {
-    left: 0,
-    top: 0,
-    right: ORIGIN_X + cols * cellScale + 56,
-    bottom: Math.max(VIEW_H, gy0 + rows * cellScale + WORLD_BOTTOM_MARGIN),
-  };
+  return computeWorldRootScrollRect({
+    originX: ORIGIN_X,
+    worldOriginScreenY,
+    cellScale,
+    mapMinX,
+    mapMinY,
+    mapMaxX,
+    mapMaxY,
+  });
 }
 
 function updateCameraAndWorldRoot(): void {
