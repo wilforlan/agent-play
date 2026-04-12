@@ -16,6 +16,23 @@ export type WorldBounds = {
   maxY: number;
 };
 
+/** Minimum playable span aligned with the watch canvas scrolling world (~20×20 cells). */
+export const MINIMUM_PLAY_WORLD_BOUNDS: WorldBounds = {
+  minX: 0,
+  minY: 0,
+  maxX: 19,
+  maxY: 19,
+};
+
+export function expandBoundsToMinimumPlayArea(bounds: WorldBounds): WorldBounds {
+  return {
+    minX: Math.min(bounds.minX, MINIMUM_PLAY_WORLD_BOUNDS.minX),
+    minY: Math.min(bounds.minY, MINIMUM_PLAY_WORLD_BOUNDS.minY),
+    maxX: Math.max(bounds.maxX, MINIMUM_PLAY_WORLD_BOUNDS.maxX),
+    maxY: Math.max(bounds.maxY, MINIMUM_PLAY_WORLD_BOUNDS.maxY),
+  };
+}
+
 /**
  * Clamps a point to lie inside `bounds` along both axes.
  *

@@ -55,6 +55,83 @@ export function buildParkScene(
   return root;
 }
 
+const PARK_SKY_GRASS_RATIO = 0.58;
+
+/**
+ * Park sky + grass + props sized to the scrolling world in **pixel space** (matches grid extent).
+ */
+export function buildParkWorldBackdrop(
+  widthPx: number,
+  heightPx: number,
+  seed: number
+): Container {
+  const root = new Container();
+  const rng = mulberry32(seed);
+  const grassTop = heightPx * PARK_SKY_GRASS_RATIO;
+
+  const sky = new Graphics();
+  sky.rect(0, 0, widthPx, grassTop * 0.52).fill({ color: 0x7ec8e3 });
+  sky
+    .rect(0, grassTop * 0.52, widthPx, grassTop * 0.48)
+    .fill({ color: 0xa8d8ea });
+  root.addChild(sky);
+
+  const grass = new Graphics();
+  grass.rect(0, grassTop, widthPx, heightPx - grassTop).fill({ color: 0x4caf6a });
+  const bladeStep = Math.max(5, Math.min(10, Math.floor(widthPx / 140)));
+  for (let x = 0; x < widthPx; x += bladeStep) {
+    const h = 2 + Math.floor(rng() * 5);
+    grass
+      .rect(x, grassTop - h, 2, h)
+      .fill({ color: 0x3d9a54, alpha: 0.72 });
+  }
+  root.addChild(grass);
+
+  const marginX = 72;
+  const grassBandH = heightPx - grassTop;
+  const benchCols = Math.max(2, Math.min(8, Math.ceil((widthPx - 2 * marginX) / 420)));
+  const benchSlotW = (widthPx - 2 * marginX) / benchCols;
+  for (let i = 0; i < benchCols; i += 1) {
+    const bx =
+      marginX +
+      (i + 0.2 + rng() * 0.6) * benchSlotW -
+      (18 + rng() * 8);
+    const by =
+      grassTop +
+      36 +
+      rng() * Math.max(24, grassBandH - 96);
+    root.addChild(makeBench(bx, by, rng));
+  }
+
+  const treeX0 = marginX;
+  const treeX1 = widthPx - marginX;
+  const treeY0 = grassTop - 6;
+  const treeY1 = heightPx - 44;
+  const spanX = treeX1 - treeX0;
+  const spanY = treeY1 - treeY0;
+  const minTreeGapX = 280;
+  const minTreeGapY = 240;
+  const treeCols = Math.max(
+    3,
+    Math.min(11, Math.floor(spanX / minTreeGapX) + 1)
+  );
+  const treeRows = Math.max(
+    2,
+    Math.min(9, Math.floor(spanY / minTreeGapY) + 1)
+  );
+  const cellW = spanX / treeCols;
+  const cellH = spanY / treeRows;
+  for (let ci = 0; ci < treeCols; ci += 1) {
+    for (let ri = 0; ri < treeRows; ri += 1) {
+      const tx = treeX0 + (ci + 0.25 + rng() * 0.5) * cellW;
+      const ty = treeY0 + (ri + 0.25 + rng() * 0.5) * cellH;
+      root.addChild(makeTree(tx, ty, rng));
+    }
+  }
+
+  return root;
+}
+
 const GROUND_TOP_RATIO = 0.58;
 
 export function buildNewYorkScene(

@@ -1,6 +1,11 @@
 export type { AgentPlaySnapshot } from "./public-types.js";
 export type { WorldBounds } from "./lib/world-bounds.js";
-export { clampWorldPosition, boundsContain } from "./lib/world-bounds.js";
+export {
+  clampWorldPosition,
+  boundsContain,
+  expandBoundsToMinimumPlayArea,
+  MINIMUM_PLAY_WORLD_BOUNDS,
+} from "./lib/world-bounds.js";
 export {
   mergeSnapshotWithPlayerChainNode,
   parsePlayerChainFanoutNotify,

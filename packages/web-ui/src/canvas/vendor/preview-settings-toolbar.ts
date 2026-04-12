@@ -628,6 +628,8 @@ export function createPreviewBottomBar(options: {
   sessionProfilePanel: HTMLElement;
   onThemeApplied: () => void;
   onAgentSettingsChanged: () => void;
+  /** When false, the Scene theme control is omitted (park-only watch UI). */
+  includeThemePanel?: boolean;
 }): HTMLElement {
   ensurePreviewLayoutStyles();
   const bar = document.createElement("div");
@@ -655,13 +657,18 @@ export function createPreviewBottomBar(options: {
   informatics.append(docLink, footer);
   const menu = document.createElement("div");
   menu.className = "preview-menu-bar";
+  const includeThemePanel = options.includeThemePanel === true;
   menu.append(
     options.chatPanel,
     options.sessionToolsPanel,
     options.sessionProfilePanel,
-    createPreviewThemeSettingsPanel({
-      onThemeApplied: options.onThemeApplied,
-    }),
+    ...(includeThemePanel
+      ? [
+          createPreviewThemeSettingsPanel({
+            onThemeApplied: options.onThemeApplied,
+          }),
+        ]
+      : []),
     createPreviewAgentSettingsPanel({
       onAgentSettingsChanged: options.onAgentSettingsChanged,
     })

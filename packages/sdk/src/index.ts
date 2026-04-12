@@ -68,6 +68,8 @@ export {
 export {
   clampWorldPosition,
   boundsContain,
+  expandBoundsToMinimumPlayArea,
+  MINIMUM_PLAY_WORLD_BOUNDS,
   type WorldBounds,
 } from "./lib/world-bounds.js";
 export {

@@ -33,7 +33,9 @@ import {
 } from "./agent-chat-panel-position.js";
 import {
   clampWorldPosition,
+  expandBoundsToMinimumPlayArea,
   mergeSnapshotWithPlayerChainNode,
+  MINIMUM_PLAY_WORLD_BOUNDS,
   parsePlayerChainFanoutNotifyFromSsePayload,
   parsePlayerChainNodeRpcBody,
   sortNodeRefsForSerializedFetch,
@@ -68,7 +70,6 @@ import {
   getJoystickVector,
   JOYSTICK_DEFLECT_EPS,
   setJoystickVectorZero,
-  shouldClampWorldPositionWhenJoystickDriving,
   shouldClearPrimaryWaypointsWhileJoystickIdle,
 } from "./preview-debug-joystick.js";
 import { createPreviewDebugPanel } from "./preview-debug-panel.js";
@@ -85,9 +86,13 @@ import { ENABLE_CROWD_LAYER, getActiveSceneTheme } from "./scene-theme.js";
 import {
   drawHomeStructure,
   drawMcpStore,
-  drawToolPad,
   drawVendorStall,
 } from "./structure-art.js";
+import { buildParkWorldBackdrop } from "./scene-backgrounds.js";
+import {
+  clampCameraToWorldRect,
+  type WorldCameraClampRect,
+} from "./world-nav-math.js";
 import type { AvatarFacing } from "./avatar-anim.js";
 import {
   DEFAULT_PROXIMITY_RADIUS,
@@ -129,6 +134,9 @@ const HOME_FRONT_OFFSET_WX = 0.16;
 const HOME_FRONT_OFFSET_WY = 0.22;
 const PREVIEW_AGENT_CHAT_MARGIN_PX = 6;
 const PREVIEW_AGENT_CHAT_GAP_PX = 8;
+
+const HUMAN_DEFAULT_SPAWN_UX = 0.1;
+const HUMAN_DEFAULT_SPAWN_UY = 0.12;
 
 /** Snapshot structure row (subset of server JSON). */
 type Structure = {
@@ -282,37 +290,102 @@ let gridBounds: WorldMapJson["bounds"] | null = null;
 let palette: MultiversePalette = mergeMultiversePalette({});
 
 /**
- * Stores grid bounds and recomputes scale/origin so the map fits the fixed view size.
+ * Fixed cell size in px; logical bounds at least {@link MINIMUM_PLAY_WORLD_BOUNDS}.
  * @remarks **Callers:** {@link loadSnapshot}, theme rebuilds. **Callees:** none.
  */
 function applyBounds(bounds: WorldMapJson["bounds"]): void {
-  gridBounds = bounds;
+  const expanded = expandBoundsToMinimumPlayArea(bounds);
+  gridBounds = expanded;
   const pad = 1;
-  const w = Math.max(1, bounds.maxX - bounds.minX + 2 * pad);
-  const h = Math.max(1, bounds.maxY - bounds.minY + 2 * pad);
-  const maxW = VIEW_W - ORIGIN_X * 2;
-  const theme = getActiveSceneTheme();
-  const grassTop = VIEW_H * theme.grassBandTopRatio;
-  const minGridTop = grassTop + 12;
+  cellScale = CELL;
+  mapMinX = expanded.minX - pad;
+  mapMinY = expanded.minY - pad;
+  mapMaxX = expanded.maxX + pad;
+  mapMaxY = expanded.maxY + pad;
   const maxBottom = VIEW_H - WORLD_BOTTOM_MARGIN;
-  const maxHSpace = Math.max(40, maxBottom - minGridTop);
-  cellScale = Math.min(maxW / w, maxHSpace / h, 64);
-  mapMinX = bounds.minX - pad;
-  mapMinY = bounds.minY - pad;
-  mapMaxX = bounds.maxX + pad;
-  mapMaxY = bounds.maxY + pad;
+  const h = Math.max(1, mapMaxY - mapMinY + 1);
   worldOriginScreenY = maxBottom - h * cellScale;
+  rebuildParkWorldBackdrop();
 }
 
-/**
- * Maps world grid coordinates to Pixi screen pixels (Y flipped so +y is “north” on screen).
- * @remarks **Callers:** drawing, {@link getAgentHeroAnchorScreen}, proximity. **Callees:** none.
- */
-function worldToScreen(wx: number, wy: number): { x: number; y: number } {
+function rebuildParkWorldBackdrop(): void {
+  if (gridBounds === null) {
+    return;
+  }
+  for (const ch of [...parkBackdropLayer.children]) {
+    parkBackdropLayer.removeChild(ch);
+    ch.destroy({ children: true });
+  }
+  const pad = 1;
+  const cols = Math.max(
+    1,
+    Math.ceil(gridBounds.maxX - gridBounds.minX + 2 * pad)
+  );
+  const rows = Math.max(
+    1,
+    Math.ceil(gridBounds.maxY - gridBounds.minY + 2 * pad)
+  );
+  const gy0 = worldOriginScreenY;
+  const w = ORIGIN_X + cols * cellScale + 56;
+  const h = Math.max(VIEW_H, gy0 + rows * cellScale + WORLD_BOTTOM_MARGIN);
+  parkBackdropLayer.addChild(buildParkWorldBackdrop(w, h, 0x5cafe));
+}
+
+function worldToWorldRootLocal(wx: number, wy: number): { x: number; y: number } {
   return {
     x: ORIGIN_X + (wx - mapMinX) * cellScale,
     y: worldOriginScreenY + (mapMaxY - wy) * cellScale,
   };
+}
+
+function worldRootLocalToCanvas(lx: number, ly: number): { x: number; y: number } {
+  return {
+    x: cameraX + lx,
+    y: cameraY + ly,
+  };
+}
+
+function getCameraClampRect(): WorldCameraClampRect {
+  if (gridBounds === null) {
+    return { left: 0, top: 0, right: VIEW_W, bottom: VIEW_H };
+  }
+  const pad = 1;
+  const cols = Math.max(
+    1,
+    Math.ceil(gridBounds.maxX - gridBounds.minX + 2 * pad)
+  );
+  const rows = Math.max(
+    1,
+    Math.ceil(gridBounds.maxY - gridBounds.minY + 2 * pad)
+  );
+  const gy0 = worldOriginScreenY;
+  return {
+    left: 0,
+    top: 0,
+    right: ORIGIN_X + cols * cellScale + 56,
+    bottom: Math.max(VIEW_H, gy0 + rows * cellScale + WORLD_BOTTOM_MARGIN),
+  };
+}
+
+function updateCameraAndWorldRoot(): void {
+  const hid = getHumanPlayerId();
+  const pos = hid !== null ? playerWorldPos.get(hid) : undefined;
+  if (pos !== undefined) {
+    const local = worldToWorldRootLocal(pos.x, pos.y);
+    cameraX = VIEW_W / 2 - local.x;
+    cameraY = VIEW_H / 2 - local.y;
+  }
+  const clamped = clampCameraToWorldRect({
+    camX: cameraX,
+    camY: cameraY,
+    zoom: 1,
+    viewW: VIEW_W,
+    viewH: VIEW_H,
+    rect: getCameraClampRect(),
+  });
+  cameraX = clamped.camX;
+  cameraY = clamped.camY;
+  worldRoot.position.set(cameraX, cameraY);
 }
 
 /**
@@ -322,6 +395,15 @@ function worldToScreen(wx: number, wy: number): { x: number; y: number } {
 function getWorldBoundsForClamp(): WorldBounds | null {
   if (gridBounds === null) return null;
   return { minX: mapMinX, minY: mapMinY, maxX: mapMaxX, maxY: mapMaxY };
+}
+
+function defaultHumanSpawnInWorld(wb: WorldBounds): { x: number; y: number } {
+  const ref = MINIMUM_PLAY_WORLD_BOUNDS;
+  const spanX = ref.maxX - ref.minX;
+  const spanY = ref.maxY - ref.minY;
+  const x = ref.minX + HUMAN_DEFAULT_SPAWN_UX * spanX;
+  const y = ref.minY + HUMAN_DEFAULT_SPAWN_UY * spanY;
+  return clampWorldPosition({ x, y }, wb);
 }
 
 const arrowKeys = {
@@ -462,7 +544,11 @@ let appStage: Container | null = null;
 const structureLayer = new Container();
 const gridGraphics = new Graphics();
 const agentsLayer = new Container();
-const worldLayer = new Container();
+const parkBackdropLayer = new Container();
+const worldRoot = new Container();
+
+let cameraX = 0;
+let cameraY = 0;
 
 const structureNodes = new Map<string, StructureVisual>();
 const agentNodes = new Map<string, AgentVisual>();
@@ -583,11 +669,11 @@ function getPlayerHomeCell(
   return { x: occ.x, y: occ.y };
 }
 
-function getAgentHeroAnchorScreen(
+function getAgentHeroAnchorLocal(
   playerId: string,
   wpos: { x: number; y: number },
   box: number
-): { cx: number; cy: number } {
+): { x: number; y: number } {
   const home = getPlayerHomeCell(playerId, snapshot);
   let wx = wpos.x;
   let wy = wpos.y;
@@ -598,8 +684,18 @@ function getAgentHeroAnchorScreen(
     wx += HOME_FRONT_OFFSET_WX;
     wy += HOME_FRONT_OFFSET_WY;
   }
-  const { x: sx, y: sy } = worldToScreen(wx, wy);
-  return { cx: sx + box * 0.3, cy: sy + box * 0.55 };
+  const { x: sx, y: sy } = worldToWorldRootLocal(wx, wy);
+  return { x: sx + box * 0.3, y: sy + box * 0.55 };
+}
+
+function getAgentHeroAnchorScreen(
+  playerId: string,
+  wpos: { x: number; y: number },
+  box: number
+): { cx: number; cy: number } {
+  const local = getAgentHeroAnchorLocal(playerId, wpos, box);
+  const p = worldRootLocalToCanvas(local.x, local.y);
+  return { cx: p.x, cy: p.y };
 }
 
 function setWaypoints(playerId: string, path: PathStep[]): void {
@@ -631,27 +727,11 @@ function ingestSnapshot(snap: Snapshot): void {
   const b = snapshot.worldMap.bounds;
   if (b !== undefined) applyBounds(b);
   else {
-    mapMinX = 0;
-    mapMinY = 0;
-    mapMaxX = 0;
-    mapMaxY = 0;
-    cellScale = CELL;
-    gridBounds = null;
-    const theme = getActiveSceneTheme();
-    const grassTop = VIEW_H * theme.grassBandTopRatio;
-    const placeholderRows = 8;
-    let y0 = VIEW_H - WORLD_BOTTOM_MARGIN - placeholderRows * cellScale;
-    const minY0 = grassTop + 16;
-    worldOriginScreenY = y0 < minY0 ? minY0 : y0;
+    applyBounds(MINIMUM_PLAY_WORLD_BOUNDS);
   }
   const wbSpawn = getWorldBoundsForClamp();
-  let humanSpawn = { x: 0, y: 0 };
-  if (wbSpawn !== null) {
-    humanSpawn = {
-      x: (wbSpawn.minX + wbSpawn.maxX) / 2,
-      y: (wbSpawn.minY + wbSpawn.maxY) / 2,
-    };
-  }
+  const humanSpawn =
+    wbSpawn !== null ? defaultHumanSpawnInWorld(wbSpawn) : { x: 0, y: 0 };
   for (const p of listAgentRows(snapshot)) {
     const home = getPlayerHomeCell(p.agentId, snapshot);
     const spawn =
@@ -861,7 +941,7 @@ function syncStructureNodes(structs: Structure[]): void {
       structureLayer.addChild(boxG);
       structureLayer.addChild(cap);
     }
-    const { x: sx, y: sy } = worldToScreen(st.x, st.y);
+    const { x: sx, y: sy } = worldToWorldRootLocal(st.x, st.y);
     const strokeCol = cssColorToPixi(palette.stroke);
     const isMcpStore = st.id.startsWith("mcp:");
     if (st.kind === "home") {
@@ -932,34 +1012,7 @@ function syncAgentNodes(): void {
 }
 
 function paintGrid(): void {
-  const theme = getActiveSceneTheme();
   gridGraphics.clear();
-  if (gridBounds === null) return;
-  const pad = 1;
-  const cols = Math.max(
-    1,
-    Math.ceil(gridBounds.maxX - gridBounds.minX + 2 * pad)
-  );
-  const rows = Math.max(
-    1,
-    Math.ceil(gridBounds.maxY - gridBounds.minY + 2 * pad)
-  );
-  const gs = theme.gridStroke;
-  const gy0 = worldOriginScreenY;
-  for (let c = 0; c <= cols; c += 1) {
-    const gx = ORIGIN_X + c * cellScale;
-    gridGraphics
-      .moveTo(gx, gy0)
-      .lineTo(gx, gy0 + rows * cellScale)
-      .stroke({ width: 1, color: gs.color, alpha: gs.alpha });
-  }
-  for (let r = 0; r <= rows; r += 1) {
-    const gy = gy0 + r * cellScale;
-    gridGraphics
-      .moveTo(ORIGIN_X, gy)
-      .lineTo(ORIGIN_X + cols * cellScale, gy)
-      .stroke({ width: 1, color: gs.color, alpha: gs.alpha });
-  }
 }
 
 function getDebugSnapshot(): {
@@ -1051,8 +1104,6 @@ function rebuildSceneForTheme(): void {
     crowdLayerContainer.destroy({ children: true });
     crowdLayerContainer = null;
   }
-  sceneRootContainer = theme.buildScene(VIEW_W, VIEW_H, 0x5cafe);
-  appStage.addChildAt(sceneRootContainer, 0);
   if (ENABLE_CROWD_LAYER) {
     const groundTop = VIEW_H * theme.grassBandTopRatio;
     const crowdClusters = layoutCrowdClusters({
@@ -1064,8 +1115,9 @@ function rebuildSceneForTheme(): void {
       clusterCountRange: [4, 8],
     });
     crowdLayerContainer = buildCrowdLayer(crowdClusters);
-    appStage.addChildAt(crowdLayerContainer, 1);
+    appStage.addChildAt(crowdLayerContainer, 0);
   }
+  rebuildParkWorldBackdrop();
   skyDecor?.setBounds(VIEW_W, VIEW_H, theme.grassBandTopRatio);
 }
 
@@ -1136,15 +1188,7 @@ function onTick(dt: number): void {
         }
       }
     }
-    let shouldClamp = shouldClampWorldPositionWhenJoystickDriving({
-      playerId: id,
-      primaryPlayerId: primaryId,
-      joystickActive,
-    });
-    if (useArrows && primaryId !== null && id === primaryId) {
-      shouldClamp = true;
-    }
-    if (wb !== null && shouldClamp) {
+    if (wb !== null) {
       next = clampWorldPosition(next, wb);
     }
     playerWorldPos.set(id, next);
@@ -1162,6 +1206,7 @@ function onTick(dt: number): void {
     lastTickWorldPos.set(id, { ...next });
   }
   skyDecor?.tick(dt);
+  updateCameraAndWorldRoot();
 }
 
 function onFrame(): void {
@@ -1178,9 +1223,10 @@ function onFrame(): void {
   for (const [id, wpos] of playerWorldPos) {
     const v = agentNodes.get(id);
     if (v === undefined) continue;
+    const anchorLocal = getAgentHeroAnchorLocal(id, wpos, box);
     const { cx, cy } = getAgentHeroAnchorScreen(id, wpos, box);
     const scale = Math.max(0.35, Math.min(0.85, cellScale / 48));
-    v.root.position.set(cx, cy);
+    v.root.position.set(anchorLocal.x, anchorLocal.y);
     drawPlatformHero(v.hero, {
       scale,
       facing: facingByPlayer.get(id) ?? "right",
@@ -1408,8 +1454,10 @@ export function bootstrap(): void {
       backdrop: mobileBackdrop,
     });
 
-    worldLayer.addChild(gridGraphics);
-    worldLayer.addChild(structureLayer);
+    worldRoot.addChild(parkBackdropLayer);
+    worldRoot.addChild(gridGraphics);
+    worldRoot.addChild(structureLayer);
+    worldRoot.addChild(agentsLayer);
     const handle = await createPixiPreview({
       width: VIEW_W,
       height: VIEW_H,
@@ -1420,8 +1468,8 @@ export function bootstrap(): void {
     });
     pixiHandle = handle;
     appStage = handle.app.stage;
-    sceneRootContainer = theme.buildScene(VIEW_W, VIEW_H, 0x5cafe);
-    handle.app.stage.addChild(sceneRootContainer);
+    applyBounds(MINIMUM_PLAY_WORLD_BOUNDS);
+    updateCameraAndWorldRoot();
     if (ENABLE_CROWD_LAYER) {
       const groundTop = VIEW_H * theme.grassBandTopRatio;
       const crowdClusters = layoutCrowdClusters({
@@ -1435,6 +1483,7 @@ export function bootstrap(): void {
       crowdLayerContainer = buildCrowdLayer(crowdClusters);
       handle.app.stage.addChild(crowdLayerContainer);
     }
+    handle.app.stage.addChild(worldRoot);
     skyDecor = createSkyDecorLayer({
       width: VIEW_W,
       height: VIEW_H,
@@ -1447,8 +1496,6 @@ export function bootstrap(): void {
     };
     syncSkyMotion();
     motionQuery.addEventListener("change", syncSkyMotion);
-    handle.app.stage.addChild(worldLayer);
-    handle.app.stage.addChild(agentsLayer);
 
     canvasHost.appendChild(agentChatOverlays.root);
     proximityPromptEl = document.createElement("div");
@@ -1488,6 +1535,7 @@ export function bootstrap(): void {
           applyDebugVisibility();
           applyJoystickVisibility();
         },
+        includeThemePanel: false,
       })
     );
 
