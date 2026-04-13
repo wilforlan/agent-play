@@ -77,6 +77,15 @@ const CreateHumanNodePayloadSchema = z
   })
   .strict();
 
+const WorldChatPublishPayloadSchema = z
+  .object({
+    requestId: NonEmpty,
+    mainNodeId: NonEmpty,
+    fromPlayerId: NonEmpty,
+    message: NonEmpty,
+  })
+  .strict();
+
 export type IntercomCommandPayload = z.infer<typeof IntercomCommandPayloadSchema>;
 export type WorldIntercomEventPayload = z.infer<
   typeof WorldIntercomEventPayloadSchema
@@ -85,6 +94,9 @@ export type IntercomResponsePayload = z.infer<
   typeof IntercomResponsePayloadSchema
 >;
 export type CreateHumanNodePayload = z.infer<typeof CreateHumanNodePayloadSchema>;
+export type WorldChatPublishPayload = z.infer<
+  typeof WorldChatPublishPayloadSchema
+>;
 
 export function parseIntercomCommandPayload(
   payload: unknown
@@ -108,4 +120,10 @@ export function parseCreateHumanNodePayload(
   payload: unknown
 ): CreateHumanNodePayload {
   return CreateHumanNodePayloadSchema.parse(payload);
+}
+
+export function parseWorldChatPublishPayload(
+  payload: unknown
+): WorldChatPublishPayload {
+  return WorldChatPublishPayloadSchema.parse(payload);
 }

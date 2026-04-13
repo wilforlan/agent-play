@@ -35,6 +35,15 @@ export type PresenceLease = {
   lastSeenAt: string;
 };
 
+export type WorldChatMessage = {
+  seq: number;
+  requestId: string;
+  mainNodeId: string;
+  fromPlayerId: string;
+  message: string;
+  ts: string;
+};
+
 export type SessionStore = {
   readonly fanoutDelivery: "redis" | "local";
   readonly playerChainGenesis: string;
@@ -77,4 +86,15 @@ export type SessionStore = {
   }): Promise<void>;
   hasPresenceLease(playerId: string): Promise<boolean>;
   listPresenceLeases(): Promise<PresenceLease[]>;
+  appendWorldChatMessage(input: {
+    requestId: string;
+    mainNodeId: string;
+    fromPlayerId: string;
+    message: string;
+    ts: string;
+  }): Promise<{ message: WorldChatMessage; totalCount: number }>;
+  listWorldChatMessages(input: {
+    limit: number;
+    beforeSeq?: number;
+  }): Promise<{ messages: WorldChatMessage[]; hasMore: boolean; totalCount: number }>;
 };

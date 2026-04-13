@@ -14,10 +14,12 @@ import type {
   PersistSnapshotRev,
   PublishedSessionMetadata,
   SessionStore,
+  WorldChatMessage,
   WorldFanoutOptions,
 } from "./session-store.js";
 
 const EVENT_LOG_MAX = 200;
+const WORLD_CHAT_MAX = 5000;
 
 function sessionHashKey(hostId: string): string {
   return `agent-play:${hostId}:session`;
@@ -33,6 +35,10 @@ function eventLogKey(hostId: string): string {
 
 function settingsHashKey(hostId: string): string {
   return `agent-play:${hostId}:session:settings`;
+}
+
+function worldChatKey(hostId: string): string {
+  return `agent-play:${hostId}:session:world-chat`;
 }
 
 function gridOccupiedKey(hostId: string): string {
@@ -187,6 +193,7 @@ export class RedisSessionStore implements SessionStore {
     await this.redis.del(snapshotKey(this.hostId));
     await this.redis.del(gridOccupiedKey(this.hostId));
     await this.redis.del(eventLogKey(this.hostId));
+    await this.redis.del(worldChatKey(this.hostId));
     await this.redis.del(settingsHashKey(this.hostId));
     await this.redis.del(playerChainLeavesKey(this.hostId));
     await this.redis.del(sh);
@@ -214,10 +221,84 @@ export class RedisSessionStore implements SessionStore {
       "lastSnapshotAt",
       "snapshotBytes",
       "snapshotRev",
+      "worldChatSeq",
       "merkleRootHex",
       "merkleLeafCount"
     );
     await chain.exec();
+  }
+
+  async appendWorldChatMessage(input: {
+    requestId: string;
+    mainNodeId: string;
+    fromPlayerId: string;
+    message: string;
+    ts: string;
+  }): Promise<{ message: WorldChatMessage; totalCount: number }> {
+    const seq = await this.redis.hincrby(
+      sessionHashKey(this.hostId),
+      "worldChatSeq",
+      1
+    );
+    const message: WorldChatMessage = {
+      seq,
+      requestId: input.requestId,
+      mainNodeId: input.mainNodeId,
+      fromPlayerId: input.fromPlayerId,
+      message: input.message,
+      ts: input.ts,
+    };
+    const key = worldChatKey(this.hostId);
+    const pipe = this.redis.multi();
+    pipe.lpush(key, JSON.stringify(message));
+    pipe.ltrim(key, 0, WORLD_CHAT_MAX - 1);
+    pipe.hset(sessionHashKey(this.hostId), "lastEventAt", input.ts);
+    pipe.llen(key);
+    const result = await pipe.exec();
+    const totalCountRaw = result?.[3]?.[1];
+    const totalCount =
+      typeof totalCountRaw === "number" ? totalCountRaw : await this.redis.llen(key);
+    return { message, totalCount };
+  }
+
+  async listWorldChatMessages(input: {
+    limit: number;
+    beforeSeq?: number;
+  }): Promise<{ messages: WorldChatMessage[]; hasMore: boolean; totalCount: number }> {
+    const safeLimit = Math.max(1, Math.min(200, Math.floor(input.limit)));
+    const key = worldChatKey(this.hostId);
+    const totalCount = await this.redis.llen(key);
+    const rows = await this.redis.lrange(key, 0, WORLD_CHAT_MAX - 1);
+    const parsed: WorldChatMessage[] = [];
+    for (const row of rows) {
+      try {
+        const value = JSON.parse(row) as WorldChatMessage;
+        if (
+          typeof value.seq === "number" &&
+          typeof value.requestId === "string" &&
+          typeof value.mainNodeId === "string" &&
+          typeof value.fromPlayerId === "string" &&
+          typeof value.message === "string" &&
+          typeof value.ts === "string"
+        ) {
+          parsed.push(value);
+        }
+      } catch {
+        continue;
+      }
+    }
+    const beforeSeq =
+      typeof input.beforeSeq === "number" ? input.beforeSeq : undefined;
+    const filtered =
+      beforeSeq !== undefined
+        ? parsed.filter((message) => message.seq < beforeSeq)
+        : parsed;
+    const messages = filtered.slice(0, safeLimit);
+    return {
+      messages,
+      hasMore: filtered.length > safeLimit,
+      totalCount,
+    };
   }
 
   async persistSnapshot(snapshot: PreviewSnapshotJson): Promise<void> {

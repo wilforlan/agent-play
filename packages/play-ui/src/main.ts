@@ -76,6 +76,7 @@ import { createPreviewDebugPanel } from "./preview-debug-panel.js";
 import { createPixiPreview, type PixiPreviewHandle } from "./pixi-multiverse.js";
 import { attachMobileSidePanelControls } from "./preview-mobile-side-panels.js";
 import { createPreviewProximityTouchControls } from "./preview-proximity-touch-controls.js";
+import { createPreviewGlobalChatRoom } from "./preview-global-chat-room";
 import {
   createPreviewBottomBar,
   ensurePreviewLayoutStyles,
@@ -128,6 +129,7 @@ const WORLD_BOTTOM_MARGIN = 14;
 const WORLD_INTERACTION_SSE = "world:interaction";
 const WORLD_AGENT_SIGNAL_SSE = "world:agent_signal";
 const WORLD_INTERCOM_SSE = "world:intercom";
+const WORLD_GLOBAL_CHAT_CHANNEL = "intercom:world:global";
 const HUMAN_VIEWER_PLAYER_ID = "__human__";
 const MAX_PLAYER_CHAIN_FETCH_STEPS = 102;
 const HOME_STAND_EPS = 0.26;
@@ -551,6 +553,7 @@ let refreshPreviewChat: () => void = () => {};
 
 let agentChatOverlays: ReturnType<typeof createPreviewAgentChatOverlays> | null =
   null;
+let globalChatRoom: ReturnType<typeof createPreviewGlobalChatRoom> | null = null;
 let sessionInteractionPanel:
   | ReturnType<typeof createPreviewSessionInteractionPanel>
   | null = null;
@@ -579,6 +582,20 @@ function playerDisplayName(playerId: string): string {
     listAgentRows(snapshot).find((p) => p.agentId === playerId)?.name ??
     playerId
   );
+}
+
+function globalSenderName(playerId: string): string {
+  const mainNodeId = getMainNodeIdForIntercom();
+  if (mainNodeId !== null && playerId === mainNodeId) {
+    return "You";
+  }
+  if (snapshot !== null) {
+    const row = listAgentRows(snapshot).find((p) => p.agentId === playerId);
+    if (row !== undefined) {
+      return row.name;
+    }
+  }
+  return playerId.slice(0, 8);
 }
 
 function registeredAgentPartnerForProximityOrNull(
@@ -860,6 +877,51 @@ function connectSse(sid: string): void {
       data = JSON.parse(raw) as unknown;
     } catch {
       return;
+    }
+    if (
+      typeof data === "object" &&
+      data !== null &&
+      "channelKey" in data &&
+      "requestId" in data &&
+      "fromPlayerId" in data &&
+      "ts" in data
+    ) {
+      const row = data as {
+        channelKey?: unknown;
+        requestId?: unknown;
+        fromPlayerId?: unknown;
+        message?: unknown;
+        result?: unknown;
+        ts?: unknown;
+      };
+      if (
+        row.channelKey === WORLD_GLOBAL_CHAT_CHANNEL &&
+        typeof row.requestId === "string" &&
+        typeof row.fromPlayerId === "string" &&
+        typeof row.ts === "string"
+      ) {
+        globalChatRoom?.appendFromIntercomEvent({
+          seq:
+            typeof row.result === "object" &&
+            row.result !== null &&
+            "seq" in row.result &&
+            typeof (row.result as { seq?: unknown }).seq === "number"
+              ? ((row.result as { seq?: number }).seq ?? Number.MAX_SAFE_INTEGER)
+              : Number.MAX_SAFE_INTEGER,
+          requestId: row.requestId,
+          fromPlayerId: row.fromPlayerId,
+          message: typeof row.message === "string" ? row.message : "",
+          ts: row.ts,
+          totalCount:
+            typeof row.result === "object" &&
+            row.result !== null &&
+            "totalCount" in row.result &&
+            typeof (row.result as { totalCount?: unknown }).totalCount === "number"
+              ? ((row.result as { totalCount?: number }).totalCount ?? undefined)
+              : undefined,
+        });
+        return;
+      }
     }
     sessionInteractionPanel?.applyIntercomEvent(data);
   });
@@ -1342,7 +1404,13 @@ export function bootstrap(): void {
     });
     debugPanelUpdate = debug.update;
     debugMount.appendChild(debug.element);
-    leftCol.appendChild(debugMount);
+    globalChatRoom = createPreviewGlobalChatRoom({
+      apiBase: API_BASE,
+      getSid,
+      getMainNodeId: getMainNodeIdForIntercom,
+      resolveSenderName: globalSenderName,
+    });
+    leftCol.append(globalChatRoom.element, debugMount);
 
     const centerCol = document.createElement("div");
     centerCol.className = "preview-game-col preview-game-col--center";
@@ -1369,7 +1437,7 @@ export function bootstrap(): void {
     toggleLeft.type = "button";
     toggleLeft.className =
       "preview-mobile-side-toggle preview-mobile-side-toggle--left";
-    toggleLeft.textContent = "Debug";
+    toggleLeft.textContent = "Chat";
     toggleLeft.setAttribute("aria-controls", "preview-side-left");
     const toggleRight = document.createElement("button");
     toggleRight.type = "button";

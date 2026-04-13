@@ -9,6 +9,7 @@ import type {
   PersistSnapshotRev,
   PublishedSessionMetadata,
   SessionStore,
+  WorldChatMessage,
   WorldFanoutOptions,
 } from "./session-store.js";
 
@@ -28,6 +29,8 @@ export class TestSessionStore implements SessionStore {
   private merkleLeafCount: number | null = null;
   private readonly eventLog: SessionEventLogEntry[] = [];
   private readonly settings: Record<string, string> = {};
+  private readonly worldChat: WorldChatMessage[] = [];
+  private worldChatSeq = 0;
   private readonly presenceLeases = new Map<
     string,
     PresenceLease & { expiresAtMs: number }
@@ -68,6 +71,8 @@ export class TestSessionStore implements SessionStore {
     this.merkleRootHex = null;
     this.merkleLeafCount = null;
     this.eventLog.length = 0;
+    this.worldChat.length = 0;
+    this.worldChatSeq = 0;
     for (const k of Object.keys(this.settings)) {
       delete this.settings[k];
     }
@@ -78,6 +83,45 @@ export class TestSessionStore implements SessionStore {
     this.rev = 0;
     this.merkleRootHex = null;
     this.merkleLeafCount = null;
+  }
+
+  async appendWorldChatMessage(input: {
+    requestId: string;
+    mainNodeId: string;
+    fromPlayerId: string;
+    message: string;
+    ts: string;
+  }): Promise<{ message: WorldChatMessage; totalCount: number }> {
+    this.worldChatSeq += 1;
+    const message: WorldChatMessage = {
+      seq: this.worldChatSeq,
+      requestId: input.requestId,
+      mainNodeId: input.mainNodeId,
+      fromPlayerId: input.fromPlayerId,
+      message: input.message,
+      ts: input.ts,
+    };
+    this.worldChat.unshift(message);
+    return { message, totalCount: this.worldChat.length };
+  }
+
+  async listWorldChatMessages(input: {
+    limit: number;
+    beforeSeq?: number;
+  }): Promise<{ messages: WorldChatMessage[]; hasMore: boolean; totalCount: number }> {
+    const safeLimit = Math.max(1, Math.min(200, Math.floor(input.limit)));
+    const beforeSeq =
+      typeof input.beforeSeq === "number" ? input.beforeSeq : undefined;
+    const filtered =
+      beforeSeq !== undefined
+        ? this.worldChat.filter((m) => m.seq < beforeSeq)
+        : this.worldChat;
+    const messages = filtered.slice(0, safeLimit).map((m) => ({ ...m }));
+    return {
+      messages,
+      hasMore: filtered.length > safeLimit,
+      totalCount: this.worldChat.length,
+    };
   }
 
   async getSnapshotJson(): Promise<PreviewSnapshotJson | null> {

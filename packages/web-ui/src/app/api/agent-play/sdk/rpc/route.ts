@@ -16,9 +16,14 @@ import {
   INTERCOM_COMMAND_OP,
   INTERCOM_RESPONSE_OP,
   parseCreateHumanNodePayload,
+  parseWorldChatHistoryPayload,
+  parseWorldChatPublishPayload,
+  WORLD_CHAT_HISTORY_OP,
+  WORLD_CHAT_PUBLISH_OP,
 } from "@/server/agent-play/intercom/shared-intercom";
 import { createNodeAccount } from "@/server/agent-play/create-node-account";
 import { getRepository } from "@/server/get-world";
+import { publishWorldIntercomEvent } from "@/server/agent-play/intercom/fanout";
 
 function requireSid(req: NextRequest): string | null {
   const raw = req.nextUrl.searchParams.get("sid");
@@ -108,6 +113,47 @@ export async function POST(req: NextRequest) {
           payload: body.payload,
         });
         return Response.json({ ok: true });
+      }
+      case WORLD_CHAT_PUBLISH_OP: {
+        const p = parseWorldChatPublishPayload(body.payload);
+        const appended = await store.appendWorldChatMessage({
+          requestId: p.requestId,
+          mainNodeId: p.mainNodeId,
+          fromPlayerId: p.fromPlayerId,
+          message: p.message,
+          ts: new Date().toISOString(),
+        });
+        await publishWorldIntercomEvent({
+          store,
+          payload: {
+            requestId: appended.message.requestId,
+            mainNodeId: appended.message.mainNodeId,
+            toPlayerId: "__world__",
+            fromPlayerId: appended.message.fromPlayerId,
+            kind: "chat",
+            status: "completed",
+            message: appended.message.message,
+            result: {
+              seq: appended.message.seq,
+              totalCount: appended.totalCount,
+            },
+            channelKey: "intercom:world:global",
+            ts: appended.message.ts,
+          },
+        });
+        return Response.json({ ok: true });
+      }
+      case WORLD_CHAT_HISTORY_OP: {
+        const p = parseWorldChatHistoryPayload(body.payload);
+        const page = await store.listWorldChatMessages({
+          limit: p.limit,
+          beforeSeq: p.beforeSeq,
+        });
+        return Response.json({
+          messages: page.messages,
+          hasMore: page.hasMore,
+          totalCount: page.totalCount,
+        });
       }
       case "recordInteraction": {
         const p = body.payload as {

@@ -3,6 +3,7 @@ import {
   parseCreateHumanNodePayload,
   parseIntercomCommandPayload,
   parseIntercomResponsePayload,
+  parseWorldChatPublishPayload,
   parseWorldIntercomEventPayload,
 } from "./validator.js";
 
@@ -115,6 +116,27 @@ describe("intercom contracts", () => {
       parseCreateHumanNodePayload({
         consent: false,
         passw: "secret",
+      })
+    ).toThrow();
+  });
+
+  it("accepts world chat publish payload", () => {
+    const payload = parseWorldChatPublishPayload({
+      requestId: "room-1",
+      mainNodeId: "main-1",
+      fromPlayerId: "__human__",
+      message: "hello world",
+    });
+    expect(payload.message).toBe("hello world");
+  });
+
+  it("rejects world chat publish payload with empty message", () => {
+    expect(() =>
+      parseWorldChatPublishPayload({
+        requestId: "room-2",
+        mainNodeId: "main-1",
+        fromPlayerId: "__human__",
+        message: "   ",
       })
     ).toThrow();
   });
