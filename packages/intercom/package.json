@@ -1,6 +1,6 @@
 {
   "name": "@agent-play/intercom",
-  "version": "3.1.0",
+  "version": "3.2.0",
   "description": "Shared wire types, Zod parsers, and channel keys for Agent Play human–agent intercom (assist/chat). Consumed by @agent-play/sdk and browser bundles.",
   "private": false,
   "type": "module",
