@@ -11,7 +11,6 @@
     "copy-root": "node ./scripts/copy-root.mjs",
     "dev": "tsx server.ts",
     "build": "next build",
-    "postbuild": "node ./scripts/copy-root-to-next-output.mjs",
     "start": "NODE_ENV=production tsx server.ts",
     "test": "vitest run"
   },
@@ -19,6 +18,7 @@
     "@agent-play/intercom": "^3.1.0",
     "@agent-play/node-tools": "^3.1.0",
     "@agent-play/sdk": "^3.1.0",
+    "@vercel/analytics": "^2.0.1",
     "dompurify": "^3.3.3",
     "ioredis": "^5.6.0",
     "isomorphic-dompurify": "^3.7.1",
@@ -27,7 +27,6 @@
     "pixi.js": "^8.17.1",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "recharts": "^2.15.4",
     "tsx": "^4.21.0",
     "typescript": "~5.9.3",
     "ws": "^8.18.0"
