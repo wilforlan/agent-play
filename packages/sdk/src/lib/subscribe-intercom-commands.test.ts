@@ -115,7 +115,13 @@ describe("subscribeIntercomCommands", () => {
         data: JSON.stringify(forwardedEnvelope),
       },
     ];
-    const executeTool = vi.fn(() => ({ mode: "chat", message: "hello" }));
+    const executeTool = vi.fn(
+      (input: { toolName: string; args: Record<string, unknown> }) => ({
+        mode: "chat",
+        message: "hello",
+        toolName: input.toolName,
+      })
+    );
     const fetchMock = vi.fn(async (url: string | URL, init?: RequestInit) => {
       const u = String(url);
       if (u.endsWith("/api/agent-play/session")) {
@@ -137,7 +143,8 @@ describe("subscribeIntercomCommands", () => {
     await vi.waitFor(() => {
       expect(executeTool).toHaveBeenCalledTimes(1);
     });
-    expect(executeTool.mock.calls[0]?.[0]).toEqual({
+    const firstCall = executeTool.mock.calls.at(0);
+    expect(firstCall?.[0]).toEqual({
       toolName: "chat_tool",
       args: { text: "hello" },
     });
@@ -258,6 +265,231 @@ describe("subscribeIntercomCommands", () => {
     await vi.waitFor(() => {
       expect(executeTool).toHaveBeenCalledTimes(1);
     });
+    await world.close();
+  });
+
+  it("passes through long-running assist-style media result payloads", async () => {
+    const agentId = "agent-media";
+    intercomSseMessages.items = [
+      {
+        event: WORLD_INTERCOM_EVENT,
+        data: JSON.stringify({
+          requestId: "r-media",
+          mainNodeId: "m1",
+          toPlayerId: "m1",
+          fromPlayerId: agentId,
+          kind: "assist",
+          status: "forwarded",
+          channelKey: "intercom:human:m1:agent:agent-media",
+          command: {
+            requestId: "r-media",
+            mainNodeId: "m1",
+            fromPlayerId: "m1",
+            toPlayerId: agentId,
+            kind: "assist",
+            toolName: "assist_pipeline_review",
+            args: {},
+          },
+          ts: "2026-01-01T00:00:00.000Z",
+        }),
+      },
+    ];
+    const executeTool = vi.fn(() => ({
+      messageKind: "media",
+      media: {
+        mediaType: "image",
+        url: "https://example.com/image.png",
+      },
+    }));
+    const fetchMock = vi.fn(async (url: string | URL, init?: RequestInit) => {
+      const u = String(url);
+      if (u.endsWith("/api/agent-play/session")) {
+        return sessionResponse();
+      }
+      if (u.includes("/api/agent-play/sdk/rpc") && init?.method === "POST") {
+        return new Response(JSON.stringify({ ok: true }), { status: 200 });
+      }
+      return new Response("not found", { status: 404 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const world = playWorld();
+    await world.connect();
+    world.subscribeIntercomCommands({
+      playerId: agentId,
+      executeTool,
+    });
+    await vi.waitFor(() => {
+      expect(executeTool).toHaveBeenCalledTimes(1);
+    });
+    const bodyStr = fetchMock.mock.calls.find((c) =>
+      String(c[0]).includes("/sdk/rpc")
+    )?.[1]?.body;
+    expect(typeof bodyStr).toBe("string");
+    const body = JSON.parse(String(bodyStr)) as {
+      payload?: { result?: { messageKind?: string; media?: { url?: string } } };
+    };
+    expect(body.payload?.result?.messageKind).toBe("media");
+    expect(body.payload?.result?.media?.url).toBe("https://example.com/image.png");
+    await world.close();
+  });
+
+  it("routes forwarded audio command payload to executeTool as chat_tool args", async () => {
+    const agentId = "agent-audio";
+    intercomSseMessages.items = [
+      {
+        event: WORLD_INTERCOM_EVENT,
+        data: JSON.stringify({
+          requestId: "r-audio",
+          mainNodeId: "m1",
+          toPlayerId: "m1",
+          fromPlayerId: agentId,
+          kind: "audio",
+          status: "forwarded",
+          channelKey: "intercom:human:m1:agent:agent-audio",
+          command: {
+            requestId: "r-audio",
+            mainNodeId: "m1",
+            fromPlayerId: "m1",
+            toPlayerId: agentId,
+            kind: "audio",
+            audio: {
+              encoding: "webm",
+              dataBase64: "Zm9v",
+              durationMs: 1000,
+            },
+          },
+          ts: "2026-01-01T00:00:00.000Z",
+        }),
+      },
+    ];
+    const executeTool = vi.fn(() => ({ message: "transcribed" }));
+    const fetchMock = vi.fn(async (url: string | URL, init?: RequestInit) => {
+      const u = String(url);
+      if (u.endsWith("/api/agent-play/session")) {
+        return sessionResponse();
+      }
+      if (u.includes("/api/agent-play/sdk/rpc") && init?.method === "POST") {
+        return new Response(JSON.stringify({ ok: true }), { status: 200 });
+      }
+      return new Response("not found", { status: 404 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const world = playWorld();
+    await world.connect();
+    world.subscribeIntercomCommands({
+      playerId: agentId,
+      executeTool,
+    });
+    await vi.waitFor(() => {
+      expect(executeTool).toHaveBeenCalledTimes(1);
+    });
+    expect(executeTool).toHaveBeenCalledWith({
+      toolName: "chat_tool",
+      args: {
+        audio: {
+          encoding: "webm",
+          dataBase64: "Zm9v",
+          durationMs: 1000,
+        },
+      },
+    });
+    await world.close();
+  });
+
+  it("invokes registered audio listener and allows playAudio response", async () => {
+    intercomSseMessages.items = [
+      {
+        event: WORLD_INTERCOM_EVENT,
+        data: JSON.stringify({
+          requestId: "r-audio-listener",
+          mainNodeId: "m1",
+          toPlayerId: "m1",
+          fromPlayerId: "agent-listener",
+          kind: "audio",
+          status: "forwarded",
+          channelKey: "intercom:human:m1:agent:agent-listener",
+          command: {
+            requestId: "r-audio-listener",
+            mainNodeId: "m1",
+            fromPlayerId: "m1",
+            toPlayerId: "p-listener",
+            kind: "audio",
+            audio: {
+              encoding: "webm",
+              dataBase64: "Zm9v",
+              durationMs: 1200,
+            },
+          },
+          ts: "2026-01-01T00:00:00.000Z",
+        }),
+      },
+    ];
+    const executeTool = vi.fn(() => ({ message: "unused" }));
+    const fetchMock = vi.fn(async (url: string | URL, init?: RequestInit) => {
+      const u = String(url);
+      if (u.endsWith("/api/agent-play/session")) {
+        return sessionResponse();
+      }
+      if (u.endsWith("/api/nodes/validate") && init?.method === "POST") {
+        return new Response(JSON.stringify({ ok: true, nodeKind: "agent" }), {
+          status: 200,
+        });
+      }
+      if (u.includes("/api/agent-play/players") && init?.method === "POST") {
+        return new Response(
+          JSON.stringify({
+            playerId: "p-listener",
+            previewUrl: `${BASE_URL}/agent-play/watch`,
+            registeredAgent: {
+              agentId: "agent-listener",
+              name: "listener",
+              toolNames: ["chat_tool"],
+              zoneCount: 0,
+              yieldCount: 0,
+              flagged: false,
+            },
+          }),
+          { status: 200 }
+        );
+      }
+      if (u.includes("/api/agent-play/sdk/rpc") && init?.method === "POST") {
+        return new Response(JSON.stringify({ ok: true }), { status: 200 });
+      }
+      return new Response("not found", { status: 404 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const world = playWorld();
+    await world.connect();
+    const registered = await world.addAgent({
+      name: "listener",
+      type: "langchain",
+      agent: { type: "langchain", toolNames: ["chat_tool"] },
+      nodeId: "agent-listener",
+    });
+    const onAudio = vi.fn(async (event) => {
+      await event.playAudio.sendAudioBase64({
+        encoding: "mp3",
+        dataBase64: "YmFy",
+        message: "agent audio response",
+      });
+    });
+    registered.on("audio", onAudio);
+
+    world.subscribeIntercomCommands({
+      playerId: registered.id,
+      executeTool,
+    });
+    await vi.waitFor(() => {
+      expect(onAudio).toHaveBeenCalledTimes(1);
+    });
+    expect(executeTool).not.toHaveBeenCalled();
+    const rpcBodies = fetchMock.mock.calls
+      .filter((c) => String(c[0]).includes("/api/agent-play/sdk/rpc"))
+      .map((c) => JSON.parse(String(c[1]?.body)) as { payload?: { result?: unknown } });
+    expect(rpcBodies.some((body) => body.payload?.result !== undefined)).toBe(true);
     await world.close();
   });
 });

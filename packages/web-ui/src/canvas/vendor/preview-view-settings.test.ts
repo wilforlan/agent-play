@@ -16,15 +16,17 @@ describe("setPreviewViewSettings", () => {
     expect(getPreviewViewSettings().themeId).toBe("tokyo");
   });
 
-  it("toggles showChatUi, debugMode, and joystickEnabled", () => {
+  it("toggles showChatUi, debugMode, joystickEnabled, and p2aEnabled", () => {
     setPreviewViewSettings({
       showChatUi: false,
       debugMode: true,
       joystickEnabled: true,
+      p2aEnabled: true,
     });
     const s = getPreviewViewSettings();
     expect(s.showChatUi).toBe(false);
     expect(s.debugMode).toBe(true);
     expect(s.joystickEnabled).toBe(true);
+    expect(s.p2aEnabled).toBe(true);
   });
 });

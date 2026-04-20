@@ -7,6 +7,17 @@ export type ChatLine = {
   playerName: string;
   role: string;
   text: string;
+  messageKind: "text" | "audio" | "media";
+  audio?: {
+    encoding?: string;
+    dataBase64?: string;
+    durationMs?: number;
+  };
+  media?: {
+    mediaType?: string;
+    url: string;
+    title?: string;
+  };
   seq: number;
 };
 
@@ -40,6 +51,7 @@ export function resetChatLogFromSnapshot(snapshot: {
         playerName: o.name,
         role: e.role,
         text: t.slice(0, CHAT_MAX_TEXT_PER_MESSAGE),
+        messageKind: "text",
         seq: e.seq ?? 0,
       });
     }
@@ -60,6 +72,17 @@ export function appendChatLogLine(input: {
   playerName: string;
   role: string;
   text: string;
+  messageKind?: "text" | "audio" | "media";
+  audio?: {
+    encoding?: string;
+    dataBase64?: string;
+    durationMs?: number;
+  };
+  media?: {
+    mediaType?: string;
+    url: string;
+    title?: string;
+  };
   seq?: number;
 }): void {
   const t = input.text.trim();
@@ -74,6 +97,9 @@ export function appendChatLogLine(input: {
     playerName: input.playerName,
     role: input.role,
     text: t.slice(0, CHAT_MAX_TEXT_PER_MESSAGE),
+    messageKind: input.messageKind ?? "text",
+    audio: input.audio,
+    media: input.media,
     seq,
   });
   while (lines.length > CHAT_MAX_MESSAGES) lines.shift();

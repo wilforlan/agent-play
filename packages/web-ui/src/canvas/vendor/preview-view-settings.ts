@@ -16,6 +16,7 @@ export type PreviewViewSettings = {
   showChatUi: boolean;
   debugMode: boolean;
   joystickEnabled: boolean;
+  p2aEnabled: boolean;
   profileAvatarPresetId: ProfileAvatarPresetId;
   profileGender: ProfileGender;
 };
@@ -50,6 +51,7 @@ export function getDefaultViewSettings(): PreviewViewSettings {
     showChatUi: true,
     debugMode: defaultDebugModeForHost(),
     joystickEnabled: true,
+    p2aEnabled: false,
     profileAvatarPresetId: "default",
     profileGender: "unspecified",
   };
@@ -77,6 +79,9 @@ function parseStored(raw: string | null): Partial<PreviewViewSettings> | null {
     }
     if (typeof o.joystickEnabled === "boolean") {
       out.joystickEnabled = o.joystickEnabled;
+    }
+    if (typeof o.p2aEnabled === "boolean") {
+      out.p2aEnabled = o.p2aEnabled;
     }
     if (
       typeof o.profileAvatarPresetId === "string" &&
@@ -110,6 +115,7 @@ function sanitize(s: PreviewViewSettings): PreviewViewSettings {
     showChatUi: s.showChatUi,
     debugMode: s.debugMode,
     joystickEnabled: s.joystickEnabled,
+    p2aEnabled: s.p2aEnabled,
     profileAvatarPresetId,
     profileGender,
   };

@@ -134,12 +134,38 @@ export type RegisteredAgentSummary = {
   flagged: boolean;
 };
 
+export type PlayAudio = {
+  sendAudioBase64: (options: {
+    encoding: string;
+    dataBase64: string;
+    durationMs?: number;
+    message?: string;
+  }) => Promise<void>;
+};
+
+export type AgentAudioEvent = {
+  requestId: string;
+  mainNodeId: string;
+  fromPlayerId: string;
+  toPlayerId: string;
+  audio: {
+    encoding: string;
+    dataBase64: string;
+    durationMs?: number;
+  };
+  playAudio: PlayAudio;
+};
+
 /** Result of `addAgent` / `addPlayer` including watch URL and registered-agent metadata from the server. */
 export type RegisteredPlayer = PlayAgentInformation & {
   previewUrl: string;
   registeredAgent: RegisteredAgentSummary;
   connectionId?: string;
   leaseTtlSeconds?: number;
+  on: (
+    eventName: "audio",
+    listener: (event: AgentAudioEvent) => void | Promise<void>
+  ) => () => void;
 };
 
 /** First step of a journey: user message origin. */

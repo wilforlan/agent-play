@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  normalizeIntercomResult,
   parseCreateHumanNodePayload,
   parseIntercomCommandPayload,
   parseIntercomResponsePayload,
@@ -16,9 +17,30 @@ describe("intercom contracts", () => {
       toPlayerId: "agent-1",
       kind: "chat",
       text: "hello",
+      intercomAddress: "intercom-address://intercom:human:main-1:agent:agent-1",
     });
     expect(payload.kind).toBe("chat");
     expect(payload.toPlayerId).toBe("agent-1");
+    expect(payload.intercomAddress).toBe(
+      "intercom-address://intercom:human:main-1:agent:agent-1"
+    );
+  });
+
+  it("accepts audio intercomCommand payload", () => {
+    const payload = parseIntercomCommandPayload({
+      requestId: "req-audio",
+      mainNodeId: "main-1",
+      fromPlayerId: "__human__",
+      toPlayerId: "agent-1",
+      kind: "audio",
+      audio: {
+        encoding: "webm",
+        dataBase64: "Zm9v",
+        durationMs: 1500,
+      },
+    });
+    expect(payload.kind).toBe("audio");
+    expect(payload.audio?.encoding).toBe("webm");
   });
 
   it("rejects command payload when identifiers are empty", () => {
@@ -46,8 +68,12 @@ describe("intercom contracts", () => {
       ts: new Date().toISOString(),
       toolName: "assist_build_budget",
       result: { ok: true },
+      intercomAddress: "intercom-address://intercom:human:main-1:agent:agent-1",
     });
     expect(payload.status).toBe("completed");
+    expect(payload.intercomAddress).toBe(
+      "intercom-address://intercom:human:main-1:agent:agent-1"
+    );
   });
 
   it("accepts forwarded event with command echo", () => {
@@ -139,5 +165,26 @@ describe("intercom contracts", () => {
         message: "   ",
       })
     ).toThrow();
+  });
+
+  it("normalizes intercom text result with messageKind=text", () => {
+    const normalized = normalizeIntercomResult({
+      message: "hello",
+    });
+    expect(normalized.messageKind).toBe("text");
+    expect(normalized.message).toBe("hello");
+  });
+
+  it("preserves audio payload and marks messageKind=audio", () => {
+    const normalized = normalizeIntercomResult({
+      result: {
+        audio: {
+          encoding: "mp3",
+          dataBase64: "Zm9v",
+        },
+      },
+    });
+    expect(normalized.messageKind).toBe("audio");
+    expect(normalized.audio).toBeDefined();
   });
 });

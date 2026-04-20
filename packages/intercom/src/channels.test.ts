@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   agentStableKeyFromToPlayerId,
+  buildIntercomAddress,
   buildIntercomChannelKey,
   encodeHumanStableKeyForIntercom,
+  parseIntercomAddress,
 } from "./channels.js";
 
 describe("intercom channel keys", () => {
@@ -35,5 +37,21 @@ describe("intercom channel keys", () => {
   it("prefixes bare agent id with agent:", () => {
     expect(agentStableKeyFromToPlayerId("ag-1")).toBe("agent:ag-1");
     expect(agentStableKeyFromToPlayerId("agent:ag-1")).toBe("agent:ag-1");
+  });
+
+  it("builds intercom-address URI from channel key", () => {
+    expect(buildIntercomAddress("intercom:human:m1:agent:a1")).toBe(
+      "intercom-address://intercom:human:m1:agent:a1"
+    );
+  });
+
+  it("parses intercom-address URI to channel key", () => {
+    expect(
+      parseIntercomAddress("intercom-address://intercom:human:m1:agent:a1")
+    ).toBe("intercom:human:m1:agent:a1");
+  });
+
+  it("throws for invalid intercom-address format", () => {
+    expect(() => parseIntercomAddress("intercom:human:m1:agent:a1")).toThrow();
   });
 });

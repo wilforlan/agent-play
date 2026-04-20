@@ -1,8 +1,10 @@
 import type { IntercomCommandPayload } from "./shared-intercom.js";
 import {
   agentStableKeyFromToPlayerId,
+  buildIntercomAddress,
   buildIntercomChannelKey,
   openOrReuseIntercomChannel,
+  parseIntercomAddress,
 } from "./shared-intercom.js";
 
 type PlayWorldLike = {
@@ -16,14 +18,20 @@ type PlayWorldLike = {
 export async function executeAgentCapability(options: {
   world: PlayWorldLike;
   payload: IntercomCommandPayload;
-}): Promise<{ channelKey: string }> {
+}): Promise<{ channelKey: string; intercomAddress: string }> {
   const { world, payload } = options;
   const agentStableKey = agentStableKeyFromToPlayerId(payload.toPlayerId);
   const channelKey = buildIntercomChannelKey({
     humanNodeId: payload.mainNodeId,
     agentStableKey,
   });
-  openOrReuseIntercomChannel(channelKey);
+  const resolvedChannelKey =
+    payload.intercomAddress === undefined
+      ? channelKey
+      : parseIntercomAddress(payload.intercomAddress);
+  const intercomAddress =
+    payload.intercomAddress ?? buildIntercomAddress(resolvedChannelKey);
+  openOrReuseIntercomChannel(resolvedChannelKey);
 
   if (payload.kind === "assist") {
     await world.recordInteraction({
@@ -33,6 +41,12 @@ export async function executeAgentCapability(options: {
         payload.args ?? {}
       )})`,
     });
+  } else if (payload.kind === "audio") {
+    await world.recordInteraction({
+      playerId: payload.toPlayerId,
+      role: "user",
+      text: `[audio] ${payload.audio?.encoding ?? "unknown"} (${payload.audio?.durationMs ?? 0}ms)`,
+    });
   } else {
     await world.recordInteraction({
       playerId: payload.toPlayerId,
@@ -40,5 +54,5 @@ export async function executeAgentCapability(options: {
       text: payload.text ?? "",
     });
   }
-  return { channelKey };
+  return { channelKey: resolvedChannelKey, intercomAddress };
 }

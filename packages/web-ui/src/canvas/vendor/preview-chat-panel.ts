@@ -156,7 +156,33 @@ export function createChatBubbleElement(line: ChatLine): HTMLElement {
   meta.textContent = `${line.playerName} · ${line.role}`;
   const body = document.createElement("div");
   body.className = "preview-chat-body";
-  body.innerHTML = renderChatMarkdown(line.text);
+  if (line.messageKind === "audio") {
+    const text = document.createElement("div");
+    text.textContent = line.text;
+    const audio = document.createElement("audio");
+    audio.controls = true;
+    const sourceData = line.audio?.dataBase64;
+    if (typeof sourceData === "string" && sourceData.length > 0) {
+      const encoding = line.audio?.encoding ?? "mp3";
+      audio.src = `data:audio/${encoding};base64,${sourceData}`;
+    }
+    body.append(text, audio);
+  } else if (line.messageKind === "media") {
+    const text = document.createElement("div");
+    text.textContent = line.text;
+    body.append(text);
+    const url = line.media?.url;
+    if (typeof url === "string" && url.length > 0) {
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.target = "_blank";
+      anchor.rel = "noreferrer";
+      anchor.textContent = line.media?.title ?? url;
+      body.append(anchor);
+    }
+  } else {
+    body.innerHTML = renderChatMarkdown(line.text);
+  }
   row.append(meta, body);
   return row;
 }

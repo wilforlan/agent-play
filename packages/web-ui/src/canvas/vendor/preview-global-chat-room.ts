@@ -3,6 +3,8 @@ const INITIAL_PAGE_SIZE = 100;
 const MAX_GLOBAL_LINES = 5000;
 const WORLD_CHAT_PUBLISH_OP = "worldChatPublish";
 const WORLD_CHAT_HISTORY_OP = "worldChatHistory";
+const P2A_HELP_PATH = "/agent-play-p2a-implementation";
+const INTERCOM_ADDRESS_PREFIX = "intercom-address://";
 
 export type GlobalChatLine = {
   seq: number;
@@ -10,6 +12,17 @@ export type GlobalChatLine = {
   fromPlayerId: string;
   senderName: string;
   message: string;
+  messageKind: "text" | "audio" | "media";
+  audio?: {
+    encoding?: string;
+    dataBase64?: string;
+    durationMs?: number;
+  };
+  media?: {
+    mediaType?: string;
+    url: string;
+    title?: string;
+  };
   ts: string;
 };
 
@@ -75,6 +88,71 @@ function ensureStyles(): void {
   color: #fde68a;
   font-family: "Press Start 2P", ui-monospace, monospace;
 }
+.preview-global-chat-room__title-tools {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.preview-global-chat-room__p2a-toggle-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  color: #dbeafe;
+  font-family: ui-sans-serif, system-ui, sans-serif;
+}
+.preview-global-chat-room__p2a-toggle {
+  margin: 0;
+}
+.preview-global-chat-room__help-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 999px;
+  border: 1px solid rgba(147, 197, 253, 0.65);
+  color: #dbeafe;
+  text-decoration: none;
+  font-size: 10px;
+  line-height: 1;
+}
+.preview-global-chat-room__p2a-panel {
+  display: grid;
+  gap: 6px;
+  border: 1px solid rgba(56, 189, 248, 0.35);
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.72);
+  padding: 8px;
+}
+.preview-global-chat-room__p2a-copy {
+  font-size: 11px;
+  color: #bfdbfe;
+}
+.preview-global-chat-room__address-row {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 6px;
+}
+.preview-global-chat-room__address-input {
+  border-radius: 6px;
+  border: 1px solid rgba(125, 211, 252, 0.4);
+  background: rgba(15, 23, 42, 0.9);
+  color: #e2e8f0;
+  font-size: 11px;
+  padding: 6px;
+}
+.preview-global-chat-room__address-copy,
+.preview-global-chat-room__address-share {
+  border-radius: 6px;
+  border: 1px solid rgba(147, 197, 253, 0.65);
+  background: rgba(30, 64, 175, 0.48);
+  color: #eff6ff;
+  font-size: 10px;
+  font-family: "Press Start 2P", ui-monospace, monospace;
+  padding: 6px 8px;
+  cursor: pointer;
+}
 .preview-global-chat-room__list {
   flex: 1 1 auto;
   min-height: 0;
@@ -139,6 +217,14 @@ function trimToNonEmpty(value: string): string {
   return value.trim();
 }
 
+function isValidIntercomAddress(value: string | null): value is string {
+  if (value === null) return false;
+  const trimmed = value.trim();
+  if (!trimmed.startsWith(INTERCOM_ADDRESS_PREFIX)) return false;
+  const channelKey = trimmed.slice(INTERCOM_ADDRESS_PREFIX.length).trim();
+  return channelKey.length > 0;
+}
+
 function toTimestampLabel(ts: string): string {
   const date = new Date(ts);
   return Number.isNaN(date.valueOf()) ? ts : date.toLocaleTimeString();
@@ -149,6 +235,10 @@ export function createPreviewGlobalChatRoom(options: {
   getSid: () => string | null;
   getMainNodeId: () => string | null;
   resolveSenderName: (fromPlayerId: string) => string;
+  getP2aEnabled: () => boolean;
+  setP2aEnabled: (enabled: boolean) => void;
+  getIntercomAddress: () => string | null;
+  ensureIntercomAddress: () => string | null;
 }): {
   element: HTMLElement;
   appendFromIntercomEvent: (input: {
@@ -156,10 +246,22 @@ export function createPreviewGlobalChatRoom(options: {
     requestId: string;
     fromPlayerId: string;
     message?: string;
+    messageKind?: "text" | "audio" | "media";
+    audio?: {
+      encoding?: string;
+      dataBase64?: string;
+      durationMs?: number;
+    };
+    media?: {
+      mediaType?: string;
+      url: string;
+      title?: string;
+    };
     ts: string;
     totalCount?: number;
   }) => void;
   getLines: () => readonly GlobalChatLine[];
+  refreshP2a: () => void;
 } {
   ensureStyles();
   const root = document.createElement("section");
@@ -172,7 +274,49 @@ export function createPreviewGlobalChatRoom(options: {
   const count = document.createElement("span");
   count.className = "preview-global-chat-room__count";
   count.textContent = "0";
-  titleRow.append(title, count);
+  const titleTools = document.createElement("div");
+  titleTools.className = "preview-global-chat-room__title-tools";
+  const p2aWrap = document.createElement("label");
+  p2aWrap.className = "preview-global-chat-room__p2a-toggle-wrap";
+  p2aWrap.title = "enable P2A audio communication";
+  const p2aToggle = document.createElement("input");
+  p2aToggle.type = "checkbox";
+  p2aToggle.className = "preview-global-chat-room__p2a-toggle";
+  p2aToggle.checked = options.getP2aEnabled();
+  const p2aText = document.createElement("span");
+  p2aText.textContent = "P2A";
+  p2aWrap.append(p2aToggle, p2aText);
+  const helpLink = document.createElement("a");
+  helpLink.className = "preview-global-chat-room__help-link";
+  helpLink.href = P2A_HELP_PATH;
+  helpLink.target = "_blank";
+  helpLink.rel = "noreferrer";
+  helpLink.textContent = "?";
+  helpLink.setAttribute("aria-label", "P2A help");
+  titleTools.append(count, p2aWrap, helpLink);
+  titleRow.append(title, titleTools);
+  const p2aPanel = document.createElement("div");
+  p2aPanel.className = "preview-global-chat-room__p2a-panel";
+  p2aPanel.hidden = true;
+  const p2aCopy = document.createElement("div");
+  p2aCopy.className = "preview-global-chat-room__p2a-copy";
+  p2aCopy.textContent =
+    "Share this intercom-address for peer connection and conferencing.";
+  const addressRow = document.createElement("div");
+  addressRow.className = "preview-global-chat-room__address-row";
+  const addressInput = document.createElement("input");
+  addressInput.className = "preview-global-chat-room__address-input";
+  addressInput.readOnly = true;
+  const addressCopy = document.createElement("button");
+  addressCopy.type = "button";
+  addressCopy.className = "preview-global-chat-room__address-copy";
+  addressCopy.textContent = "Copy";
+  const addressShare = document.createElement("button");
+  addressShare.type = "button";
+  addressShare.className = "preview-global-chat-room__address-share";
+  addressShare.textContent = "Share";
+  addressRow.append(addressInput, addressCopy, addressShare);
+  p2aPanel.append(p2aCopy, addressRow);
   const list = document.createElement("div");
   list.className = "preview-global-chat-room__list";
   const composer = document.createElement("div");
@@ -185,7 +329,7 @@ export function createPreviewGlobalChatRoom(options: {
   send.className = "preview-global-chat-room__send";
   send.textContent = "Send";
   composer.append(input, send);
-  root.append(titleRow, list, composer);
+  root.append(titleRow, p2aPanel, list, composer);
 
   let lines: GlobalChatLine[] = [];
   let knownRequestIds = new Set<string>();
@@ -196,6 +340,22 @@ export function createPreviewGlobalChatRoom(options: {
 
   const renderCount = (): void => {
     count.textContent = formatCompactCount(totalCount);
+  };
+
+  const renderP2aPanel = (): void => {
+    const enabled = options.getP2aEnabled();
+    p2aToggle.checked = enabled;
+    p2aPanel.hidden = !enabled;
+    p2aPanel.style.display = enabled ? "grid" : "none";
+    const existingAddress = options.getIntercomAddress();
+    const address =
+      enabled && !isValidIntercomAddress(existingAddress)
+        ? options.ensureIntercomAddress()
+        : existingAddress;
+    addressInput.value = address ?? "";
+    const validAddress = isValidIntercomAddress(address);
+    addressCopy.disabled = !enabled || !validAddress;
+    addressShare.disabled = !enabled || !validAddress;
   };
 
   const lineElement = (line: GlobalChatLine): HTMLElement => {
@@ -210,7 +370,34 @@ export function createPreviewGlobalChatRoom(options: {
     meta.textContent = `${line.senderName} · ${toTimestampLabel(line.ts)}`;
     const body = document.createElement("div");
     body.className = "preview-global-chat-room__message";
-    body.textContent = line.message;
+    if (line.messageKind === "audio") {
+      const text = document.createElement("div");
+      text.textContent = line.message;
+      body.append(text);
+      const audio = document.createElement("audio");
+      audio.controls = true;
+      const sourceData = line.audio?.dataBase64;
+      if (typeof sourceData === "string" && sourceData.length > 0) {
+        const encoding = line.audio?.encoding ?? "mp3";
+        audio.src = `data:audio/${encoding};base64,${sourceData}`;
+      }
+      body.append(audio);
+    } else if (line.messageKind === "media") {
+      const text = document.createElement("div");
+      text.textContent = line.message;
+      body.append(text);
+      const url = line.media?.url;
+      if (typeof url === "string" && url.length > 0) {
+        const anchor = document.createElement("a");
+        anchor.href = url;
+        anchor.target = "_blank";
+        anchor.rel = "noreferrer";
+        anchor.textContent = line.media?.title ?? url;
+        body.append(anchor);
+      }
+    } else {
+      body.textContent = line.message;
+    }
     row.append(meta, body);
     return row;
   };
@@ -219,6 +406,7 @@ export function createPreviewGlobalChatRoom(options: {
     list.replaceChildren(...lines.map(lineElement));
     list.scrollTop = list.scrollHeight;
     renderCount();
+    renderP2aPanel();
   };
 
   const updateKnownIds = (): void => {
@@ -226,6 +414,9 @@ export function createPreviewGlobalChatRoom(options: {
   };
 
   const appendSingleLine = (line: GlobalChatLine): void => {
+    if (line.messageKind === "text" && trimToNonEmpty(line.message).length === 0) {
+      return;
+    }
     if (knownRequestIds.has(line.requestId)) return;
     lines = [...lines, line];
     knownRequestIds.add(line.requestId);
@@ -249,6 +440,7 @@ export function createPreviewGlobalChatRoom(options: {
         fromPlayerId: row.fromPlayerId,
         senderName: options.resolveSenderName(row.fromPlayerId),
         message: row.message,
+        messageKind: "text" as const,
         ts: row.ts,
       }))
       .sort((a, b) => a.seq - b.seq);
@@ -328,6 +520,7 @@ export function createPreviewGlobalChatRoom(options: {
       fromPlayerId: mainNodeId,
       senderName: options.resolveSenderName(mainNodeId),
       message,
+      messageKind: "text",
       ts: new Date().toISOString(),
     });
     totalCount = Math.max(totalCount + 1, lines.length);
@@ -356,6 +549,27 @@ export function createPreviewGlobalChatRoom(options: {
   send.addEventListener("click", () => {
     void sendMessage();
   });
+  p2aToggle.addEventListener("change", () => {
+    options.setP2aEnabled(p2aToggle.checked);
+    if (p2aToggle.checked) {
+      options.ensureIntercomAddress();
+    }
+    renderP2aPanel();
+  });
+  addressCopy.addEventListener("click", () => {
+    const address = options.getIntercomAddress();
+    if (address === null) return;
+    void navigator.clipboard?.writeText(address);
+  });
+  addressShare.addEventListener("click", () => {
+    const address = options.getIntercomAddress();
+    if (address === null) return;
+    if (typeof navigator.share === "function") {
+      void navigator.share({ text: address });
+      return;
+    }
+    void navigator.clipboard?.writeText(address);
+  });
   input.addEventListener("keydown", (event) => {
     if (event.key === "Enter") {
       event.preventDefault();
@@ -364,12 +578,20 @@ export function createPreviewGlobalChatRoom(options: {
   });
 
   void loadInitialHistory();
+  renderP2aPanel();
 
   return {
     element: root,
     appendFromIntercomEvent: (event) => {
+      const messageKind = event.messageKind ?? "text";
       const message = trimToNonEmpty(event.message ?? "");
-      if (message.length === 0) return;
+      const fallbackMessage =
+        messageKind === "media" && event.media !== undefined
+          ? `Media: ${event.media.url}`
+          : messageKind === "audio"
+            ? "Audio message received."
+            : message;
+      if (messageKind === "text" && fallbackMessage.length === 0) return;
       if (typeof event.totalCount === "number" && event.totalCount >= 0) {
         totalCount = event.totalCount;
       }
@@ -378,11 +600,17 @@ export function createPreviewGlobalChatRoom(options: {
         requestId: event.requestId,
         fromPlayerId: event.fromPlayerId,
         senderName: options.resolveSenderName(event.fromPlayerId),
-        message,
+        message: fallbackMessage,
+        messageKind,
+        audio: event.audio,
+        media: event.media,
         ts: event.ts,
       });
       renderCount();
     },
     getLines: () => lines,
+    refreshP2a: () => {
+      renderP2aPanel();
+    },
   };
 }

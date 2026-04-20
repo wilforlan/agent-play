@@ -32,7 +32,10 @@ export async function dispatchIntercomCommand(options: {
     },
   });
   try {
-    const { channelKey } = await executeAgentCapability({ world, payload });
+    const { channelKey, intercomAddress } = await executeAgentCapability({
+      world,
+      payload,
+    });
     await publishWorldIntercomEvent({
       store,
       payload: {
@@ -44,6 +47,7 @@ export async function dispatchIntercomCommand(options: {
         status: "forwarded",
         toolName: payload.toolName,
         channelKey,
+        intercomAddress,
         command: payload,
         ts: new Date().toISOString(),
       },

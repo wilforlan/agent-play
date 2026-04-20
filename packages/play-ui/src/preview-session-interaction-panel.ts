@@ -21,7 +21,7 @@ import {
 
 const STYLE_ID = "agent-play-preview-session-interaction-styles";
 
-type Mode = "assist" | "chat";
+type Mode = "assist" | "chat" | "push_to_talk";
 
 export type SessionInteractionAgent = {
   agentId: string;
@@ -104,6 +104,72 @@ function ensureStyles(): void {
 .preview-session-interaction__mode-btn[data-active="1"] {
   border-color: rgba(96, 165, 250, 0.65);
   background: rgba(30, 58, 138, 0.48);
+}
+.preview-session-interaction__audio-tools { display: grid; gap: 8px; margin-top: 8px; }
+.preview-session-interaction__audio-buttons { display: flex; flex-wrap: wrap; gap: 6px; }
+.preview-session-interaction__audio-btn {
+  border: 1px solid rgba(96, 165, 250, 0.55);
+  background: rgba(30, 41, 59, 0.95);
+  color: #dbeafe;
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 11px;
+  cursor: pointer;
+}
+.preview-session-interaction__audio-stop-btn {
+  border-color: rgba(248, 113, 113, 0.8);
+  background: rgba(153, 27, 27, 0.88);
+  color: #fee2e2;
+}
+.preview-session-interaction__audio-state {
+  font-size: 11px;
+  color: #bfdbfe;
+}
+.preview-session-interaction__audio-bar {
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.72);
+  min-height: 42px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+}
+.preview-session-interaction__audio-wave {
+  flex: 1 1 auto;
+  height: 18px;
+  border-radius: 999px;
+  background: linear-gradient(
+    90deg,
+    rgba(96, 165, 250, 0.2) 0%,
+    rgba(96, 165, 250, 0.9) 20%,
+    rgba(96, 165, 250, 0.2) 40%,
+    rgba(96, 165, 250, 0.9) 60%,
+    rgba(96, 165, 250, 0.2) 80%,
+    rgba(96, 165, 250, 0.9) 100%
+  );
+  background-size: 220% 100%;
+  animation: preview-session-interaction-wave 1.2s linear infinite;
+}
+@keyframes preview-session-interaction-wave {
+  0% { background-position: 0% 0%; }
+  100% { background-position: 220% 0%; }
+}
+.preview-session-interaction__audio-post-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.preview-session-interaction__audio-transcript {
+  font-size: 12px;
+  line-height: 1.35;
+  color: #e2e8f0;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.72);
+  padding: 8px;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 .preview-session-interaction__assist-tools { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
 .preview-session-interaction__assist-tool-btn {
@@ -475,11 +541,101 @@ function formatIntercomResultText(payload: WorldIntercomEventPayload): string {
   return payload.status;
 }
 
+type IntercomContent = {
+  messageKind: "text" | "audio" | "media";
+  text: string;
+  audio?: {
+    encoding?: string;
+    dataBase64?: string;
+    durationMs?: number;
+  };
+  media?: {
+    mediaType?: string;
+    url: string;
+    title?: string;
+  };
+};
+
+function readIntercomContent(payload: WorldIntercomEventPayload): IntercomContent {
+  const baseText = formatIntercomResultText(payload);
+  const result = payload.result;
+  if (result === undefined) {
+    return { messageKind: "text", text: baseText };
+  }
+  const kind = result.messageKind;
+  if (kind === "audio") {
+    const audio = result.audio;
+    const parsedAudio =
+      typeof audio === "object" && audio !== null
+        ? (() => {
+            const audioObj = audio as Record<string, unknown>;
+            return {
+              encoding:
+                typeof audioObj.encoding === "string"
+                  ? audioObj.encoding
+                  : undefined,
+              dataBase64:
+                typeof audioObj.dataBase64 === "string"
+                  ? audioObj.dataBase64
+                  : undefined,
+              durationMs:
+                typeof audioObj.durationMs === "number"
+                  ? audioObj.durationMs
+                  : undefined,
+            };
+          })()
+        : undefined;
+    const text =
+      typeof result.message === "string" && result.message.trim().length > 0
+        ? result.message
+        : "Audio message received.";
+    return { messageKind: "audio", text, audio: parsedAudio };
+  }
+  if (kind === "media") {
+    const media = result.media;
+    const parsedMedia =
+      typeof media === "object" &&
+      media !== null &&
+      typeof (media as Record<string, unknown>).url === "string" &&
+      ((media as Record<string, unknown>).url as string).length > 0
+        ? (() => {
+            const mediaObj = media as Record<string, unknown>;
+            return {
+              mediaType:
+                typeof mediaObj.mediaType === "string"
+                  ? mediaObj.mediaType
+                  : undefined,
+              url: mediaObj.url as string,
+              title:
+                typeof mediaObj.title === "string" ? mediaObj.title : undefined,
+            };
+          })()
+        : undefined;
+    const text =
+      typeof result.message === "string" && result.message.trim().length > 0
+        ? result.message
+        : parsedMedia !== undefined
+          ? `Media: ${parsedMedia.url}`
+          : "Media message received.";
+    return { messageKind: "media", text, media: parsedMedia };
+  }
+  return { messageKind: "text", text: baseText };
+}
+
 function escapeAssistPlainText(s: string): string {
   return s
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;");
+}
+
+async function blobToBase64(blob: Blob): Promise<string> {
+  const bytes = new Uint8Array(await blob.arrayBuffer());
+  let binary = "";
+  for (const byte of bytes) {
+    binary += String.fromCharCode(byte);
+  }
+  return btoa(binary);
 }
 
 export function createPreviewSessionInteractionPanel(options: {
@@ -493,6 +649,8 @@ export function createPreviewSessionInteractionPanel(options: {
   setAgents: (agents: readonly SessionInteractionAgent[]) => void;
   setContext: (agentId: string) => void;
   setMode: (mode: Mode) => void;
+  focusChatInput: () => void;
+  scrollToBottom: () => void;
   refresh: () => void;
   applyIntercomEvent: (raw: unknown) => void;
 } {
@@ -604,7 +762,11 @@ export function createPreviewSessionInteractionPanel(options: {
   chatBtn.type = "button";
   chatBtn.className = "preview-session-interaction__mode-btn";
   chatBtn.textContent = "Chat Action";
-  modes.append(assistBtn, chatBtn);
+  const pttBtn = document.createElement("button");
+  pttBtn.type = "button";
+  pttBtn.className = "preview-session-interaction__mode-btn";
+  pttBtn.textContent = "Push to Talk";
+  modes.append(assistBtn, chatBtn, pttBtn);
 
   const progress = document.createElement("div");
   progress.className = "preview-session-interaction__progress";
@@ -647,6 +809,23 @@ export function createPreviewSessionInteractionPanel(options: {
     string,
     { mode: Mode; agentId: string; toolName?: string }
   >();
+  let draftAudio:
+    | {
+        blob: Blob;
+        url: string;
+        mimeType: string;
+        transcript: string;
+        durationMs: number;
+      }
+    | null = null;
+  let mediaRecorder: MediaRecorder | null = null;
+  let mediaStream: MediaStream | null = null;
+  let speechRecognition: { stop: () => void } | null = null;
+  let recordingStartedAtMs: number | null = null;
+  let recordingMaxTimeoutId: ReturnType<typeof setTimeout> | null = null;
+  let shouldAutoStartRecording = false;
+  let shouldFocusChatInput = false;
+  let chatInputEl: HTMLInputElement | null = null;
 
   type ReplyWaitState = {
     requestId: string;
@@ -753,10 +932,168 @@ export function createPreviewSessionInteractionPanel(options: {
   const applyModeButtons = (): void => {
     assistBtn.setAttribute("data-active", mode === "assist" ? "1" : "0");
     chatBtn.setAttribute("data-active", mode === "chat" ? "1" : "0");
+    pttBtn.setAttribute("data-active", mode === "push_to_talk" ? "1" : "0");
+  };
+
+  const clearDraftAudio = (): void => {
+    if (draftAudio !== null) {
+      URL.revokeObjectURL(draftAudio.url);
+    }
+    draftAudio = null;
+  };
+
+  const clearRecordingMaxTimeout = (): void => {
+    if (recordingMaxTimeoutId !== null) {
+      clearTimeout(recordingMaxTimeoutId);
+      recordingMaxTimeoutId = null;
+    }
+  };
+
+  const stopAudioCapture = (): void => {
+    clearRecordingMaxTimeout();
+    if (speechRecognition !== null) {
+      speechRecognition.stop();
+      speechRecognition = null;
+    }
+    if (mediaRecorder !== null && mediaRecorder.state !== "inactive") {
+      mediaRecorder.stop();
+    }
+    mediaRecorder = null;
+    recordingStartedAtMs = null;
+    if (mediaStream !== null) {
+      for (const track of mediaStream.getTracks()) {
+        track.stop();
+      }
+      mediaStream = null;
+    }
+  };
+
+  const startPushToTalkRecording = async (): Promise<void> => {
+    if (mediaRecorder !== null && mediaRecorder.state === "recording") {
+      return;
+    }
+    try {
+      clearInteractionError();
+      clearDraftAudio();
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      mediaStream = stream;
+      const chunks: BlobPart[] = [];
+      const recorder = new MediaRecorder(stream);
+      mediaRecorder = recorder;
+      recordingStartedAtMs = Date.now();
+      recorder.addEventListener("dataavailable", (event) => {
+        const maybeData =
+          typeof event === "object" && event !== null && "data" in event
+            ? (event as { data?: Blob }).data
+            : undefined;
+        if (maybeData instanceof Blob && maybeData.size > 0) {
+          chunks.push(maybeData);
+        }
+      });
+      recorder.addEventListener("stop", () => {
+        clearRecordingMaxTimeout();
+        const mimeType = recorder.mimeType || "audio/webm";
+        const blob = new Blob(chunks, { type: mimeType });
+        const started = recordingStartedAtMs;
+        const durationMs = started === null ? 0 : Math.max(0, Date.now() - started);
+        recordingStartedAtMs = null;
+        draftAudio = {
+          blob,
+          url: URL.createObjectURL(blob),
+          mimeType,
+          transcript: "",
+          durationMs,
+        };
+        mediaRecorder = null;
+        render();
+        void sendPushToTalkAudio();
+      });
+      recorder.start();
+      recordingMaxTimeoutId = setTimeout(() => {
+        stopAudioCapture();
+        render();
+      }, 30_000);
+      render();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setInteractionError("Unable to access microphone.", {
+        step: "push_to_talk:start",
+        message,
+      });
+    }
+  };
+
+  const sendPushToTalkAudio = async (): Promise<void> => {
+    if (activeAgentId === null || draftAudio === null) return;
+    const sid = options.getSid();
+    const mainNodeId = options.getMainNodeId();
+    if (sid === null || mainNodeId === null) {
+      setInteractionError("Cannot send voice right now.", {
+        step: "push_to_talk:precheck",
+        reason: sid === null ? "sid_null" : "mainNodeId_null",
+      });
+      return;
+    }
+    setBusy(true);
+    try {
+      const audioPayload = {
+        encoding: draftAudio.mimeType.replace(/^audio\//, ""),
+        dataBase64: await blobToBase64(draftAudio.blob),
+        durationMs: draftAudio.durationMs,
+      };
+      const text = "Voice message sent to agent.";
+      draftAudio = { ...draftAudio, transcript: text };
+      const requestId = crypto.randomUUID();
+      pendingByRequestId.set(requestId, {
+        mode: "push_to_talk",
+        agentId: activeAgentId,
+      });
+      appendChatLogLine({
+        agentId: activeAgentId,
+        playerName: "You",
+        role: "user",
+        text,
+      });
+      startReplyWait({
+        requestId,
+        mode: "push_to_talk",
+        agentId: activeAgentId,
+        mainNodeId,
+      });
+      const rpcUrl = `${options.apiBase}/sdk/rpc?sid=${encodeURIComponent(sid)}`;
+      const intercomResponse = await fetch(rpcUrl, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          op: INTERCOM_COMMAND_OP,
+          payload: {
+            requestId,
+            mainNodeId,
+            fromPlayerId: mainNodeId,
+            toPlayerId: activeAgentId,
+            kind: "audio",
+            audio: audioPayload,
+          },
+        }),
+      });
+      if (!intercomResponse.ok) {
+        throw new Error(await intercomResponse.text());
+      }
+      result.textContent = `${requestId}: pending`;
+      render();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setInteractionError("Voice request failed.", {
+        step: "push_to_talk:send",
+        message,
+      });
+      setBusy(false);
+    }
   };
 
   const renderChat = (): void => {
     body.replaceChildren();
+    chatInputEl = null;
     if (activeAgentId === null) {
       const empty = document.createElement("div");
       empty.className = "preview-session-interaction__empty";
@@ -770,7 +1107,34 @@ export function createPreviewSessionInteractionPanel(options: {
       const bubble = document.createElement("div");
       const isUser = line.role === "user";
       bubble.className = `preview-session-interaction__bubble ${isUser ? "preview-session-interaction__bubble--left" : "preview-session-interaction__bubble--right"}`;
-      bubble.textContent = line.text;
+      if (line.messageKind === "audio") {
+        const text = document.createElement("div");
+        text.textContent = line.text;
+        bubble.append(text);
+        const audio = document.createElement("audio");
+        audio.controls = true;
+        const sourceData = line.audio?.dataBase64;
+        if (typeof sourceData === "string" && sourceData.length > 0) {
+          const encoding = line.audio?.encoding ?? "mp3";
+          audio.src = `data:audio/${encoding};base64,${sourceData}`;
+        }
+        bubble.append(audio);
+      } else if (line.messageKind === "media") {
+        const text = document.createElement("div");
+        text.textContent = line.text;
+        bubble.append(text);
+        const url = line.media?.url;
+        if (typeof url === "string" && url.length > 0) {
+          const anchor = document.createElement("a");
+          anchor.href = url;
+          anchor.target = "_blank";
+          anchor.rel = "noreferrer";
+          anchor.textContent = line.media?.title ?? url;
+          bubble.append(anchor);
+        }
+      } else {
+        bubble.textContent = line.text;
+      }
       log.append(bubble);
     }
     if (
@@ -792,6 +1156,11 @@ export function createPreviewSessionInteractionPanel(options: {
     send.className = "preview-session-interaction__send-btn";
     send.textContent = "Send";
     compose.append(input, send);
+    chatInputEl = input;
+    if (shouldFocusChatInput) {
+      input.focus();
+      shouldFocusChatInput = false;
+    }
     compose.addEventListener("submit", (e) => {
       e.preventDefault();
       logSessionInteraction("chat:submit:precheck", "start", {
@@ -1193,6 +1562,69 @@ export function createPreviewSessionInteractionPanel(options: {
     body.append(heading, desc, form);
   };
 
+  const renderPushToTalk = (): void => {
+    body.replaceChildren();
+    if (activeAgentId === null) {
+      const empty = document.createElement("div");
+      empty.className = "preview-session-interaction__empty";
+      empty.textContent = "Move near an occupant and press P.";
+      body.append(empty);
+      return;
+    }
+    const titleEl = document.createElement("div");
+    titleEl.className = "preview-session-interaction__assist-desc";
+    titleEl.textContent = "Recording starts automatically. Max 30 seconds.";
+    const tools = document.createElement("div");
+    tools.className = "preview-session-interaction__audio-tools";
+    const state = document.createElement("div");
+    state.className = "preview-session-interaction__audio-state";
+    const isRecording = mediaRecorder !== null && mediaRecorder.state === "recording";
+    state.textContent = isRecording
+      ? "Recording in progress..."
+      : busy
+        ? "Sending voice to agent..."
+      : draftAudio === null
+        ? "Preparing microphone..."
+        : "Voice sent. Waiting for response.";
+    const audioBar = document.createElement("div");
+    audioBar.className = "preview-session-interaction__audio-bar";
+    if (isRecording) {
+      const wave = document.createElement("div");
+      wave.className = "preview-session-interaction__audio-wave";
+      const stopBtn = document.createElement("button");
+      stopBtn.type = "button";
+      stopBtn.className =
+        "preview-session-interaction__audio-btn preview-session-interaction__audio-stop-btn";
+      stopBtn.textContent = "Stop";
+      stopBtn.addEventListener("click", () => {
+        stopAudioCapture();
+        render();
+      });
+      audioBar.append(wave, stopBtn);
+    } else {
+      const waveIdle = document.createElement("div");
+      waveIdle.className = "preview-session-interaction__audio-wave";
+      waveIdle.style.animationPlayState = "paused";
+      waveIdle.style.opacity = "0.45";
+      audioBar.append(waveIdle);
+    }
+    const transcript = document.createElement("div");
+    transcript.className = "preview-session-interaction__audio-transcript";
+    const transcriptText = draftAudio?.transcript ?? "";
+    transcript.textContent =
+      transcriptText.length !== 0
+        ? transcriptText
+        : "Agent-side processing in progress.";
+
+    tools.append(state, audioBar, transcript);
+    body.append(titleEl, tools);
+
+    if (shouldAutoStartRecording && !isRecording && draftAudio === null) {
+      shouldAutoStartRecording = false;
+      void startPushToTalkRecording();
+    }
+  };
+
   const render = (): void => {
     renderNodeInfo();
     applyModeButtons();
@@ -1205,7 +1637,15 @@ export function createPreviewSessionInteractionPanel(options: {
       renderAssist();
       return;
     }
+    if (mode === "push_to_talk") {
+      renderPushToTalk();
+      return;
+    }
     renderChat();
+  };
+
+  const scrollToBottom = (): void => {
+    root.scrollTop = root.scrollHeight;
   };
 
   const applyIntercomEvent = (raw: unknown): void => {
@@ -1272,19 +1712,26 @@ export function createPreviewSessionInteractionPanel(options: {
       return;
     }
     if (payload.status === "stream") {
-      result.textContent = `${rid}: ${formatIntercomResultText(payload)}`;
+      result.textContent = `${rid}: ${readIntercomContent(payload).text}`;
       return;
     }
     if (payload.status === "completed") {
       clearReplyWaitState();
       setBusy(false);
       clearInteractionError();
-      if (pending.mode === "chat" && activeAgentId === pending.agentId) {
+      if (
+        (pending.mode === "chat" || pending.mode === "push_to_talk") &&
+        activeAgentId === pending.agentId
+      ) {
+        const content = readIntercomContent(payload);
         appendChatLogLine({
           agentId: pending.agentId,
           playerName: "Agent",
           role: "assistant",
-          text: formatIntercomResultText(payload),
+          text: content.text,
+          messageKind: content.messageKind,
+          audio: content.audio,
+          media: content.media,
         });
       } else if (pending.mode === "assist") {
         const r = payload.result ?? {};
@@ -1337,6 +1784,10 @@ export function createPreviewSessionInteractionPanel(options: {
     mode = "chat";
     render();
   });
+  pttBtn.addEventListener("click", () => {
+    mode = "push_to_talk";
+    render();
+  });
 
   render();
   return {
@@ -1367,12 +1818,37 @@ export function createPreviewSessionInteractionPanel(options: {
       activeAgentId = agentId;
       selectedTool = null;
       assistResultView = null;
+      stopAudioCapture();
+      clearDraftAudio();
+      if (mode === "push_to_talk") {
+        shouldAutoStartRecording = true;
+      }
       clearInteractionError();
       render();
+      scrollToBottom();
     },
     setMode: (nextMode) => {
+      if (nextMode !== "push_to_talk") {
+        stopAudioCapture();
+      }
       mode = nextMode;
+      shouldAutoStartRecording = nextMode === "push_to_talk";
+      shouldFocusChatInput = nextMode === "chat";
       render();
+      scrollToBottom();
+    },
+    focusChatInput: () => {
+      if (chatInputEl !== null) {
+        chatInputEl.focus();
+        return;
+      }
+      shouldFocusChatInput = true;
+      if (mode === "chat") {
+        render();
+      }
+    },
+    scrollToBottom: () => {
+      scrollToBottom();
     },
     refresh: () => {
       render();

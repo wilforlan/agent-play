@@ -24,6 +24,7 @@ describe("dispatchIntercomCommand", () => {
         toPlayerId: "agent-1",
         kind: "chat",
         text: "hello",
+        intercomAddress: "intercom-address://intercom:human:main-1:agent:agent-1",
       },
     });
     expect(world.recordInteraction).toHaveBeenCalledWith({
@@ -38,10 +39,14 @@ describe("dispatchIntercomCommand", () => {
     const secondPayload = publishMock.mock.calls[1]?.[2] as {
       status?: string;
       command?: { requestId?: string };
+      intercomAddress?: string;
     };
     expect(firstPayload.status).toBe("started");
     expect(secondPayload.status).toBe("forwarded");
     expect(secondPayload.command?.requestId).toBe("req-1");
+    expect(secondPayload.intercomAddress).toBe(
+      "intercom-address://intercom:human:main-1:agent:agent-1"
+    );
   });
 
   it("publishes failed event when world execution throws", async () => {

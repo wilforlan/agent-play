@@ -1,4 +1,7 @@
-import { parseIntercomResponsePayload } from "./shared-intercom.js";
+import {
+  normalizeIntercomResult,
+  parseIntercomResponsePayload,
+} from "./shared-intercom.js";
 import { publishWorldIntercomEvent } from "./fanout.js";
 import type { SessionStore } from "../session-store.js";
 
@@ -18,8 +21,12 @@ export async function handleIntercomResponse(options: {
       status: p.status,
       toolName: p.toolName,
       message: p.message,
-      result: p.result,
+      result: normalizeIntercomResult({
+        message: p.message,
+        result: p.result,
+      }),
       error: p.error,
+      intercomAddress: p.intercomAddress,
       ts: p.ts,
     },
   });

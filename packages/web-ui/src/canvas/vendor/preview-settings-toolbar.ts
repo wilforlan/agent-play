@@ -263,7 +263,8 @@ body > .preview-shell {
   cursor: not-allowed;
 }
 .preview-proximity-touch-pad__key--assist:focus-visible,
-.preview-proximity-touch-pad__key--chat:focus-visible {
+.preview-proximity-touch-pad__key--chat:focus-visible,
+.preview-proximity-touch-pad__key--ptt:focus-visible {
   outline: 2px solid rgba(129, 140, 248, 0.85);
   outline-offset: 2px;
 }
