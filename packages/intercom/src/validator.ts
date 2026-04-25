@@ -10,23 +10,16 @@ const IntercomAddress = z
     return value;
   });
 
-const IntercomAudioPayloadSchema = z.object({
-  encoding: NonEmpty,
-  dataBase64: NonEmpty,
-  durationMs: z.number().nonnegative().optional(),
-});
-
 const IntercomCommandPayloadSchema = z
   .object({
     requestId: NonEmpty,
     mainNodeId: NonEmpty,
     fromPlayerId: NonEmpty,
     toPlayerId: NonEmpty,
-    kind: z.enum(["assist", "chat", "audio"]),
+    kind: z.enum(["assist", "chat"]),
     toolName: z.string().optional(),
     args: z.record(z.string(), z.unknown()).optional(),
     text: z.string().optional(),
-    audio: IntercomAudioPayloadSchema.optional(),
     intercomAddress: IntercomAddress.optional(),
   })
   .superRefine((value, ctx) => {
@@ -44,13 +37,6 @@ const IntercomCommandPayloadSchema = z
         message: "text is required for chat",
       });
     }
-    if (value.kind === "audio" && value.audio === undefined) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["audio"],
-        message: "audio is required for audio kind",
-      });
-    }
   });
 
 const WorldIntercomEventPayloadSchema = z.object({
@@ -58,7 +44,7 @@ const WorldIntercomEventPayloadSchema = z.object({
   mainNodeId: NonEmpty,
   toPlayerId: NonEmpty,
   fromPlayerId: NonEmpty,
-  kind: z.enum(["assist", "chat", "audio"]),
+  kind: z.enum(["assist", "chat"]),
   status: z.enum(["started", "stream", "completed", "failed", "forwarded"]),
   toolName: z.string().optional(),
   message: z.string().optional(),
@@ -76,7 +62,7 @@ const IntercomResponsePayloadSchema = z
     mainNodeId: NonEmpty,
     toPlayerId: NonEmpty,
     fromPlayerId: NonEmpty,
-    kind: z.enum(["assist", "chat", "audio"]),
+    kind: z.enum(["assist", "chat"]),
     status: z.enum(["stream", "completed", "failed"]),
     toolName: z.string().optional(),
     message: z.string().optional(),

@@ -84,8 +84,6 @@ export type PlatformAgentInformation = {
  */
 export type P2aEnableFlag = "on" | "off";
 
-export const INTERCOM_P2A_AUDIO_NOT_ENABLED = "P2A_AUDIO_NOT_ENABLED" as const;
-
 export type RealtimeWebrtcClientSecret = {
   clientSecret: string;
   expiresAt?: string;
@@ -171,28 +169,6 @@ export type RegisteredAgentSummary = {
   flagged: boolean;
 };
 
-export type PlayAudio = {
-  sendAudioBase64: (options: {
-    encoding: string;
-    dataBase64: string;
-    durationMs?: number;
-    message?: string;
-  }) => Promise<void>;
-};
-
-export type AgentAudioEvent = {
-  requestId: string;
-  mainNodeId: string;
-  fromPlayerId: string;
-  toPlayerId: string;
-  audio: {
-    encoding: string;
-    dataBase64: string;
-    durationMs?: number;
-  };
-  playAudio: PlayAudio;
-};
-
 /** Result of `addAgent` / `addPlayer` including watch URL and registered-agent metadata from the server. */
 export type RegisteredPlayer = PlayAgentInformation & {
   previewUrl: string;
@@ -203,10 +179,6 @@ export type RegisteredPlayer = PlayAgentInformation & {
   realtimeWebrtc?: RealtimeWebrtcClientSecret;
   connectionId?: string;
   leaseTtlSeconds?: number;
-  on: (
-    eventName: "audio",
-    listener: (event: AgentAudioEvent) => void | Promise<void>
-  ) => () => void;
 };
 
 /** First step of a journey: user message origin. */

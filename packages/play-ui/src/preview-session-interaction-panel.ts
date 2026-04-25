@@ -20,7 +20,6 @@ import {
 } from "./preview-assist-coerce.js";
 
 const STYLE_ID = "agent-play-preview-session-interaction-styles";
-const INTERCOM_P2A_AUDIO_NOT_ENABLED = "P2A_AUDIO_NOT_ENABLED";
 
 type Mode = "assist" | "chat" | "push_to_talk";
 
@@ -550,13 +549,8 @@ function formatIntercomResultText(payload: WorldIntercomEventPayload): string {
 }
 
 type IntercomContent = {
-  messageKind: "text" | "audio" | "media";
+  messageKind: "text" | "media";
   text: string;
-  audio?: {
-    encoding?: string;
-    dataBase64?: string;
-    durationMs?: number;
-  };
   media?: {
     mediaType?: string;
     url: string;
@@ -571,34 +565,6 @@ function readIntercomContent(payload: WorldIntercomEventPayload): IntercomConten
     return { messageKind: "text", text: baseText };
   }
   const kind = result.messageKind;
-  if (kind === "audio") {
-    const audio = result.audio;
-    const parsedAudio =
-      typeof audio === "object" && audio !== null
-        ? (() => {
-            const audioObj = audio as Record<string, unknown>;
-            return {
-              encoding:
-                typeof audioObj.encoding === "string"
-                  ? audioObj.encoding
-                  : undefined,
-              dataBase64:
-                typeof audioObj.dataBase64 === "string"
-                  ? audioObj.dataBase64
-                  : undefined,
-              durationMs:
-                typeof audioObj.durationMs === "number"
-                  ? audioObj.durationMs
-                  : undefined,
-            };
-          })()
-        : undefined;
-    const text =
-      typeof result.message === "string" && result.message.trim().length > 0
-        ? result.message
-        : "Audio message received.";
-    return { messageKind: "audio", text, audio: parsedAudio };
-  }
   if (kind === "media") {
     const media = result.media;
     const parsedMedia =
@@ -635,15 +601,6 @@ function escapeAssistPlainText(s: string): string {
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;");
-}
-
-async function blobToBase64(blob: Blob): Promise<string> {
-  const bytes = new Uint8Array(await blob.arrayBuffer());
-  let binary = "";
-  for (const byte of bytes) {
-    binary += String.fromCharCode(byte);
-  }
-  return btoa(binary);
 }
 
 export function createPreviewSessionInteractionPanel(options: {
@@ -1083,65 +1040,17 @@ export function createPreviewSessionInteractionPanel(options: {
       });
       return;
     }
-    if (
-      activeAgentId !== null &&
-      typeof p2aAgent?.realtimeWebrtc?.clientSecret === "string"
-    ) {
+    if (activeAgentId !== null && typeof p2aAgent?.realtimeWebrtc?.clientSecret === "string") {
       const ok = await ensureRealtimeConnection(activeAgentId);
       if (!ok) {
         return;
       }
       return;
     }
-    try {
-      clearInteractionError();
-      clearDraftAudio();
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      mediaStream = stream;
-      const chunks: BlobPart[] = [];
-      const recorder = new MediaRecorder(stream);
-      mediaRecorder = recorder;
-      recordingStartedAtMs = Date.now();
-      recorder.addEventListener("dataavailable", (event) => {
-        const maybeData =
-          typeof event === "object" && event !== null && "data" in event
-            ? (event as { data?: Blob }).data
-            : undefined;
-        if (maybeData instanceof Blob && maybeData.size > 0) {
-          chunks.push(maybeData);
-        }
-      });
-      recorder.addEventListener("stop", () => {
-        clearRecordingMaxTimeout();
-        const mimeType = recorder.mimeType || "audio/webm";
-        const blob = new Blob(chunks, { type: mimeType });
-        const started = recordingStartedAtMs;
-        const durationMs = started === null ? 0 : Math.max(0, Date.now() - started);
-        recordingStartedAtMs = null;
-        draftAudio = {
-          blob,
-          url: URL.createObjectURL(blob),
-          mimeType,
-          transcript: "",
-          durationMs,
-        };
-        mediaRecorder = null;
-        render();
-        void sendPushToTalkAudio();
-      });
-      recorder.start();
-      recordingMaxTimeoutId = setTimeout(() => {
-        stopAudioCapture();
-        render();
-      }, 30_000);
-      render();
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      setInteractionError("Unable to access microphone.", {
-        step: "push_to_talk:start",
-        message,
-      });
-    }
+    setInteractionError("Push to talk requires realtime webRTC credentials for this agent.", {
+      step: "push_to_talk:missing_realtime_credentials",
+      agentId: activeAgentId,
+    });
   };
 
   const sendPushToTalkAudio = async (): Promise<void> => {
@@ -1183,70 +1092,10 @@ export function createPreviewSessionInteractionPanel(options: {
       }
       return;
     }
-    const sid = options.getSid();
-    const mainNodeId = options.getMainNodeId();
-    if (sid === null || mainNodeId === null) {
-      setInteractionError("Cannot send voice right now.", {
-        step: "push_to_talk:precheck",
-        reason: sid === null ? "sid_null" : "mainNodeId_null",
-      });
-      return;
-    }
-    setBusy(true);
-    try {
-      const audioPayload = {
-        encoding: draftAudio.mimeType.replace(/^audio\//, ""),
-        dataBase64: await blobToBase64(draftAudio.blob),
-        durationMs: draftAudio.durationMs,
-      };
-      const text = "Voice message sent to agent.";
-      draftAudio = { ...draftAudio, transcript: text };
-      const requestId = crypto.randomUUID();
-      pendingByRequestId.set(requestId, {
-        mode: "push_to_talk",
-        agentId: activeAgentId,
-      });
-      appendChatLogLine({
-        agentId: activeAgentId,
-        playerName: "You",
-        role: "user",
-        text,
-      });
-      startReplyWait({
-        requestId,
-        mode: "push_to_talk",
-        agentId: activeAgentId,
-        mainNodeId,
-      });
-      const rpcUrl = `${options.apiBase}/sdk/rpc?sid=${encodeURIComponent(sid)}`;
-      const intercomResponse = await fetch(rpcUrl, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          op: INTERCOM_COMMAND_OP,
-          payload: {
-            requestId,
-            mainNodeId,
-            fromPlayerId: mainNodeId,
-            toPlayerId: activeAgentId,
-            kind: "audio",
-            audio: audioPayload,
-          },
-        }),
-      });
-      if (!intercomResponse.ok) {
-        throw new Error(await intercomResponse.text());
-      }
-      result.textContent = `${requestId}: pending`;
-      render();
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      setInteractionError("Voice request failed.", {
-        step: "push_to_talk:send",
-        message,
-      });
-      setBusy(false);
-    }
+    setInteractionError("Audio intercom kind is deprecated. Realtime WebRTC is required.", {
+      step: "push_to_talk:audio_intercom_deprecated",
+      agentId: activeAgentId,
+    });
   };
 
   const renderChat = (): void => {
@@ -1780,58 +1629,12 @@ export function createPreviewSessionInteractionPanel(options: {
       body.append(titleEl, state, actions);
       return;
     }
-    const titleEl = document.createElement("div");
-    titleEl.className = "preview-session-interaction__assist-desc";
-    titleEl.textContent = "Recording starts automatically. Max 30 seconds.";
-    const tools = document.createElement("div");
-    tools.className = "preview-session-interaction__audio-tools";
-    const state = document.createElement("div");
-    state.className = "preview-session-interaction__audio-state";
-    const isRecording = mediaRecorder !== null && mediaRecorder.state === "recording";
-    state.textContent = isRecording
-      ? "Recording in progress..."
-      : busy
-        ? "Sending voice to agent..."
-      : draftAudio === null
-        ? "Preparing microphone..."
-        : "Voice sent. Waiting for response.";
-    const audioBar = document.createElement("div");
-    audioBar.className = "preview-session-interaction__audio-bar";
-    if (isRecording) {
-      const wave = document.createElement("div");
-      wave.className = "preview-session-interaction__audio-wave";
-      const stopBtn = document.createElement("button");
-      stopBtn.type = "button";
-      stopBtn.className =
-        "preview-session-interaction__audio-btn preview-session-interaction__audio-stop-btn";
-      stopBtn.textContent = "Stop";
-      stopBtn.addEventListener("click", () => {
-        stopAudioCapture();
-        render();
-      });
-      audioBar.append(wave, stopBtn);
-    } else {
-      const waveIdle = document.createElement("div");
-      waveIdle.className = "preview-session-interaction__audio-wave";
-      waveIdle.style.animationPlayState = "paused";
-      waveIdle.style.opacity = "0.45";
-      audioBar.append(waveIdle);
-    }
-    const transcript = document.createElement("div");
-    transcript.className = "preview-session-interaction__audio-transcript";
-    const transcriptText = draftAudio?.transcript ?? "";
-    transcript.textContent =
-      transcriptText.length !== 0
-        ? transcriptText
-        : "Agent-side processing in progress.";
-
-    tools.append(state, audioBar, transcript);
-    body.append(titleEl, tools);
-
-    if (shouldAutoStartRecording && !isRecording && draftAudio === null) {
-      shouldAutoStartRecording = false;
-      void startPushToTalkRecording();
-    }
+    shouldAutoStartRecording = false;
+    const warn = document.createElement("div");
+    warn.className = "preview-session-interaction__empty";
+    warn.textContent =
+      "Push to talk requires realtime credentials on this agent node. Audio intercom fallback is deprecated.";
+    body.append(warn);
   };
 
   const render = (): void => {
@@ -1939,7 +1742,6 @@ export function createPreviewSessionInteractionPanel(options: {
           role: "assistant",
           text: content.text,
           messageKind: content.messageKind,
-          audio: content.audio,
           media: content.media,
         });
       } else if (pending.mode === "assist") {
@@ -1972,13 +1774,8 @@ export function createPreviewSessionInteractionPanel(options: {
         error: errText,
       });
       result.textContent = `${rid}: ${errText}`;
-      const isP2aAudioMissing =
-        pending.mode === "push_to_talk" &&
-        errText === INTERCOM_P2A_AUDIO_NOT_ENABLED;
       setInteractionError(
-        isP2aAudioMissing
-          ? "Push to talk is not enabled for this agent."
-          : "Intercom reported failure for this request.",
+        "Intercom reported failure for this request.",
         {
           step: "intercom:payload",
           requestId: rid,

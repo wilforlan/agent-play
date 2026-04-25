@@ -14,13 +14,9 @@
  * **Wire note** — Fanout and SSE use **`playerChainNotify`** (node references). Legacy **`playerChainDelta`**-style digests on the wire are not used; use **`getWorldSnapshot`** if you need a full snapshot only.
  */
 
-export {
-  INTERCOM_P2A_AUDIO_NOT_ENABLED,
-} from "./public-types.js";
 export type {
   AddAgentInput,
   AddPlayerInput,
-  AgentAudioEvent,
   AgentPlaySnapshot,
   AgentPlayWorldMap,
   AgentPlayWorldMapAgentOccupant,
@@ -39,7 +35,6 @@ export type {
   PlayerChainOccupantPresentNode,
   PlayerChainOccupantRemovedNode,
   PlayAgentInformation,
-  PlayAudio,
   PlatformAgentInformation,
   RecordInteractionInput,
   RealtimeWebrtcClientSecret,

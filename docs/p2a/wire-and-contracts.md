@@ -10,13 +10,11 @@ The SDK [`AddAgentInput`](../../packages/sdk/src/public-types.ts) includes **`en
 
 Persistence in Redis/repository for `enableP2a` is not required for the agents-side bridge: the automation client that called `addAgent` is the source of truth for whether it attached a realtime bridge.
 
-## Intercom audio
+## Intercom commands
 
-- **Inbound**: `world:intercom` with `status: "forwarded"` and `command.kind === "audio"` (see `@agent-play/intercom` validators). The SDK [`subscribeIntercomCommands`](../../packages/sdk/src/lib/remote-play-world.ts) dispatches to per-player **`audio`** listeners when registered.
-- **No handler**: if there are no **`audio`** listeners for the target player, the SDK posts **`intercomResponse`** with **`status: "failed"`** and error **`P2A_AUDIO_NOT_ENABLED`** (constant **`INTERCOM_P2A_AUDIO_NOT_ENABLED`** in `@agent-play/sdk`). Audio is **not** routed through **`chat_tool`**.
-- **Outbound**: `intercomResponse` with `kind: "audio"` and `status: "stream"` (incremental) then **`completed`**, correlated by **`requestId`**, **`fromPlayerId`**, **`toPlayerId`**, **`mainNodeId`**.
-
-Payload shapes must stay compatible with [`IntercomResponsePayload`](../../packages/intercom/src/validator.ts) and play-ui handling of `stream` vs `completed`.
+- Supported command kinds are **`assist`** and **`chat`**.
+- **`kind: "audio"`** is removed from active intercom command handling.
+- Payload shapes must stay compatible with [`IntercomResponsePayload`](../../packages/intercom/src/validator.ts) and play-ui handling of `stream` vs `completed`.
 
 ## Watch UI gating
 
@@ -28,7 +26,7 @@ World snapshot agent occupants include **`enableP2a`** (`"on"` | `"off"`) when s
 
 ## WebRTC client secret (per-agent)
 
-When **`P2A_WEBRTC_ENABLED=1`** and agent registration uses **`enableP2a: "on"`**, the players route may mint and return:
+When agent registration includes `realtimeWebrtc` and uses **`enableP2a: "on"`**, the players route forwards:
 
 - **`realtimeWebrtc.clientSecret`** (ephemeral client secret)
 - optional **`realtimeWebrtc.expiresAt`**

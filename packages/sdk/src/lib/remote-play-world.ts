@@ -1,6 +1,4 @@
 import {
-  INTERCOM_P2A_AUDIO_NOT_ENABLED,
-  type AgentAudioEvent,
   type AddAgentInput,
   type AddPlayerInput,
   type AgentPlaySnapshot,
@@ -9,7 +7,6 @@ import {
   type AgentPlayWorldMap,
   type AgentPlayWorldMapBounds,
   type Journey,
-  type PlayAudio,
   type RecordInteractionInput,
   type RegisteredAgentSummary,
   type RegisteredPlayer,
@@ -275,8 +272,6 @@ export type IntercomToolExecutor = (input: {
   args: Record<string, unknown>;
 }) => Record<string, unknown> | Promise<Record<string, unknown>>;
 
-type AudioEventListener = (event: AgentAudioEvent) => void | Promise<void>;
-
 type SubscribeIntercomChatAgents = {
   /**
    * Same LangChain agent instances passed to **`langchainRegistration`** (e.g. **`createAgent`** return values).
@@ -362,7 +357,6 @@ export class RemotePlayWorld {
     string,
     { connectionId: string; leaseTtlSeconds: number; timer: ReturnType<typeof setInterval> }
   >();
-  private readonly audioListenersByPlayerId = new Map<string, Set<AudioEventListener>>();
   private audioInitOptions: RemotePlayWorldOpenAiAudioOptions | null = null;
 
   constructor(options: RemotePlayWorldOptions = {}) {
@@ -424,29 +418,6 @@ export class RemotePlayWorld {
     return () => {
       this.closeListeners.delete(handler);
     };
-  }
-
-  private registerAudioListener(
-    playerId: string,
-    listener: AudioEventListener
-  ): () => void {
-    const existing = this.audioListenersByPlayerId.get(playerId) ?? new Set<AudioEventListener>();
-    existing.add(listener);
-    this.audioListenersByPlayerId.set(playerId, existing);
-    return () => {
-      const listeners = this.audioListenersByPlayerId.get(playerId);
-      if (listeners === undefined) return;
-      listeners.delete(listener);
-      if (listeners.size === 0) {
-        this.audioListenersByPlayerId.delete(playerId);
-      }
-    };
-  }
-
-  private getAudioListeners(playerId: string): readonly AudioEventListener[] {
-    const listeners = this.audioListenersByPlayerId.get(playerId);
-    if (listeners === undefined) return [];
-    return Array.from(listeners);
   }
 
   hold(): RemotePlayWorldHold {
@@ -883,15 +854,6 @@ export class RemotePlayWorld {
         : undefined;
     const enableP2a: P2aEnableFlag = enableP2aFromBody ?? input.enableP2a ?? "off";
     const realtimeWebrtc = parseRealtimeWebrtcClientSecret(body.realtimeWebrtc);
-    const on = (
-      eventName: "audio",
-      listener: (event: AgentAudioEvent) => void | Promise<void>
-    ): (() => void) => {
-      if (eventName !== "audio") {
-        return () => {};
-      }
-      return this.registerAudioListener(playerId, listener);
-    };
     return {
       id: playerId,
       name: input.name,
@@ -904,7 +866,6 @@ export class RemotePlayWorld {
       ...(realtimeWebrtc !== undefined ? { realtimeWebrtc } : {}),
       connectionId: bodyConnectionId,
       leaseTtlSeconds: bodyLeaseTtlSeconds,
-      on,
     };
   }
 
@@ -983,7 +944,7 @@ export class RemotePlayWorld {
 
   /**
    * Subscribes to the session SSE stream and handles **`forwarded`** intercom commands whose **`toPlayerId`** is in **`playerId`** or **`playerIds`**, invoking **`executeTool`** (non-audio) or per-player **`audio`** listeners, and posting **`intercomResponse`** (**`completed`** / **`failed`**).
-   * **`kind: "audio"`** without registered **`audio`** listeners yields **`failed`** with **`INTERCOM_P2A_AUDIO_NOT_ENABLED`** (never **`chat_tool`**).
+   * Audio commands are ignored; only `assist` and `chat` are executed here.
    * Uses a **single** SSE connection when **`playerIds`** lists multiple automation agents (recommended for several agents in one process).
    * Not invoked automatically by {@link RemotePlayWorld.addAgent}.
    */
@@ -1075,64 +1036,11 @@ export class RemotePlayWorld {
           });
           try {
             let result: Record<string, unknown>;
-            if (cmd.kind === "audio") {
-              const audioListeners = this.getAudioListeners(cmd.toPlayerId);
-              if (audioListeners.length > 0) {
-                const playAudio: PlayAudio = {
-                  sendAudioBase64: async (options) => {
-                    await this.sendIntercomResponse({
-                      requestId: cmd.requestId,
-                      mainNodeId: cmd.mainNodeId,
-                      toPlayerId: cmd.fromPlayerId,
-                      fromPlayerId: cmd.toPlayerId,
-                      kind: cmd.kind,
-                      status: "completed",
-                      ts: new Date().toISOString(),
-                      result: {
-                        messageKind: "audio",
-                        message: options.message,
-                        audio: {
-                          encoding: options.encoding,
-                          dataBase64: options.dataBase64,
-                          durationMs: options.durationMs,
-                        },
-                      },
-                    });
-                  },
-                };
-                const audio = cmd.audio;
-                if (audio === undefined) {
-                  throw new Error("intercom: audio payload missing for audio command");
-                }
-                const event: AgentAudioEvent = {
-                  requestId: cmd.requestId,
-                  mainNodeId: cmd.mainNodeId,
-                  fromPlayerId: cmd.fromPlayerId,
-                  toPlayerId: cmd.toPlayerId,
-                  audio: {
-                    encoding: audio.encoding,
-                    dataBase64: audio.dataBase64,
-                    ...(typeof audio.durationMs === "number"
-                      ? { durationMs: audio.durationMs }
-                      : {}),
-                  },
-                  playAudio,
-                };
-                for (const listener of audioListeners) {
-                  await Promise.resolve(listener(event));
-                }
-                result = { handledBy: "audio_listener" };
-                continue;
-              }
-              await this.sendIntercomResponse({
+            if (cmd.kind !== "assist" && cmd.kind !== "chat") {
+              this.logTransport("intercom:unsupported_kind:ignored", {
                 requestId: cmd.requestId,
-                mainNodeId: cmd.mainNodeId,
-                toPlayerId: cmd.fromPlayerId,
-                fromPlayerId: cmd.toPlayerId,
-                kind: "audio",
-                status: "failed",
-                ts: new Date().toISOString(),
-                error: INTERCOM_P2A_AUDIO_NOT_ENABLED,
+                kind: cmd.kind,
+                toPlayerId: cmd.toPlayerId,
               });
               continue;
             }

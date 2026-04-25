@@ -26,23 +26,6 @@ describe("intercom contracts", () => {
     );
   });
 
-  it("accepts audio intercomCommand payload", () => {
-    const payload = parseIntercomCommandPayload({
-      requestId: "req-audio",
-      mainNodeId: "main-1",
-      fromPlayerId: "__human__",
-      toPlayerId: "agent-1",
-      kind: "audio",
-      audio: {
-        encoding: "webm",
-        dataBase64: "Zm9v",
-        durationMs: 1500,
-      },
-    });
-    expect(payload.kind).toBe("audio");
-    expect(payload.audio?.encoding).toBe("webm");
-  });
-
   it("rejects command payload when identifiers are empty", () => {
     expect(() =>
       parseIntercomCommandPayload({
@@ -175,16 +158,16 @@ describe("intercom contracts", () => {
     expect(normalized.message).toBe("hello");
   });
 
-  it("preserves audio payload and marks messageKind=audio", () => {
+  it("preserves media payload and marks messageKind=media", () => {
     const normalized = normalizeIntercomResult({
       result: {
-        audio: {
-          encoding: "mp3",
-          dataBase64: "Zm9v",
+        media: {
+          mediaType: "image",
+          url: "https://example.com/image.png",
         },
       },
     });
-    expect(normalized.messageKind).toBe("audio");
-    expect(normalized.audio).toBeDefined();
+    expect(normalized.messageKind).toBe("media");
+    expect(normalized.media).toBeDefined();
   });
 });
