@@ -20,6 +20,7 @@ import {
 } from "./preview-assist-coerce.js";
 
 const STYLE_ID = "agent-play-preview-session-interaction-styles";
+const INTERCOM_P2A_AUDIO_NOT_ENABLED = "P2A_AUDIO_NOT_ENABLED";
 
 type Mode = "assist" | "chat" | "push_to_talk";
 
@@ -27,6 +28,13 @@ export type SessionInteractionAgent = {
   agentId: string;
   name: string;
   assistTools?: readonly AssistToolDef[];
+  enableP2a?: "on" | "off";
+  realtimeWebrtc?: {
+    clientSecret: string;
+    expiresAt?: string;
+    model: string;
+    voice?: string;
+  };
 };
 
 function ensureStyles(): void {
@@ -649,6 +657,8 @@ export function createPreviewSessionInteractionPanel(options: {
   setAgents: (agents: readonly SessionInteractionAgent[]) => void;
   setContext: (agentId: string) => void;
   setMode: (mode: Mode) => void;
+  preparePushToTalkConnection: (agentId: string) => Promise<boolean>;
+  closeVoiceConnection: () => void;
   focusChatInput: () => void;
   scrollToBottom: () => void;
   refresh: () => void;
@@ -823,6 +833,11 @@ export function createPreviewSessionInteractionPanel(options: {
   let speechRecognition: { stop: () => void } | null = null;
   let recordingStartedAtMs: number | null = null;
   let recordingMaxTimeoutId: ReturnType<typeof setTimeout> | null = null;
+  let realtimePc: RTCPeerConnection | null = null;
+  let realtimeDc: RTCDataChannel | null = null;
+  let realtimeStream: MediaStream | null = null;
+  let realtimeAgentId: string | null = null;
+  let realtimeState: "idle" | "connecting" | "connected" | "failed" = "idle";
   let shouldAutoStartRecording = false;
   let shouldFocusChatInput = false;
   let chatInputEl: HTMLInputElement | null = null;
@@ -949,6 +964,93 @@ export function createPreviewSessionInteractionPanel(options: {
     }
   };
 
+  const closeRealtimeConnection = (): void => {
+    if (realtimeDc !== null) {
+      try {
+        realtimeDc.close();
+      } catch {
+        // noop
+      }
+    }
+    realtimeDc = null;
+    if (realtimePc !== null) {
+      try {
+        realtimePc.close();
+      } catch {
+        // noop
+      }
+    }
+    realtimePc = null;
+    if (realtimeStream !== null) {
+      for (const track of realtimeStream.getTracks()) {
+        track.stop();
+      }
+    }
+    realtimeStream = null;
+    realtimeAgentId = null;
+    realtimeState = "idle";
+  };
+
+  const ensureRealtimeConnection = async (
+    agentId: string
+  ): Promise<boolean> => {
+    const agent = agentsById.get(agentId);
+    const secret = agent?.realtimeWebrtc?.clientSecret;
+    if (typeof secret !== "string" || secret.length === 0) {
+      return false;
+    }
+    if (realtimeState === "connected" && realtimeAgentId === agentId) {
+      return true;
+    }
+    closeRealtimeConnection();
+    realtimeState = "connecting";
+    render();
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const pc = new RTCPeerConnection();
+      const dc = pc.createDataChannel("oai-events");
+      for (const track of stream.getTracks()) {
+        pc.addTrack(track, stream);
+      }
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+      const sdpResponse = await fetch("https://api.openai.com/v1/realtime/calls", {
+        method: "POST",
+        body: offer.sdp,
+        headers: {
+          Authorization: `Bearer ${secret}`,
+          "Content-Type": "application/sdp",
+        },
+      });
+      if (!sdpResponse.ok) {
+        throw new Error(await sdpResponse.text());
+      }
+      const answer: RTCSessionDescriptionInit = {
+        type: "answer",
+        sdp: await sdpResponse.text(),
+      };
+      await pc.setRemoteDescription(answer);
+      realtimePc = pc;
+      realtimeDc = dc;
+      realtimeStream = stream;
+      realtimeAgentId = agentId;
+      realtimeState = "connected";
+      return true;
+    } catch (error) {
+      closeRealtimeConnection();
+      realtimeState = "failed";
+      const message = error instanceof Error ? error.message : String(error);
+      setInteractionError("Unable to connect realtime voice.", {
+        step: "push_to_talk:webrtc_connect",
+        agentId,
+        message,
+      });
+      return false;
+    } finally {
+      render();
+    }
+  };
+
   const stopAudioCapture = (): void => {
     clearRecordingMaxTimeout();
     if (speechRecognition !== null) {
@@ -970,6 +1072,25 @@ export function createPreviewSessionInteractionPanel(options: {
 
   const startPushToTalkRecording = async (): Promise<void> => {
     if (mediaRecorder !== null && mediaRecorder.state === "recording") {
+      return;
+    }
+    const p2aAgent =
+      activeAgentId === null ? undefined : agentsById.get(activeAgentId);
+    if (p2aAgent?.enableP2a !== "on") {
+      setInteractionError("Push to talk is not enabled for this agent.", {
+        step: "push_to_talk:agent_not_p2a",
+        agentId: activeAgentId,
+      });
+      return;
+    }
+    if (
+      activeAgentId !== null &&
+      typeof p2aAgent?.realtimeWebrtc?.clientSecret === "string"
+    ) {
+      const ok = await ensureRealtimeConnection(activeAgentId);
+      if (!ok) {
+        return;
+      }
       return;
     }
     try {
@@ -1025,6 +1146,43 @@ export function createPreviewSessionInteractionPanel(options: {
 
   const sendPushToTalkAudio = async (): Promise<void> => {
     if (activeAgentId === null || draftAudio === null) return;
+    const sendAgent = agentsById.get(activeAgentId);
+    if (sendAgent?.enableP2a !== "on") {
+      setInteractionError("Push to talk is not enabled for this agent.", {
+        step: "push_to_talk:send_blocked",
+        agentId: activeAgentId,
+      });
+      return;
+    }
+    if (typeof sendAgent.realtimeWebrtc?.clientSecret === "string") {
+      if (!(await ensureRealtimeConnection(activeAgentId))) {
+        return;
+      }
+      const messageEvent = {
+        type: "conversation.item.create",
+        item: {
+          type: "message",
+          role: "user",
+          content: [
+            {
+              type: "input_text",
+              text: draftAudio.transcript || "Voice input from microphone track.",
+            },
+          ],
+        },
+      };
+      try {
+        realtimeDc?.send(JSON.stringify(messageEvent));
+        result.textContent = "Realtime voice connected.";
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        setInteractionError("Voice request failed.", {
+          step: "push_to_talk:dc_send",
+          message,
+        });
+      }
+      return;
+    }
     const sid = options.getSid();
     const mainNodeId = options.getMainNodeId();
     if (sid === null || mainNodeId === null) {
@@ -1571,6 +1729,57 @@ export function createPreviewSessionInteractionPanel(options: {
       body.append(empty);
       return;
     }
+    const p2aTarget = agentsById.get(activeAgentId);
+    if (p2aTarget?.enableP2a !== "on") {
+      shouldAutoStartRecording = false;
+      const warn = document.createElement("div");
+      warn.className = "preview-session-interaction__empty";
+      warn.textContent =
+        "Push to talk is not enabled for this agent. Register the agent with P2A enabled to use voice.";
+      body.append(warn);
+      return;
+    }
+    if (typeof p2aTarget?.realtimeWebrtc?.clientSecret === "string") {
+      shouldAutoStartRecording = false;
+      const titleEl = document.createElement("div");
+      titleEl.className = "preview-session-interaction__assist-desc";
+      titleEl.textContent =
+        "Realtime WebRTC voice uses direct microphone tracks (no local media recording buffer).";
+      const state = document.createElement("div");
+      state.className = "preview-session-interaction__audio-state";
+      state.textContent =
+        realtimeState === "connected"
+          ? "Voice connected."
+          : realtimeState === "connecting"
+            ? "Connecting voice..."
+            : realtimeState === "failed"
+              ? "Voice connection failed."
+              : "Press P near the agent to connect voice.";
+      const actions = document.createElement("div");
+      actions.className = "preview-session-interaction__audio-buttons";
+      const connectBtn = document.createElement("button");
+      connectBtn.type = "button";
+      connectBtn.className = "preview-session-interaction__audio-btn";
+      connectBtn.textContent =
+        realtimeState === "connected" ? "Reconnect" : "Connect Voice";
+      connectBtn.addEventListener("click", () => {
+        if (activeAgentId !== null) {
+          void ensureRealtimeConnection(activeAgentId);
+        }
+      });
+      const disconnectBtn = document.createElement("button");
+      disconnectBtn.type = "button";
+      disconnectBtn.className = "preview-session-interaction__audio-btn";
+      disconnectBtn.textContent = "Disconnect";
+      disconnectBtn.disabled = realtimeState !== "connected";
+      disconnectBtn.addEventListener("click", () => {
+        closeRealtimeConnection();
+        render();
+      });
+      actions.append(connectBtn, disconnectBtn);
+      body.append(titleEl, state, actions);
+      return;
+    }
     const titleEl = document.createElement("div");
     titleEl.className = "preview-session-interaction__assist-desc";
     titleEl.textContent = "Recording starts automatically. Max 30 seconds.";
@@ -1763,14 +1972,22 @@ export function createPreviewSessionInteractionPanel(options: {
         error: errText,
       });
       result.textContent = `${rid}: ${errText}`;
-      setInteractionError("Intercom reported failure for this request.", {
-        step: "intercom:payload",
-        requestId: rid,
-        status: payload.status,
-        error: errText,
-        mode: pending.mode,
-        agentId: pending.agentId,
-      });
+      const isP2aAudioMissing =
+        pending.mode === "push_to_talk" &&
+        errText === INTERCOM_P2A_AUDIO_NOT_ENABLED;
+      setInteractionError(
+        isP2aAudioMissing
+          ? "Push to talk is not enabled for this agent."
+          : "Intercom reported failure for this request.",
+        {
+          step: "intercom:payload",
+          requestId: rid,
+          status: payload.status,
+          error: errText,
+          mode: pending.mode,
+          agentId: pending.agentId,
+        }
+      );
       pendingByRequestId.delete(rid);
       render();
     }
@@ -1819,6 +2036,7 @@ export function createPreviewSessionInteractionPanel(options: {
       selectedTool = null;
       assistResultView = null;
       stopAudioCapture();
+      closeRealtimeConnection();
       clearDraftAudio();
       if (mode === "push_to_talk") {
         shouldAutoStartRecording = true;
@@ -1830,6 +2048,7 @@ export function createPreviewSessionInteractionPanel(options: {
     setMode: (nextMode) => {
       if (nextMode !== "push_to_talk") {
         stopAudioCapture();
+        closeRealtimeConnection();
       }
       mode = nextMode;
       shouldAutoStartRecording = nextMode === "push_to_talk";
@@ -1851,6 +2070,20 @@ export function createPreviewSessionInteractionPanel(options: {
       scrollToBottom();
     },
     refresh: () => {
+      render();
+    },
+    preparePushToTalkConnection: async (agentId) => {
+      const agent = agentsById.get(agentId);
+      if (agent?.enableP2a !== "on") {
+        return false;
+      }
+      if (typeof agent.realtimeWebrtc?.clientSecret !== "string") {
+        return true;
+      }
+      return ensureRealtimeConnection(agentId);
+    },
+    closeVoiceConnection: () => {
+      closeRealtimeConnection();
       render();
     },
     applyIntercomEvent,

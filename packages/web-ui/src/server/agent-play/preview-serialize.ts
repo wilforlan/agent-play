@@ -37,6 +37,13 @@ export type PreviewWorldMapAgentOccupantJson = {
   assistToolNames?: string[];
   assistTools?: AssistToolSnapshotJson[];
   hasChatTool?: boolean;
+  enableP2a?: "on" | "off";
+  realtimeWebrtc?: {
+    clientSecret: string;
+    expiresAt?: string;
+    model: string;
+    voice?: string;
+  };
   stationary?: boolean;
   lastUpdate?: WorldJourneyUpdateJson;
   recentInteractions?: PreviewInteractionEntryJson[];

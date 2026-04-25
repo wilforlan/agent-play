@@ -82,6 +82,17 @@ export type PlatformAgentInformation = {
  * It is sent on the wire as `agentId` for server compatibility; treating it as a node id makes the
  * contract explicit for billing, validation, and event attribution.
  */
+export type P2aEnableFlag = "on" | "off";
+
+export const INTERCOM_P2A_AUDIO_NOT_ENABLED = "P2A_AUDIO_NOT_ENABLED" as const;
+
+export type RealtimeWebrtcClientSecret = {
+  clientSecret: string;
+  expiresAt?: string;
+  model: string;
+  voice?: string;
+};
+
 export type AddAgentInput = PlatformAgentInformation & {
   /** Registration from {@link langchainRegistration}. */
   agent: LangChainAgentRegistration;
@@ -89,6 +100,11 @@ export type AddAgentInput = PlatformAgentInformation & {
   mainNodeId?: string;
   /** Agent node id — same value the server stores as registered `agentId`. */
   nodeId: string;
+  /**
+   * When **`"on"`**, the automation process may attach OpenAI Realtime (see `@agent-play/p2a-audio`).
+   * Omitted or **`"off"`** disables that bridge. Requires **`OPENAI_API_KEY`** on the agent host when on.
+   */
+  enableP2a?: P2aEnableFlag;
 };
 
 /**
@@ -109,6 +125,8 @@ export type AddPlayerInput = PlatformAgentInformation & {
   mainNodeId?: string;
   /** Registered agent id (or session-local id without Redis). */
   agentId: string;
+  /** @inheritdoc AddAgentInput.enableP2a */
+  enableP2a?: P2aEnableFlag;
 };
 
 /** Zone counter event surfaced on snapshots and signals. */
@@ -160,6 +178,10 @@ export type AgentAudioEvent = {
 export type RegisteredPlayer = PlayAgentInformation & {
   previewUrl: string;
   registeredAgent: RegisteredAgentSummary;
+  /** Echo of registration-time P2A flag (defaults to **`"off"`**). */
+  enableP2a: P2aEnableFlag;
+  /** Optional OpenAI Realtime WebRTC client-secret payload for browser-side direct voice. */
+  realtimeWebrtc?: RealtimeWebrtcClientSecret;
   connectionId?: string;
   leaseTtlSeconds?: number;
   on: (
@@ -241,6 +263,7 @@ export type AgentPlayWorldMapAgentOccupant = {
   assistToolNames?: string[];
   assistTools?: AssistToolSpec[];
   hasChatTool?: boolean;
+  enableP2a?: P2aEnableFlag;
   stationary?: boolean;
   lastUpdate?: unknown;
   recentInteractions?: Array<{

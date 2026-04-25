@@ -1,16 +1,19 @@
-import type {
-  AgentAudioEvent,
-  AddAgentInput,
-  AddPlayerInput,
-  AgentPlaySnapshot,
-  AgentPlayWorldMap,
-  AgentPlayWorldMapBounds,
-  Journey,
-  PlayAudio,
-  RecordInteractionInput,
-  RegisteredAgentSummary,
-  RegisteredPlayer,
-  PlayerChainNodeResponse,
+import {
+  INTERCOM_P2A_AUDIO_NOT_ENABLED,
+  type AgentAudioEvent,
+  type AddAgentInput,
+  type AddPlayerInput,
+  type AgentPlaySnapshot,
+  type P2aEnableFlag,
+  type RealtimeWebrtcClientSecret,
+  type AgentPlayWorldMap,
+  type AgentPlayWorldMapBounds,
+  type Journey,
+  type PlayAudio,
+  type RecordInteractionInput,
+  type RegisteredAgentSummary,
+  type RegisteredPlayer,
+  type PlayerChainNodeResponse,
 } from "../public-types.js";
 import { agentPlayDebug } from "./agent-play-debug.js";
 import {
@@ -223,6 +226,33 @@ function parseRegisteredAgentSummary(raw: unknown): RegisteredAgentSummary {
     yieldCount: raw.yieldCount,
     flagged: raw.flagged,
   };
+}
+
+function parseRealtimeWebrtcClientSecret(
+  raw: unknown
+): RealtimeWebrtcClientSecret | undefined {
+  if (!isRecord(raw)) {
+    return undefined;
+  }
+  const clientSecret = raw.clientSecret;
+  const model = raw.model;
+  if (typeof clientSecret !== "string" || clientSecret.length === 0) {
+    return undefined;
+  }
+  if (typeof model !== "string" || model.length === 0) {
+    return undefined;
+  }
+  const parsed: RealtimeWebrtcClientSecret = {
+    clientSecret,
+    model,
+  };
+  if (typeof raw.expiresAt === "string" && raw.expiresAt.length > 0) {
+    parsed.expiresAt = raw.expiresAt;
+  }
+  if (typeof raw.voice === "string" && raw.voice.length > 0) {
+    parsed.voice = raw.voice;
+  }
+  return parsed;
 }
 
 function formatInvalidHoldSecondsError(): string {
@@ -756,6 +786,7 @@ export class RemotePlayWorld {
         agentId: input.nodeId,
         connectionId,
         leaseTtlSeconds,
+        ...(input.enableP2a !== undefined ? { enableP2a: input.enableP2a } : {}),
       }),
     });
     const bodyText = await res.text();
@@ -812,6 +843,12 @@ export class RemotePlayWorld {
       timer,
     });
     const now = new Date();
+    const enableP2aFromBody =
+      body.enableP2a === "on" || body.enableP2a === "off"
+        ? body.enableP2a
+        : undefined;
+    const enableP2a: P2aEnableFlag = enableP2aFromBody ?? input.enableP2a ?? "off";
+    const realtimeWebrtc = parseRealtimeWebrtcClientSecret(body.realtimeWebrtc);
     const on = (
       eventName: "audio",
       listener: (event: AgentAudioEvent) => void | Promise<void>
@@ -829,6 +866,8 @@ export class RemotePlayWorld {
       updatedAt: now,
       previewUrl,
       registeredAgent,
+      enableP2a,
+      ...(realtimeWebrtc !== undefined ? { realtimeWebrtc } : {}),
       connectionId: bodyConnectionId,
       leaseTtlSeconds: bodyLeaseTtlSeconds,
       on,
@@ -845,6 +884,9 @@ export class RemotePlayWorld {
       agent: input.agent,
       nodeId: input.agentId,
     };
+    if (input.enableP2a !== undefined) {
+      payload.enableP2a = input.enableP2a;
+    }
     if (input.version !== undefined) {
       payload.version = input.version;
     }
@@ -906,7 +948,8 @@ export class RemotePlayWorld {
   }
 
   /**
-   * Subscribes to the session SSE stream and handles **`forwarded`** intercom commands whose **`toPlayerId`** is in **`playerId`** or **`playerIds`**, invoking **`executeTool`** and posting **`intercomResponse`** (**`completed`** / **`failed`**).
+   * Subscribes to the session SSE stream and handles **`forwarded`** intercom commands whose **`toPlayerId`** is in **`playerId`** or **`playerIds`**, invoking **`executeTool`** (non-audio) or per-player **`audio`** listeners, and posting **`intercomResponse`** (**`completed`** / **`failed`**).
+   * **`kind: "audio"`** without registered **`audio`** listeners yields **`failed`** with **`INTERCOM_P2A_AUDIO_NOT_ENABLED`** (never **`chat_tool`**).
    * Uses a **single** SSE connection when **`playerIds`** lists multiple automation agents (recommended for several agents in one process).
    * Not invoked automatically by {@link RemotePlayWorld.addAgent}.
    */
@@ -996,27 +1039,7 @@ export class RemotePlayWorld {
             kind: cmd.kind,
             toolName: cmd.toolName,
           });
-          const toolName =
-            cmd.kind === "chat" || cmd.kind === "audio"
-              ? "chat_tool"
-              : cmd.toolName ?? "";
-          const args =
-            cmd.kind === "chat"
-              ? { text: cmd.text ?? "" }
-              : cmd.kind === "audio"
-                ? { audio: cmd.audio }
-                : (cmd.args ?? {});
-          this.logTransport("intercom:executeTool", {
-            requestId: cmd.requestId,
-            toolName,
-            argsPreview: this.truncateForLog(JSON.stringify(args)),
-          });
           try {
-            this.logTransport("intercom:executeTool:started", {
-              requestId: cmd.requestId,
-              toolName,
-              argsPreview: this.truncateForLog(JSON.stringify(args)),
-            });
             let result: Record<string, unknown>;
             if (cmd.kind === "audio") {
               const audioListeners = this.getAudioListeners(cmd.toPlayerId);
@@ -1067,6 +1090,17 @@ export class RemotePlayWorld {
                 result = { handledBy: "audio_listener" };
                 continue;
               }
+              await this.sendIntercomResponse({
+                requestId: cmd.requestId,
+                mainNodeId: cmd.mainNodeId,
+                toPlayerId: cmd.fromPlayerId,
+                fromPlayerId: cmd.toPlayerId,
+                kind: "audio",
+                status: "failed",
+                ts: new Date().toISOString(),
+                error: INTERCOM_P2A_AUDIO_NOT_ENABLED,
+              });
+              continue;
             }
             if (
               cmd.kind === "chat" &&
@@ -1091,16 +1125,32 @@ export class RemotePlayWorld {
                 resultPreview: this.truncateForLog(JSON.stringify(result)),
               });
             } else {
+              const toolName =
+                cmd.kind === "chat" ? "chat_tool" : cmd.toolName ?? "";
+              const args =
+                cmd.kind === "chat"
+                  ? { text: cmd.text ?? "" }
+                  : (cmd.args ?? {});
+              this.logTransport("intercom:executeTool", {
+                requestId: cmd.requestId,
+                toolName,
+                argsPreview: this.truncateForLog(JSON.stringify(args)),
+              });
+              this.logTransport("intercom:executeTool:started", {
+                requestId: cmd.requestId,
+                toolName,
+                argsPreview: this.truncateForLog(JSON.stringify(args)),
+              });
               result = await Promise.resolve(
                 executeTool({ toolName, args })
               );
+              this.logTransport("intercom:executeTool:completed", {
+                requestId: cmd.requestId,
+                toolName,
+                argsPreview: this.truncateForLog(JSON.stringify(args)),
+                resultPreview: this.truncateForLog(JSON.stringify(result)),
+              });
             }
-            this.logTransport("intercom:executeTool:completed", {
-              requestId: cmd.requestId,
-              toolName,
-              argsPreview: this.truncateForLog(JSON.stringify(args)),
-              resultPreview: this.truncateForLog(JSON.stringify(result)),
-            });
             await this.sendIntercomResponse({
               requestId: cmd.requestId,
               mainNodeId: cmd.mainNodeId,

@@ -1,5 +1,10 @@
-import type { AgentPlaySnapshot } from "@agent-play/sdk";
-import { langchainRegistration, RemotePlayWorld } from "@agent-play/sdk";
+import type { AgentPlaySnapshot, P2aEnableFlag, RegisteredPlayer } from "@agent-play/sdk";
+import {
+  agentPlayDebug,
+  langchainRegistration,
+  RemotePlayWorld,
+} from "@agent-play/sdk";
+import { subscribeP2aAudioBridge } from "@agent-play/p2a-audio";
 import type { BuiltinAgentDefinition } from "../builtins/types.js";
 import { getBuiltinAgentDefinitions } from "../builtins/definitions.js";
 import { executeToolCapability } from "../tool-handlers/execute-tool-capability.js";
@@ -31,10 +36,19 @@ function resolveSkippedBuiltinPlayerId(
 export type RegisterBuiltinAgentsOptions = {
   skipExistingByName?: boolean;
   mainNodeId?: string;
+  /** Default **`enableP2a`** for builtins when the definition omits it. */
+  enableP2a?: P2aEnableFlag;
 };
 
 const DEFAULT_MAIN_NODE_ID =
   "87b6637b010478e48a83a8d445041ae4df5d607df7932153cdfee5c601e8e39e";
+
+function resolveEnableP2aForBuiltin(
+  def: BuiltinAgentDefinition,
+  options: RegisterBuiltinAgentsOptions
+): P2aEnableFlag {
+  return def.enableP2a ?? options.enableP2a ?? "off";
+}
 
 export async function registerBuiltinAgents(
   options: RegisterBuiltinAgentsOptions = {}
@@ -56,16 +70,22 @@ export async function registerBuiltinAgents(
     }
   }
   const intercomPlayerIds: string[] = [];
+  const p2aTargets: RegisteredPlayer[] = [];
   for (const def of getBuiltinAgentDefinitions()) {
     const skipAdd = skipExisting && existingNames.has(def.name);
     if (!skipAdd) {
+      const enableP2a = resolveEnableP2aForBuiltin(def, options);
       const registered = await world.addAgent({
         name: def.name,
         type: def.type,
         agent: langchainRegistration(def.agent),
         nodeId: def.id,
+        enableP2a,
       });
       intercomPlayerIds.push(registered.id);
+      if (registered.enableP2a === "on") {
+        p2aTargets.push(registered);
+      }
       continue;
     }
     const playerId = resolveSkippedBuiltinPlayerId(snap, def);
@@ -74,6 +94,28 @@ export async function registerBuiltinAgents(
     }
   }
   let closeIntercom: () => void = () => {};
+  const p2aDisposers: Array<() => Promise<void>> = [];
+  if (p2aTargets.length > 0) {
+    const key = process.env.OPENAI_API_KEY?.trim();
+    if (key === undefined || key.length === 0) {
+      throw new Error(
+        "OPENAI_API_KEY is required when registering builtins with enableP2a on"
+      );
+    }
+    agentPlayDebug("register-builtins", "p2a_audio_bridges_start", {
+      count: p2aTargets.length,
+      playerIds: p2aTargets.map((r) => r.id),
+    });
+    for (const registered of p2aTargets) {
+      p2aDisposers.push(
+        subscribeP2aAudioBridge({
+          world,
+          registered,
+          openaiApiKey: key,
+        }).dispose
+      );
+    }
+  }
   if (intercomPlayerIds.length > 0) {
     const chatAgentsByPlayerId = new Map(
       getBuiltinAgentDefinitions()
@@ -88,6 +130,12 @@ export async function registerBuiltinAgents(
   }
   world.onClose(() => {
     closeIntercom();
+    if (p2aDisposers.length > 0) {
+      agentPlayDebug("register-builtins", "p2a_audio_bridges_dispose", {
+        count: p2aDisposers.length,
+      });
+    }
+    void Promise.all(p2aDisposers.map((d) => d()));
   });
   return world;
 }

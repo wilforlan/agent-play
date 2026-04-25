@@ -267,13 +267,33 @@ describe("createPreviewSessionInteractionPanel", () => {
     ).toBeNull();
   });
 
+  it("shows disabled copy in push-to-talk when agent enableP2a is off", () => {
+    const panel = createPreviewSessionInteractionPanel({
+      getSid: () => "sid-1",
+      apiBase: "/api/agent-play",
+      getMainNodeId: () => "main-node-1",
+    });
+    panel.setAgents([
+      { agentId: "agent-1", name: "Agent 1", enableP2a: "off" },
+    ]);
+    panel.setContext("agent-1");
+    panel.setMode("push_to_talk");
+    document.body.append(panel.element);
+    expect(
+      panel.element.querySelector(".preview-session-interaction__audio-tools")
+    ).toBeNull();
+    expect(panel.element.textContent).toMatch(/not enabled for this agent/i);
+  });
+
   it("shows audio tools and hides chat input in push-to-talk mode", () => {
     const panel = createPreviewSessionInteractionPanel({
       getSid: () => "sid-1",
       apiBase: "/api/agent-play",
       getMainNodeId: () => "main-node-1",
     });
-    panel.setAgents([{ agentId: "agent-1", name: "Agent 1" }]);
+    panel.setAgents([
+      { agentId: "agent-1", name: "Agent 1", enableP2a: "on" },
+    ]);
     panel.setContext("agent-1");
     panel.setMode("push_to_talk");
     document.body.append(panel.element);
@@ -320,7 +340,9 @@ describe("createPreviewSessionInteractionPanel", () => {
       apiBase: "/api/agent-play",
       getMainNodeId: () => "main-node-1",
     });
-    panel.setAgents([{ agentId: "agent-1", name: "Agent 1" }]);
+    panel.setAgents([
+      { agentId: "agent-1", name: "Agent 1", enableP2a: "on" },
+    ]);
     panel.setContext("agent-1");
     panel.setMode("push_to_talk");
     document.body.append(panel.element);
@@ -387,7 +409,9 @@ describe("createPreviewSessionInteractionPanel", () => {
       apiBase: "/api/agent-play",
       getMainNodeId: () => "main-node-1",
     });
-    panel.setAgents([{ agentId: "agent-1", name: "Agent 1" }]);
+    panel.setAgents([
+      { agentId: "agent-1", name: "Agent 1", enableP2a: "on" },
+    ]);
     panel.setContext("agent-1");
     panel.setMode("push_to_talk");
     document.body.append(panel.element);
@@ -476,7 +500,9 @@ describe("createPreviewSessionInteractionPanel", () => {
       apiBase: "/agent-play",
       getMainNodeId: () => "main-node-1",
     });
-    panel.setAgents([{ agentId: "agent-1", name: "Agent 1" }]);
+    panel.setAgents([
+      { agentId: "agent-1", name: "Agent 1", enableP2a: "on" },
+    ]);
     panel.setContext("agent-1");
     panel.setMode("push_to_talk");
     document.body.append(panel.element);

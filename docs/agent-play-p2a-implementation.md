@@ -9,6 +9,8 @@ The goal is to add voice communication without breaking existing world/intercom 
 Assist tools are the core world background runtime for this architecture. For the focused runtime definition, see [Assist tools as world background runtime](assist-tools-world-background-runtime.md).
 For the intercom addressing model that powers Agent Ringer and frontend `/` delivery, see [Intercom-address architecture](intercom-address.md).
 
+**See also:** [P2A realtime hub](p2a/index.md) documents the **OpenAI Realtime** automation bridge (`@agent-play/p2a-audio`, `addAgent({ enableP2a })`), complementary to the Ringer-centric flow below.
+
 ## Scope
 
 This plan covers:

@@ -51,8 +51,16 @@ export function parseAgentOccupantRow(
   } else if (typeof raw.agentType === "string") {
     platform = raw.agentType;
   }
+  const enableP2a =
+    raw.enableP2a === "on" || raw.enableP2a === "off" ? raw.enableP2a : undefined;
+  if (platform !== undefined && enableP2a !== undefined) {
+    return { ...base, platform, enableP2a };
+  }
   if (platform !== undefined) {
     return { ...base, platform };
+  }
+  if (enableP2a !== undefined) {
+    return { ...base, enableP2a };
   }
   return base;
 }

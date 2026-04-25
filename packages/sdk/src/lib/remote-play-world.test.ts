@@ -350,6 +350,100 @@ describe("RemotePlayWorld", () => {
     expect(player.id).toBe("p1");
     expect(player.previewUrl).toBe(`${BASE_URL}/agent-play/watch`);
     expect(player.registeredAgent.agentId).toBe("aid-1");
+    expect(player.enableP2a).toBe("off");
+    await world.close();
+  });
+
+  it("addAgent forwards enableP2a on the wire and prefers server echo on RegisteredPlayer", async () => {
+    const fetchMock = vi.fn(
+      async (url: string | URL, init?: RequestInit) => {
+        const u = String(url);
+        if (u.endsWith("/api/agent-play/session")) {
+          return sessionResponse();
+        }
+        if (u.endsWith("/api/nodes/validate") && init?.method === "POST") {
+          return new Response(JSON.stringify({ ok: true, nodeKind: "agent" }), {
+            status: 200,
+          });
+        }
+        if (u.includes("/api/agent-play/players") && init?.method === "POST") {
+          const body = JSON.parse(String(init.body)) as { enableP2a?: string };
+          expect(body.enableP2a).toBe("on");
+          return new Response(
+            JSON.stringify({
+              playerId: "p2",
+              previewUrl: `${BASE_URL}/agent-play/watch`,
+              registeredAgent: sampleRegisteredAgent("aid-2", "b"),
+              enableP2a: "on",
+            }),
+            { status: 200 }
+          );
+        }
+        return notFound();
+      }
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const world = playWorld("key");
+    await world.connect();
+    const player = await world.addAgent({
+      name: "b",
+      type: "langchain",
+      agent: { type: "langchain", toolNames: ["chat_tool"] },
+      nodeId: "aid-2",
+      enableP2a: "on",
+    });
+    expect(player.enableP2a).toBe("on");
+    await world.close();
+  });
+
+  it("addAgent returns realtimeWebrtc payload when server provides client secret", async () => {
+    const fetchMock = vi.fn(
+      async (url: string | URL, init?: RequestInit) => {
+        const u = String(url);
+        if (u.endsWith("/api/agent-play/session")) {
+          return sessionResponse();
+        }
+        if (u.endsWith("/api/nodes/validate") && init?.method === "POST") {
+          return new Response(JSON.stringify({ ok: true, nodeKind: "agent" }), {
+            status: 200,
+          });
+        }
+        if (u.includes("/api/agent-play/players") && init?.method === "POST") {
+          return new Response(
+            JSON.stringify({
+              playerId: "p3",
+              previewUrl: `${BASE_URL}/agent-play/watch`,
+              registeredAgent: sampleRegisteredAgent("aid-3", "c"),
+              enableP2a: "on",
+              realtimeWebrtc: {
+                clientSecret: "cs_test_123",
+                model: "gpt-realtime",
+                voice: "marin",
+                expiresAt: "2026-04-25T11:00:00.000Z",
+              },
+            }),
+            { status: 200 }
+          );
+        }
+        return notFound();
+      }
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const world = playWorld("key");
+    await world.connect();
+    const player = await world.addAgent({
+      name: "c",
+      type: "langchain",
+      agent: { type: "langchain", toolNames: ["chat_tool"] },
+      nodeId: "aid-3",
+      enableP2a: "on",
+    });
+    expect(player.realtimeWebrtc).toEqual({
+      clientSecret: "cs_test_123",
+      model: "gpt-realtime",
+      voice: "marin",
+      expiresAt: "2026-04-25T11:00:00.000Z",
+    });
     await world.close();
   });
 
@@ -690,6 +784,55 @@ describe("RemotePlayWorld", () => {
     expect(snap.sid).toBe("sid-1");
     expect(snap.worldMap.occupants).toHaveLength(3);
     expect(snap.worldMap.occupants[0]?.kind).toBe("human");
+    await world.close();
+  });
+
+  it("getWorldSnapshot preserves enableP2a on agent occupants when present", async () => {
+    const fetchMock = vi.fn(
+      async (url: string | URL, init?: RequestInit) => {
+        const u = String(url);
+        if (u.endsWith("/api/agent-play/session")) {
+          return sessionResponse();
+        }
+        if (
+          u.endsWith("/api/agent-play/sdk/rpc") &&
+          !u.includes("sid=") &&
+          init?.method === "POST"
+        ) {
+          return new Response(
+            JSON.stringify({
+              snapshot: {
+                sid: "sid-p2a",
+                worldMap: {
+                  bounds: { minX: 0, minY: 0, maxX: 2, maxY: 2 },
+                  occupants: [
+                    {
+                      kind: "agent",
+                      agentId: "a-p2a",
+                      name: "Voice",
+                      x: 0,
+                      y: 0,
+                      enableP2a: "on",
+                    },
+                  ],
+                },
+              },
+            }),
+            { status: 200 }
+          );
+        }
+        return notFound();
+      }
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const world = playWorld();
+    await world.connect();
+    const snap = await world.getWorldSnapshot();
+    const occ = snap.worldMap.occupants[0];
+    expect(occ?.kind).toBe("agent");
+    if (occ?.kind === "agent") {
+      expect(occ.enableP2a).toBe("on");
+    }
     await world.close();
   });
 

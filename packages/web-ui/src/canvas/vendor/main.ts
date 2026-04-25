@@ -196,6 +196,13 @@ type AgentRow = {
   assistTools?: SnapshotAssistTool[];
   onZone?: { zoneCount: number; flagged?: boolean; at: string };
   onYield?: { yieldCount: number; at: string };
+  enableP2a?: "on" | "off";
+  realtimeWebrtc?: {
+    clientSecret: string;
+    expiresAt?: string;
+    model: string;
+    voice?: string;
+  };
 };
 
 type SnapshotAgentOccupant = {
@@ -210,6 +217,13 @@ type SnapshotAgentOccupant = {
   assistTools?: SnapshotAssistTool[];
   onZone?: { zoneCount: number; flagged?: boolean; at: string };
   onYield?: { yieldCount: number; at: string };
+  enableP2a?: "on" | "off";
+  realtimeWebrtc?: {
+    clientSecret: string;
+    expiresAt?: string;
+    model: string;
+    voice?: string;
+  };
 };
 
 type SnapshotMcpOccupant = {
@@ -252,6 +266,41 @@ function mapOccupantLastUpdate(
   };
 }
 
+function snapshotEnableP2aFlag(raw: unknown): "on" | "off" | undefined {
+  if (raw === "on" || raw === "off") {
+    return raw;
+  }
+  return undefined;
+}
+
+function snapshotRealtimeWebrtc(
+  raw: unknown
+):
+  | { clientSecret: string; expiresAt?: string; model: string; voice?: string }
+  | undefined {
+  if (typeof raw !== "object" || raw === null) {
+    return undefined;
+  }
+  const rec = raw as Record<string, unknown>;
+  if (typeof rec.clientSecret !== "string" || rec.clientSecret.length === 0) {
+    return undefined;
+  }
+  if (typeof rec.model !== "string" || rec.model.length === 0) {
+    return undefined;
+  }
+  const out: { clientSecret: string; expiresAt?: string; model: string; voice?: string } = {
+    clientSecret: rec.clientSecret,
+    model: rec.model,
+  };
+  if (typeof rec.expiresAt === "string" && rec.expiresAt.length > 0) {
+    out.expiresAt = rec.expiresAt;
+  }
+  if (typeof rec.voice === "string" && rec.voice.length > 0) {
+    out.voice = rec.voice;
+  }
+  return out;
+}
+
 function listAgentRows(s: Snapshot): AgentRow[] {
   return s.worldMap.occupants
     .filter((o): o is SnapshotAgentOccupant => o.kind === "agent")
@@ -265,6 +314,12 @@ function listAgentRows(s: Snapshot): AgentRow[] {
       assistTools: o.assistTools,
       onZone: o.onZone,
       onYield: o.onYield,
+      enableP2a: snapshotEnableP2aFlag(
+        (o as { enableP2a?: unknown }).enableP2a
+      ),
+      realtimeWebrtc: snapshotRealtimeWebrtc(
+        (o as { realtimeWebrtc?: unknown }).realtimeWebrtc
+      ),
     }));
 }
 
@@ -494,6 +549,40 @@ function triggerProximityAssistOrChat(action: "assist" | "chat"): void {
   void sendProximityAction(partner, action);
 }
 
+function showP2aTargetNotEnabledModal(): void {
+  const existing = document.getElementById("preview-p2a-target-modal");
+  if (existing !== null) return;
+  const overlay = document.createElement("div");
+  overlay.id = "preview-p2a-target-modal";
+  overlay.style.cssText =
+    "position:fixed;inset:0;z-index:13000;background:rgba(2,6,23,0.72);display:grid;place-items:center;padding:16px;";
+  const card = document.createElement("div");
+  card.style.cssText =
+    "max-width:360px;width:100%;border-radius:12px;border:1px solid rgba(248,113,113,0.55);background:#0f172a;color:#e2e8f0;padding:16px;display:grid;gap:10px;";
+  const title = document.createElement("h3");
+  title.style.cssText = "margin:0;font-size:16px;color:#fecaca;";
+  title.textContent = "Push to talk not available";
+  const body = document.createElement("p");
+  body.style.cssText = "margin:0;font-size:13px;line-height:1.45;color:#cbd5e1;";
+  body.textContent =
+    "Push to talk is not enabled for this agent. Register the agent with P2A on, or choose another agent.";
+  const close = document.createElement("button");
+  close.type = "button";
+  close.style.cssText =
+    "justify-self:end;border-radius:8px;border:1px solid rgba(148,163,184,0.45);background:rgba(30,41,59,0.95);color:#e2e8f0;padding:6px 10px;cursor:pointer;";
+  close.textContent = "Got it";
+  const remove = (): void => overlay.remove();
+  close.addEventListener("click", remove);
+  overlay.addEventListener("click", (event) => {
+    if (event.target === overlay) {
+      remove();
+    }
+  });
+  card.append(title, body, close);
+  overlay.append(card);
+  document.body.append(overlay);
+}
+
 function showP2aRequiredModal(): void {
   const existing = document.getElementById("preview-p2a-required-modal");
   if (existing !== null) return;
@@ -528,7 +617,7 @@ function showP2aRequiredModal(): void {
   document.body.append(overlay);
 }
 
-function triggerProximityPushToTalk(): void {
+async function triggerProximityPushToTalk(): Promise<void> {
   const partner = registeredAgentPartnerForProximityOrNull(
     lastProximityPartnerId
   );
@@ -537,7 +626,19 @@ function triggerProximityPushToTalk(): void {
     showP2aRequiredModal();
     return;
   }
+  if (snapshot !== null) {
+    const row = listAgentRows(snapshot).find((r) => r.agentId === partner);
+    if (row?.enableP2a !== "on") {
+      showP2aTargetNotEnabledModal();
+      return;
+    }
+  }
   sessionInteractionPanel?.setContext(partner);
+  const ready = await (sessionInteractionPanel?.preparePushToTalkConnection(partner) ??
+    Promise.resolve(true));
+  if (!ready) {
+    return;
+  }
   sessionInteractionPanel?.setMode("push_to_talk");
   sessionInteractionPanel?.scrollToBottom();
   if (mobileSidePanelControls?.isMobileViewport() === true) {
@@ -579,7 +680,7 @@ function onDocumentKeyDown(e: KeyboardEvent): void {
     return;
   }
   if (act === "push_to_talk") {
-    triggerProximityPushToTalk();
+    void triggerProximityPushToTalk();
     return;
   }
   void sendProximityAction(partner, act);
@@ -752,6 +853,8 @@ function hydrateChatFromSnapshot(s: Snapshot): void {
       agentId: p.agentId,
       name: p.name,
       assistTools: p.assistTools,
+      enableP2a: p.enableP2a,
+      realtimeWebrtc: p.realtimeWebrtc,
     }))
   );
   sessionInteractionPanel?.refresh();
@@ -1463,6 +1566,7 @@ function onFrame(): void {
       agentChatOverlays?.setLayout(id, layout.left, layout.top);
     }
   }
+  const prevProximityPartnerId = lastProximityPartnerId;
   const primaryPid = getHumanPlayerId();
   if (
     primaryPid !== null &&
@@ -1477,6 +1581,12 @@ function onFrame(): void {
     });
   } else {
     lastProximityPartnerId = null;
+  }
+  if (
+    prevProximityPartnerId !== null &&
+    prevProximityPartnerId !== lastProximityPartnerId
+  ) {
+    sessionInteractionPanel?.closeVoiceConnection();
   }
   if (proximityLegendEl !== null) {
     if (lastProximityPartnerId !== null) {
@@ -1749,7 +1859,7 @@ export function bootstrap(): void {
         triggerProximityAssistOrChat("chat");
       },
       onPushToTalk: () => {
-        triggerProximityPushToTalk();
+        void triggerProximityPushToTalk();
       },
     });
 

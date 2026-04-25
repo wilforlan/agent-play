@@ -19,4 +19,6 @@ export type BuiltinAgentDefinition = {
    * for `addAgent` and in **`chatAgentsByPlayerId`** for intercom **`invoke`**.
    */
   agent: unknown;
+  /** When **`"on"`**, {@link registerBuiltinAgents} attaches `@agent-play/p2a-audio` for this builtin. */
+  enableP2a?: "on" | "off";
 };

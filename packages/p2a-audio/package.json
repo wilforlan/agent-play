@@ -1,0 +1,48 @@
+{
+  "name": "@agent-play/p2a-audio",
+  "version": "3.1.0",
+  "description": "Node-only OpenAI Realtime WebSocket bridge for Agent Play intercom audio (no LiveKit).",
+  "private": false,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "author": "Isaac Williams",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/wilforlan/agent-play.git",
+    "directory": "packages/p2a-audio"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsup",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@agent-play/intercom": "file:../intercom",
+    "@agent-play/sdk": "file:../sdk",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "@types/ws": "^8.5.13",
+    "tsup": "^8.5.1",
+    "typescript": "~5.9.3",
+    "vitest": "^4.1.1"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

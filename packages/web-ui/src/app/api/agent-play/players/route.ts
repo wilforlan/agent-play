@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import { agentPlayVerbose } from "@/server/agent-play/agent-play-debug";
 import { logAgentPlayApi } from "@/server/agent-play/log-agent-play-api";
+import { mintOpenAiRealtimeClientSecret } from "@/server/agent-play/openai-realtime-client-secret";
 import type { LangChainAgentRegistration } from "@/server/agent-play/play-world.js";
 import { getPlayWorld } from "@/server/get-world";
 import { validateAgentPlaySession } from "@/server/agent-play/session-validation";
@@ -99,6 +100,40 @@ export async function POST(req: NextRequest) {
   const agentId = agentIdRaw;
   const name = body.name;
   const type = body.type;
+  const enableP2aRaw = body.enableP2a;
+  const enableP2a =
+    enableP2aRaw === "on" || enableP2aRaw === "off" ? enableP2aRaw : undefined;
+  const webRtcEnabled = process.env.P2A_WEBRTC_ENABLED === "1";
+  let realtimeWebrtc:
+    | {
+        clientSecret: string;
+        expiresAt?: string;
+        model: string;
+        voice?: string;
+      }
+    | undefined;
+  if (webRtcEnabled && enableP2a === "on") {
+    const openaiApiKey = process.env.OPENAI_API_KEY?.trim() ?? "";
+    if (openaiApiKey.length === 0) {
+      agentPlayVerbose("api", "players realtime secret skipped", {
+        reason: "missing OPENAI_API_KEY",
+        agentId,
+      });
+    } else {
+      try {
+        realtimeWebrtc = await mintOpenAiRealtimeClientSecret({
+          apiKey: openaiApiKey,
+          model: process.env.P2A_WEBRTC_MODEL,
+          voice: process.env.P2A_WEBRTC_VOICE,
+        });
+      } catch (mintErr) {
+        agentPlayVerbose("api", "players realtime secret failed", {
+          agentId,
+          message: mintErr instanceof Error ? mintErr.message : String(mintErr),
+        });
+      }
+    }
+  }
 
   try {
     const registered = await world.addPlayer({
@@ -110,6 +145,8 @@ export async function POST(req: NextRequest) {
       agentId,
       connectionId,
       leaseTtlSeconds,
+      ...(enableP2a !== undefined ? { enableP2a } : {}),
+      ...(realtimeWebrtc !== undefined ? { realtimeWebrtc } : {}),
     });
     return Response.json({
       playerId: registered.id,
@@ -117,6 +154,8 @@ export async function POST(req: NextRequest) {
       registeredAgent: registered.registeredAgent,
       connectionId: connectionId ?? null,
       leaseTtlSeconds: leaseTtlSeconds ?? null,
+      enableP2a: registered.enableP2a,
+      ...(realtimeWebrtc !== undefined ? { realtimeWebrtc } : {}),
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);

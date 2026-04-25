@@ -11,6 +11,7 @@ vi.mock("eventsource-client", () => ({
 }));
 
 import { RemotePlayWorld } from "@agent-play/sdk";
+import * as p2aAudio from "@agent-play/p2a-audio";
 import { getBuiltinAgentDefinitions } from "./builtins/definitions.js";
 import { registerBuiltinAgents } from "./register-builtins.js";
 
@@ -65,6 +66,9 @@ describe("registerBuiltinAgents", () => {
 
   it("returns world and registers built-ins when snapshot empty", async () => {
     setCredentialsFixture();
+    const p2aSpy = vi
+      .spyOn(p2aAudio, "subscribeP2aAudioBridge")
+      .mockReturnValue({ dispose: async () => {} });
     let addPlayerCount = 0;
     let validateCount = 0;
     let sawConnectValidation = false;
@@ -151,6 +155,76 @@ describe("registerBuiltinAgents", () => {
     expect(addPlayerCount).toBe(2);
     expect(validateCount).toBe(3);
     expect(sawConnectValidation).toBe(true);
+    expect(p2aSpy).not.toHaveBeenCalled();
+  });
+
+  it("subscribes p2a-audio when enableP2a is on for new agents", async () => {
+    setCredentialsFixture();
+    const p2aSpy = vi
+      .spyOn(p2aAudio, "subscribeP2aAudioBridge")
+      .mockReturnValue({ dispose: async () => {} });
+    let addPlayerCount = 0;
+    const fetchMock = vi.fn(
+      async (url: string | URL, init?: RequestInit) => {
+        const u = String(url);
+        if (u.endsWith("/api/nodes/validate") && init?.method === "POST") {
+          return new Response(JSON.stringify({ ok: true, nodeKind: "agent" }), {
+            status: 200,
+          });
+        }
+        if (u.endsWith("/api/agent-play/session")) {
+          return new Response(JSON.stringify({ sid: "sid-z" }), { status: 200 });
+        }
+        if (u.includes("/api/agent-play/sdk/rpc") && init?.method === "POST") {
+          const body = JSON.parse(String(init.body)) as { op?: string };
+          if (body.op === "getWorldSnapshot") {
+            return new Response(
+              JSON.stringify({
+                snapshot: {
+                  sid: "sid-z",
+                  worldMap: {
+                    bounds: { minX: 0, minY: 0, maxX: 2, maxY: 2 },
+                    occupants: [],
+                  },
+                },
+              }),
+              { status: 200 }
+            );
+          }
+        }
+        if (
+          new URL(u).pathname === "/api/agent-play/players" &&
+          init?.method === "POST"
+        ) {
+          addPlayerCount += 1;
+          const body = JSON.parse(String(init.body)) as {
+            name?: string;
+            agent?: unknown;
+            agentId?: string;
+            enableP2a?: string;
+          };
+          expect(body.enableP2a).toBe("on");
+          const name = body.name ?? "agent";
+          return new Response(
+            JSON.stringify({
+              playerId: `pid-${String(addPlayerCount)}`,
+              previewUrl: "http://127.0.0.1:3000/agent-play/watch",
+              registeredAgent: mockRegisteredAgent(
+                name,
+                body.agentId ?? `pid-${String(addPlayerCount)}`
+              ),
+              enableP2a: "on",
+            }),
+            { status: 200 }
+          );
+        }
+        return new Response("not found", { status: 404 });
+      }
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    await registerBuiltinAgents({ enableP2a: "on" });
+    expect(addPlayerCount).toBe(2);
+    expect(p2aSpy).toHaveBeenCalledTimes(2);
   });
 
   it("skips addAgent when built-in name already on snapshot but still subscribes intercom", async () => {

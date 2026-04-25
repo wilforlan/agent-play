@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { WORLD_INTERCOM_EVENT } from "@agent-play/intercom";
+import { INTERCOM_RESPONSE_OP, WORLD_INTERCOM_EVENT } from "@agent-play/intercom";
+import { INTERCOM_P2A_AUDIO_NOT_ENABLED } from "../public-types.js";
 import {
   RemotePlayWorld,
   type RemotePlayWorldNodeCredentials,
@@ -334,7 +335,7 @@ describe("subscribeIntercomCommands", () => {
     await world.close();
   });
 
-  it("routes forwarded audio command payload to executeTool as chat_tool args", async () => {
+  it("sends failed intercom response when forwarded audio has no audio listeners", async () => {
     const agentId = "agent-audio";
     intercomSseMessages.items = [
       {
@@ -383,18 +384,39 @@ describe("subscribeIntercomCommands", () => {
       executeTool,
     });
     await vi.waitFor(() => {
-      expect(executeTool).toHaveBeenCalledTimes(1);
+      const rpcCall = fetchMock.mock.calls.find((c) => {
+        if (!String(c[0]).includes("/sdk/rpc") || c[1]?.method !== "POST") {
+          return false;
+        }
+        const raw = c[1]?.body;
+        const body =
+          typeof raw === "string"
+            ? (JSON.parse(raw) as { op?: string })
+            : null;
+        return body?.op === INTERCOM_RESPONSE_OP;
+      });
+      expect(rpcCall).toBeDefined();
+      expect(executeTool).not.toHaveBeenCalled();
     });
-    expect(executeTool).toHaveBeenCalledWith({
-      toolName: "chat_tool",
-      args: {
-        audio: {
-          encoding: "webm",
-          dataBase64: "Zm9v",
-          durationMs: 1000,
-        },
-      },
+    const rpcCall = fetchMock.mock.calls.find((c) => {
+      if (!String(c[0]).includes("/sdk/rpc") || c[1]?.method !== "POST") {
+        return false;
+      }
+      const raw = c[1]?.body;
+      const body =
+        typeof raw === "string" ? (JSON.parse(raw) as { op?: string }) : null;
+      return body?.op === INTERCOM_RESPONSE_OP;
     });
+    expect(rpcCall).toBeDefined();
+    const body = JSON.parse(String(rpcCall?.[1]?.body)) as {
+      op?: string;
+      payload?: { status?: string; error?: string; kind?: string; requestId?: string };
+    };
+    expect(body.op).toBe(INTERCOM_RESPONSE_OP);
+    expect(body.payload?.status).toBe("failed");
+    expect(body.payload?.kind).toBe("audio");
+    expect(body.payload?.requestId).toBe("r-audio");
+    expect(body.payload?.error).toBe(INTERCOM_P2A_AUDIO_NOT_ENABLED);
     await world.close();
   });
 
