@@ -134,10 +134,10 @@ const WORLD_INTERACTION_SSE = "world:interaction";
 const WORLD_AGENT_SIGNAL_SSE = "world:agent_signal";
 const WORLD_INTERCOM_SSE = "world:intercom";
 const WORLD_GLOBAL_CHAT_CHANNEL = "intercom:world:global";
-function buildIntercomAddress(channelKey: string): string {
-  return `intercom-address://${channelKey}`;
+const AP_INTERCOM_PROTOCOL = "ap-intercom";
+function buildIntercomAddress(nodeId: string): string {
+  return `${AP_INTERCOM_PROTOCOL}://${nodeId.trim()}`;
 }
-const INTERCOM_ADDRESS_PREFIX = "intercom-address://";
 const HUMAN_VIEWER_PLAYER_ID = "__human__";
 const MAX_PLAYER_CHAIN_FETCH_STEPS = 102;
 const HOME_STAND_EPS = 0.26;
@@ -786,9 +786,19 @@ function globalSenderName(playerId: string): string {
 function isValidIntercomAddress(value: string | null): value is string {
   if (value === null) return false;
   const trimmed = value.trim();
-  if (!trimmed.startsWith(INTERCOM_ADDRESS_PREFIX)) return false;
-  const channelKey = trimmed.slice(INTERCOM_ADDRESS_PREFIX.length).trim();
-  return channelKey.length > 0;
+  const delimiterIndex = trimmed.indexOf("://");
+  if (delimiterIndex <= 0) return false;
+  const protocol = trimmed.slice(0, delimiterIndex).trim().toLowerCase();
+  const id = trimmed.slice(delimiterIndex + 3).trim();
+  return protocol.endsWith("-intercom") && id.length > 0;
+}
+
+function resolvePersonalIntercomAddress(): string | null {
+  const mainNodeId = getMainNodeIdForIntercom();
+  if (mainNodeId === null || mainNodeId.trim().length === 0) {
+    return null;
+  }
+  return buildIntercomAddress(mainNodeId);
 }
 
 function readIntercomMessageForPlayback(data: {
@@ -1137,11 +1147,8 @@ function connectSse(sid: string): void {
           });
         }
       }
-      if (
-        typeof row.channelKey === "string" &&
-        row.channelKey !== WORLD_GLOBAL_CHAT_CHANNEL
-      ) {
-        activeIntercomAddress = buildIntercomAddress(row.channelKey);
+      if (typeof row.intercomAddress === "string" && isValidIntercomAddress(row.intercomAddress)) {
+        activeIntercomAddress = row.intercomAddress;
         globalChatRoom?.refreshP2a();
       }
       if (
@@ -1693,7 +1700,7 @@ export function bootstrap(): void {
         setPreviewViewSettings({ p2aEnabled: enabled });
         if (enabled) {
           if (!isValidIntercomAddress(activeIntercomAddress)) {
-            activeIntercomAddress = buildIntercomAddress(WORLD_GLOBAL_CHAT_CHANNEL);
+            activeIntercomAddress = resolvePersonalIntercomAddress();
           }
           globalChatRoom?.refreshP2a();
         }
@@ -1701,7 +1708,7 @@ export function bootstrap(): void {
       getIntercomAddress: () => activeIntercomAddress,
       ensureIntercomAddress: () => {
         if (!isValidIntercomAddress(activeIntercomAddress)) {
-          activeIntercomAddress = buildIntercomAddress(WORLD_GLOBAL_CHAT_CHANNEL);
+          activeIntercomAddress = resolvePersonalIntercomAddress();
         }
         globalChatRoom?.refreshP2a();
         return activeIntercomAddress;

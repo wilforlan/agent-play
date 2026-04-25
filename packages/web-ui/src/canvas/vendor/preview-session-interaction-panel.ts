@@ -978,10 +978,9 @@ export function createPreviewSessionInteractionPanel(options: {
         name: agent?.name ?? agentId,
         instructions,
       });
-      const session = new RealtimeSession({
+      const session = new RealtimeSession(realtimeAgent, {
         model: agent?.realtimeWebrtc?.model ?? "gpt-realtime",
         voice: agent?.realtimeWebrtc?.voice,
-        agent: realtimeAgent,
       }) as {
         connect: (options: {
           apiKey: string;

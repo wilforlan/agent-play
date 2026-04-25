@@ -23,6 +23,7 @@ The cutover keeps the current infrastructure pattern intact: transport and snaps
    - snapshot occupant data -> normalized agent rows (including `enableP2a` and `realtimeWebrtc`)
    - rows -> session panel `setAgents(...)`
    - panel in-memory `agentsById` lookup -> voice preflight/connect
+   - personal intercom address fallback uses `ap-intercom://{human_node_id}` instead of a world-global channel URI
 4. P-key orchestration and proximity lifecycle stay in existing main-loop/panel boundaries; only connection internals move to Realtime SDK.
 
 This means web-ui behavior remains aligned with existing app architecture: state is snapshot-driven, voice credentials are runtime in-memory values, and panel public APIs stay stable.
@@ -54,6 +55,9 @@ This means web-ui behavior remains aligned with existing app architecture: state
 - Intercom command handling is now scoped to `assist` and `chat`.
 - `kind: "audio"` command flow is removed from active SDK/intercom runtime paths.
 - Push-to-talk depends on realtime credentials for direct OpenAI voice sessions, not intercom audio fallback.
+- Intercom addressing is personal and protocol-aware:
+  - first-party canonical format: `ap-intercom://{node_id}`
+  - third-party namespaces are supported when needed (example: `gm-intercom://6465f64e6c8fdaa2dfad3a0693662e5d4b2803d30c49f0e961fa6ef0914066a2`)
 
 ## Package-level impact summary
 

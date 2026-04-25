@@ -4,7 +4,6 @@ const MAX_GLOBAL_LINES = 5000;
 const WORLD_CHAT_PUBLISH_OP = "worldChatPublish";
 const WORLD_CHAT_HISTORY_OP = "worldChatHistory";
 const P2A_HELP_PATH = "/agent-play-p2a-implementation";
-const INTERCOM_ADDRESS_PREFIX = "intercom-address://";
 
 export type GlobalChatLine = {
   seq: number;
@@ -220,9 +219,11 @@ function trimToNonEmpty(value: string): string {
 function isValidIntercomAddress(value: string | null): value is string {
   if (value === null) return false;
   const trimmed = value.trim();
-  if (!trimmed.startsWith(INTERCOM_ADDRESS_PREFIX)) return false;
-  const channelKey = trimmed.slice(INTERCOM_ADDRESS_PREFIX.length).trim();
-  return channelKey.length > 0;
+  const delimiterIndex = trimmed.indexOf("://");
+  if (delimiterIndex <= 0) return false;
+  const protocol = trimmed.slice(0, delimiterIndex).trim().toLowerCase();
+  const id = trimmed.slice(delimiterIndex + 3).trim();
+  return protocol.endsWith("-intercom") && id.length > 0;
 }
 
 function toTimestampLabel(ts: string): string {

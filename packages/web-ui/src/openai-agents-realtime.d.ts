@@ -4,8 +4,7 @@ declare module "@openai/agents/realtime" {
   }
 
   export class RealtimeSession {
-    constructor(options: {
-      agent: RealtimeAgent;
+    constructor(agent: RealtimeAgent, options?: {
       model?: string;
       voice?: string;
     });

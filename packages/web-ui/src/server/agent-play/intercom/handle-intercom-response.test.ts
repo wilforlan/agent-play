@@ -20,7 +20,7 @@ describe("handleIntercomResponse", () => {
         status: "completed",
         ts,
         result: { message: "ok" },
-        intercomAddress: "intercom-address://intercom:human:m1:agent:agent-p1",
+        intercomAddress: "ap-intercom://m1",
       },
     });
     const publishMock = vi.mocked(store.publishWorldFanout);
@@ -31,9 +31,7 @@ describe("handleIntercomResponse", () => {
       result?: { messageKind?: string; message?: string };
     };
     expect(payload.status).toBe("completed");
-    expect(payload.intercomAddress).toBe(
-      "intercom-address://intercom:human:m1:agent:agent-p1"
-    );
+    expect(payload.intercomAddress).toBe("ap-intercom://m1");
     expect(payload.result?.messageKind).toBe("text");
     expect(payload.result?.message).toBe("ok");
   });

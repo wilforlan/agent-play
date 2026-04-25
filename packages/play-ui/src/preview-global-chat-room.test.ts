@@ -22,7 +22,7 @@ describe("createPreviewGlobalChatRoom", () => {
       getIntercomAddress: () => intercomAddress,
       ensureIntercomAddress: () => {
         if (intercomAddress === null) {
-          intercomAddress = "intercom-address://intercom:world:global";
+          intercomAddress = "ap-intercom://main-1";
         }
         return intercomAddress;
       },
@@ -172,7 +172,7 @@ describe("createPreviewGlobalChatRoom", () => {
       toggle.dispatchEvent(new Event("change"));
     }
     expect(p2aEnabled).toBe(true);
-    expect(intercomAddress).toBe("intercom-address://intercom:world:global");
+    expect(intercomAddress).toBe("ap-intercom://main-1");
     expect(addressPanel?.hidden).toBe(false);
     const addressInput = room.element.querySelector(
       ".preview-global-chat-room__address-input"

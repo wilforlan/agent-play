@@ -3,7 +3,8 @@ export type IntercomChannelParts = {
   agentStableKey: string;
 };
 
-const INTERCOM_ADDRESS_PREFIX = "intercom-address://";
+const DEFAULT_INTERCOM_PROTOCOL = "ap-intercom";
+const INTERCOM_PROTOCOL_PATTERN = /^[a-z][a-z0-9-]*$/;
 
 export function encodeHumanStableKeyForIntercom(humanNodeId: string): string {
   return humanNodeId.trim();
@@ -32,17 +33,33 @@ export function agentStableKeyFromToPlayerId(toPlayerId: string): string {
 }
 
 export function buildIntercomAddress(channelKey: string): string {
-  return `${INTERCOM_ADDRESS_PREFIX}${channelKey.trim()}`;
+  const value = channelKey.trim();
+  if (value.length === 0) {
+    throw new Error("invalid intercom-address");
+  }
+  return `${DEFAULT_INTERCOM_PROTOCOL}://${value}`;
+}
+
+export function parseIntercomAddressParts(intercomAddress: string): {
+  protocol: string;
+  value: string;
+} {
+  const trimmed = intercomAddress.trim();
+  const delimiterIndex = trimmed.indexOf("://");
+  if (delimiterIndex <= 0) {
+    throw new Error("invalid intercom-address");
+  }
+  const protocol = trimmed.slice(0, delimiterIndex).trim().toLowerCase();
+  const value = trimmed.slice(delimiterIndex + 3).trim();
+  if (!INTERCOM_PROTOCOL_PATTERN.test(protocol) || !protocol.endsWith("-intercom")) {
+    throw new Error("invalid intercom-address");
+  }
+  if (value.length === 0) {
+    throw new Error("invalid intercom-address");
+  }
+  return { protocol, value };
 }
 
 export function parseIntercomAddress(intercomAddress: string): string {
-  const trimmed = intercomAddress.trim();
-  if (!trimmed.startsWith(INTERCOM_ADDRESS_PREFIX)) {
-    throw new Error("invalid intercom-address");
-  }
-  const channelKey = trimmed.slice(INTERCOM_ADDRESS_PREFIX.length).trim();
-  if (channelKey.length === 0) {
-    throw new Error("invalid intercom-address");
-  }
-  return channelKey;
+  return parseIntercomAddressParts(intercomAddress).value;
 }

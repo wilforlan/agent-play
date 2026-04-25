@@ -4,6 +4,7 @@ import {
   buildIntercomAddress,
   buildIntercomChannelKey,
   openOrReuseIntercomChannel,
+  parseIntercomAddressParts,
   parseIntercomAddress,
 } from "./shared-intercom.js";
 
@@ -25,12 +26,24 @@ export async function executeAgentCapability(options: {
     humanNodeId: payload.mainNodeId,
     agentStableKey,
   });
-  const resolvedChannelKey =
-    payload.intercomAddress === undefined
-      ? channelKey
-      : parseIntercomAddress(payload.intercomAddress);
+  const resolvedChannelKey = (() => {
+    if (payload.intercomAddress === undefined) {
+      return channelKey;
+    }
+    const parts = parseIntercomAddressParts(payload.intercomAddress);
+    if (parts.protocol === "ap-intercom") {
+      return buildIntercomChannelKey({
+        humanNodeId: parseIntercomAddress(payload.intercomAddress),
+        agentStableKey,
+      });
+    }
+    return buildIntercomChannelKey({
+      humanNodeId: parts.value,
+      agentStableKey,
+    });
+  })();
   const intercomAddress =
-    payload.intercomAddress ?? buildIntercomAddress(resolvedChannelKey);
+    payload.intercomAddress ?? buildIntercomAddress(payload.mainNodeId);
   openOrReuseIntercomChannel(resolvedChannelKey);
 
   if (payload.kind === "assist") {
@@ -40,12 +53,6 @@ export async function executeAgentCapability(options: {
       text: `[assist] ${payload.toolName ?? ""}(${JSON.stringify(
         payload.args ?? {}
       )})`,
-    });
-  } else if (payload.kind === "audio") {
-    await world.recordInteraction({
-      playerId: payload.toPlayerId,
-      role: "user",
-      text: `[audio] ${payload.audio?.encoding ?? "unknown"} (${payload.audio?.durationMs ?? 0}ms)`,
     });
   } else {
     await world.recordInteraction({

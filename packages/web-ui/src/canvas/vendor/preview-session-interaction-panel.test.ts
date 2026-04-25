@@ -7,7 +7,7 @@ const CREDENTIALS_KEY = "agent-play.humanCredentials";
 const realtimeAgentConstructorMock = vi.fn();
 const realtimeSessionConnectMock = vi.fn(async () => {});
 const realtimeSessionCloseMock = vi.fn();
-const realtimeSessionConstructorMock = vi.fn(() => ({
+const realtimeSessionConstructorMock = vi.fn((_agent, _options) => ({
   connect: realtimeSessionConnectMock,
   close: realtimeSessionCloseMock,
 }));
@@ -20,9 +20,10 @@ vi.mock("@openai/agents/realtime", () => ({
     return { options };
   },
   RealtimeSession: function RealtimeSession(
+    agent: Record<string, unknown>,
     options: Record<string, unknown>
   ): Record<string, unknown> {
-    realtimeSessionConstructorMock(options);
+    realtimeSessionConstructorMock(agent, options);
     return {
       connect: realtimeSessionConnectMock,
       close: realtimeSessionCloseMock,
@@ -396,6 +397,7 @@ describe("createPreviewSessionInteractionPanel", () => {
       })
     );
     expect(realtimeSessionConstructorMock).toHaveBeenCalledWith(
+      expect.any(Object),
       expect.objectContaining({
         model: "gpt-realtime",
       })
