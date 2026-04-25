@@ -49,6 +49,30 @@ function parseLangChainAgent(v: unknown): LangChainAgentRegistration | null {
   };
 }
 
+function resolveRealtimeInstructionsFromBody(input: unknown): string | undefined {
+  if (!isRecord(input)) {
+    return undefined;
+  }
+  const raw = input.realtimeInstructions;
+  if (typeof raw !== "string") {
+    return undefined;
+  }
+  const trimmed = raw.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
+function resolveRealtimeInstructionsFromEnv(agentName: string): string | undefined {
+  const template = process.env.P2A_WEBRTC_SYSTEM_PROMPT_TEMPLATE?.trim();
+  if (template !== undefined && template.length > 0) {
+    return template.replaceAll("{{agentName}}", agentName);
+  }
+  const prompt = process.env.P2A_WEBRTC_SYSTEM_PROMPT?.trim();
+  if (prompt !== undefined && prompt.length > 0) {
+    return prompt;
+  }
+  return undefined;
+}
+
 export async function POST(req: NextRequest) {
   logAgentPlayApi("POST agent-play/players", req);
   const rawSid = req.nextUrl.searchParams.get("sid");
@@ -121,10 +145,15 @@ export async function POST(req: NextRequest) {
       });
     } else {
       try {
+        const instructions =
+          resolveRealtimeInstructionsFromBody(body) ??
+          resolveRealtimeInstructionsFromEnv(name);
         realtimeWebrtc = await mintOpenAiRealtimeClientSecret({
           apiKey: openaiApiKey,
           model: process.env.P2A_WEBRTC_MODEL,
           voice: process.env.P2A_WEBRTC_VOICE,
+          agentName: name,
+          ...(instructions !== undefined ? { instructions } : {}),
         });
       } catch (mintErr) {
         agentPlayVerbose("api", "players realtime secret failed", {

@@ -81,5 +81,37 @@ describe("mintOpenAiRealtimeClientSecret", () => {
       },
     });
   });
+
+  it("includes explicit instructions when provided", async () => {
+    const fetchMock = vi.fn(async () => {
+      return new Response(JSON.stringify({ value: "cs_instr" }), { status: 200 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    await mintOpenAiRealtimeClientSecret({
+      apiKey: "sk-test",
+      instructions: "You are a concise aviation copilot.",
+    });
+    const init = fetchMock.mock.calls[0]?.[1] as RequestInit;
+    const bodyRaw = init.body;
+    const body = typeof bodyRaw === "string" ? JSON.parse(bodyRaw) : null;
+    expect(body?.session?.instructions).toBe(
+      "You are a concise aviation copilot."
+    );
+  });
+
+  it("falls back to agentName persona when instructions absent", async () => {
+    const fetchMock = vi.fn(async () => {
+      return new Response(JSON.stringify({ value: "cs_name" }), { status: 200 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    await mintOpenAiRealtimeClientSecret({
+      apiKey: "sk-test",
+      agentName: "Sales AI",
+    });
+    const init = fetchMock.mock.calls[0]?.[1] as RequestInit;
+    const bodyRaw = init.body;
+    const body = typeof bodyRaw === "string" ? JSON.parse(bodyRaw) : null;
+    expect(body?.session?.instructions).toContain("Sales AI");
+  });
 });
 

@@ -2,6 +2,8 @@ export type MintOpenAiRealtimeClientSecretOptions = {
   apiKey: string;
   model?: string;
   voice?: string;
+  instructions?: string;
+  agentName?: string;
 };
 
 export type MintedOpenAiRealtimeClientSecret = {
@@ -18,6 +20,24 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
 
+function resolveRealtimeInstructions(
+  options: MintOpenAiRealtimeClientSecretOptions
+): string | undefined {
+  const explicit = options.instructions?.trim();
+  if (explicit !== undefined && explicit.length > 0) {
+    return explicit;
+  }
+  const agentName = options.agentName?.trim();
+  if (agentName !== undefined && agentName.length > 0) {
+    return [
+      `You are ${agentName}.`,
+      "You are speaking with a human in real-time voice mode on agent-play.com.",
+      "Keep responses short, clear, and conversational unless asked for detail.",
+    ].join(" ");
+  }
+  return undefined;
+}
+
 export async function mintOpenAiRealtimeClientSecret(
   options: MintOpenAiRealtimeClientSecretOptions
 ): Promise<MintedOpenAiRealtimeClientSecret> {
@@ -27,6 +47,7 @@ export async function mintOpenAiRealtimeClientSecret(
   }
   const model = options.model?.trim() || DEFAULT_REALTIME_MODEL;
   const voice = options.voice?.trim() || DEFAULT_REALTIME_VOICE;
+  const instructions = resolveRealtimeInstructions(options);
   const res = await fetch("https://api.openai.com/v1/realtime/client_secrets", {
     method: "POST",
     headers: {
@@ -37,6 +58,7 @@ export async function mintOpenAiRealtimeClientSecret(
       session: {
         type: "realtime",
         model,
+        ...(instructions !== undefined ? { instructions } : {}),
         audio: {
           output: {
             voice,
