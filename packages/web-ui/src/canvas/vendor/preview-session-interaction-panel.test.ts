@@ -4,10 +4,39 @@ import { formatCredentialCreatedAt } from "./preview-human-credentials.js";
 import { createPreviewSessionInteractionPanel } from "./preview-session-interaction-panel.js";
 
 const CREDENTIALS_KEY = "agent-play.humanCredentials";
+const realtimeAgentConstructorMock = vi.fn();
+const realtimeSessionConnectMock = vi.fn(async () => {});
+const realtimeSessionCloseMock = vi.fn();
+const realtimeSessionConstructorMock = vi.fn(() => ({
+  connect: realtimeSessionConnectMock,
+  close: realtimeSessionCloseMock,
+}));
+
+vi.mock("@openai/agents/realtime", () => ({
+  RealtimeAgent: function RealtimeAgent(
+    options: Record<string, unknown>
+  ): Record<string, unknown> {
+    realtimeAgentConstructorMock(options);
+    return { options };
+  },
+  RealtimeSession: function RealtimeSession(
+    options: Record<string, unknown>
+  ): Record<string, unknown> {
+    realtimeSessionConstructorMock(options);
+    return {
+      connect: realtimeSessionConnectMock,
+      close: realtimeSessionCloseMock,
+    };
+  },
+}));
 
 describe("createPreviewSessionInteractionPanel", () => {
   beforeEach(() => {
     vi.useRealTimers();
+    realtimeAgentConstructorMock.mockClear();
+    realtimeSessionConnectMock.mockClear();
+    realtimeSessionCloseMock.mockClear();
+    realtimeSessionConstructorMock.mockClear();
   });
 
   afterEach(() => {
@@ -285,7 +314,7 @@ describe("createPreviewSessionInteractionPanel", () => {
     expect(panel.element.textContent).toMatch(/not enabled for this agent/i);
   });
 
-  it("shows audio tools and hides chat input in push-to-talk mode", () => {
+  it("shows missing-credentials warning when P2A is on but realtime credentials are absent", () => {
     const panel = createPreviewSessionInteractionPanel({
       getSid: () => "sid-1",
       apiBase: "/api/agent-play",
@@ -302,7 +331,8 @@ describe("createPreviewSessionInteractionPanel", () => {
     ).toBeNull();
     expect(
       panel.element.querySelector(".preview-session-interaction__audio-tools")
-    ).not.toBeNull();
+    ).toBeNull();
+    expect(panel.element.textContent).toMatch(/requires realtime credentials/i);
   });
 
   it("shows WebRTC voice controls instead of MediaRecorder tools when token is present", () => {
@@ -332,6 +362,51 @@ describe("createPreviewSessionInteractionPanel", () => {
     expect(panel.element.textContent).toMatch(/connect voice/i);
   });
 
+  it("preparePushToTalkConnection uses Realtime SDK with agent name, instructions, model, and ephemeral key", async () => {
+    vi.stubGlobal("navigator", {
+      mediaDevices: {
+        getUserMedia: vi.fn(async () => ({
+          getTracks: () => [{ stop: vi.fn() }],
+        })),
+      },
+    });
+    const panel = createPreviewSessionInteractionPanel({
+      getSid: () => "sid-1",
+      apiBase: "/api/agent-play",
+      getMainNodeId: () => "main-node-1",
+    });
+    panel.setAgents([
+      {
+        agentId: "agent-1",
+        name: "Agent One",
+        enableP2a: "on",
+        realtimeWebrtc: {
+          clientSecret: "cs_test_123",
+          model: "gpt-realtime",
+        },
+        realtimeInstructions: "Be concise and helpful.",
+      },
+    ]);
+    const ok = await panel.preparePushToTalkConnection("agent-1");
+    expect(ok).toBe(true);
+    expect(realtimeAgentConstructorMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: "Agent One",
+        instructions: "Be concise and helpful.",
+      })
+    );
+    expect(realtimeSessionConstructorMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        model: "gpt-realtime",
+      })
+    );
+    expect(realtimeSessionConnectMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        apiKey: "cs_test_123",
+      })
+    );
+  });
+
   it("preparePushToTalkConnection returns false when target does not have P2A enabled", async () => {
     const panel = createPreviewSessionInteractionPanel({
       getSid: () => "sid-1",
@@ -341,134 +416,6 @@ describe("createPreviewSessionInteractionPanel", () => {
     panel.setAgents([{ agentId: "agent-1", name: "Agent 1", enableP2a: "off" }]);
     const ok = await panel.preparePushToTalkConnection("agent-1");
     expect(ok).toBe(false);
-  });
-
-  it("auto-starts push-to-talk recording with waveform and stop control", async () => {
-    const stopTrack = vi.fn();
-    vi.stubGlobal("navigator", {
-      mediaDevices: {
-        getUserMedia: vi.fn(async () => ({
-          getTracks: () => [{ stop: stopTrack }],
-        })),
-      },
-    });
-    class FakeMediaRecorder {
-      public state: "inactive" | "recording" = "inactive";
-      public mimeType = "audio/webm";
-      private listeners = new Map<string, ((event?: unknown) => void)[]>();
-      addEventListener(name: string, cb: (event?: unknown) => void): void {
-        const existing = this.listeners.get(name) ?? [];
-        existing.push(cb);
-        this.listeners.set(name, existing);
-      }
-      start(): void {
-        this.state = "recording";
-      }
-      stop(): void {
-        this.state = "inactive";
-        const callbacks = this.listeners.get("stop") ?? [];
-        for (const callback of callbacks) {
-          callback();
-        }
-      }
-    }
-    vi.stubGlobal("MediaRecorder", FakeMediaRecorder);
-    const panel = createPreviewSessionInteractionPanel({
-      getSid: () => "sid-1",
-      apiBase: "/api/agent-play",
-      getMainNodeId: () => "main-node-1",
-    });
-    panel.setAgents([
-      { agentId: "agent-1", name: "Agent 1", enableP2a: "on" },
-    ]);
-    panel.setContext("agent-1");
-    panel.setMode("push_to_talk");
-    document.body.append(panel.element);
-    await Promise.resolve();
-    expect(
-      panel.element.querySelector(".preview-session-interaction__audio-wave")
-    ).not.toBeNull();
-    expect(
-      panel.element.querySelector(".preview-session-interaction__audio-stop-btn")
-    ).not.toBeNull();
-    expect(
-      panel.element.querySelector(".preview-session-interaction__audio-post-actions")
-    ).toBeNull();
-  });
-
-  it("auto-stops recording after 30 seconds and auto-sends audio intercom command", async () => {
-    vi.useFakeTimers();
-    vi.stubGlobal("navigator", {
-      mediaDevices: {
-        getUserMedia: vi.fn(async () => ({
-          getTracks: () => [{ stop: vi.fn() }],
-        })),
-      },
-    });
-    class FakeMediaRecorder {
-      public state: "inactive" | "recording" = "inactive";
-      public mimeType = "audio/webm";
-      private listeners = new Map<string, ((event?: unknown) => void)[]>();
-      addEventListener(name: string, cb: (event?: unknown) => void): void {
-        const existing = this.listeners.get(name) ?? [];
-        existing.push(cb);
-        this.listeners.set(name, existing);
-      }
-      start(): void {
-        this.state = "recording";
-      }
-      stop(): void {
-        this.state = "inactive";
-        const callbacks = this.listeners.get("stop") ?? [];
-        for (const callback of callbacks) {
-          callback();
-        }
-      }
-    }
-    vi.stubGlobal("MediaRecorder", FakeMediaRecorder);
-    vi.stubGlobal("URL", {
-      createObjectURL: vi.fn(() => "blob://recording"),
-      revokeObjectURL: vi.fn(),
-    });
-    vi.stubGlobal("crypto", {
-      randomUUID: () => "req-ptt-autosend",
-    });
-    const fetchMock = vi
-      .fn<(input: string, init?: RequestInit) => Promise<Response>>()
-      .mockResolvedValueOnce({
-        ok: true,
-        status: 200,
-        json: async () => ({ ok: true }),
-        text: async () => JSON.stringify({ ok: true }),
-      } as unknown as Response);
-    vi.stubGlobal("fetch", fetchMock);
-    const panel = createPreviewSessionInteractionPanel({
-      getSid: () => "sid-1",
-      apiBase: "/api/agent-play",
-      getMainNodeId: () => "main-node-1",
-    });
-    panel.setAgents([
-      { agentId: "agent-1", name: "Agent 1", enableP2a: "on" },
-    ]);
-    panel.setContext("agent-1");
-    panel.setMode("push_to_talk");
-    document.body.append(panel.element);
-    await Promise.resolve();
-    await vi.advanceTimersByTimeAsync(30_000);
-    expect(
-      panel.element.querySelector(".preview-session-interaction__audio-post-actions")
-    ).toBeNull();
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    const rpcBody = JSON.parse(
-      String((fetchMock.mock.calls[0] as [string, RequestInit])[1].body)
-    ) as {
-      payload?: {
-        kind?: string;
-        audio?: { encoding?: string; dataBase64?: string };
-      };
-    };
-    expect(rpcBody.payload?.kind).toBe("audio");
-    expect(rpcBody.payload?.audio?.encoding).toBe("webm");
   });
 
   it("focuses chat input when focusChatInput is called", () => {
@@ -487,78 +434,6 @@ describe("createPreviewSessionInteractionPanel", () => {
     );
   });
 
-  it("sends audio intercom command through /agent-play sdk/rpc path", async () => {
-    vi.stubGlobal("navigator", {
-      mediaDevices: {
-        getUserMedia: vi.fn(async () => ({
-          getTracks: () => [{ stop: vi.fn() }],
-        })),
-      },
-    });
-    class FakeMediaRecorder {
-      public state: "inactive" | "recording" = "inactive";
-      public mimeType = "audio/webm";
-      private listeners = new Map<string, ((event?: unknown) => void)[]>();
-      addEventListener(name: string, cb: (event?: unknown) => void): void {
-        const existing = this.listeners.get(name) ?? [];
-        existing.push(cb);
-        this.listeners.set(name, existing);
-      }
-      start(): void {
-        this.state = "recording";
-      }
-      stop(): void {
-        this.state = "inactive";
-        const callbacks = this.listeners.get("stop") ?? [];
-        for (const callback of callbacks) {
-          callback();
-        }
-      }
-    }
-    vi.stubGlobal("MediaRecorder", FakeMediaRecorder);
-    vi.stubGlobal("URL", {
-      createObjectURL: vi.fn(() => "blob://recording"),
-      revokeObjectURL: vi.fn(),
-    });
-    vi.stubGlobal("crypto", {
-      randomUUID: () => "req-ptt-fallback",
-    });
-    const fetchMock = vi.fn<(input: string, init?: RequestInit) => Promise<Response>>();
-    fetchMock
-      .mockResolvedValueOnce({
-        ok: true,
-        status: 200,
-        json: async () => ({ ok: true }),
-        text: async () => JSON.stringify({ ok: true }),
-      } as unknown as Response);
-    vi.stubGlobal("fetch", fetchMock);
-
-    const panel = createPreviewSessionInteractionPanel({
-      getSid: () => "sid-1",
-      apiBase: "/agent-play",
-      getMainNodeId: () => "main-node-1",
-    });
-    panel.setAgents([
-      { agentId: "agent-1", name: "Agent 1", enableP2a: "on" },
-    ]);
-    panel.setContext("agent-1");
-    panel.setMode("push_to_talk");
-    document.body.append(panel.element);
-    await Promise.resolve();
-
-    const stopBtn = panel.element.querySelector(
-      ".preview-session-interaction__audio-stop-btn"
-    ) as HTMLButtonElement;
-    stopBtn.click();
-    await Promise.resolve();
-
-    await new Promise((resolve) => {
-      setTimeout(resolve, 10);
-    });
-
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(fetchMock.mock.calls[0]?.[0]).toContain("/agent-play/sdk/rpc?sid=sid-1");
-  });
 
   it("renders media completion from intercom response in chat mode", async () => {
     vi.stubGlobal("crypto", {

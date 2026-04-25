@@ -473,6 +473,7 @@ describe("RemotePlayWorld", () => {
         }
         if (u.includes("/api/agent-play/players") && init?.method === "POST") {
           const body = JSON.parse(String(init.body)) as {
+            realtimeInstructions?: string;
             realtimeWebrtc?: {
               clientSecret: string;
               model: string;
@@ -480,6 +481,9 @@ describe("RemotePlayWorld", () => {
               expiresAt?: string;
             };
           };
+          expect(body.realtimeInstructions).toBe(
+            "You are d. Keep responses short, clear, and conversational unless asked for detail."
+          );
           expect(body.realtimeWebrtc).toEqual({
             clientSecret: "cs_sdk_123",
             model: "gpt-realtime",

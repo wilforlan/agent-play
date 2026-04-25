@@ -38,6 +38,7 @@ export type PreviewWorldMapAgentOccupantJson = {
   assistTools?: AssistToolSnapshotJson[];
   hasChatTool?: boolean;
   enableP2a?: "on" | "off";
+  realtimeInstructions?: string;
   realtimeWebrtc?: {
     clientSecret: string;
     expiresAt?: string;

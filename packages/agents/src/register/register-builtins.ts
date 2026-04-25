@@ -58,6 +58,18 @@ export async function registerBuiltinAgents(
     logging: "on",
     ...resolveAgentsRemotePlayWorldOptions(),
   });
+  const openAiApiKey = process.env.OPENAI_API_KEY?.trim();
+  if (
+    process.env.P2A_WEBRTC_ENABLED === "1" &&
+    openAiApiKey !== undefined &&
+    openAiApiKey.length > 0
+  ) {
+    world.initAudio({
+      openai: {
+        apiKey: openAiApiKey,
+      },
+    });
+  }
   agentPlayDebug("register-builtins", "p2a_audio_bridge_deprecated", {
     via: "sdk-or-agents-endpoint",
   });

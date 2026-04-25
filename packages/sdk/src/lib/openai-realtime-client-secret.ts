@@ -3,13 +3,15 @@ import type {
   RemotePlayWorldOpenAiAudioOptions,
 } from "../public-types.js";
 
-type MintOptions = {
+export type ResolveRealtimeInstructionsOptions = {
   openai: RemotePlayWorldOpenAiAudioOptions;
   agentName: string;
 };
 
 /** Resolves OpenAI realtime instructions, preferring explicit text then template fallback. */
-function resolveRealtimeInstructions(options: MintOptions): string | undefined {
+export function resolveRealtimeInstructions(
+  options: ResolveRealtimeInstructionsOptions
+): string | undefined {
   const explicit = options.openai.instructions?.trim();
   if (explicit !== undefined && explicit.length > 0) {
     return explicit;
@@ -20,6 +22,8 @@ function resolveRealtimeInstructions(options: MintOptions): string | undefined {
   }
   return `You are ${options.agentName}. Keep responses short, clear, and conversational unless asked for detail.`;
 }
+
+type MintOptions = ResolveRealtimeInstructionsOptions;
 
 /**
  * Mints a short-lived OpenAI Realtime client secret for a single agent registration.

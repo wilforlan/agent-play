@@ -142,6 +142,11 @@ export async function POST(req: NextRequest) {
   const enableP2a =
     enableP2aRaw === "on" || enableP2aRaw === "off" ? enableP2aRaw : undefined;
   const realtimeWebrtc = parseRealtimeWebrtcFromBody(body);
+  const realtimeInstructions =
+    typeof body.realtimeInstructions === "string" &&
+    body.realtimeInstructions.trim().length > 0
+      ? body.realtimeInstructions.trim()
+      : undefined;
 
   try {
     const registered = await world.addPlayer({
@@ -155,6 +160,9 @@ export async function POST(req: NextRequest) {
       leaseTtlSeconds,
       ...(enableP2a !== undefined ? { enableP2a } : {}),
       ...(realtimeWebrtc !== undefined ? { realtimeWebrtc } : {}),
+      ...(realtimeInstructions !== undefined
+        ? { realtimeInstructions }
+        : {}),
     });
     return Response.json({
       playerId: registered.id,

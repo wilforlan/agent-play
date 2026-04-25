@@ -18,6 +18,7 @@ import {
   buildAssistArgsFromInputs,
   resolveAssistFieldType,
 } from "./preview-assist-coerce.js";
+import { RealtimeAgent, RealtimeSession } from "@openai/agents/realtime";
 
 const STYLE_ID = "agent-play-preview-session-interaction-styles";
 
@@ -28,6 +29,7 @@ export type SessionInteractionAgent = {
   name: string;
   assistTools?: readonly AssistToolDef[];
   enableP2a?: "on" | "off";
+  realtimeInstructions?: string;
   realtimeWebrtc?: {
     clientSecret: string;
     expiresAt?: string;
@@ -790,9 +792,14 @@ export function createPreviewSessionInteractionPanel(options: {
   let speechRecognition: { stop: () => void } | null = null;
   let recordingStartedAtMs: number | null = null;
   let recordingMaxTimeoutId: ReturnType<typeof setTimeout> | null = null;
-  let realtimePc: RTCPeerConnection | null = null;
-  let realtimeDc: RTCDataChannel | null = null;
-  let realtimeStream: MediaStream | null = null;
+  let realtimeSession:
+    | {
+        connect: (options: { apiKey: string; mediaStream?: MediaStream }) => Promise<void>;
+        close?: () => void | Promise<void>;
+        disconnect?: () => void | Promise<void>;
+      }
+    | null = null;
+  let realtimeInputStream: MediaStream | null = null;
   let realtimeAgentId: string | null = null;
   let realtimeState: "idle" | "connecting" | "connected" | "failed" = "idle";
   let shouldAutoStartRecording = false;
@@ -922,28 +929,24 @@ export function createPreviewSessionInteractionPanel(options: {
   };
 
   const closeRealtimeConnection = (): void => {
-    if (realtimeDc !== null) {
+    if (realtimeSession !== null) {
       try {
-        realtimeDc.close();
+        if (typeof realtimeSession.close === "function") {
+          void realtimeSession.close();
+        } else if (typeof realtimeSession.disconnect === "function") {
+          void realtimeSession.disconnect();
+        }
       } catch {
         // noop
       }
     }
-    realtimeDc = null;
-    if (realtimePc !== null) {
-      try {
-        realtimePc.close();
-      } catch {
-        // noop
-      }
-    }
-    realtimePc = null;
-    if (realtimeStream !== null) {
-      for (const track of realtimeStream.getTracks()) {
+    realtimeSession = null;
+    if (realtimeInputStream !== null) {
+      for (const track of realtimeInputStream.getTracks()) {
         track.stop();
       }
     }
-    realtimeStream = null;
+    realtimeInputStream = null;
     realtimeAgentId = null;
     realtimeState = "idle";
   };
@@ -963,33 +966,33 @@ export function createPreviewSessionInteractionPanel(options: {
     realtimeState = "connecting";
     render();
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const pc = new RTCPeerConnection();
-      const dc = pc.createDataChannel("oai-events");
-      for (const track of stream.getTracks()) {
-        pc.addTrack(track, stream);
-      }
-      const offer = await pc.createOffer();
-      await pc.setLocalDescription(offer);
-      const sdpResponse = await fetch("https://api.openai.com/v1/realtime/calls", {
-        method: "POST",
-        body: offer.sdp,
-        headers: {
-          Authorization: `Bearer ${secret}`,
-          "Content-Type": "application/sdp",
-        },
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: true,
       });
-      if (!sdpResponse.ok) {
-        throw new Error(await sdpResponse.text());
-      }
-      const answer: RTCSessionDescriptionInit = {
-        type: "answer",
-        sdp: await sdpResponse.text(),
+      const instructions =
+        typeof agent?.realtimeInstructions === "string" &&
+        agent.realtimeInstructions.trim().length > 0
+          ? agent.realtimeInstructions
+          : `You are ${agent?.name ?? "the assistant"}.`;
+      const realtimeAgent = new RealtimeAgent({
+        name: agent?.name ?? agentId,
+        instructions,
+      });
+      const session = new RealtimeSession({
+        model: agent?.realtimeWebrtc?.model ?? "gpt-realtime",
+        voice: agent?.realtimeWebrtc?.voice,
+        agent: realtimeAgent,
+      }) as {
+        connect: (options: {
+          apiKey: string;
+          mediaStream?: MediaStream;
+        }) => Promise<void>;
+        close?: () => void | Promise<void>;
+        disconnect?: () => void | Promise<void>;
       };
-      await pc.setRemoteDescription(answer);
-      realtimePc = pc;
-      realtimeDc = dc;
-      realtimeStream = stream;
+      await session.connect({ apiKey: secret, mediaStream: stream });
+      realtimeSession = session;
+      realtimeInputStream = stream;
       realtimeAgentId = agentId;
       realtimeState = "connected";
       return true;
@@ -998,7 +1001,7 @@ export function createPreviewSessionInteractionPanel(options: {
       realtimeState = "failed";
       const message = error instanceof Error ? error.message : String(error);
       setInteractionError("Unable to connect realtime voice.", {
-        step: "push_to_talk:webrtc_connect",
+        step: "push_to_talk:realtime_connect",
         agentId,
         message,
       });
@@ -1067,29 +1070,7 @@ export function createPreviewSessionInteractionPanel(options: {
       if (!(await ensureRealtimeConnection(activeAgentId))) {
         return;
       }
-      const messageEvent = {
-        type: "conversation.item.create",
-        item: {
-          type: "message",
-          role: "user",
-          content: [
-            {
-              type: "input_text",
-              text: draftAudio.transcript || "Voice input from microphone track.",
-            },
-          ],
-        },
-      };
-      try {
-        realtimeDc?.send(JSON.stringify(messageEvent));
-        result.textContent = "Realtime voice connected.";
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        setInteractionError("Voice request failed.", {
-          step: "push_to_talk:dc_send",
-          message,
-        });
-      }
+      result.textContent = "Realtime voice connected.";
       return;
     }
     setInteractionError("Audio intercom kind is deprecated. Realtime WebRTC is required.", {
@@ -1633,7 +1614,7 @@ export function createPreviewSessionInteractionPanel(options: {
     const warn = document.createElement("div");
     warn.className = "preview-session-interaction__empty";
     warn.textContent =
-      "Push to talk requires realtime credentials on this agent node. Audio intercom fallback is deprecated.";
+      "Push to talk requires realtime credentials on this agent node. ";
     body.append(warn);
   };
 

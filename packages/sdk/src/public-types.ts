@@ -255,6 +255,8 @@ export type AgentPlayWorldMapAgentOccupant = {
   assistTools?: AssistToolSpec[];
   hasChatTool?: boolean;
   enableP2a?: P2aEnableFlag;
+  realtimeInstructions?: string;
+  realtimeWebrtc?: RealtimeWebrtcClientSecret;
   stationary?: boolean;
   lastUpdate?: unknown;
   recentInteractions?: Array<{

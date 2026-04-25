@@ -138,6 +138,7 @@ export type AddPlayerInput = PlatformAgentInformation & {
   connectionId?: string;
   leaseTtlSeconds?: number;
   enableP2a?: P2aEnableFlag;
+  realtimeInstructions?: string;
   realtimeWebrtc?: {
     clientSecret: string;
     expiresAt?: string;
@@ -923,6 +924,9 @@ export class PlayWorld {
           assistToolNames: extractAssistToolNames(effectiveToolNames),
           hasChatTool: effectiveToolNames.includes("chat_tool"),
           enableP2a: input.enableP2a ?? "off",
+          ...(input.realtimeInstructions !== undefined
+            ? { realtimeInstructions: input.realtimeInstructions }
+            : {}),
           ...(input.realtimeWebrtc !== undefined
             ? { realtimeWebrtc: input.realtimeWebrtc }
             : {}),

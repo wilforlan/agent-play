@@ -42,7 +42,6 @@ import {
   type AgentPlaySnapshot,
   type WorldBounds,
 } from "@agent-play/sdk/browser";
-import { buildIntercomAddress } from "@agent-play/intercom";
 import {
   appendChatLogLine,
   resetChatLogFromSnapshot,
@@ -135,6 +134,9 @@ const WORLD_INTERACTION_SSE = "world:interaction";
 const WORLD_AGENT_SIGNAL_SSE = "world:agent_signal";
 const WORLD_INTERCOM_SSE = "world:intercom";
 const WORLD_GLOBAL_CHAT_CHANNEL = "intercom:world:global";
+function buildIntercomAddress(channelKey: string): string {
+  return `intercom-address://${channelKey}`;
+}
 const INTERCOM_ADDRESS_PREFIX = "intercom-address://";
 const HUMAN_VIEWER_PLAYER_ID = "__human__";
 const MAX_PLAYER_CHAIN_FETCH_STEPS = 102;
@@ -197,6 +199,7 @@ type AgentRow = {
   onZone?: { zoneCount: number; flagged?: boolean; at: string };
   onYield?: { yieldCount: number; at: string };
   enableP2a?: "on" | "off";
+  realtimeInstructions?: string;
   realtimeWebrtc?: {
     clientSecret: string;
     expiresAt?: string;
@@ -218,6 +221,7 @@ type SnapshotAgentOccupant = {
   onZone?: { zoneCount: number; flagged?: boolean; at: string };
   onYield?: { yieldCount: number; at: string };
   enableP2a?: "on" | "off";
+  realtimeInstructions?: string;
   realtimeWebrtc?: {
     clientSecret: string;
     expiresAt?: string;
@@ -301,6 +305,17 @@ function snapshotRealtimeWebrtc(
   return out;
 }
 
+function snapshotRealtimeInstructions(raw: unknown): string | undefined {
+  if (typeof raw !== "string") {
+    return undefined;
+  }
+  const trimmed = raw.trim();
+  if (trimmed.length === 0) {
+    return undefined;
+  }
+  return trimmed;
+}
+
 function listAgentRows(s: Snapshot): AgentRow[] {
   return s.worldMap.occupants
     .filter((o): o is SnapshotAgentOccupant => o.kind === "agent")
@@ -316,6 +331,9 @@ function listAgentRows(s: Snapshot): AgentRow[] {
       onYield: o.onYield,
       enableP2a: snapshotEnableP2aFlag(
         (o as { enableP2a?: unknown }).enableP2a
+      ),
+      realtimeInstructions: snapshotRealtimeInstructions(
+        (o as { realtimeInstructions?: unknown }).realtimeInstructions
       ),
       realtimeWebrtc: snapshotRealtimeWebrtc(
         (o as { realtimeWebrtc?: unknown }).realtimeWebrtc
@@ -854,6 +872,7 @@ function hydrateChatFromSnapshot(s: Snapshot): void {
       name: p.name,
       assistTools: p.assistTools,
       enableP2a: p.enableP2a,
+      realtimeInstructions: p.realtimeInstructions,
       realtimeWebrtc: p.realtimeWebrtc,
     }))
   );

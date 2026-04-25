@@ -48,7 +48,10 @@ import {
   WORLD_INTERCOM_EVENT,
 } from "@agent-play/intercom";
 import { intercomResultRecordFromLangChainInvokeOutput } from "./intercom-langchain-chat-result.js";
-import { mintOpenAiRealtimeClientSecretForSdk } from "./openai-realtime-client-secret.js";
+import {
+  mintOpenAiRealtimeClientSecretForSdk,
+  resolveRealtimeInstructions,
+} from "./openai-realtime-client-secret.js";
 
 const PLAYER_CONNECTION_HEARTBEAT_MAX_ATTEMPTS = 10;
 const PLAYER_CONNECTION_HEARTBEAT_RETRY_DELAY_MS = 10_000;
@@ -765,7 +768,15 @@ export class RemotePlayWorld {
     const connectionId = randomUUID();
     const leaseTtlSeconds = 45;
     let realtimeWebrtcFromInit: RealtimeWebrtcClientSecret | undefined;
+    let realtimeInstructionsFromInit: string | undefined;
+    console.log("input.enableP2a", input.enableP2a);
+    console.log("this.audioInitOptions", this.audioInitOptions);
     if (input.enableP2a === "on" && this.audioInitOptions !== null) {
+      console.log("resolving realtime instructions for agent", input.name);
+      realtimeInstructionsFromInit = resolveRealtimeInstructions({
+        openai: this.audioInitOptions,
+        agentName: input.name,
+      });
       realtimeWebrtcFromInit = await mintOpenAiRealtimeClientSecretForSdk({
         openai: this.audioInitOptions,
         agentName: input.name,
@@ -776,23 +787,34 @@ export class RemotePlayWorld {
         voice: this.audioInitOptions.voice,
       });
     }
+    console.log("realtimeWebrtcFromInit", realtimeWebrtcFromInit);
+    console.log("realtimeInstructionsFromInit", realtimeInstructionsFromInit);
+    const requestPayload = {
+      name: input.name,
+      type: input.type,
+      agent: input.agent,
+      mainNodeId: effectiveMainNodeId,
+      password: this.password,
+      agentId: input.nodeId,
+      connectionId,
+      leaseTtlSeconds,
+      ...(input.enableP2a !== undefined ? { enableP2a: input.enableP2a } : {}),
+      ...(realtimeWebrtcFromInit !== undefined
+        ? { realtimeWebrtc: realtimeWebrtcFromInit }
+        : {}),
+      ...(realtimeInstructionsFromInit !== undefined
+        ? { realtimeInstructions: realtimeInstructionsFromInit }
+        : {}),
+    };
+    this.logTransport("addAgent:request_payload", {
+      url,
+      payload: requestPayload,
+    });
+    const requestBody = JSON.stringify(requestPayload);
     const res = await fetch(url, {
       method: "POST",
       headers: this.jsonHeaders(),
-      body: JSON.stringify({
-        name: input.name,
-        type: input.type,
-        agent: input.agent,
-        mainNodeId: effectiveMainNodeId,
-        password: this.password,
-        agentId: input.nodeId,
-        connectionId,
-        leaseTtlSeconds,
-        ...(input.enableP2a !== undefined ? { enableP2a: input.enableP2a } : {}),
-        ...(realtimeWebrtcFromInit !== undefined
-          ? { realtimeWebrtc: realtimeWebrtcFromInit }
-          : {}),
-      }),
+      body: requestBody,
     });
     const bodyText = await res.text();
     if (!res.ok) {
