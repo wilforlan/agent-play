@@ -1,7 +1,6 @@
 import { NextRequest } from "next/server";
 import { agentPlayVerbose } from "@/server/agent-play/agent-play-debug";
 import { logAgentPlayApi } from "@/server/agent-play/log-agent-play-api";
-import { mintOpenAiRealtimeClientSecret } from "@/server/agent-play/openai-realtime-client-secret";
 import type { LangChainAgentRegistration } from "@/server/agent-play/play-world.js";
 import { getPlayWorld } from "@/server/get-world";
 import { validateAgentPlaySession } from "@/server/agent-play/session-validation";
@@ -49,28 +48,43 @@ function parseLangChainAgent(v: unknown): LangChainAgentRegistration | null {
   };
 }
 
-function resolveRealtimeInstructionsFromBody(input: unknown): string | undefined {
+function parseRealtimeWebrtcFromBody(input: unknown):
+  | {
+      clientSecret: string;
+      expiresAt?: string;
+      model: string;
+      voice?: string;
+    }
+  | undefined {
   if (!isRecord(input)) {
     return undefined;
   }
-  const raw = input.realtimeInstructions;
-  if (typeof raw !== "string") {
+  const raw = input.realtimeWebrtc;
+  if (!isRecord(raw)) {
     return undefined;
   }
-  const trimmed = raw.trim();
-  return trimmed.length > 0 ? trimmed : undefined;
-}
-
-function resolveRealtimeInstructionsFromEnv(agentName: string): string | undefined {
-  const template = process.env.P2A_WEBRTC_SYSTEM_PROMPT_TEMPLATE?.trim();
-  if (template !== undefined && template.length > 0) {
-    return template.replaceAll("{{agentName}}", agentName);
+  if (typeof raw.clientSecret !== "string" || raw.clientSecret.length === 0) {
+    return undefined;
   }
-  const prompt = process.env.P2A_WEBRTC_SYSTEM_PROMPT?.trim();
-  if (prompt !== undefined && prompt.length > 0) {
-    return prompt;
+  if (typeof raw.model !== "string" || raw.model.length === 0) {
+    return undefined;
   }
-  return undefined;
+  const parsed: {
+    clientSecret: string;
+    expiresAt?: string;
+    model: string;
+    voice?: string;
+  } = {
+    clientSecret: raw.clientSecret,
+    model: raw.model,
+  };
+  if (typeof raw.expiresAt === "string" && raw.expiresAt.length > 0) {
+    parsed.expiresAt = raw.expiresAt;
+  }
+  if (typeof raw.voice === "string" && raw.voice.length > 0) {
+    parsed.voice = raw.voice;
+  }
+  return parsed;
 }
 
 export async function POST(req: NextRequest) {
@@ -127,42 +141,7 @@ export async function POST(req: NextRequest) {
   const enableP2aRaw = body.enableP2a;
   const enableP2a =
     enableP2aRaw === "on" || enableP2aRaw === "off" ? enableP2aRaw : undefined;
-  const webRtcEnabled = process.env.P2A_WEBRTC_ENABLED === "1";
-  let realtimeWebrtc:
-    | {
-        clientSecret: string;
-        expiresAt?: string;
-        model: string;
-        voice?: string;
-      }
-    | undefined;
-  if (webRtcEnabled && enableP2a === "on") {
-    const openaiApiKey = process.env.OPENAI_API_KEY?.trim() ?? "";
-    if (openaiApiKey.length === 0) {
-      agentPlayVerbose("api", "players realtime secret skipped", {
-        reason: "missing OPENAI_API_KEY",
-        agentId,
-      });
-    } else {
-      try {
-        const instructions =
-          resolveRealtimeInstructionsFromBody(body) ??
-          resolveRealtimeInstructionsFromEnv(name);
-        realtimeWebrtc = await mintOpenAiRealtimeClientSecret({
-          apiKey: openaiApiKey,
-          model: process.env.P2A_WEBRTC_MODEL,
-          voice: process.env.P2A_WEBRTC_VOICE,
-          agentName: name,
-          ...(instructions !== undefined ? { instructions } : {}),
-        });
-      } catch (mintErr) {
-        agentPlayVerbose("api", "players realtime secret failed", {
-          agentId,
-          message: mintErr instanceof Error ? mintErr.message : String(mintErr),
-        });
-      }
-    }
-  }
+  const realtimeWebrtc = parseRealtimeWebrtcFromBody(body);
 
   try {
     const registered = await world.addPlayer({

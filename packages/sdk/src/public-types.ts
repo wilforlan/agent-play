@@ -93,6 +93,25 @@ export type RealtimeWebrtcClientSecret = {
   voice?: string;
 };
 
+/** OpenAI Realtime minting options used by {@link RemotePlayWorld.initAudio}. */
+export type RemotePlayWorldOpenAiAudioOptions = {
+  /** Server-side OpenAI key used to mint ephemeral browser client secrets. */
+  apiKey?: string;
+  /** Realtime model id, defaults to `gpt-realtime`. */
+  model?: string;
+  /** Realtime voice id, defaults to `marin`. */
+  voice?: string;
+  /** Explicit system instructions for the realtime session. */
+  instructions?: string;
+  /** Template fallback for instructions; `{{agentName}}` placeholder is supported. */
+  instructionsTemplate?: string;
+};
+
+/** Configuration payload for enabling SDK-managed realtime audio initialization. */
+export type RemotePlayWorldInitAudioOptions = {
+  openai: RemotePlayWorldOpenAiAudioOptions;
+};
+
 export type AddAgentInput = PlatformAgentInformation & {
   /** Registration from {@link langchainRegistration}. */
   agent: LangChainAgentRegistration;
@@ -101,8 +120,8 @@ export type AddAgentInput = PlatformAgentInformation & {
   /** Agent node id — same value the server stores as registered `agentId`. */
   nodeId: string;
   /**
-   * When **`"on"`**, the automation process may attach OpenAI Realtime (see `@agent-play/p2a-audio`).
-   * Omitted or **`"off"`** disables that bridge. Requires **`OPENAI_API_KEY`** on the agent host when on.
+   * When **`"on"`**, registration enables OpenAI Realtime provisioning for this agent.
+   * Omitted or **`"off"`** disables realtime voice for this registration.
    */
   enableP2a?: P2aEnableFlag;
 };

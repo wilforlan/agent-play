@@ -447,6 +447,113 @@ describe("RemotePlayWorld", () => {
     await world.close();
   });
 
+  it("initAudio mints realtime client secret and addAgent forwards it to players route", async () => {
+    const fetchMock = vi.fn(
+      async (url: string | URL, init?: RequestInit) => {
+        const u = String(url);
+        if (u.endsWith("/api/agent-play/session")) {
+          return sessionResponse();
+        }
+        if (u.endsWith("/api/nodes/validate") && init?.method === "POST") {
+          return new Response(JSON.stringify({ ok: true, nodeKind: "agent" }), {
+            status: 200,
+          });
+        }
+        if (
+          u === "https://api.openai.com/v1/realtime/client_secrets" &&
+          init?.method === "POST"
+        ) {
+          return new Response(
+            JSON.stringify({
+              value: "cs_sdk_123",
+              expires_at: "2026-04-25T11:30:00.000Z",
+            }),
+            { status: 200 }
+          );
+        }
+        if (u.includes("/api/agent-play/players") && init?.method === "POST") {
+          const body = JSON.parse(String(init.body)) as {
+            realtimeWebrtc?: {
+              clientSecret: string;
+              model: string;
+              voice?: string;
+              expiresAt?: string;
+            };
+          };
+          expect(body.realtimeWebrtc).toEqual({
+            clientSecret: "cs_sdk_123",
+            model: "gpt-realtime",
+            voice: "marin",
+            expiresAt: "2026-04-25T11:30:00.000Z",
+          });
+          return new Response(
+            JSON.stringify({
+              playerId: "p4",
+              previewUrl: `${BASE_URL}/agent-play/watch`,
+              registeredAgent: sampleRegisteredAgent("aid-4", "d"),
+              enableP2a: "on",
+              realtimeWebrtc: body.realtimeWebrtc,
+            }),
+            { status: 200 }
+          );
+        }
+        return notFound();
+      }
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const world = playWorld("key");
+    await world.connect();
+    world.initAudio({
+      openai: {
+        apiKey: "sk-sdk-test",
+        model: "gpt-realtime",
+        voice: "marin",
+      },
+    });
+    const player = await world.addAgent({
+      name: "d",
+      type: "langchain",
+      agent: { type: "langchain", toolNames: ["chat_tool"] },
+      nodeId: "aid-4",
+      enableP2a: "on",
+    });
+    expect(player.realtimeWebrtc?.clientSecret).toBe("cs_sdk_123");
+    await world.close();
+  });
+
+  it("initAudio throws on addAgent when OPENAI_API_KEY is missing", async () => {
+    const fetchMock = vi.fn(async (url: string | URL, init?: RequestInit) => {
+      const u = String(url);
+      if (u.endsWith("/api/agent-play/session")) {
+        return sessionResponse();
+      }
+      if (u.endsWith("/api/nodes/validate") && init?.method === "POST") {
+        return new Response(JSON.stringify({ ok: true, nodeKind: "agent" }), {
+          status: 200,
+        });
+      }
+      return notFound();
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const world = playWorld("key");
+    await world.connect();
+    world.initAudio({
+      openai: {
+        apiKey: "",
+      },
+    });
+    await expect(
+      world.addAgent({
+        name: "voice",
+        type: "langchain",
+        agent: { type: "langchain", toolNames: ["chat_tool"] },
+        nodeId: "aid-voice",
+        enableP2a: "on",
+      })
+    ).rejects.toThrow(/OPENAI_API_KEY/i);
+    await world.close();
+  });
+
   it("addAgent throws when agent node validation fails", async () => {
     const fetchMock = vi.fn(async (url: string | URL, init?: RequestInit) => {
       const u = String(url);

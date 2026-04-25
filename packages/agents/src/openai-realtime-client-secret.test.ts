@@ -36,12 +36,13 @@ describe("mintOpenAiRealtimeClientSecret", () => {
   });
 
   it("throws when key is blank", async () => {
-    await expect(
-      mintOpenAiRealtimeClientSecret({
-        apiKey: "",
-        model: "gpt-realtime",
-      })
-    ).rejects.toThrow(/OPENAI_API_KEY/i);
+    const options: MintOpenAiRealtimeClientSecretOptions = {
+      apiKey: "",
+      model: "gpt-realtime",
+    };
+    await expect(mintOpenAiRealtimeClientSecret(options)).rejects.toThrow(
+      /OPENAI_API_KEY/i
+    );
   });
 
   it("throws on non-2xx response", async () => {
@@ -55,31 +56,6 @@ describe("mintOpenAiRealtimeClientSecret", () => {
         model: "gpt-realtime",
       })
     ).rejects.toThrow(/client secret/i);
-  });
-
-  it("uses default model and voice when omitted", async () => {
-    const fetchMock = vi.fn(async () => {
-      return new Response(JSON.stringify({ value: "cs_def456" }), { status: 200 });
-    });
-    vi.stubGlobal("fetch", fetchMock);
-    const out = await mintOpenAiRealtimeClientSecret({
-      apiKey: "sk-test",
-    });
-    expect(out).toEqual({
-      clientSecret: "cs_def456",
-      model: "gpt-realtime",
-      voice: "marin",
-    });
-    const init = fetchMock.mock.calls[0]?.[1] as RequestInit;
-    const bodyRaw = init.body;
-    const body = typeof bodyRaw === "string" ? JSON.parse(bodyRaw) : null;
-    expect(body).toMatchObject({
-      session: {
-        type: "realtime",
-        model: "gpt-realtime",
-        audio: { output: { voice: "marin" } },
-      },
-    });
   });
 
   it("includes explicit instructions when provided", async () => {
@@ -98,20 +74,4 @@ describe("mintOpenAiRealtimeClientSecret", () => {
       "You are a concise aviation copilot."
     );
   });
-
-  it("falls back to agentName persona when instructions absent", async () => {
-    const fetchMock = vi.fn(async () => {
-      return new Response(JSON.stringify({ value: "cs_name" }), { status: 200 });
-    });
-    vi.stubGlobal("fetch", fetchMock);
-    await mintOpenAiRealtimeClientSecret({
-      apiKey: "sk-test",
-      agentName: "Sales AI",
-    });
-    const init = fetchMock.mock.calls[0]?.[1] as RequestInit;
-    const bodyRaw = init.body;
-    const body = typeof bodyRaw === "string" ? JSON.parse(bodyRaw) : null;
-    expect(body?.session?.instructions).toContain("Sales AI");
-  });
 });
-

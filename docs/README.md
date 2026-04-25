@@ -33,7 +33,7 @@ The repository uses npm workspaces. **`packages/sdk`** is the Node.js package `@
 | [P2A implementation architecture](agent-play-p2a-implementation.md) | Peer to Agent audio architecture: assist-background execution, response processor, ringer play rooms, and canvas UX controls |
 | [Assist tools as world background runtime](assist-tools-world-background-runtime.md) | Defines assist tools as the primary world background execution model and its role in P2A delivery flow |
 | [Intercom-address architecture](intercom-address.md) | Core P2A addressing model for Agent Ringer: shareable `intercom-address://{channelKey}`, open inbound text/audio/media delivery, and `/` page display behavior |
-| [P2A realtime hub](p2a/index.md) | OpenAI Realtime over intercom (`enableP2a` on `addAgent`), `@agent-play/p2a-audio`, no LiveKit |
+| [P2A realtime hub](p2a/index.md) | OpenAI Realtime via SDK `initAudio()` + client secrets (`enableP2a` on `addAgent`), no LiveKit |
 | [In-browser docs (`/doc`)](in-app-docs.md) | How `docs/` is copied into web-ui, App Router layout, Docker |
 
 Older topic-specific pages such as [Architecture](architecture.md), [Core features](core-features.md), and [Events, SSE, and remote API](events-sse-and-remote.md) may still describe paths as `play-sdk/`; treat **`packages/sdk`** and **`packages/play-ui`** as the current locations.

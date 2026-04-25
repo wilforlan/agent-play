@@ -14,6 +14,8 @@ import {
   type RegisteredAgentSummary,
   type RegisteredPlayer,
   type PlayerChainNodeResponse,
+  type RemotePlayWorldInitAudioOptions,
+  type RemotePlayWorldOpenAiAudioOptions,
 } from "../public-types.js";
 import { agentPlayDebug } from "./agent-play-debug.js";
 import {
@@ -49,6 +51,7 @@ import {
   WORLD_INTERCOM_EVENT,
 } from "@agent-play/intercom";
 import { intercomResultRecordFromLangChainInvokeOutput } from "./intercom-langchain-chat-result.js";
+import { mintOpenAiRealtimeClientSecretForSdk } from "./openai-realtime-client-secret.js";
 
 const PLAYER_CONNECTION_HEARTBEAT_MAX_ATTEMPTS = 10;
 const PLAYER_CONNECTION_HEARTBEAT_RETRY_DELAY_MS = 10_000;
@@ -333,6 +336,7 @@ function normalizeIntercomSubscribePlayerIds(
  * Authenticates like the CLI: **`x-node-id`** (derived node id) and **`x-node-passw`** (hashed passphrase material) on every request.
  *
  * Register automation agents with {@link RemotePlayWorld.addAgent} (`nodeId` is the agent node id; the server stores it as `agentId`).
+ * Call {@link RemotePlayWorld.initAudio} before `addAgent` to have the SDK mint per-agent OpenAI Realtime client secrets and forward them on registration.
  *
  * Incremental updates: {@link RemotePlayWorld.subscribeWorldState} listens for **`playerChainNotify`** in SSE `data`, then fetches each changed leaf via {@link RemotePlayWorld.getPlayerChainNode} and merges with {@link mergeSnapshotWithPlayerChainNode}.
  *
@@ -359,6 +363,7 @@ export class RemotePlayWorld {
     { connectionId: string; leaseTtlSeconds: number; timer: ReturnType<typeof setInterval> }
   >();
   private readonly audioListenersByPlayerId = new Map<string, Set<AudioEventListener>>();
+  private audioInitOptions: RemotePlayWorldOpenAiAudioOptions | null = null;
 
   constructor(options: RemotePlayWorldOptions = {}) {
     const creds = loadAgentPlayCredentialsFileFromPathSync(
@@ -598,6 +603,17 @@ export class RemotePlayWorld {
     return u.toString();
   }
 
+  /**
+   * Enables SDK-managed OpenAI Realtime client secret minting for subsequent {@link addAgent} calls.
+   *
+   * When set and `addAgent({ enableP2a: "on" })` is used, the SDK mints a short-lived client secret
+   * and includes it in the players registration payload as `realtimeWebrtc`.
+   */
+  initAudio(options: RemotePlayWorldInitAudioOptions): this {
+    this.audioInitOptions = { ...options.openai };
+    return this;
+  }
+
   async getWorldSnapshot(): Promise<AgentPlaySnapshot> {
     const res = await fetch(`${this.apiBase}/api/agent-play/sdk/rpc`, {
       method: "POST",
@@ -754,6 +770,9 @@ export class RemotePlayWorld {
 
   /**
    * Registers an automation agent using **agent node id** (`nodeId`), sent to the server as `agentId`.
+   *
+   * If {@link initAudio} was called and **`enableP2a`** is **`"on"`**, this call mints a per-agent
+   * OpenAI Realtime client secret and forwards it as `realtimeWebrtc`.
    */
   async addAgent(input: AddAgentInput): Promise<RegisteredPlayer> {
     const sid = this.getSessionId();
@@ -774,6 +793,18 @@ export class RemotePlayWorld {
     const url = `${this.apiBase}/api/agent-play/players?sid=${encodeURIComponent(sid)}`;
     const connectionId = randomUUID();
     const leaseTtlSeconds = 45;
+    let realtimeWebrtcFromInit: RealtimeWebrtcClientSecret | undefined;
+    if (input.enableP2a === "on" && this.audioInitOptions !== null) {
+      realtimeWebrtcFromInit = await mintOpenAiRealtimeClientSecretForSdk({
+        openai: this.audioInitOptions,
+        agentName: input.name,
+      });
+      this.logTransport("addAgent:p2a_enabled", {
+        agentName: input.name,
+        model: this.audioInitOptions.model,
+        voice: this.audioInitOptions.voice,
+      });
+    }
     const res = await fetch(url, {
       method: "POST",
       headers: this.jsonHeaders(),
@@ -787,6 +818,9 @@ export class RemotePlayWorld {
         connectionId,
         leaseTtlSeconds,
         ...(input.enableP2a !== undefined ? { enableP2a: input.enableP2a } : {}),
+        ...(realtimeWebrtcFromInit !== undefined
+          ? { realtimeWebrtc: realtimeWebrtcFromInit }
+          : {}),
       }),
     });
     const bodyText = await res.text();

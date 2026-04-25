@@ -10,11 +10,10 @@
     "packages/*"
   ],
   "scripts": {
-    "build": "npm run build:node-tools && npm run build:intercom && npm run build:sdk && npm run build:p2a-audio && npm run build:agents && npm run build:cli && npm run build:web-ui && npm run build:play-ui",
+    "build": "npm run build:node-tools && npm run build:intercom && npm run build:sdk && npm run build:agents && npm run build:cli && npm run build:web-ui && npm run build:play-ui",
     "build:intercom": "npm run build -w @agent-play/intercom",
     "build:node-tools": "npm run build -w @agent-play/node-tools",
     "build:sdk": "npm run build -w @agent-play/sdk",
-    "build:p2a-audio": "npm run build -w @agent-play/p2a-audio",
     "build:agents": "npm run build -w @agent-play/agents",
     "build:web-ui": "npm run build -w @agent-play/web-ui",
     "build:cli": "npm run build -w @agent-play/cli",

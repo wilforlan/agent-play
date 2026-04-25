@@ -1,6 +1,6 @@
 # P2A realtime implementation hub
 
-This folder documents **OpenAI Realtime** integration for Agent Play **without LiveKit**: a Node-only bridge in **`@agent-play/p2a-audio`** over intercom **`kind: "audio"`** and SSE, wired from **`packages/agents`**.
+This folder documents **OpenAI Realtime** integration for Agent Play **without LiveKit** using SDK-managed realtime client secret minting (`RemotePlayWorld.initAudio()`) and transport through `addAgent`.
 
 ## Related product architecture
 
@@ -21,15 +21,15 @@ await world.addAgent({
 });
 ```
 
-When **`enableP2a: "on"`**, the **agents process** that runs `subscribeIntercomCommands` must supply **`OPENAI_API_KEY`** (see [realtime-openai-bridge.md](./realtime-openai-bridge.md)). Keys are **never** sent from the browser for this path.
+When **`enableP2a: "on"`** and SDK audio init is enabled, agent registration includes `realtimeWebrtc` client secret metadata. Keys are **never** sent from the browser for this path.
 
 ## Doc map
 
 | Document | Contents |
 |----------|----------|
 | [wire-and-contracts.md](./wire-and-contracts.md) | `requestId`, intercom `stream` / `completed`, optional `enableP2a` on add-agent wire |
-| [realtime-openai-bridge.md](./realtime-openai-bridge.md) | WebSocket client, PCM/base64, no LiveKit policy, secrets |
-| [packages-and-sdk-surface.md](./packages-and-sdk-surface.md) | `@agent-play/p2a-audio` vs SDK vs agents; browser bundle constraints |
+| [realtime-openai-bridge.md](./realtime-openai-bridge.md) | SDK + agents minting flow, no LiveKit policy, secrets |
+| [packages-and-sdk-surface.md](./packages-and-sdk-surface.md) | SDK vs agents responsibilities; browser bundle constraints |
 
 ## High-level flow
 
@@ -43,14 +43,13 @@ flowchart LR
     RPC[RPC_intercomResponse]
   end
   subgraph agents [packages_agents]
+    Init[world_initAudio]
     Add[addAgent_enableP2a]
-    Bridge["@agent-play/p2a-audio"]
-    OAI[OpenAI_Realtime_WS]
+    Mint[client_secret_mint]
   end
   PTT --> SSE
-  SSE --> Bridge
-  Add --> Bridge
-  Bridge --> OAI
-  Bridge --> RPC
+  Init --> Mint
+  Add --> Mint
+  Mint --> RPC
   RPC --> SSE
 ```

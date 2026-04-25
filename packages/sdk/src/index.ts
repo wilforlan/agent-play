@@ -43,6 +43,8 @@ export type {
   PlatformAgentInformation,
   RecordInteractionInput,
   RealtimeWebrtcClientSecret,
+  RemotePlayWorldInitAudioOptions,
+  RemotePlayWorldOpenAiAudioOptions,
   RegisteredAgentSummary,
   RegisteredPlayer,
   WorldInteractionRole,

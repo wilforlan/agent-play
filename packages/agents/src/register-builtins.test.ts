@@ -11,7 +11,6 @@ vi.mock("eventsource-client", () => ({
 }));
 
 import { RemotePlayWorld } from "@agent-play/sdk";
-import * as p2aAudio from "@agent-play/p2a-audio";
 import { getBuiltinAgentDefinitions } from "./builtins/definitions.js";
 import { registerBuiltinAgents } from "./register-builtins.js";
 
@@ -66,9 +65,6 @@ describe("registerBuiltinAgents", () => {
 
   it("returns world and registers built-ins when snapshot empty", async () => {
     setCredentialsFixture();
-    const p2aSpy = vi
-      .spyOn(p2aAudio, "subscribeP2aAudioBridge")
-      .mockReturnValue({ dispose: async () => {} });
     let addPlayerCount = 0;
     let validateCount = 0;
     let sawConnectValidation = false;
@@ -155,14 +151,10 @@ describe("registerBuiltinAgents", () => {
     expect(addPlayerCount).toBe(2);
     expect(validateCount).toBe(3);
     expect(sawConnectValidation).toBe(true);
-    expect(p2aSpy).not.toHaveBeenCalled();
   });
 
-  it("subscribes p2a-audio when enableP2a is on for new agents", async () => {
+  it("forwards enableP2a when on for new agents", async () => {
     setCredentialsFixture();
-    const p2aSpy = vi
-      .spyOn(p2aAudio, "subscribeP2aAudioBridge")
-      .mockReturnValue({ dispose: async () => {} });
     let addPlayerCount = 0;
     const fetchMock = vi.fn(
       async (url: string | URL, init?: RequestInit) => {
@@ -224,7 +216,6 @@ describe("registerBuiltinAgents", () => {
     vi.stubGlobal("fetch", fetchMock);
     await registerBuiltinAgents({ enableP2a: "on" });
     expect(addPlayerCount).toBe(2);
-    expect(p2aSpy).toHaveBeenCalledTimes(2);
   });
 
   it("skips addAgent when built-in name already on snapshot but still subscribes intercom", async () => {

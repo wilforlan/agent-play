@@ -90,4 +90,3 @@ export async function mintOpenAiRealtimeClientSecret(
   }
   return parsed;
 }
-

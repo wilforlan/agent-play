@@ -305,6 +305,44 @@ describe("createPreviewSessionInteractionPanel", () => {
     ).not.toBeNull();
   });
 
+  it("shows WebRTC voice controls instead of MediaRecorder tools when token is present", () => {
+    const panel = createPreviewSessionInteractionPanel({
+      getSid: () => "sid-1",
+      apiBase: "/api/agent-play",
+      getMainNodeId: () => "main-node-1",
+    });
+    panel.setAgents([
+      {
+        agentId: "agent-1",
+        name: "Agent 1",
+        enableP2a: "on",
+        realtimeWebrtc: {
+          clientSecret: "cs_test",
+          model: "gpt-realtime",
+        },
+      },
+    ]);
+    panel.setContext("agent-1");
+    panel.setMode("push_to_talk");
+    document.body.append(panel.element);
+    expect(panel.element.textContent).toMatch(/direct microphone tracks/i);
+    expect(
+      panel.element.querySelector(".preview-session-interaction__audio-stop-btn")
+    ).toBeNull();
+    expect(panel.element.textContent).toMatch(/connect voice/i);
+  });
+
+  it("preparePushToTalkConnection returns false when target does not have P2A enabled", async () => {
+    const panel = createPreviewSessionInteractionPanel({
+      getSid: () => "sid-1",
+      apiBase: "/api/agent-play",
+      getMainNodeId: () => "main-node-1",
+    });
+    panel.setAgents([{ agentId: "agent-1", name: "Agent 1", enableP2a: "off" }]);
+    const ok = await panel.preparePushToTalkConnection("agent-1");
+    expect(ok).toBe(false);
+  });
+
   it("auto-starts push-to-talk recording with waveform and stop control", async () => {
     const stopTrack = vi.fn();
     vi.stubGlobal("navigator", {
