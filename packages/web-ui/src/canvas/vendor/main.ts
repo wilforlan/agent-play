@@ -1129,6 +1129,7 @@ function connectSse(sid: string): void {
         channelKey?: unknown;
         requestId?: unknown;
         fromPlayerId?: unknown;
+        intercomAddress?: unknown;
         message?: unknown;
         result?: unknown;
         status?: unknown;
