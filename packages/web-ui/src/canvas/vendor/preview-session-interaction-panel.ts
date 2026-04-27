@@ -122,7 +122,12 @@ function ensureStyles(): void {
   background: rgba(30, 58, 138, 0.48);
 }
 .preview-session-interaction__audio-tools { display: grid; gap: 8px; margin-top: 8px; }
-.preview-session-interaction__audio-buttons { display: flex; flex-wrap: wrap; gap: 6px; }
+.preview-session-interaction__audio-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
 .preview-session-interaction__audio-btn {
   border: 1px solid rgba(96, 165, 250, 0.55);
   background: rgba(30, 41, 59, 0.95);
@@ -131,6 +136,14 @@ function ensureStyles(): void {
   padding: 6px 10px;
   font-size: 11px;
   cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.preview-session-interaction__audio-btn-icon {
+  width: 12px;
+  height: 12px;
+  display: inline-block;
 }
 .preview-session-interaction__audio-stop-btn {
   border-color: rgba(248, 113, 113, 0.8);
@@ -140,6 +153,72 @@ function ensureStyles(): void {
 .preview-session-interaction__audio-state {
   font-size: 11px;
   color: #bfdbfe;
+}
+.preview-session-interaction__audio-status-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.preview-session-interaction__audio-status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border-radius: 999px;
+  border: 1px solid rgba(148, 163, 184, 0.45);
+  padding: 4px 8px;
+  font-size: 11px;
+  line-height: 1;
+}
+.preview-session-interaction__audio-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: #60a5fa;
+}
+.preview-session-interaction__audio-status-badge[data-state="disconnected"] {
+  color: #bfdbfe;
+  border-color: rgba(96, 165, 250, 0.55);
+  background: rgba(30, 58, 138, 0.26);
+}
+.preview-session-interaction__audio-status-badge[data-state="connecting"] {
+  color: #fef08a;
+  border-color: rgba(250, 204, 21, 0.55);
+  background: rgba(161, 98, 7, 0.22);
+}
+.preview-session-interaction__audio-status-badge[data-state="connected"] {
+  color: #86efac;
+  border-color: rgba(34, 197, 94, 0.55);
+  background: rgba(20, 83, 45, 0.25);
+}
+.preview-session-interaction__audio-status-badge[data-state="failed"] {
+  color: #fca5a5;
+  border-color: rgba(239, 68, 68, 0.55);
+  background: rgba(127, 29, 29, 0.25);
+}
+.preview-session-interaction__audio-status-badge[data-state="disconnected"] .preview-session-interaction__audio-status-dot {
+  background: #60a5fa;
+}
+.preview-session-interaction__audio-status-badge[data-state="connecting"] .preview-session-interaction__audio-status-dot {
+  background: #facc15;
+}
+.preview-session-interaction__audio-status-badge[data-state="connected"] .preview-session-interaction__audio-status-dot {
+  background: #22c55e;
+}
+.preview-session-interaction__audio-status-badge[data-state="failed"] .preview-session-interaction__audio-status-dot {
+  background: #ef4444;
+}
+.preview-session-interaction__audio-connecting-spinner {
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  border: 2px solid rgba(250, 204, 21, 0.3);
+  border-top-color: rgba(250, 204, 21, 1);
+  animation: preview-session-interaction-spin 0.8s linear infinite;
+}
+@keyframes preview-session-interaction-spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
 }
 .preview-session-interaction__audio-bar {
   border: 1px solid rgba(148, 163, 184, 0.35);
@@ -527,6 +606,21 @@ function titleFromToolName(toolName: string): string {
     .join(" ");
 }
 
+function createRingerIcon(): SVGSVGElement {
+  const icon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  icon.setAttribute("viewBox", "0 0 24 24");
+  icon.setAttribute("aria-hidden", "true");
+  icon.setAttribute("class", "preview-session-interaction__audio-btn-icon");
+  const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  path.setAttribute(
+    "d",
+    "M12 3a5 5 0 00-5 5v3.2c0 .7-.2 1.4-.6 2L5 15h14l-1.4-1.8c-.4-.6-.6-1.3-.6-2V8a5 5 0 00-5-5zm0 18a2.5 2.5 0 002.45-2h-4.9A2.5 2.5 0 0012 21z"
+  );
+  path.setAttribute("fill", "currentColor");
+  icon.append(path);
+  return icon;
+}
+
 const DEFAULT_INTERCOM_REPLY_TIMEOUT_MS = 30_000;
 
 function intercomEventMatchesHumanAgentReply(
@@ -633,6 +727,7 @@ export function createPreviewSessionInteractionPanel(options: {
   ensureStyles();
   const root = document.createElement("section");
   root.className = "preview-session-interaction";
+  root.tabIndex = -1;
   const header = document.createElement("div");
   header.className = "preview-session-interaction__header";
   const title = document.createElement("div");
@@ -970,6 +1065,88 @@ export function createPreviewSessionInteractionPanel(options: {
     realtimeState = "idle";
   };
 
+  const requestRealtimeSecretFromIntercom = (
+    agentId: string,
+    sid: string | null,
+    mainNodeId: string | null
+  ): Promise<RealtimeWebrtcSecret | null> => {
+    return new Promise<RealtimeWebrtcSecret | null>((resolve, reject) => {
+      if (sid === null || mainNodeId === null) {
+        resolve(null);
+        return;
+      }
+      const requestId = crypto.randomUUID();
+      realtimeCredentialWaiters.set(requestId, { resolve, reject });
+      pendingByRequestId.set(requestId, { mode: "push_to_talk", agentId });
+      startReplyWait({
+        requestId,
+        mode: "push_to_talk",
+        agentId,
+        mainNodeId,
+      });
+      const rpcUrl = `${options.apiBase}/sdk/rpc?sid=${encodeURIComponent(sid)}`;
+      void fetch(rpcUrl, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          op: INTERCOM_COMMAND_OP,
+          payload: {
+            requestId,
+            mainNodeId,
+            fromPlayerId: mainNodeId,
+            toPlayerId: agentId,
+            kind: "realtime",
+          },
+        }),
+      }).catch((error: unknown) => {
+        realtimeCredentialWaiters.delete(requestId);
+        pendingByRequestId.delete(requestId);
+        reject(error);
+      });
+    });
+  };
+
+  type RealtimeSessionLike = {
+    connect: (options: { apiKey: string; mediaStream?: MediaStream }) => Promise<void>;
+    close?: () => void | Promise<void>;
+    disconnect?: () => void | Promise<void>;
+  };
+
+  class PlayWorldAgent {
+    private readonly agentId: string;
+    private readonly agentName: string;
+    private readonly instructions: string;
+
+    constructor(options: { agentId: string; agentName: string; instructions: string }) {
+      this.agentId = options.agentId;
+      this.agentName = options.agentName;
+      this.instructions = options.instructions;
+    }
+
+    async connect(credentials: RealtimeWebrtcSecret): Promise<{
+      session: RealtimeSessionLike;
+      stream: MediaStream;
+    }> {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: true,
+      });
+      const realtimeAgent = new RealtimeAgent({
+        name: this.agentName,
+        instructions: this.instructions,
+      });
+      const session = new RealtimeSession(realtimeAgent, {
+        model: credentials.model ?? "gpt-realtime",
+        voice: credentials.voice,
+      }) as RealtimeSessionLike;
+      await session.connect({ apiKey: credentials.clientSecret, mediaStream: stream });
+      return { session, stream };
+    }
+
+    getAgentId(): string {
+      return this.agentId;
+    }
+  }
+
   const ensureRealtimeConnection = async (
     agentId: string
   ): Promise<boolean> => {
@@ -983,44 +1160,11 @@ export function createPreviewSessionInteractionPanel(options: {
     realtimeState = "connecting";
     render();
     try {
-      const secretResponse =
-        typeof agent?.realtimeWebrtc?.clientSecret === "string" &&
-        agent.realtimeWebrtc.clientSecret.length > 0
-          ? agent.realtimeWebrtc
-          : await new Promise<RealtimeWebrtcSecret | null>((resolve, reject) => {
-              if (sid === null || mainNodeId === null) {
-                resolve(null);
-                return;
-              }
-              const requestId = crypto.randomUUID();
-              realtimeCredentialWaiters.set(requestId, { resolve, reject });
-              pendingByRequestId.set(requestId, { mode: "push_to_talk", agentId });
-              startReplyWait({
-                requestId,
-                mode: "push_to_talk",
-                agentId,
-                mainNodeId,
-              });
-              const rpcUrl = `${options.apiBase}/sdk/rpc?sid=${encodeURIComponent(sid)}`;
-              void fetch(rpcUrl, {
-                method: "POST",
-                headers: { "content-type": "application/json" },
-                body: JSON.stringify({
-                  op: INTERCOM_COMMAND_OP,
-                  payload: {
-                    requestId,
-                    mainNodeId,
-                    fromPlayerId: mainNodeId,
-                    toPlayerId: agentId,
-                    kind: "realtime",
-                  },
-                }),
-              }).catch((error: unknown) => {
-                realtimeCredentialWaiters.delete(requestId);
-                pendingByRequestId.delete(requestId);
-                reject(error);
-              });
-            });
+      const secretResponse = await requestRealtimeSecretFromIntercom(
+        agentId,
+        sid,
+        mainNodeId
+      );
       if (
         secretResponse === null ||
         typeof secretResponse.clientSecret !== "string" ||
@@ -1028,39 +1172,60 @@ export function createPreviewSessionInteractionPanel(options: {
       ) {
         return false;
       }
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: true,
-      });
       const instructions =
         typeof agent?.realtimeInstructions === "string" &&
         agent.realtimeInstructions.trim().length > 0
           ? agent.realtimeInstructions
           : `You are ${agent?.name ?? "the assistant"}.`;
-      const realtimeAgent = new RealtimeAgent({
-        name: agent?.name ?? agentId,
+      const playWorldAgent = new PlayWorldAgent({
+        agentId,
+        agentName: agent?.name ?? agentId,
         instructions,
       });
-      const session = new RealtimeSession(realtimeAgent, {
-        model: secretResponse.model ?? "gpt-realtime",
-        voice: secretResponse.voice,
-      }) as {
-        connect: (options: {
-          apiKey: string;
-          mediaStream?: MediaStream;
-        }) => Promise<void>;
-        close?: () => void | Promise<void>;
-        disconnect?: () => void | Promise<void>;
-      };
-      await session.connect({ apiKey: secretResponse.clientSecret, mediaStream: stream });
+      const { session, stream } = await playWorldAgent.connect(secretResponse);
       realtimeSession = session;
       realtimeInputStream = stream;
-      realtimeAgentId = agentId;
+      realtimeAgentId = playWorldAgent.getAgentId();
       realtimeState = "connected";
       return true;
     } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      const expiredToken = /ephemeral token expired/i.test(message);
+      if (expiredToken) {
+        try {
+          const refreshedSecret = await requestRealtimeSecretFromIntercom(
+            agentId,
+            sid,
+            mainNodeId
+          );
+          if (
+            refreshedSecret !== null &&
+            typeof refreshedSecret.clientSecret === "string" &&
+            refreshedSecret.clientSecret.length > 0
+          ) {
+            const instructions =
+              typeof agent?.realtimeInstructions === "string" &&
+              agent.realtimeInstructions.trim().length > 0
+                ? agent.realtimeInstructions
+                : `You are ${agent?.name ?? "the assistant"}.`;
+            const playWorldAgent = new PlayWorldAgent({
+              agentId,
+              agentName: agent?.name ?? agentId,
+              instructions,
+            });
+            const { session, stream } = await playWorldAgent.connect(refreshedSecret);
+            realtimeSession = session;
+            realtimeInputStream = stream;
+            realtimeAgentId = playWorldAgent.getAgentId();
+            realtimeState = "connected";
+            return true;
+          }
+        } catch {
+          // fall through to shared failure handling below
+        }
+      }
       closeRealtimeConnection();
       realtimeState = "failed";
-      const message = error instanceof Error ? error.message : String(error);
       setInteractionError("Unable to connect realtime voice.", {
         step: "push_to_talk:realtime_connect",
         agentId,
@@ -1623,15 +1788,47 @@ export function createPreviewSessionInteractionPanel(options: {
     const titleEl = document.createElement("div");
     titleEl.className = "preview-session-interaction__assist-desc";
     titleEl.textContent =
-      "Realtime WebRTC voice requests fresh credentials over intercom before connecting.";
+      "Push to Talk requests fresh credentials over intercom before connecting.";
+    const stateRow = document.createElement("div");
+    stateRow.className = "preview-session-interaction__audio-status-row";
+    const stateBadge = document.createElement("div");
+    stateBadge.className = "preview-session-interaction__audio-status-badge";
+    const stateDot = document.createElement("span");
+    stateDot.className = "preview-session-interaction__audio-status-dot";
+    const stateLabel = document.createElement("span");
+    const badgeState =
+      realtimeState === "connected"
+        ? "connected"
+        : realtimeState === "connecting"
+          ? "connecting"
+          : realtimeState === "failed"
+            ? "failed"
+            : "disconnected";
+    stateBadge.setAttribute("data-state", badgeState);
+    stateLabel.textContent =
+      badgeState === "connected"
+        ? "Connected"
+        : badgeState === "connecting"
+          ? "Connecting"
+          : badgeState === "failed"
+            ? "Failed"
+            : "Disconnected";
+    stateBadge.append(stateDot, stateLabel);
+    stateRow.append(stateBadge);
+    if (badgeState === "connecting") {
+      const spinner = document.createElement("span");
+      spinner.className = "preview-session-interaction__audio-connecting-spinner";
+      spinner.setAttribute("aria-label", "Connecting");
+      stateRow.append(spinner);
+    }
     const state = document.createElement("div");
     state.className = "preview-session-interaction__audio-state";
     state.textContent =
-      realtimeState === "connected"
+      badgeState === "connected"
         ? "Voice connected."
-        : realtimeState === "connecting"
+        : badgeState === "connecting"
           ? "Connecting voice..."
-          : realtimeState === "failed"
+          : badgeState === "failed"
             ? "Voice connection failed."
             : "Press P near the agent to connect voice.";
     const actions = document.createElement("div");
@@ -1639,8 +1836,7 @@ export function createPreviewSessionInteractionPanel(options: {
     const connectBtn = document.createElement("button");
     connectBtn.type = "button";
     connectBtn.className = "preview-session-interaction__audio-btn";
-    connectBtn.textContent =
-      realtimeState === "connected" ? "Reconnect" : "Connect Voice";
+    connectBtn.append(createRingerIcon(), "Connect Voice");
     connectBtn.addEventListener("click", () => {
       if (activeAgentId !== null) {
         void ensureRealtimeConnection(activeAgentId);
@@ -1650,13 +1846,16 @@ export function createPreviewSessionInteractionPanel(options: {
     disconnectBtn.type = "button";
     disconnectBtn.className = "preview-session-interaction__audio-btn";
     disconnectBtn.textContent = "Disconnect";
-    disconnectBtn.disabled = realtimeState !== "connected";
     disconnectBtn.addEventListener("click", () => {
       closeRealtimeConnection();
       render();
     });
-    actions.append(connectBtn, disconnectBtn);
-    body.append(titleEl, state, actions);
+    if (realtimeState === "connected") {
+      actions.append(disconnectBtn);
+    } else {
+      actions.append(connectBtn);
+    }
+    body.append(titleEl, stateRow, state, actions);
   };
 
   const render = (): void => {
@@ -1894,6 +2093,9 @@ export function createPreviewSessionInteractionPanel(options: {
       shouldAutoStartRecording = nextMode === "push_to_talk";
       shouldFocusChatInput = nextMode === "chat";
       render();
+      if (nextMode === "push_to_talk") {
+        root.focus({ preventScroll: true });
+      }
       scrollToBottom();
     },
     focusChatInput: () => {

@@ -652,15 +652,15 @@ async function triggerProximityPushToTalk(): Promise<void> {
     }
   }
   sessionInteractionPanel?.setContext(partner);
-  const ready = await (sessionInteractionPanel?.preparePushToTalkConnection(partner) ??
-    Promise.resolve(true));
-  if (!ready) {
-    return;
-  }
   sessionInteractionPanel?.setMode("push_to_talk");
   sessionInteractionPanel?.scrollToBottom();
   if (mobileSidePanelControls?.isMobileViewport() === true) {
     mobileSidePanelControls.openRightPanel();
+  }
+  const ready = await (sessionInteractionPanel?.preparePushToTalkConnection(partner) ??
+    Promise.resolve(true));
+  if (!ready) {
+    return;
   }
 }
 
