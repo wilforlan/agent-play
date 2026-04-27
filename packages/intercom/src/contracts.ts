@@ -1,4 +1,4 @@
-export type IntercomCommandKind = "assist" | "chat";
+export type IntercomCommandKind = "assist" | "chat" | "realtime";
 
 export type WorldIntercomStatus =
   | "started"

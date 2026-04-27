@@ -32,7 +32,7 @@ export async function dispatchIntercomCommand(options: {
     },
   });
   try {
-    const { channelKey, intercomAddress } = await executeAgentCapability({
+    const { channelKey, intercomAddress, realtimeWebrtc } = await executeAgentCapability({
       world,
       payload,
     });
@@ -52,6 +52,28 @@ export async function dispatchIntercomCommand(options: {
         ts: new Date().toISOString(),
       },
     });
+    if (payload.kind === "realtime") {
+      await publishWorldIntercomEvent({
+        store,
+        payload: {
+          requestId: payload.requestId,
+          mainNodeId: payload.mainNodeId,
+          toPlayerId: payload.fromPlayerId,
+          fromPlayerId: payload.toPlayerId,
+          kind: payload.kind,
+          status: "completed",
+          message: "Realtime credentials ready.",
+          result: {
+            messageKind: "text",
+            message: "Realtime credentials ready.",
+            realtimeWebrtc,
+          },
+          channelKey,
+          intercomAddress,
+          ts: new Date().toISOString(),
+        },
+      });
+    }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     await publishWorldIntercomEvent({

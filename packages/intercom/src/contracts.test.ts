@@ -17,13 +17,11 @@ describe("intercom contracts", () => {
       toPlayerId: "agent-1",
       kind: "chat",
       text: "hello",
-      intercomAddress: "intercom-address://intercom:human:main-1:agent:agent-1",
+      intercomAddress: "ap-intercom://main-1",
     });
     expect(payload.kind).toBe("chat");
     expect(payload.toPlayerId).toBe("agent-1");
-    expect(payload.intercomAddress).toBe(
-      "intercom-address://intercom:human:main-1:agent:agent-1"
-    );
+    expect(payload.intercomAddress).toBe("ap-intercom://main-1");
   });
 
   it("rejects command payload when identifiers are empty", () => {
@@ -51,12 +49,21 @@ describe("intercom contracts", () => {
       ts: new Date().toISOString(),
       toolName: "assist_build_budget",
       result: { ok: true },
-      intercomAddress: "intercom-address://intercom:human:main-1:agent:agent-1",
+      intercomAddress: "ap-intercom://main-1",
     });
     expect(payload.status).toBe("completed");
-    expect(payload.intercomAddress).toBe(
-      "intercom-address://intercom:human:main-1:agent:agent-1"
-    );
+    expect(payload.intercomAddress).toBe("ap-intercom://main-1");
+  });
+
+  it("accepts realtime command payload", () => {
+    const payload = parseIntercomCommandPayload({
+      requestId: "req-rt-1",
+      mainNodeId: "main-1",
+      fromPlayerId: "__human__",
+      toPlayerId: "agent-1",
+      kind: "realtime",
+    });
+    expect(payload.kind).toBe("realtime");
   });
 
   it("accepts forwarded event with command echo", () => {

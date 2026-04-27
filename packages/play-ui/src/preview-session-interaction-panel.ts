@@ -38,6 +38,13 @@ export type SessionInteractionAgent = {
   };
 };
 
+type RealtimeWebrtcSecret = {
+  clientSecret: string;
+  expiresAt?: string;
+  model: string;
+  voice?: string;
+};
+
 function ensureStyles(): void {
   if (document.getElementById(STYLE_ID) !== null) return;
   const s = document.createElement("style");
@@ -778,6 +785,13 @@ export function createPreviewSessionInteractionPanel(options: {
     string,
     { mode: Mode; agentId: string; toolName?: string }
   >();
+  const realtimeCredentialWaiters = new Map<
+    string,
+    {
+      resolve: (value: RealtimeWebrtcSecret | null) => void;
+      reject: (reason?: unknown) => void;
+    }
+  >();
   let draftAudio:
     | {
         blob: Blob;
@@ -837,6 +851,11 @@ export function createPreviewSessionInteractionPanel(options: {
       const rid = replyWait.requestId;
       clearReplyWaitState();
       pendingByRequestId.delete(rid);
+      const waiter = realtimeCredentialWaiters.get(rid);
+      if (waiter !== undefined) {
+        realtimeCredentialWaiters.delete(rid);
+        waiter.resolve(null);
+      }
       setBusy(false);
       setInteractionError("Sorry — request timed out.", {
         step: "intercom:reply_timeout",
@@ -955,10 +974,8 @@ export function createPreviewSessionInteractionPanel(options: {
     agentId: string
   ): Promise<boolean> => {
     const agent = agentsById.get(agentId);
-    const secret = agent?.realtimeWebrtc?.clientSecret;
-    if (typeof secret !== "string" || secret.length === 0) {
-      return false;
-    }
+    const sid = options.getSid();
+    const mainNodeId = options.getMainNodeId();
     if (realtimeState === "connected" && realtimeAgentId === agentId) {
       return true;
     }
@@ -966,6 +983,51 @@ export function createPreviewSessionInteractionPanel(options: {
     realtimeState = "connecting";
     render();
     try {
+      const secretResponse =
+        typeof agent?.realtimeWebrtc?.clientSecret === "string" &&
+        agent.realtimeWebrtc.clientSecret.length > 0
+          ? agent.realtimeWebrtc
+          : await new Promise<RealtimeWebrtcSecret | null>((resolve, reject) => {
+              if (sid === null || mainNodeId === null) {
+                resolve(null);
+                return;
+              }
+              const requestId = crypto.randomUUID();
+              realtimeCredentialWaiters.set(requestId, { resolve, reject });
+              pendingByRequestId.set(requestId, { mode: "push_to_talk", agentId });
+              startReplyWait({
+                requestId,
+                mode: "push_to_talk",
+                agentId,
+                mainNodeId,
+              });
+              const rpcUrl = `${options.apiBase}/sdk/rpc?sid=${encodeURIComponent(sid)}`;
+              void fetch(rpcUrl, {
+                method: "POST",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({
+                  op: INTERCOM_COMMAND_OP,
+                  payload: {
+                    requestId,
+                    mainNodeId,
+                    fromPlayerId: mainNodeId,
+                    toPlayerId: agentId,
+                    kind: "realtime",
+                  },
+                }),
+              }).catch((error: unknown) => {
+                realtimeCredentialWaiters.delete(requestId);
+                pendingByRequestId.delete(requestId);
+                reject(error);
+              });
+            });
+      if (
+        secretResponse === null ||
+        typeof secretResponse.clientSecret !== "string" ||
+        secretResponse.clientSecret.length === 0
+      ) {
+        return false;
+      }
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: true,
       });
@@ -979,8 +1041,8 @@ export function createPreviewSessionInteractionPanel(options: {
         instructions,
       });
       const session = new RealtimeSession(realtimeAgent, {
-        model: agent?.realtimeWebrtc?.model ?? "gpt-realtime",
-        voice: agent?.realtimeWebrtc?.voice,
+        model: secretResponse.model ?? "gpt-realtime",
+        voice: secretResponse.voice,
       }) as {
         connect: (options: {
           apiKey: string;
@@ -989,7 +1051,7 @@ export function createPreviewSessionInteractionPanel(options: {
         close?: () => void | Promise<void>;
         disconnect?: () => void | Promise<void>;
       };
-      await session.connect({ apiKey: secret, mediaStream: stream });
+      await session.connect({ apiKey: secretResponse.clientSecret, mediaStream: stream });
       realtimeSession = session;
       realtimeInputStream = stream;
       realtimeAgentId = agentId;
@@ -1042,17 +1104,13 @@ export function createPreviewSessionInteractionPanel(options: {
       });
       return;
     }
-    if (activeAgentId !== null && typeof p2aAgent?.realtimeWebrtc?.clientSecret === "string") {
+    if (activeAgentId !== null) {
       const ok = await ensureRealtimeConnection(activeAgentId);
       if (!ok) {
         return;
       }
       return;
     }
-    setInteractionError("Push to talk requires realtime webRTC credentials for this agent.", {
-      step: "push_to_talk:missing_realtime_credentials",
-      agentId: activeAgentId,
-    });
   };
 
   const sendPushToTalkAudio = async (): Promise<void> => {
@@ -1065,17 +1123,10 @@ export function createPreviewSessionInteractionPanel(options: {
       });
       return;
     }
-    if (typeof sendAgent.realtimeWebrtc?.clientSecret === "string") {
-      if (!(await ensureRealtimeConnection(activeAgentId))) {
-        return;
-      }
-      result.textContent = "Realtime voice connected.";
+    if (!(await ensureRealtimeConnection(activeAgentId))) {
       return;
     }
-    setInteractionError("Audio intercom kind is deprecated. Realtime WebRTC is required.", {
-      step: "push_to_talk:audio_intercom_deprecated",
-      agentId: activeAgentId,
-    });
+    result.textContent = "Realtime voice connected.";
   };
 
   const renderChat = (): void => {
@@ -1568,53 +1619,44 @@ export function createPreviewSessionInteractionPanel(options: {
       body.append(warn);
       return;
     }
-    if (typeof p2aTarget?.realtimeWebrtc?.clientSecret === "string") {
-      shouldAutoStartRecording = false;
-      const titleEl = document.createElement("div");
-      titleEl.className = "preview-session-interaction__assist-desc";
-      titleEl.textContent =
-        "Realtime WebRTC voice uses direct microphone tracks (no local media recording buffer).";
-      const state = document.createElement("div");
-      state.className = "preview-session-interaction__audio-state";
-      state.textContent =
-        realtimeState === "connected"
-          ? "Voice connected."
-          : realtimeState === "connecting"
-            ? "Connecting voice..."
-            : realtimeState === "failed"
-              ? "Voice connection failed."
-              : "Press P near the agent to connect voice.";
-      const actions = document.createElement("div");
-      actions.className = "preview-session-interaction__audio-buttons";
-      const connectBtn = document.createElement("button");
-      connectBtn.type = "button";
-      connectBtn.className = "preview-session-interaction__audio-btn";
-      connectBtn.textContent =
-        realtimeState === "connected" ? "Reconnect" : "Connect Voice";
-      connectBtn.addEventListener("click", () => {
-        if (activeAgentId !== null) {
-          void ensureRealtimeConnection(activeAgentId);
-        }
-      });
-      const disconnectBtn = document.createElement("button");
-      disconnectBtn.type = "button";
-      disconnectBtn.className = "preview-session-interaction__audio-btn";
-      disconnectBtn.textContent = "Disconnect";
-      disconnectBtn.disabled = realtimeState !== "connected";
-      disconnectBtn.addEventListener("click", () => {
-        closeRealtimeConnection();
-        render();
-      });
-      actions.append(connectBtn, disconnectBtn);
-      body.append(titleEl, state, actions);
-      return;
-    }
     shouldAutoStartRecording = false;
-    const warn = document.createElement("div");
-    warn.className = "preview-session-interaction__empty";
-    warn.textContent =
-      "Push to talk requires realtime credentials on this agent node. ";
-    body.append(warn);
+    const titleEl = document.createElement("div");
+    titleEl.className = "preview-session-interaction__assist-desc";
+    titleEl.textContent =
+      "Realtime WebRTC voice requests fresh credentials over intercom before connecting.";
+    const state = document.createElement("div");
+    state.className = "preview-session-interaction__audio-state";
+    state.textContent =
+      realtimeState === "connected"
+        ? "Voice connected."
+        : realtimeState === "connecting"
+          ? "Connecting voice..."
+          : realtimeState === "failed"
+            ? "Voice connection failed."
+            : "Press P near the agent to connect voice.";
+    const actions = document.createElement("div");
+    actions.className = "preview-session-interaction__audio-buttons";
+    const connectBtn = document.createElement("button");
+    connectBtn.type = "button";
+    connectBtn.className = "preview-session-interaction__audio-btn";
+    connectBtn.textContent =
+      realtimeState === "connected" ? "Reconnect" : "Connect Voice";
+    connectBtn.addEventListener("click", () => {
+      if (activeAgentId !== null) {
+        void ensureRealtimeConnection(activeAgentId);
+      }
+    });
+    const disconnectBtn = document.createElement("button");
+    disconnectBtn.type = "button";
+    disconnectBtn.className = "preview-session-interaction__audio-btn";
+    disconnectBtn.textContent = "Disconnect";
+    disconnectBtn.disabled = realtimeState !== "connected";
+    disconnectBtn.addEventListener("click", () => {
+      closeRealtimeConnection();
+      render();
+    });
+    actions.append(connectBtn, disconnectBtn);
+    body.append(titleEl, state, actions);
   };
 
   const render = (): void => {
@@ -1711,10 +1753,26 @@ export function createPreviewSessionInteractionPanel(options: {
       clearReplyWaitState();
       setBusy(false);
       clearInteractionError();
-      if (
-        (pending.mode === "chat" || pending.mode === "push_to_talk") &&
-        activeAgentId === pending.agentId
-      ) {
+      if (pending.mode === "push_to_talk") {
+        const realtimeWebrtc =
+          typeof payload.result?.realtimeWebrtc === "object" &&
+          payload.result.realtimeWebrtc !== null
+            ? (payload.result.realtimeWebrtc as RealtimeWebrtcSecret)
+            : null;
+        const waiter = realtimeCredentialWaiters.get(rid);
+        if (waiter !== undefined) {
+          realtimeCredentialWaiters.delete(rid);
+          waiter.resolve(realtimeWebrtc);
+        }
+        pendingByRequestId.delete(rid);
+        result.textContent =
+          realtimeWebrtc !== null
+            ? `${rid}: realtime credentials received`
+            : `${rid}: missing realtime credentials`;
+        render();
+        return;
+      }
+      if (pending.mode === "chat" && activeAgentId === pending.agentId) {
         const content = readIntercomContent(payload);
         appendChatLogLine({
           agentId: pending.agentId,
@@ -1766,6 +1824,11 @@ export function createPreviewSessionInteractionPanel(options: {
         }
       );
       pendingByRequestId.delete(rid);
+      const waiter = realtimeCredentialWaiters.get(rid);
+      if (waiter !== undefined) {
+        realtimeCredentialWaiters.delete(rid);
+        waiter.resolve(null);
+      }
       render();
     }
   };
@@ -1855,7 +1918,7 @@ export function createPreviewSessionInteractionPanel(options: {
         return false;
       }
       if (typeof agent.realtimeWebrtc?.clientSecret !== "string") {
-        return true;
+        return ensureRealtimeConnection(agentId);
       }
       return ensureRealtimeConnection(agentId);
     },

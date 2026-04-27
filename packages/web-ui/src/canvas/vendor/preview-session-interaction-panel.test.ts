@@ -333,7 +333,9 @@ describe("createPreviewSessionInteractionPanel", () => {
     expect(
       panel.element.querySelector(".preview-session-interaction__audio-tools")
     ).toBeNull();
-    expect(panel.element.textContent).toMatch(/requires realtime credentials/i);
+    expect(panel.element.textContent).toMatch(
+      /requests fresh credentials over intercom/i
+    );
   });
 
   it("shows WebRTC voice controls instead of MediaRecorder tools when token is present", () => {
@@ -356,7 +358,9 @@ describe("createPreviewSessionInteractionPanel", () => {
     panel.setContext("agent-1");
     panel.setMode("push_to_talk");
     document.body.append(panel.element);
-    expect(panel.element.textContent).toMatch(/direct microphone tracks/i);
+    expect(panel.element.textContent).toMatch(
+      /requests fresh credentials over intercom/i
+    );
     expect(
       panel.element.querySelector(".preview-session-interaction__audio-stop-btn")
     ).toBeNull();

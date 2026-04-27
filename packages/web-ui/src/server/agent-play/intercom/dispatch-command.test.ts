@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { dispatchIntercomCommand } from "./dispatch-command.js";
 import type { SessionStore } from "../session-store.js";
 
@@ -9,6 +9,26 @@ const mkStore = () =>
   }) as unknown as SessionStore;
 
 describe("dispatchIntercomCommand", () => {
+  beforeEach(() => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: true,
+        text: async () =>
+          JSON.stringify({
+            value: "cs_test_jit",
+            expires_at: "2099-01-01T00:00:00.000Z",
+          }),
+      }))
+    );
+    process.env.OPENAI_API_KEY = "sk_test_123";
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    delete process.env.OPENAI_API_KEY;
+  });
+
   it("publishes started and forwarded events for chat command", async () => {
     const store = mkStore();
     const world = {
@@ -107,5 +127,30 @@ describe("dispatchIntercomCommand", () => {
     expect(forwardedPayload.channelKey).toBe(
       "intercom:human:6465f64e6c8fdaa2dfad3a0693662e5d4b2803d30c49f0e961fa6ef0914066a2:agent:agent-1"
     );
+  });
+
+  it("publishes completed event with realtime credentials for realtime command", async () => {
+    const store = mkStore();
+    const world = {
+      recordInteraction: vi.fn(async () => ({})),
+    };
+    await dispatchIntercomCommand({
+      store,
+      world,
+      payload: {
+        requestId: "req-rt",
+        mainNodeId: "main-1",
+        fromPlayerId: "main-1",
+        toPlayerId: "agent-1",
+        kind: "realtime",
+      },
+    });
+    const publishMock = vi.mocked(store.publishWorldFanout);
+    const completedPayload = publishMock.mock.calls[2]?.[2] as {
+      status?: string;
+      result?: { realtimeWebrtc?: { clientSecret?: string } };
+    };
+    expect(completedPayload.status).toBe("completed");
+    expect(completedPayload.result?.realtimeWebrtc?.clientSecret).toBe("cs_test_jit");
   });
 });
