@@ -334,7 +334,4 @@ describe("subscribeIntercomCommands", () => {
     await world.close();
   });
 
-  
-
-  
 });

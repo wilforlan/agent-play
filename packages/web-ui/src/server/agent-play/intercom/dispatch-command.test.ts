@@ -10,23 +10,11 @@ const mkStore = () =>
 
 describe("dispatchIntercomCommand", () => {
   beforeEach(() => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () => ({
-        ok: true,
-        text: async () =>
-          JSON.stringify({
-            value: "cs_test_jit",
-            expires_at: "2099-01-01T00:00:00.000Z",
-          }),
-      }))
-    );
-    process.env.OPENAI_API_KEY = "sk_test_123";
+    // no-op
   });
 
   afterEach(() => {
     vi.unstubAllGlobals();
-    delete process.env.OPENAI_API_KEY;
   });
 
   it("publishes started and forwarded events for chat command", async () => {
@@ -129,7 +117,7 @@ describe("dispatchIntercomCommand", () => {
     );
   });
 
-  it("publishes completed event with realtime credentials for realtime command", async () => {
+  it("publishes started and forwarded for realtime command and waits for agent response", async () => {
     const store = mkStore();
     const world = {
       recordInteraction: vi.fn(async () => ({})),
@@ -146,11 +134,12 @@ describe("dispatchIntercomCommand", () => {
       },
     });
     const publishMock = vi.mocked(store.publishWorldFanout);
-    const completedPayload = publishMock.mock.calls[2]?.[2] as {
+    const forwardedPayload = publishMock.mock.calls[1]?.[2] as {
       status?: string;
-      result?: { realtimeWebrtc?: { clientSecret?: string } };
+      command?: { kind?: string };
     };
-    expect(completedPayload.status).toBe("completed");
-    expect(completedPayload.result?.realtimeWebrtc?.clientSecret).toBe("cs_test_jit");
+    expect(publishMock).toHaveBeenCalledTimes(2);
+    expect(forwardedPayload.status).toBe("forwarded");
+    expect(forwardedPayload.command?.kind).toBe("realtime");
   });
 });

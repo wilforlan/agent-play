@@ -1,27 +1,7 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { executeAgentCapability } from "./execute-agent-capability.js";
 
 describe("executeAgentCapability", () => {
-  beforeEach(() => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () => ({
-        ok: true,
-        text: async () =>
-          JSON.stringify({
-            value: "cs_test_jit",
-            expires_at: "2099-01-01T00:00:00.000Z",
-          }),
-      }))
-    );
-    process.env.OPENAI_API_KEY = "sk_test_123";
-  });
-
-  afterEach(() => {
-    vi.unstubAllGlobals();
-    delete process.env.OPENAI_API_KEY;
-  });
-
   it("uses canonical ap-intercom address when payload has no explicit address", async () => {
     const world = {
       recordInteraction: vi.fn(async () => ({})),
@@ -102,7 +82,7 @@ describe("executeAgentCapability", () => {
     });
   });
 
-  it("mints realtime credentials for realtime command", async () => {
+  it("forwards realtime command without minting server-side credentials", async () => {
     const world = {
       recordInteraction: vi.fn(async () => ({})),
     };
@@ -116,11 +96,9 @@ describe("executeAgentCapability", () => {
         kind: "realtime",
       },
     });
-    expect(result.realtimeWebrtc).toEqual({
-      clientSecret: "cs_test_jit",
-      expiresAt: "2099-01-01T00:00:00.000Z",
-      model: "gpt-realtime",
-      voice: "marin",
+    expect(result).toEqual({
+      channelKey: "intercom:human:human-main:agent:agent-rt",
+      intercomAddress: "ap-intercom://human-main",
     });
   });
 });

@@ -288,6 +288,21 @@ export type SubscribeIntercomCommandsOptions =
   | ({ playerIds: readonly string[]; executeTool: IntercomToolExecutor } &
       SubscribeIntercomChatAgents);
 
+async function resolveRealtimeWebrtcForIntercom(options: {
+  audioInitOptions: RemotePlayWorldOpenAiAudioOptions | null;
+  playerId: string;
+}): Promise<RealtimeWebrtcClientSecret> {
+  if (options.audioInitOptions === null) {
+    throw new Error(
+      "intercom realtime requires initAudio({ openai: ... }) in the agent process"
+    );
+  }
+  return mintOpenAiRealtimeClientSecretForSdk({
+    openai: options.audioInitOptions,
+    agentName: options.playerId,
+  });
+}
+
 function getSseEventName(msg: unknown): string | undefined {
   if (typeof msg !== "object" || msg === null) {
     return undefined;
@@ -965,8 +980,8 @@ export class RemotePlayWorld {
   }
 
   /**
-   * Subscribes to the session SSE stream and handles **`forwarded`** intercom commands whose **`toPlayerId`** is in **`playerId`** or **`playerIds`**, invoking **`executeTool`** (non-audio) or per-player **`audio`** listeners, and posting **`intercomResponse`** (**`completed`** / **`failed`**).
-   * Audio commands are ignored; only `assist` and `chat` are executed here.
+   * Subscribes to the session SSE stream and handles **`forwarded`** intercom commands whose **`toPlayerId`** is in **`playerId`** or **`playerIds`**, invoking assist/chat execution and posting **`intercomResponse`** (**`completed`** / **`failed`**).
+   * Realtime commands mint ephemeral WebRTC credentials in the agent process and return them through `intercomResponse`.
    * Uses a **single** SSE connection when **`playerIds`** lists multiple automation agents (recommended for several agents in one process).
    * Not invoked automatically by {@link RemotePlayWorld.addAgent}.
    */
@@ -1058,15 +1073,18 @@ export class RemotePlayWorld {
           });
           try {
             let result: Record<string, unknown>;
-            if (cmd.kind !== "assist" && cmd.kind !== "chat") {
-              this.logTransport("intercom:unsupported_kind:ignored", {
-                requestId: cmd.requestId,
-                kind: cmd.kind,
-                toPlayerId: cmd.toPlayerId,
+            const commandKind = `${cmd.kind}`;
+            if (commandKind === "realtime" || commandKind === "audio") {
+              const realtimeWebrtc = await resolveRealtimeWebrtcForIntercom({
+                audioInitOptions: this.audioInitOptions,
+                playerId: cmd.toPlayerId,
               });
-              continue;
-            }
-            if (
+              result = {
+                messageKind: "text",
+                message: "Realtime credentials ready.",
+                realtimeWebrtc,
+              };
+            } else if (
               cmd.kind === "chat" &&
               chatAgentsByPlayerId !== undefined &&
               chatAgentsByPlayerId.has(cmd.toPlayerId)
@@ -1088,7 +1106,7 @@ export class RemotePlayWorld {
                 requestId: cmd.requestId,
                 resultPreview: this.truncateForLog(JSON.stringify(result)),
               });
-            } else {
+            } else if (cmd.kind === "assist" || cmd.kind === "chat") {
               const toolName =
                 cmd.kind === "chat" ? "chat_tool" : cmd.toolName ?? "";
               const args =
@@ -1114,6 +1132,13 @@ export class RemotePlayWorld {
                 argsPreview: this.truncateForLog(JSON.stringify(args)),
                 resultPreview: this.truncateForLog(JSON.stringify(result)),
               });
+            } else {
+              this.logTransport("intercom:unsupported_kind:ignored", {
+                requestId: cmd.requestId,
+                kind: cmd.kind,
+                toPlayerId: cmd.toPlayerId,
+              });
+              continue;
             }
             await this.sendIntercomResponse({
               requestId: cmd.requestId,
