@@ -95,9 +95,10 @@ describe("findNearestProximityPartner", () => {
 });
 
 describe("proximityKeyToAction", () => {
-  it("maps A C Z Y", () => {
+  it("maps A C P Z Y", () => {
     expect(proximityKeyToAction("a")).toBe("assist");
     expect(proximityKeyToAction("C")).toBe("chat");
+    expect(proximityKeyToAction("p")).toBe("push_to_talk");
     expect(proximityKeyToAction("z")).toBe("zone");
     expect(proximityKeyToAction("Y")).toBe("yield");
     expect(proximityKeyToAction("x")).toBe(null);

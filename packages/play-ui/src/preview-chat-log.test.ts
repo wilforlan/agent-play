@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   appendChatLogLine,
+  getChatLogLines,
   getChatLogLinesForAgent,
   resetChatLogFromSnapshot,
 } from "./preview-chat-log.js";
@@ -101,5 +102,36 @@ describe("preview chat log", () => {
     });
     expect(getChatLogLinesForAgent("x").map((l) => l.text)).toEqual(["x1", "x2"]);
     expect(getChatLogLinesForAgent("y").map((l) => l.text)).toEqual(["y1"]);
+  });
+
+  it("preserves audio and media payload metadata on appended lines", () => {
+    resetChatLogFromSnapshot(emptyWorld);
+    appendChatLogLine({
+      agentId: "a1",
+      playerName: "Agent",
+      role: "assistant",
+      text: "audio response",
+      messageKind: "audio",
+      audio: {
+        encoding: "mp3",
+        dataBase64: "Zm9v",
+      },
+    });
+    appendChatLogLine({
+      agentId: "a1",
+      playerName: "Agent",
+      role: "assistant",
+      text: "media response",
+      messageKind: "media",
+      media: {
+        mediaType: "image",
+        url: "https://example.com/x.png",
+      },
+    });
+    const lines = getChatLogLines();
+    expect(lines[0]?.messageKind).toBe("audio");
+    expect(lines[0]?.audio).toBeDefined();
+    expect(lines[1]?.messageKind).toBe("media");
+    expect(lines[1]?.media?.url).toBe("https://example.com/x.png");
   });
 });

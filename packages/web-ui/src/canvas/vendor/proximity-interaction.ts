@@ -27,12 +27,18 @@ export function findNearestProximityPartner(options: {
   return bestId;
 }
 
-export type ProximityActionKind = "assist" | "chat" | "zone" | "yield";
+export type ProximityActionKind =
+  | "assist"
+  | "chat"
+  | "push_to_talk"
+  | "zone"
+  | "yield";
 
 export function proximityKeyToAction(key: string): ProximityActionKind | null {
   const k = key.toLowerCase();
   if (k === "a") return "assist";
   if (k === "c") return "chat";
+  if (k === "p") return "push_to_talk";
   if (k === "z") return "zone";
   if (k === "y") return "yield";
   return null;

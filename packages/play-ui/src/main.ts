@@ -77,11 +77,15 @@ import { createPixiPreview, type PixiPreviewHandle } from "./pixi-multiverse.js"
 import { attachMobileSidePanelControls } from "./preview-mobile-side-panels.js";
 import { createPreviewProximityTouchControls } from "./preview-proximity-touch-controls.js";
 import { createPreviewGlobalChatRoom } from "./preview-global-chat-room";
+import { createPreviewRingerEngine } from "./preview-ringer-engine.js";
 import {
   createPreviewBottomBar,
   ensurePreviewLayoutStyles,
 } from "./preview-settings-toolbar.js";
-import { getPreviewViewSettings } from "./preview-view-settings.js";
+import {
+  getPreviewViewSettings,
+  setPreviewViewSettings,
+} from "./preview-view-settings.js";
 import { createSkyDecorLayer } from "./sky-decor.js";
 import { ENABLE_CROWD_LAYER, getActiveSceneTheme } from "./scene-theme.js";
 import {
@@ -130,6 +134,10 @@ const WORLD_INTERACTION_SSE = "world:interaction";
 const WORLD_AGENT_SIGNAL_SSE = "world:agent_signal";
 const WORLD_INTERCOM_SSE = "world:intercom";
 const WORLD_GLOBAL_CHAT_CHANNEL = "intercom:world:global";
+const AP_INTERCOM_PROTOCOL = "ap-intercom";
+function buildIntercomAddress(nodeId: string): string {
+  return `${AP_INTERCOM_PROTOCOL}://${nodeId.trim()}`;
+}
 const HUMAN_VIEWER_PLAYER_ID = "__human__";
 const MAX_PLAYER_CHAIN_FETCH_STEPS = 102;
 const HOME_STAND_EPS = 0.26;
@@ -190,6 +198,14 @@ type AgentRow = {
   assistTools?: SnapshotAssistTool[];
   onZone?: { zoneCount: number; flagged?: boolean; at: string };
   onYield?: { yieldCount: number; at: string };
+  enableP2a?: "on" | "off";
+  realtimeInstructions?: string;
+  realtimeWebrtc?: {
+    clientSecret: string;
+    expiresAt?: string;
+    model: string;
+    voice?: string;
+  };
 };
 
 type SnapshotAgentOccupant = {
@@ -204,6 +220,14 @@ type SnapshotAgentOccupant = {
   assistTools?: SnapshotAssistTool[];
   onZone?: { zoneCount: number; flagged?: boolean; at: string };
   onYield?: { yieldCount: number; at: string };
+  enableP2a?: "on" | "off";
+  realtimeInstructions?: string;
+  realtimeWebrtc?: {
+    clientSecret: string;
+    expiresAt?: string;
+    model: string;
+    voice?: string;
+  };
 };
 
 type SnapshotMcpOccupant = {
@@ -246,6 +270,52 @@ function mapOccupantLastUpdate(
   };
 }
 
+function snapshotEnableP2aFlag(raw: unknown): "on" | "off" | undefined {
+  if (raw === "on" || raw === "off") {
+    return raw;
+  }
+  return undefined;
+}
+
+function snapshotRealtimeWebrtc(
+  raw: unknown
+):
+  | { clientSecret: string; expiresAt?: string; model: string; voice?: string }
+  | undefined {
+  if (typeof raw !== "object" || raw === null) {
+    return undefined;
+  }
+  const rec = raw as Record<string, unknown>;
+  if (typeof rec.clientSecret !== "string" || rec.clientSecret.length === 0) {
+    return undefined;
+  }
+  if (typeof rec.model !== "string" || rec.model.length === 0) {
+    return undefined;
+  }
+  const out: { clientSecret: string; expiresAt?: string; model: string; voice?: string } = {
+    clientSecret: rec.clientSecret,
+    model: rec.model,
+  };
+  if (typeof rec.expiresAt === "string" && rec.expiresAt.length > 0) {
+    out.expiresAt = rec.expiresAt;
+  }
+  if (typeof rec.voice === "string" && rec.voice.length > 0) {
+    out.voice = rec.voice;
+  }
+  return out;
+}
+
+function snapshotRealtimeInstructions(raw: unknown): string | undefined {
+  if (typeof raw !== "string") {
+    return undefined;
+  }
+  const trimmed = raw.trim();
+  if (trimmed.length === 0) {
+    return undefined;
+  }
+  return trimmed;
+}
+
 function listAgentRows(s: Snapshot): AgentRow[] {
   return s.worldMap.occupants
     .filter((o): o is SnapshotAgentOccupant => o.kind === "agent")
@@ -259,6 +329,15 @@ function listAgentRows(s: Snapshot): AgentRow[] {
       assistTools: o.assistTools,
       onZone: o.onZone,
       onYield: o.onYield,
+      enableP2a: snapshotEnableP2aFlag(
+        (o as { enableP2a?: unknown }).enableP2a
+      ),
+      realtimeInstructions: snapshotRealtimeInstructions(
+        (o as { realtimeInstructions?: unknown }).realtimeInstructions
+      ),
+      realtimeWebrtc: snapshotRealtimeWebrtc(
+        (o as { realtimeWebrtc?: unknown }).realtimeWebrtc
+      ),
     }));
 }
 
@@ -479,10 +558,110 @@ function triggerProximityAssistOrChat(action: "assist" | "chat"): void {
   if (partner === null || partner === HUMAN_VIEWER_PLAYER_ID) return;
   sessionInteractionPanel?.setContext(partner);
   sessionInteractionPanel?.setMode(action);
+  if (action === "chat") {
+    sessionInteractionPanel?.focusChatInput();
+  }
   if (mobileSidePanelControls?.isMobileViewport() === true) {
     mobileSidePanelControls.openRightPanel();
   }
   void sendProximityAction(partner, action);
+}
+
+function showP2aTargetNotEnabledModal(): void {
+  const existing = document.getElementById("preview-p2a-target-modal");
+  if (existing !== null) return;
+  const overlay = document.createElement("div");
+  overlay.id = "preview-p2a-target-modal";
+  overlay.style.cssText =
+    "position:fixed;inset:0;z-index:13000;background:rgba(2,6,23,0.72);display:grid;place-items:center;padding:16px;";
+  const card = document.createElement("div");
+  card.style.cssText =
+    "max-width:360px;width:100%;border-radius:12px;border:1px solid rgba(248,113,113,0.55);background:#0f172a;color:#e2e8f0;padding:16px;display:grid;gap:10px;";
+  const title = document.createElement("h3");
+  title.style.cssText = "margin:0;font-size:16px;color:#fecaca;";
+  title.textContent = "Push to talk not available";
+  const body = document.createElement("p");
+  body.style.cssText = "margin:0;font-size:13px;line-height:1.45;color:#cbd5e1;";
+  body.textContent =
+    "Push to talk is not enabled for this agent. Register the agent with P2A on, or choose another agent.";
+  const close = document.createElement("button");
+  close.type = "button";
+  close.style.cssText =
+    "justify-self:end;border-radius:8px;border:1px solid rgba(148,163,184,0.45);background:rgba(30,41,59,0.95);color:#e2e8f0;padding:6px 10px;cursor:pointer;";
+  close.textContent = "Got it";
+  const remove = (): void => overlay.remove();
+  close.addEventListener("click", remove);
+  overlay.addEventListener("click", (event) => {
+    if (event.target === overlay) {
+      remove();
+    }
+  });
+  card.append(title, body, close);
+  overlay.append(card);
+  document.body.append(overlay);
+}
+
+function showP2aRequiredModal(): void {
+  const existing = document.getElementById("preview-p2a-required-modal");
+  if (existing !== null) return;
+  const overlay = document.createElement("div");
+  overlay.id = "preview-p2a-required-modal";
+  overlay.style.cssText =
+    "position:fixed;inset:0;z-index:13000;background:rgba(2,6,23,0.72);display:grid;place-items:center;padding:16px;";
+  const card = document.createElement("div");
+  card.style.cssText =
+    "max-width:360px;width:100%;border-radius:12px;border:1px solid rgba(248,113,113,0.55);background:#0f172a;color:#e2e8f0;padding:16px;display:grid;gap:10px;";
+  const title = document.createElement("h3");
+  title.style.cssText = "margin:0;font-size:16px;color:#fecaca;";
+  title.textContent = "Enable P2A first";
+  const body = document.createElement("p");
+  body.style.cssText = "margin:0;font-size:13px;line-height:1.45;color:#cbd5e1;";
+  body.textContent =
+    "Push to Talk requires P2A to be enabled. Turn on the P2A toggle in the world chat panel, then press P again.";
+  const close = document.createElement("button");
+  close.type = "button";
+  close.style.cssText =
+    "justify-self:end;border-radius:8px;border:1px solid rgba(148,163,184,0.45);background:rgba(30,41,59,0.95);color:#e2e8f0;padding:6px 10px;cursor:pointer;";
+  close.textContent = "Got it";
+  const remove = (): void => overlay.remove();
+  close.addEventListener("click", remove);
+  overlay.addEventListener("click", (event) => {
+    if (event.target === overlay) {
+      remove();
+    }
+  });
+  card.append(title, body, close);
+  overlay.append(card);
+  document.body.append(overlay);
+}
+
+async function triggerProximityPushToTalk(): Promise<void> {
+  const partner = registeredAgentPartnerForProximityOrNull(
+    lastProximityPartnerId
+  );
+  if (partner === null || partner === HUMAN_VIEWER_PLAYER_ID) return;
+  if (!getPreviewViewSettings().p2aEnabled) {
+    showP2aRequiredModal();
+    return;
+  }
+  if (snapshot !== null) {
+    const row = listAgentRows(snapshot).find((r) => r.agentId === partner);
+    if (row?.enableP2a !== "on") {
+      showP2aTargetNotEnabledModal();
+      return;
+    }
+  }
+  sessionInteractionPanel?.setContext(partner);
+  sessionInteractionPanel?.setMode("push_to_talk");
+  sessionInteractionPanel?.scrollToBottom();
+  if (mobileSidePanelControls?.isMobileViewport() === true) {
+    mobileSidePanelControls.openRightPanel();
+  }
+  const ready = await (sessionInteractionPanel?.preparePushToTalkConnection(partner) ??
+    Promise.resolve(true));
+  if (!ready) {
+    return;
+  }
 }
 
 /**
@@ -516,6 +695,10 @@ function onDocumentKeyDown(e: KeyboardEvent): void {
   e.preventDefault();
   if (act === "assist" || act === "chat") {
     triggerProximityAssistOrChat(act);
+    return;
+  }
+  if (act === "push_to_talk") {
+    void triggerProximityPushToTalk();
     return;
   }
   void sendProximityAction(partner, act);
@@ -554,6 +737,8 @@ let refreshPreviewChat: () => void = () => {};
 let agentChatOverlays: ReturnType<typeof createPreviewAgentChatOverlays> | null =
   null;
 let globalChatRoom: ReturnType<typeof createPreviewGlobalChatRoom> | null = null;
+let activeIntercomAddress: string | null = null;
+const ringerEngine = createPreviewRingerEngine();
 let sessionInteractionPanel:
   | ReturnType<typeof createPreviewSessionInteractionPanel>
   | null = null;
@@ -596,6 +781,57 @@ function globalSenderName(playerId: string): string {
     }
   }
   return playerId.slice(0, 8);
+}
+
+function isValidIntercomAddress(value: string | null): value is string {
+  if (value === null) return false;
+  const trimmed = value.trim();
+  const delimiterIndex = trimmed.indexOf("://");
+  if (delimiterIndex <= 0) return false;
+  const protocol = trimmed.slice(0, delimiterIndex).trim().toLowerCase();
+  const id = trimmed.slice(delimiterIndex + 3).trim();
+  return protocol.endsWith("-intercom") && id.length > 0;
+}
+
+function resolvePersonalIntercomAddress(): string | null {
+  const mainNodeId = getMainNodeIdForIntercom();
+  if (mainNodeId === null || mainNodeId.trim().length === 0) {
+    return null;
+  }
+  return buildIntercomAddress(mainNodeId);
+}
+
+function readIntercomMessageForPlayback(data: {
+  message?: unknown;
+  result?: unknown;
+}): string | null {
+  if (typeof data.message === "string" && data.message.trim().length > 0) {
+    return data.message.trim();
+  }
+  if (typeof data.result !== "object" || data.result === null) {
+    return null;
+  }
+  const result = data.result as Record<string, unknown>;
+  const message = result.message;
+  if (typeof message === "string" && message.trim().length > 0) {
+    return message.trim();
+  }
+  const kind = result.messageKind;
+  if (kind === "media") {
+    const media = result.media;
+    if (
+      typeof media === "object" &&
+      media !== null &&
+      typeof (media as Record<string, unknown>).url === "string"
+    ) {
+      return `Media: ${(media as Record<string, unknown>).url as string}`;
+    }
+    return "Media message received.";
+  }
+  if (kind === "audio") {
+    return "Audio message received.";
+  }
+  return null;
 }
 
 function registeredAgentPartnerForProximityOrNull(
@@ -645,6 +881,9 @@ function hydrateChatFromSnapshot(s: Snapshot): void {
       agentId: p.agentId,
       name: p.name,
       assistTools: p.assistTools,
+      enableP2a: p.enableP2a,
+      realtimeInstructions: p.realtimeInstructions,
+      realtimeWebrtc: p.realtimeWebrtc,
     }))
   );
   sessionInteractionPanel?.refresh();
@@ -890,34 +1129,75 @@ function connectSse(sid: string): void {
         channelKey?: unknown;
         requestId?: unknown;
         fromPlayerId?: unknown;
+        intercomAddress?: unknown;
         message?: unknown;
         result?: unknown;
+        status?: unknown;
         ts?: unknown;
       };
+      if (
+        getPreviewViewSettings().p2aEnabled &&
+        row.status === "completed" &&
+        typeof row.fromPlayerId === "string"
+      ) {
+        const playbackMessage = readIntercomMessageForPlayback(row);
+        if (playbackMessage !== null) {
+          void ringerEngine.playIncomingMessage({
+            targetName: globalSenderName(row.fromPlayerId),
+            message: playbackMessage,
+          });
+        }
+      }
+      if (typeof row.intercomAddress === "string" && isValidIntercomAddress(row.intercomAddress)) {
+        activeIntercomAddress = row.intercomAddress;
+        globalChatRoom?.refreshP2a();
+      }
       if (
         row.channelKey === WORLD_GLOBAL_CHAT_CHANNEL &&
         typeof row.requestId === "string" &&
         typeof row.fromPlayerId === "string" &&
         typeof row.ts === "string"
       ) {
+        const resultRecord =
+          typeof row.result === "object" && row.result !== null
+            ? (row.result as Record<string, unknown>)
+            : undefined;
+        const messageKindRaw = resultRecord?.messageKind;
+        const messageKind =
+          messageKindRaw === "audio" || messageKindRaw === "media"
+            ? messageKindRaw
+            : "text";
+        const audio =
+          typeof resultRecord?.audio === "object" && resultRecord.audio !== null
+            ? (resultRecord.audio as {
+                encoding?: string;
+                dataBase64?: string;
+                durationMs?: number;
+              })
+            : undefined;
+        const media =
+          typeof resultRecord?.media === "object" && resultRecord.media !== null
+            ? (resultRecord.media as {
+                mediaType?: string;
+                url: string;
+                title?: string;
+              })
+            : undefined;
         globalChatRoom?.appendFromIntercomEvent({
           seq:
-            typeof row.result === "object" &&
-            row.result !== null &&
-            "seq" in row.result &&
-            typeof (row.result as { seq?: unknown }).seq === "number"
-              ? ((row.result as { seq?: number }).seq ?? Number.MAX_SAFE_INTEGER)
+            typeof resultRecord?.seq === "number"
+              ? (resultRecord.seq ?? Number.MAX_SAFE_INTEGER)
               : Number.MAX_SAFE_INTEGER,
           requestId: row.requestId,
           fromPlayerId: row.fromPlayerId,
           message: typeof row.message === "string" ? row.message : "",
+          messageKind,
+          audio,
+          media,
           ts: row.ts,
           totalCount:
-            typeof row.result === "object" &&
-            row.result !== null &&
-            "totalCount" in row.result &&
-            typeof (row.result as { totalCount?: unknown }).totalCount === "number"
-              ? ((row.result as { totalCount?: number }).totalCount ?? undefined)
+            typeof resultRecord?.totalCount === "number"
+              ? (resultRecord.totalCount ?? undefined)
               : undefined,
         });
         return;
@@ -1313,6 +1593,7 @@ function onFrame(): void {
       agentChatOverlays?.setLayout(id, layout.left, layout.top);
     }
   }
+  const prevProximityPartnerId = lastProximityPartnerId;
   const primaryPid = getHumanPlayerId();
   if (
     primaryPid !== null &&
@@ -1328,12 +1609,18 @@ function onFrame(): void {
   } else {
     lastProximityPartnerId = null;
   }
+  if (
+    prevProximityPartnerId !== null &&
+    prevProximityPartnerId !== lastProximityPartnerId
+  ) {
+    sessionInteractionPanel?.closeVoiceConnection();
+  }
   if (proximityLegendEl !== null) {
     if (lastProximityPartnerId !== null) {
-      proximityLegendEl.textContent = `Near ${playerDisplayName(lastProximityPartnerId)}. A: for assist · C: for chat · Z: for zone · Y: for yield`;
+      proximityLegendEl.textContent = `Near ${playerDisplayName(lastProximityPartnerId)}. A: for assist · C: for chat · P: push to talk · Z: for zone · Y: for yield`;
     } else {
       proximityLegendEl.textContent =
-        "Near another player: A: for assist · C: for chat · Z: for zone · Y: for yield";
+        "Near another player: A: for assist · C: for chat · P: push to talk · Z: for zone · Y: for yield";
     }
   }
   if (proximityPromptEl !== null) {
@@ -1409,6 +1696,24 @@ export function bootstrap(): void {
       getSid,
       getMainNodeId: getMainNodeIdForIntercom,
       resolveSenderName: globalSenderName,
+      getP2aEnabled: () => getPreviewViewSettings().p2aEnabled,
+      setP2aEnabled: (enabled) => {
+        setPreviewViewSettings({ p2aEnabled: enabled });
+        if (enabled) {
+          if (!isValidIntercomAddress(activeIntercomAddress)) {
+            activeIntercomAddress = resolvePersonalIntercomAddress();
+          }
+          globalChatRoom?.refreshP2a();
+        }
+      },
+      getIntercomAddress: () => activeIntercomAddress,
+      ensureIntercomAddress: () => {
+        if (!isValidIntercomAddress(activeIntercomAddress)) {
+          activeIntercomAddress = resolvePersonalIntercomAddress();
+        }
+        globalChatRoom?.refreshP2a();
+        return activeIntercomAddress;
+      },
     });
     leftCol.append(globalChatRoom.element, debugMount);
 
@@ -1469,7 +1774,7 @@ export function bootstrap(): void {
     const proximityLegend = document.createElement("div");
     proximityLegend.className = "preview-proximity-legend";
     proximityLegend.textContent =
-      "Near another player: A: for assist · C: for chat · Z: for zone · Y: for yield";
+      "Near another player: A: for assist · C: for chat · P: push to talk · Z: for zone · Y: for yield";
     proximityLegendEl = proximityLegend;
 
     const chatPanel = createPreviewChatSettingsPanel({
@@ -1562,7 +1867,7 @@ export function bootstrap(): void {
     canvasHost.appendChild(agentChatOverlays.root);
     proximityPromptEl = document.createElement("div");
     proximityPromptEl.className = "preview-proximity-prompt";
-    proximityPromptEl.textContent = "A: for assist\nC: for chat";
+    proximityPromptEl.textContent = "A: for assist\nC: for chat\nP: push to talk";
     canvasHost.appendChild(proximityPromptEl);
 
     proximityTouchPadHandle = createPreviewProximityTouchControls({
@@ -1579,6 +1884,9 @@ export function bootstrap(): void {
       },
       onChat: () => {
         triggerProximityAssistOrChat("chat");
+      },
+      onPushToTalk: () => {
+        void triggerProximityPushToTalk();
       },
     });
 

@@ -51,10 +51,56 @@ export function parseAgentOccupantRow(
   } else if (typeof raw.agentType === "string") {
     platform = raw.agentType;
   }
+  const enableP2a =
+    raw.enableP2a === "on" || raw.enableP2a === "off" ? raw.enableP2a : undefined;
+  const realtimeInstructions =
+    typeof raw.realtimeInstructions === "string" &&
+    raw.realtimeInstructions.trim().length > 0
+      ? raw.realtimeInstructions
+      : undefined;
+  const realtimeRaw = raw.realtimeWebrtc;
+  const realtimeWebrtc =
+    typeof realtimeRaw === "object" &&
+    realtimeRaw !== null &&
+    typeof (realtimeRaw as Record<string, unknown>).clientSecret === "string" &&
+    ((realtimeRaw as Record<string, unknown>).clientSecret as string).length > 0 &&
+    typeof (realtimeRaw as Record<string, unknown>).model === "string" &&
+    ((realtimeRaw as Record<string, unknown>).model as string).length > 0
+      ? (() => {
+          const record = realtimeRaw as Record<string, unknown>;
+          const parsed: {
+            clientSecret: string;
+            model: string;
+            expiresAt?: string;
+            voice?: string;
+          } = {
+            clientSecret: record.clientSecret as string,
+            model: record.model as string,
+          };
+          if (typeof record.expiresAt === "string" && record.expiresAt.length > 0) {
+            parsed.expiresAt = record.expiresAt;
+          }
+          if (typeof record.voice === "string" && record.voice.length > 0) {
+            parsed.voice = record.voice;
+          }
+          return parsed;
+        })()
+      : undefined;
+
+  const out: AgentPlayWorldMapAgentOccupant = { ...base };
   if (platform !== undefined) {
-    return { ...base, platform };
+    out.platform = platform;
   }
-  return base;
+  if (enableP2a !== undefined) {
+    out.enableP2a = enableP2a;
+  }
+  if (realtimeInstructions !== undefined) {
+    out.realtimeInstructions = realtimeInstructions;
+  }
+  if (realtimeWebrtc !== undefined) {
+    out.realtimeWebrtc = realtimeWebrtc;
+  }
+  return out;
 }
 
 export function parseMcpOccupantRow(

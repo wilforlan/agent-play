@@ -1,14 +1,18 @@
-import type {
-  AddAgentInput,
-  AddPlayerInput,
-  AgentPlaySnapshot,
-  AgentPlayWorldMap,
-  AgentPlayWorldMapBounds,
-  Journey,
-  RecordInteractionInput,
-  RegisteredAgentSummary,
-  RegisteredPlayer,
-  PlayerChainNodeResponse,
+import {
+  type AddAgentInput,
+  type AddPlayerInput,
+  type AgentPlaySnapshot,
+  type P2aEnableFlag,
+  type RealtimeWebrtcClientSecret,
+  type AgentPlayWorldMap,
+  type AgentPlayWorldMapBounds,
+  type Journey,
+  type RecordInteractionInput,
+  type RegisteredAgentSummary,
+  type RegisteredPlayer,
+  type PlayerChainNodeResponse,
+  type RemotePlayWorldInitAudioOptions,
+  type RemotePlayWorldOpenAiAudioOptions,
 } from "../public-types.js";
 import { agentPlayDebug } from "./agent-play-debug.js";
 import {
@@ -44,6 +48,10 @@ import {
   WORLD_INTERCOM_EVENT,
 } from "@agent-play/intercom";
 import { intercomResultRecordFromLangChainInvokeOutput } from "./intercom-langchain-chat-result.js";
+import {
+  mintOpenAiRealtimeClientSecretForSdk,
+  resolveRealtimeInstructions,
+} from "./openai-realtime-client-secret.js";
 
 const PLAYER_CONNECTION_HEARTBEAT_MAX_ATTEMPTS = 10;
 const PLAYER_CONNECTION_HEARTBEAT_RETRY_DELAY_MS = 10_000;
@@ -223,6 +231,33 @@ function parseRegisteredAgentSummary(raw: unknown): RegisteredAgentSummary {
   };
 }
 
+function parseRealtimeWebrtcClientSecret(
+  raw: unknown
+): RealtimeWebrtcClientSecret | undefined {
+  if (!isRecord(raw)) {
+    return undefined;
+  }
+  const clientSecret = raw.clientSecret;
+  const model = raw.model;
+  if (typeof clientSecret !== "string" || clientSecret.length === 0) {
+    return undefined;
+  }
+  if (typeof model !== "string" || model.length === 0) {
+    return undefined;
+  }
+  const parsed: RealtimeWebrtcClientSecret = {
+    clientSecret,
+    model,
+  };
+  if (typeof raw.expiresAt === "string" && raw.expiresAt.length > 0) {
+    parsed.expiresAt = raw.expiresAt;
+  }
+  if (typeof raw.voice === "string" && raw.voice.length > 0) {
+    parsed.voice = raw.voice;
+  }
+  return parsed;
+}
+
 function formatInvalidHoldSecondsError(): string {
   return [
     "RemotePlayWorld.hold().for(seconds): seconds must be a finite number.",
@@ -252,6 +287,21 @@ export type SubscribeIntercomCommandsOptions =
   | ({ playerId: string; executeTool: IntercomToolExecutor } & SubscribeIntercomChatAgents)
   | ({ playerIds: readonly string[]; executeTool: IntercomToolExecutor } &
       SubscribeIntercomChatAgents);
+
+async function resolveRealtimeWebrtcForIntercom(options: {
+  audioInitOptions: RemotePlayWorldOpenAiAudioOptions | null;
+  playerId: string;
+}): Promise<RealtimeWebrtcClientSecret> {
+  if (options.audioInitOptions === null) {
+    throw new Error(
+      "intercom realtime requires initAudio({ openai: ... }) in the agent process"
+    );
+  }
+  return mintOpenAiRealtimeClientSecretForSdk({
+    openai: options.audioInitOptions,
+    agentName: options.playerId,
+  });
+}
 
 function getSseEventName(msg: unknown): string | undefined {
   if (typeof msg !== "object" || msg === null) {
@@ -299,6 +349,7 @@ function normalizeIntercomSubscribePlayerIds(
  * Authenticates like the CLI: **`x-node-id`** (derived node id) and **`x-node-passw`** (hashed passphrase material) on every request.
  *
  * Register automation agents with {@link RemotePlayWorld.addAgent} (`nodeId` is the agent node id; the server stores it as `agentId`).
+ * Call {@link RemotePlayWorld.initAudio} before `addAgent` to have the SDK mint per-agent OpenAI Realtime client secrets and forward them on registration.
  *
  * Incremental updates: {@link RemotePlayWorld.subscribeWorldState} listens for **`playerChainNotify`** in SSE `data`, then fetches each changed leaf via {@link RemotePlayWorld.getPlayerChainNode} and merges with {@link mergeSnapshotWithPlayerChainNode}.
  *
@@ -324,6 +375,7 @@ export class RemotePlayWorld {
     string,
     { connectionId: string; leaseTtlSeconds: number; timer: ReturnType<typeof setInterval> }
   >();
+  private audioInitOptions: RemotePlayWorldOpenAiAudioOptions | null = null;
 
   constructor(options: RemotePlayWorldOptions = {}) {
     const creds = loadAgentPlayCredentialsFileFromPathSync(
@@ -540,6 +592,17 @@ export class RemotePlayWorld {
     return u.toString();
   }
 
+  /**
+   * Enables SDK-managed OpenAI Realtime client secret minting for subsequent {@link addAgent} calls.
+   *
+   * When set and `addAgent({ enableP2a: "on" })` is used, the SDK mints a short-lived client secret
+   * and includes it in the players registration payload as `realtimeWebrtc`.
+   */
+  initAudio(options: RemotePlayWorldInitAudioOptions): this {
+    this.audioInitOptions = { ...options.openai };
+    return this;
+  }
+
   async getWorldSnapshot(): Promise<AgentPlaySnapshot> {
     const res = await fetch(`${this.apiBase}/api/agent-play/sdk/rpc`, {
       method: "POST",
@@ -696,6 +759,9 @@ export class RemotePlayWorld {
 
   /**
    * Registers an automation agent using **agent node id** (`nodeId`), sent to the server as `agentId`.
+   *
+   * If {@link initAudio} was called and **`enableP2a`** is **`"on"`**, this call mints a per-agent
+   * OpenAI Realtime client secret and forwards it as `realtimeWebrtc`.
    */
   async addAgent(input: AddAgentInput): Promise<RegisteredPlayer> {
     const sid = this.getSessionId();
@@ -716,19 +782,52 @@ export class RemotePlayWorld {
     const url = `${this.apiBase}/api/agent-play/players?sid=${encodeURIComponent(sid)}`;
     const connectionId = randomUUID();
     const leaseTtlSeconds = 45;
+    let realtimeWebrtcFromInit: RealtimeWebrtcClientSecret | undefined;
+    let realtimeInstructionsFromInit: string | undefined;
+    if (input.enableP2a === "on" && this.audioInitOptions !== null) {
+      console.log("resolving realtime instructions for agent", input.name);
+      realtimeInstructionsFromInit = resolveRealtimeInstructions({
+        openai: this.audioInitOptions,
+        agentName: input.name,
+      });
+      realtimeWebrtcFromInit = await mintOpenAiRealtimeClientSecretForSdk({
+        openai: this.audioInitOptions,
+        agentName: input.name,
+      });
+      this.logTransport("addAgent:p2a_enabled", {
+        agentName: input.name,
+        model: this.audioInitOptions.model,
+        voice: this.audioInitOptions.voice,
+      });
+    }
+    console.log("realtimeWebrtcFromInit", realtimeWebrtcFromInit);
+    console.log("realtimeInstructionsFromInit", realtimeInstructionsFromInit);
+    const requestPayload = {
+      name: input.name,
+      type: input.type,
+      agent: input.agent,
+      mainNodeId: effectiveMainNodeId,
+      password: this.password,
+      agentId: input.nodeId,
+      connectionId,
+      leaseTtlSeconds,
+      ...(input.enableP2a !== undefined ? { enableP2a: input.enableP2a } : {}),
+      ...(realtimeWebrtcFromInit !== undefined
+        ? { realtimeWebrtc: realtimeWebrtcFromInit }
+        : {}),
+      ...(realtimeInstructionsFromInit !== undefined
+        ? { realtimeInstructions: realtimeInstructionsFromInit }
+        : {}),
+    };
+    this.logTransport("addAgent:request_payload", {
+      url,
+      payload: requestPayload,
+    });
+    const requestBody = JSON.stringify(requestPayload);
     const res = await fetch(url, {
       method: "POST",
       headers: this.jsonHeaders(),
-      body: JSON.stringify({
-        name: input.name,
-        type: input.type,
-        agent: input.agent,
-        mainNodeId: effectiveMainNodeId,
-        password: this.password,
-        agentId: input.nodeId,
-        connectionId,
-        leaseTtlSeconds,
-      }),
+      body: requestBody,
     });
     const bodyText = await res.text();
     if (!res.ok) {
@@ -784,6 +883,12 @@ export class RemotePlayWorld {
       timer,
     });
     const now = new Date();
+    const enableP2aFromBody =
+      body.enableP2a === "on" || body.enableP2a === "off"
+        ? body.enableP2a
+        : undefined;
+    const enableP2a: P2aEnableFlag = enableP2aFromBody ?? input.enableP2a ?? "off";
+    const realtimeWebrtc = parseRealtimeWebrtcClientSecret(body.realtimeWebrtc);
     return {
       id: playerId,
       name: input.name,
@@ -792,6 +897,8 @@ export class RemotePlayWorld {
       updatedAt: now,
       previewUrl,
       registeredAgent,
+      enableP2a,
+      ...(realtimeWebrtc !== undefined ? { realtimeWebrtc } : {}),
       connectionId: bodyConnectionId,
       leaseTtlSeconds: bodyLeaseTtlSeconds,
     };
@@ -807,6 +914,9 @@ export class RemotePlayWorld {
       agent: input.agent,
       nodeId: input.agentId,
     };
+    if (input.enableP2a !== undefined) {
+      payload.enableP2a = input.enableP2a;
+    }
     if (input.version !== undefined) {
       payload.version = input.version;
     }
@@ -868,7 +978,8 @@ export class RemotePlayWorld {
   }
 
   /**
-   * Subscribes to the session SSE stream and handles **`forwarded`** intercom commands whose **`toPlayerId`** is in **`playerId`** or **`playerIds`**, invoking **`executeTool`** and posting **`intercomResponse`** (**`completed`** / **`failed`**).
+   * Subscribes to the session SSE stream and handles **`forwarded`** intercom commands whose **`toPlayerId`** is in **`playerId`** or **`playerIds`**, invoking assist/chat execution and posting **`intercomResponse`** (**`completed`** / **`failed`**).
+   * Realtime commands mint ephemeral WebRTC credentials in the agent process and return them through `intercomResponse`.
    * Uses a **single** SSE connection when **`playerIds`** lists multiple automation agents (recommended for several agents in one process).
    * Not invoked automatically by {@link RemotePlayWorld.addAgent}.
    */
@@ -958,23 +1069,20 @@ export class RemotePlayWorld {
             kind: cmd.kind,
             toolName: cmd.toolName,
           });
-          const toolName =
-            cmd.kind === "chat" ? "chat_tool" : cmd.toolName ?? "";
-          const args =
-            cmd.kind === "chat" ? { text: cmd.text ?? "" } : (cmd.args ?? {});
-          this.logTransport("intercom:executeTool", {
-            requestId: cmd.requestId,
-            toolName,
-            argsPreview: this.truncateForLog(JSON.stringify(args)),
-          });
           try {
-            this.logTransport("intercom:executeTool:started", {
-              requestId: cmd.requestId,
-              toolName,
-              argsPreview: this.truncateForLog(JSON.stringify(args)),
-            });
             let result: Record<string, unknown>;
-            if (
+            const commandKind = `${cmd.kind}`;
+            if (commandKind === "realtime" || commandKind === "audio") {
+              const realtimeWebrtc = await resolveRealtimeWebrtcForIntercom({
+                audioInitOptions: this.audioInitOptions,
+                playerId: cmd.toPlayerId,
+              });
+              result = {
+                messageKind: "text",
+                message: "Realtime credentials ready.",
+                realtimeWebrtc,
+              };
+            } else if (
               cmd.kind === "chat" &&
               chatAgentsByPlayerId !== undefined &&
               chatAgentsByPlayerId.has(cmd.toPlayerId)
@@ -996,17 +1104,40 @@ export class RemotePlayWorld {
                 requestId: cmd.requestId,
                 resultPreview: this.truncateForLog(JSON.stringify(result)),
               });
-            } else {
+            } else if (cmd.kind === "assist" || cmd.kind === "chat") {
+              const toolName =
+                cmd.kind === "chat" ? "chat_tool" : cmd.toolName ?? "";
+              const args =
+                cmd.kind === "chat"
+                  ? { text: cmd.text ?? "" }
+                  : (cmd.args ?? {});
+              this.logTransport("intercom:executeTool", {
+                requestId: cmd.requestId,
+                toolName,
+                argsPreview: this.truncateForLog(JSON.stringify(args)),
+              });
+              this.logTransport("intercom:executeTool:started", {
+                requestId: cmd.requestId,
+                toolName,
+                argsPreview: this.truncateForLog(JSON.stringify(args)),
+              });
               result = await Promise.resolve(
                 executeTool({ toolName, args })
               );
+              this.logTransport("intercom:executeTool:completed", {
+                requestId: cmd.requestId,
+                toolName,
+                argsPreview: this.truncateForLog(JSON.stringify(args)),
+                resultPreview: this.truncateForLog(JSON.stringify(result)),
+              });
+            } else {
+              this.logTransport("intercom:unsupported_kind:ignored", {
+                requestId: cmd.requestId,
+                kind: cmd.kind,
+                toPlayerId: cmd.toPlayerId,
+              });
+              continue;
             }
-            this.logTransport("intercom:executeTool:completed", {
-              requestId: cmd.requestId,
-              toolName,
-              argsPreview: this.truncateForLog(JSON.stringify(args)),
-              resultPreview: this.truncateForLog(JSON.stringify(result)),
-            });
             await this.sendIntercomResponse({
               requestId: cmd.requestId,
               mainNodeId: cmd.mainNodeId,

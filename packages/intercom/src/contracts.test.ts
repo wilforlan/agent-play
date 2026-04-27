@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  normalizeIntercomResult,
   parseCreateHumanNodePayload,
   parseIntercomCommandPayload,
   parseIntercomResponsePayload,
@@ -16,9 +17,11 @@ describe("intercom contracts", () => {
       toPlayerId: "agent-1",
       kind: "chat",
       text: "hello",
+      intercomAddress: "ap-intercom://main-1",
     });
     expect(payload.kind).toBe("chat");
     expect(payload.toPlayerId).toBe("agent-1");
+    expect(payload.intercomAddress).toBe("ap-intercom://main-1");
   });
 
   it("rejects command payload when identifiers are empty", () => {
@@ -46,8 +49,21 @@ describe("intercom contracts", () => {
       ts: new Date().toISOString(),
       toolName: "assist_build_budget",
       result: { ok: true },
+      intercomAddress: "ap-intercom://main-1",
     });
     expect(payload.status).toBe("completed");
+    expect(payload.intercomAddress).toBe("ap-intercom://main-1");
+  });
+
+  it("accepts realtime command payload", () => {
+    const payload = parseIntercomCommandPayload({
+      requestId: "req-rt-1",
+      mainNodeId: "main-1",
+      fromPlayerId: "__human__",
+      toPlayerId: "agent-1",
+      kind: "realtime",
+    });
+    expect(payload.kind).toBe("realtime");
   });
 
   it("accepts forwarded event with command echo", () => {
@@ -139,5 +155,26 @@ describe("intercom contracts", () => {
         message: "   ",
       })
     ).toThrow();
+  });
+
+  it("normalizes intercom text result with messageKind=text", () => {
+    const normalized = normalizeIntercomResult({
+      message: "hello",
+    });
+    expect(normalized.messageKind).toBe("text");
+    expect(normalized.message).toBe("hello");
+  });
+
+  it("preserves media payload and marks messageKind=media", () => {
+    const normalized = normalizeIntercomResult({
+      result: {
+        media: {
+          mediaType: "image",
+          url: "https://example.com/image.png",
+        },
+      },
+    });
+    expect(normalized.messageKind).toBe("media");
+    expect(normalized.media).toBeDefined();
   });
 });

@@ -1,8 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
   agentStableKeyFromToPlayerId,
+  buildIntercomAddress,
   buildIntercomChannelKey,
   encodeHumanStableKeyForIntercom,
+  parseIntercomAddressParts,
+  parseIntercomAddress,
 } from "./channels.js";
 
 describe("intercom channel keys", () => {
@@ -35,5 +38,31 @@ describe("intercom channel keys", () => {
   it("prefixes bare agent id with agent:", () => {
     expect(agentStableKeyFromToPlayerId("ag-1")).toBe("agent:ag-1");
     expect(agentStableKeyFromToPlayerId("agent:ag-1")).toBe("agent:ag-1");
+  });
+
+  it("builds canonical ap-intercom URI from node id", () => {
+    expect(buildIntercomAddress("node-m1")).toBe("ap-intercom://node-m1");
+  });
+
+  it("parses ap-intercom URI to node id", () => {
+    expect(parseIntercomAddress("ap-intercom://node-m1")).toBe("node-m1");
+  });
+
+  it("parses third-party intercom URI protocol and value", () => {
+    expect(
+      parseIntercomAddressParts(
+        "gm-intercom://6465f64e6c8fdaa2dfad3a0693662e5d4b2803d30c49f0e961fa6ef0914066a2"
+      )
+    ).toEqual({
+      protocol: "gm-intercom",
+      value:
+        "6465f64e6c8fdaa2dfad3a0693662e5d4b2803d30c49f0e961fa6ef0914066a2",
+    });
+  });
+
+  it("throws for invalid intercom address format", () => {
+    expect(() => parseIntercomAddress("intercom:human:m1:agent:a1")).toThrow();
+    expect(() => parseIntercomAddress("ap-intercom://")).toThrow();
+    expect(() => parseIntercomAddress("://node-m1")).toThrow();
   });
 });

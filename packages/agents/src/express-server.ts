@@ -23,6 +23,7 @@ const registrationTarget =
   ).replace(/\/$/, "");
 
 const app = express();
+app.use(express.json());
 
 app.get("/health", (_req, res) => {
   res.json({
@@ -37,8 +38,8 @@ app.listen(sidecarPort, listenHost, () => {
   );
   void registerBuiltinAgents({
     ...(mainNodeIdEnv !== undefined && mainNodeIdEnv.length > 0
-      ? { mainNodeId: mainNodeIdEnv }
-      : {}),
+      ? { mainNodeId: mainNodeIdEnv, enableP2a: "on" }
+      : { enableP2a: "on" }),
   })
     .then(async (world) => {
       console.log("[agent-play/agents] built-in agents registered via SDK");

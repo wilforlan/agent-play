@@ -27,6 +27,8 @@ function mockRegisteredAgent(name: string, agentId: string) {
 
 describe("registerBuiltinAgents", () => {
   const originalCredentialsPath = process.env.AGENT_PLAY_CREDENTIALS_PATH;
+  const originalOpenAiApiKey = process.env.OPENAI_API_KEY;
+  const originalP2aWebrtcEnabled = process.env.P2A_WEBRTC_ENABLED;
   const tempDirs: string[] = [];
 
   afterEach(() => {
@@ -40,6 +42,16 @@ describe("registerBuiltinAgents", () => {
       delete process.env.AGENT_PLAY_CREDENTIALS_PATH;
     } else {
       process.env.AGENT_PLAY_CREDENTIALS_PATH = originalCredentialsPath;
+    }
+    if (originalOpenAiApiKey === undefined) {
+      delete process.env.OPENAI_API_KEY;
+    } else {
+      process.env.OPENAI_API_KEY = originalOpenAiApiKey;
+    }
+    if (originalP2aWebrtcEnabled === undefined) {
+      delete process.env.P2A_WEBRTC_ENABLED;
+    } else {
+      process.env.P2A_WEBRTC_ENABLED = originalP2aWebrtcEnabled;
     }
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
@@ -151,6 +163,197 @@ describe("registerBuiltinAgents", () => {
     expect(addPlayerCount).toBe(2);
     expect(validateCount).toBe(3);
     expect(sawConnectValidation).toBe(true);
+  });
+
+  it("forwards enableP2a when on for new agents", async () => {
+    setCredentialsFixture();
+    let addPlayerCount = 0;
+    const fetchMock = vi.fn(
+      async (url: string | URL, init?: RequestInit) => {
+        const u = String(url);
+        if (u.endsWith("/api/nodes/validate") && init?.method === "POST") {
+          return new Response(JSON.stringify({ ok: true, nodeKind: "agent" }), {
+            status: 200,
+          });
+        }
+        if (u.endsWith("/api/agent-play/session")) {
+          return new Response(JSON.stringify({ sid: "sid-z" }), { status: 200 });
+        }
+        if (u.includes("/api/agent-play/sdk/rpc") && init?.method === "POST") {
+          const body = JSON.parse(String(init.body)) as { op?: string };
+          if (body.op === "getWorldSnapshot") {
+            return new Response(
+              JSON.stringify({
+                snapshot: {
+                  sid: "sid-z",
+                  worldMap: {
+                    bounds: { minX: 0, minY: 0, maxX: 2, maxY: 2 },
+                    occupants: [],
+                  },
+                },
+              }),
+              { status: 200 }
+            );
+          }
+        }
+        if (
+          new URL(u).pathname === "/api/agent-play/players" &&
+          init?.method === "POST"
+        ) {
+          addPlayerCount += 1;
+          const body = JSON.parse(String(init.body)) as {
+            name?: string;
+            agent?: unknown;
+            agentId?: string;
+            enableP2a?: string;
+          };
+          expect(body.enableP2a).toBe("on");
+          const name = body.name ?? "agent";
+          return new Response(
+            JSON.stringify({
+              playerId: `pid-${String(addPlayerCount)}`,
+              previewUrl: "http://127.0.0.1:3000/agent-play/watch",
+              registeredAgent: mockRegisteredAgent(
+                name,
+                body.agentId ?? `pid-${String(addPlayerCount)}`
+              ),
+              enableP2a: "on",
+            }),
+            { status: 200 }
+          );
+        }
+        return new Response("not found", { status: 404 });
+      }
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    await registerBuiltinAgents({ enableP2a: "on" });
+    expect(addPlayerCount).toBe(2);
+  });
+
+  it("calls world.initAudio when OPENAI_API_KEY is present and P2A_WEBRTC_ENABLED=1", async () => {
+    setCredentialsFixture();
+    process.env.OPENAI_API_KEY = "sk-test-agents";
+    process.env.P2A_WEBRTC_ENABLED = "1";
+    const initAudioSpy = vi.spyOn(RemotePlayWorld.prototype, "initAudio");
+    const fetchMock = vi.fn(
+      async (url: string | URL, init?: RequestInit) => {
+        const u = String(url);
+        if (u.endsWith("/api/nodes/validate") && init?.method === "POST") {
+          return new Response(JSON.stringify({ ok: true, nodeKind: "agent" }), {
+            status: 200,
+          });
+        }
+        if (u.endsWith("/api/agent-play/session")) {
+          return new Response(JSON.stringify({ sid: "sid-z" }), { status: 200 });
+        }
+        if (u.includes("/api/agent-play/sdk/rpc") && init?.method === "POST") {
+          const body = JSON.parse(String(init.body)) as { op?: string };
+          if (body.op === "getWorldSnapshot") {
+            return new Response(
+              JSON.stringify({
+                snapshot: {
+                  sid: "sid-z",
+                  worldMap: {
+                    bounds: { minX: 0, minY: 0, maxX: 2, maxY: 2 },
+                    occupants: [],
+                  },
+                },
+              }),
+              { status: 200 }
+            );
+          }
+        }
+        if (
+          new URL(u).pathname === "/api/agent-play/players" &&
+          init?.method === "POST"
+        ) {
+          const body = JSON.parse(String(init.body)) as {
+            name?: string;
+            agentId?: string;
+          };
+          return new Response(
+            JSON.stringify({
+              playerId: "pid-1",
+              previewUrl: "http://127.0.0.1:3000/agent-play/watch",
+              registeredAgent: mockRegisteredAgent(
+                body.name ?? "agent",
+                body.agentId ?? "aid-1"
+              ),
+            }),
+            { status: 200 }
+          );
+        }
+        return new Response("not found", { status: 404 });
+      }
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    await registerBuiltinAgents({ enableP2a: "on" });
+    expect(initAudioSpy).toHaveBeenCalledWith({
+      openai: {
+        apiKey: "sk-test-agents",
+      },
+    });
+  });
+
+  it("does not call world.initAudio when OPENAI_API_KEY is missing", async () => {
+    setCredentialsFixture();
+    delete process.env.OPENAI_API_KEY;
+    process.env.P2A_WEBRTC_ENABLED = "1";
+    const initAudioSpy = vi.spyOn(RemotePlayWorld.prototype, "initAudio");
+    const fetchMock = vi.fn(
+      async (url: string | URL, init?: RequestInit) => {
+        const u = String(url);
+        if (u.endsWith("/api/nodes/validate") && init?.method === "POST") {
+          return new Response(JSON.stringify({ ok: true, nodeKind: "agent" }), {
+            status: 200,
+          });
+        }
+        if (u.endsWith("/api/agent-play/session")) {
+          return new Response(JSON.stringify({ sid: "sid-z" }), { status: 200 });
+        }
+        if (u.includes("/api/agent-play/sdk/rpc") && init?.method === "POST") {
+          const body = JSON.parse(String(init.body)) as { op?: string };
+          if (body.op === "getWorldSnapshot") {
+            return new Response(
+              JSON.stringify({
+                snapshot: {
+                  sid: "sid-z",
+                  worldMap: {
+                    bounds: { minX: 0, minY: 0, maxX: 2, maxY: 2 },
+                    occupants: [],
+                  },
+                },
+              }),
+              { status: 200 }
+            );
+          }
+        }
+        if (
+          new URL(u).pathname === "/api/agent-play/players" &&
+          init?.method === "POST"
+        ) {
+          const body = JSON.parse(String(init.body)) as {
+            name?: string;
+            agentId?: string;
+          };
+          return new Response(
+            JSON.stringify({
+              playerId: "pid-1",
+              previewUrl: "http://127.0.0.1:3000/agent-play/watch",
+              registeredAgent: mockRegisteredAgent(
+                body.name ?? "agent",
+                body.agentId ?? "aid-1"
+              ),
+            }),
+            { status: 200 }
+          );
+        }
+        return new Response("not found", { status: 404 });
+      }
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    await registerBuiltinAgents({ enableP2a: "on" });
+    expect(initAudioSpy).not.toHaveBeenCalled();
   });
 
   it("skips addAgent when built-in name already on snapshot but still subscribes intercom", async () => {

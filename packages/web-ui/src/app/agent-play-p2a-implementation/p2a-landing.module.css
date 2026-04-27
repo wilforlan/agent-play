@@ -1,0 +1,133 @@
+.page {
+  min-height: 100vh;
+  padding: 48px 24px 72px;
+  color: #e2e8f0;
+  background:
+    radial-gradient(circle at 15% 20%, rgba(14, 116, 144, 0.3), transparent 45%),
+    radial-gradient(circle at 85% 10%, rgba(79, 70, 229, 0.28), transparent 42%),
+    linear-gradient(180deg, #020617 0%, #0f172a 55%, #020617 100%);
+  font-family:
+    Inter,
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    "Segoe UI",
+    sans-serif;
+}
+
+.hero {
+  max-width: 980px;
+  margin: 0 auto 32px;
+  padding: 28px;
+  border-radius: 18px;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  background: rgba(15, 23, 42, 0.72);
+  backdrop-filter: blur(6px);
+}
+
+.kicker {
+  margin: 0;
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #7dd3fc;
+}
+
+.title {
+  margin: 10px 0 8px;
+  font-size: clamp(32px, 5vw, 52px);
+  line-height: 1.05;
+}
+
+.subtitle {
+  margin: 0;
+  font-size: 16px;
+  color: #cbd5e1;
+  max-width: 740px;
+}
+
+.subtitle code {
+  font-size: 0.95em;
+  color: #93c5fd;
+}
+
+.addressBlock {
+  margin-top: 20px;
+  display: inline-grid;
+  gap: 6px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(56, 189, 248, 0.38);
+  background: rgba(2, 132, 199, 0.12);
+}
+
+.addressLabel {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #bae6fd;
+}
+
+.addressValue {
+  font-size: clamp(14px, 2vw, 18px);
+  color: #e0f2fe;
+  word-break: break-word;
+}
+
+.grid {
+  max-width: 980px;
+  margin: 0 auto 24px;
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.card {
+  padding: 18px;
+  border-radius: 14px;
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  background: rgba(15, 23, 42, 0.66);
+}
+
+.card h2 {
+  margin: 0 0 8px;
+  font-size: 17px;
+  color: #f8fafc;
+}
+
+.card p {
+  margin: 0;
+  color: #cbd5e1;
+  line-height: 1.5;
+}
+
+.section {
+  max-width: 980px;
+  margin: 0 auto 18px;
+  padding: 22px;
+  border-radius: 14px;
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  background: rgba(15, 23, 42, 0.58);
+}
+
+.section h2 {
+  margin: 0 0 14px;
+  font-size: 22px;
+  color: #f8fafc;
+}
+
+.steps {
+  margin: 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 8px;
+  color: #dbeafe;
+}
+
+.list {
+  margin: 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 8px;
+  color: #cbd5e1;
+}

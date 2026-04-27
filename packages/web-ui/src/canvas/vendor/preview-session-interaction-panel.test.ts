@@ -4,10 +4,40 @@ import { formatCredentialCreatedAt } from "./preview-human-credentials.js";
 import { createPreviewSessionInteractionPanel } from "./preview-session-interaction-panel.js";
 
 const CREDENTIALS_KEY = "agent-play.humanCredentials";
+const realtimeAgentConstructorMock = vi.fn();
+const realtimeSessionConnectMock = vi.fn(async () => {});
+const realtimeSessionCloseMock = vi.fn();
+const realtimeSessionConstructorMock = vi.fn((_agent, _options) => ({
+  connect: realtimeSessionConnectMock,
+  close: realtimeSessionCloseMock,
+}));
+
+vi.mock("@openai/agents/realtime", () => ({
+  RealtimeAgent: function RealtimeAgent(
+    options: Record<string, unknown>
+  ): Record<string, unknown> {
+    realtimeAgentConstructorMock(options);
+    return { options };
+  },
+  RealtimeSession: function RealtimeSession(
+    agent: Record<string, unknown>,
+    options: Record<string, unknown>
+  ): Record<string, unknown> {
+    realtimeSessionConstructorMock(agent, options);
+    return {
+      connect: realtimeSessionConnectMock,
+      close: realtimeSessionCloseMock,
+    };
+  },
+}));
 
 describe("createPreviewSessionInteractionPanel", () => {
   beforeEach(() => {
     vi.useRealTimers();
+    realtimeAgentConstructorMock.mockClear();
+    realtimeSessionConnectMock.mockClear();
+    realtimeSessionCloseMock.mockClear();
+    realtimeSessionConstructorMock.mockClear();
   });
 
   afterEach(() => {
@@ -265,6 +295,302 @@ describe("createPreviewSessionInteractionPanel", () => {
     expect(
       panel.element.querySelector(".preview-session-interaction__reply-loading")
     ).toBeNull();
+  });
+
+  it("shows disabled copy in push-to-talk when agent enableP2a is off", () => {
+    const panel = createPreviewSessionInteractionPanel({
+      getSid: () => "sid-1",
+      apiBase: "/api/agent-play",
+      getMainNodeId: () => "main-node-1",
+    });
+    panel.setAgents([
+      { agentId: "agent-1", name: "Agent 1", enableP2a: "off" },
+    ]);
+    panel.setContext("agent-1");
+    panel.setMode("push_to_talk");
+    document.body.append(panel.element);
+    expect(
+      panel.element.querySelector(".preview-session-interaction__audio-tools")
+    ).toBeNull();
+    expect(panel.element.textContent).toMatch(/not enabled for this agent/i);
+  });
+
+  it("shows missing-credentials warning when P2A is on but realtime credentials are absent", () => {
+    const panel = createPreviewSessionInteractionPanel({
+      getSid: () => "sid-1",
+      apiBase: "/api/agent-play",
+      getMainNodeId: () => "main-node-1",
+    });
+    panel.setAgents([
+      { agentId: "agent-1", name: "Agent 1", enableP2a: "on" },
+    ]);
+    panel.setContext("agent-1");
+    panel.setMode("push_to_talk");
+    document.body.append(panel.element);
+    expect(
+      panel.element.querySelector(".preview-session-interaction__chat-compose")
+    ).toBeNull();
+    expect(
+      panel.element.querySelector(".preview-session-interaction__audio-tools")
+    ).toBeNull();
+    expect(panel.element.textContent).toMatch(
+      /requests fresh credentials over intercom/i
+    );
+  });
+
+  it("shows WebRTC voice controls instead of MediaRecorder tools when token is present", () => {
+    const panel = createPreviewSessionInteractionPanel({
+      getSid: () => "sid-1",
+      apiBase: "/api/agent-play",
+      getMainNodeId: () => "main-node-1",
+    });
+    panel.setAgents([
+      {
+        agentId: "agent-1",
+        name: "Agent 1",
+        enableP2a: "on",
+        realtimeWebrtc: {
+          clientSecret: "cs_test",
+          model: "gpt-realtime",
+        },
+      },
+    ]);
+    panel.setContext("agent-1");
+    panel.setMode("push_to_talk");
+    document.body.append(panel.element);
+    expect(panel.element.textContent).toMatch(
+      /requests fresh credentials over intercom/i
+    );
+    expect(
+      panel.element.querySelector(".preview-session-interaction__audio-stop-btn")
+    ).toBeNull();
+    expect(panel.element.textContent).toMatch(/connect voice/i);
+    expect(
+      panel.element.querySelector(".preview-session-interaction__audio-btn-icon")
+    ).not.toBeNull();
+    expect(
+      panel.element.querySelector("button.preview-session-interaction__audio-btn")
+        ?.textContent
+    ).toMatch(/connect voice/i);
+    const badge = panel.element.querySelector(
+      ".preview-session-interaction__audio-status-badge"
+    ) as HTMLElement | null;
+    expect(badge?.getAttribute("data-state")).toBe("disconnected");
+  });
+
+  it("focuses panel and shows connecting indicator immediately in push-to-talk mode", async () => {
+    realtimeSessionConnectMock.mockImplementationOnce(async () => {});
+    vi.stubGlobal("navigator", {
+      mediaDevices: {
+        getUserMedia: vi.fn(async () => ({
+          getTracks: () => [{ stop: vi.fn() }],
+        })),
+      },
+    });
+    vi.stubGlobal("crypto", {
+      randomUUID: () => "req-ptt-connecting",
+    });
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ ok: true }))));
+    const panel = createPreviewSessionInteractionPanel({
+      getSid: () => "sid-1",
+      apiBase: "/api/agent-play",
+      getMainNodeId: () => "main-node-1",
+    });
+    panel.setAgents([
+      {
+        agentId: "agent-1",
+        name: "Agent One",
+        enableP2a: "on",
+        realtimeWebrtc: {
+          clientSecret: "cs_test_123",
+          model: "gpt-realtime",
+        },
+      },
+    ]);
+    document.body.append(panel.element);
+    panel.setContext("agent-1");
+    panel.setMode("push_to_talk");
+    expect(document.activeElement).toBe(panel.element);
+    const connectPromise = panel.preparePushToTalkConnection("agent-1");
+    await Promise.resolve();
+    panel.applyIntercomEvent({
+      requestId: "req-ptt-connecting",
+      mainNodeId: "main-node-1",
+      toPlayerId: "main-node-1",
+      fromPlayerId: "agent-1",
+      kind: "chat",
+      status: "completed",
+      result: {
+        messageKind: "text",
+        message: "Realtime credentials ready.",
+        realtimeWebrtc: {
+          clientSecret: "cs_test_123",
+          model: "gpt-realtime",
+        },
+      },
+      ts: "2026-04-10T12:00:00.000Z",
+    });
+    await Promise.resolve();
+    const badgeWhileConnecting = panel.element.querySelector(
+      ".preview-session-interaction__audio-status-badge"
+    ) as HTMLElement | null;
+    expect(badgeWhileConnecting?.getAttribute("data-state")).toBe("connecting");
+    expect(
+      panel.element.querySelector(".preview-session-interaction__audio-connecting-spinner")
+    ).not.toBeNull();
+    const ok = await connectPromise;
+    expect(ok).toBe(true);
+    const badgeConnected = panel.element.querySelector(
+      ".preview-session-interaction__audio-status-badge"
+    ) as HTMLElement | null;
+    expect(badgeConnected?.getAttribute("data-state")).toBe("connected");
+    expect(
+      panel.element.querySelector("button.preview-session-interaction__audio-btn")
+        ?.textContent
+    ).toMatch(/disconnect/i);
+  });
+
+  it("preparePushToTalkConnection uses Realtime SDK with agent name, instructions, model, and ephemeral key", async () => {
+    vi.stubGlobal("navigator", {
+      mediaDevices: {
+        getUserMedia: vi.fn(async () => ({
+          getTracks: () => [{ stop: vi.fn() }],
+        })),
+      },
+    });
+    vi.stubGlobal("crypto", {
+      randomUUID: () => "req-ptt-prepare",
+    });
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ ok: true }))));
+    const panel = createPreviewSessionInteractionPanel({
+      getSid: () => "sid-1",
+      apiBase: "/api/agent-play",
+      getMainNodeId: () => "main-node-1",
+    });
+    panel.setAgents([
+      {
+        agentId: "agent-1",
+        name: "Agent One",
+        enableP2a: "on",
+        realtimeWebrtc: {
+          clientSecret: "cs_test_123",
+          model: "gpt-realtime",
+        },
+        realtimeInstructions: "Be concise and helpful.",
+      },
+    ]);
+    const preparePromise = panel.preparePushToTalkConnection("agent-1");
+    await Promise.resolve();
+    panel.applyIntercomEvent({
+      requestId: "req-ptt-prepare",
+      mainNodeId: "main-node-1",
+      toPlayerId: "main-node-1",
+      fromPlayerId: "agent-1",
+      kind: "chat",
+      status: "completed",
+      result: {
+        messageKind: "text",
+        message: "Realtime credentials ready.",
+        realtimeWebrtc: {
+          clientSecret: "cs_test_123",
+          model: "gpt-realtime",
+        },
+      },
+      ts: "2026-04-10T12:00:00.000Z",
+    });
+    const ok = await preparePromise;
+    expect(ok).toBe(true);
+    expect(realtimeAgentConstructorMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: "Agent One",
+        instructions: "Be concise and helpful.",
+      })
+    );
+    expect(realtimeSessionConstructorMock).toHaveBeenCalledWith(
+      expect.any(Object),
+      expect.objectContaining({
+        model: "gpt-realtime",
+      })
+    );
+    expect(realtimeSessionConnectMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        apiKey: "cs_test_123",
+      })
+    );
+  });
+
+  it("preparePushToTalkConnection returns false when target does not have P2A enabled", async () => {
+    const panel = createPreviewSessionInteractionPanel({
+      getSid: () => "sid-1",
+      apiBase: "/api/agent-play",
+      getMainNodeId: () => "main-node-1",
+    });
+    panel.setAgents([{ agentId: "agent-1", name: "Agent 1", enableP2a: "off" }]);
+    const ok = await panel.preparePushToTalkConnection("agent-1");
+    expect(ok).toBe(false);
+  });
+
+  it("focuses chat input when focusChatInput is called", () => {
+    const panel = createPreviewSessionInteractionPanel({
+      getSid: () => "sid-1",
+      apiBase: "/api/agent-play",
+      getMainNodeId: () => "main-node-1",
+    });
+    panel.setAgents([{ agentId: "agent-1", name: "Agent 1" }]);
+    panel.setContext("agent-1");
+    panel.setMode("chat");
+    document.body.append(panel.element);
+    panel.focusChatInput();
+    expect(document.activeElement?.className).toContain(
+      "preview-session-interaction__chat-input"
+    );
+  });
+
+
+  it("renders media completion from intercom response in chat mode", async () => {
+    vi.stubGlobal("crypto", {
+      randomUUID: () => "req-chat-media",
+    });
+    const fetchMock = vi.fn(
+      async () => new Response(JSON.stringify({ ok: true }))
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const panel = createPreviewSessionInteractionPanel({
+      getSid: () => "sid-1",
+      apiBase: "/api/agent-play",
+      getMainNodeId: () => "main-node-1",
+    });
+    panel.setAgents([{ agentId: "agent-1", name: "Agent 1" }]);
+    panel.setContext("agent-1");
+    panel.setMode("chat");
+    document.body.append(panel.element);
+    const input = panel.element.querySelector(
+      ".preview-session-interaction__chat-input"
+    ) as HTMLInputElement;
+    input.value = "show media";
+    const form = panel.element.querySelector(
+      ".preview-session-interaction__chat-compose"
+    ) as HTMLFormElement;
+    form.dispatchEvent(new Event("submit", { cancelable: true, bubbles: true }));
+    await Promise.resolve();
+    panel.applyIntercomEvent({
+      requestId: "req-chat-media",
+      mainNodeId: "main-node-1",
+      toPlayerId: "main-node-1",
+      fromPlayerId: "agent-1",
+      kind: "chat",
+      status: "completed",
+      result: {
+        messageKind: "media",
+        media: {
+          mediaType: "image",
+          url: "https://example.com/x.png",
+        },
+      },
+      ts: "2026-04-10T12:00:00.000Z",
+    });
+    expect(panel.element.textContent).toContain("Media:");
+    expect(panel.element.textContent).toContain("https://example.com/x.png");
   });
 
   it("shows node id and created time from stored human credentials", () => {

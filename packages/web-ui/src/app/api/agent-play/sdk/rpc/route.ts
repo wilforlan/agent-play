@@ -18,6 +18,7 @@ import {
   parseCreateHumanNodePayload,
   parseWorldChatHistoryPayload,
   parseWorldChatPublishPayload,
+  normalizeIntercomResult,
   WORLD_CHAT_HISTORY_OP,
   WORLD_CHAT_PUBLISH_OP,
 } from "@/server/agent-play/intercom/shared-intercom";
@@ -133,10 +134,13 @@ export async function POST(req: NextRequest) {
             kind: "chat",
             status: "completed",
             message: appended.message.message,
-            result: {
-              seq: appended.message.seq,
-              totalCount: appended.totalCount,
-            },
+            result: normalizeIntercomResult({
+              message: appended.message.message,
+              result: {
+                seq: appended.message.seq,
+                totalCount: appended.totalCount,
+              },
+            }),
             channelKey: "intercom:world:global",
             ts: appended.message.ts,
           },

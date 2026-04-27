@@ -18,15 +18,31 @@ import {
   buildAssistArgsFromInputs,
   resolveAssistFieldType,
 } from "./preview-assist-coerce.js";
+import { RealtimeAgent, RealtimeSession } from "@openai/agents/realtime";
 
 const STYLE_ID = "agent-play-preview-session-interaction-styles";
 
-type Mode = "assist" | "chat";
+type Mode = "assist" | "chat" | "push_to_talk";
 
 export type SessionInteractionAgent = {
   agentId: string;
   name: string;
   assistTools?: readonly AssistToolDef[];
+  enableP2a?: "on" | "off";
+  realtimeInstructions?: string;
+  realtimeWebrtc?: {
+    clientSecret: string;
+    expiresAt?: string;
+    model: string;
+    voice?: string;
+  };
+};
+
+type RealtimeWebrtcSecret = {
+  clientSecret: string;
+  expiresAt?: string;
+  model: string;
+  voice?: string;
 };
 
 function ensureStyles(): void {
@@ -104,6 +120,151 @@ function ensureStyles(): void {
 .preview-session-interaction__mode-btn[data-active="1"] {
   border-color: rgba(96, 165, 250, 0.65);
   background: rgba(30, 58, 138, 0.48);
+}
+.preview-session-interaction__audio-tools { display: grid; gap: 8px; margin-top: 8px; }
+.preview-session-interaction__audio-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+.preview-session-interaction__audio-btn {
+  border: 1px solid rgba(96, 165, 250, 0.55);
+  background: rgba(30, 41, 59, 0.95);
+  color: #dbeafe;
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 11px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.preview-session-interaction__audio-btn-icon {
+  width: 12px;
+  height: 12px;
+  display: inline-block;
+}
+.preview-session-interaction__audio-stop-btn {
+  border-color: rgba(248, 113, 113, 0.8);
+  background: rgba(153, 27, 27, 0.88);
+  color: #fee2e2;
+}
+.preview-session-interaction__audio-state {
+  font-size: 11px;
+  color: #bfdbfe;
+}
+.preview-session-interaction__audio-status-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.preview-session-interaction__audio-status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border-radius: 999px;
+  border: 1px solid rgba(148, 163, 184, 0.45);
+  padding: 4px 8px;
+  font-size: 11px;
+  line-height: 1;
+}
+.preview-session-interaction__audio-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: #60a5fa;
+}
+.preview-session-interaction__audio-status-badge[data-state="disconnected"] {
+  color: #bfdbfe;
+  border-color: rgba(96, 165, 250, 0.55);
+  background: rgba(30, 58, 138, 0.26);
+}
+.preview-session-interaction__audio-status-badge[data-state="connecting"] {
+  color: #fef08a;
+  border-color: rgba(250, 204, 21, 0.55);
+  background: rgba(161, 98, 7, 0.22);
+}
+.preview-session-interaction__audio-status-badge[data-state="connected"] {
+  color: #86efac;
+  border-color: rgba(34, 197, 94, 0.55);
+  background: rgba(20, 83, 45, 0.25);
+}
+.preview-session-interaction__audio-status-badge[data-state="failed"] {
+  color: #fca5a5;
+  border-color: rgba(239, 68, 68, 0.55);
+  background: rgba(127, 29, 29, 0.25);
+}
+.preview-session-interaction__audio-status-badge[data-state="disconnected"] .preview-session-interaction__audio-status-dot {
+  background: #60a5fa;
+}
+.preview-session-interaction__audio-status-badge[data-state="connecting"] .preview-session-interaction__audio-status-dot {
+  background: #facc15;
+}
+.preview-session-interaction__audio-status-badge[data-state="connected"] .preview-session-interaction__audio-status-dot {
+  background: #22c55e;
+}
+.preview-session-interaction__audio-status-badge[data-state="failed"] .preview-session-interaction__audio-status-dot {
+  background: #ef4444;
+}
+.preview-session-interaction__audio-connecting-spinner {
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  border: 2px solid rgba(250, 204, 21, 0.3);
+  border-top-color: rgba(250, 204, 21, 1);
+  animation: preview-session-interaction-spin 0.8s linear infinite;
+}
+@keyframes preview-session-interaction-spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+.preview-session-interaction__audio-bar {
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.72);
+  min-height: 42px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+}
+.preview-session-interaction__audio-wave {
+  flex: 1 1 auto;
+  height: 18px;
+  border-radius: 999px;
+  background: linear-gradient(
+    90deg,
+    rgba(96, 165, 250, 0.2) 0%,
+    rgba(96, 165, 250, 0.9) 20%,
+    rgba(96, 165, 250, 0.2) 40%,
+    rgba(96, 165, 250, 0.9) 60%,
+    rgba(96, 165, 250, 0.2) 80%,
+    rgba(96, 165, 250, 0.9) 100%
+  );
+  background-size: 220% 100%;
+  animation: preview-session-interaction-wave 1.2s linear infinite;
+}
+@keyframes preview-session-interaction-wave {
+  0% { background-position: 0% 0%; }
+  100% { background-position: 220% 0%; }
+}
+.preview-session-interaction__audio-post-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.preview-session-interaction__audio-transcript {
+  font-size: 12px;
+  line-height: 1.35;
+  color: #e2e8f0;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.72);
+  padding: 8px;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 .preview-session-interaction__assist-tools { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
 .preview-session-interaction__assist-tool-btn {
@@ -445,6 +606,21 @@ function titleFromToolName(toolName: string): string {
     .join(" ");
 }
 
+function createRingerIcon(): SVGSVGElement {
+  const icon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  icon.setAttribute("viewBox", "0 0 24 24");
+  icon.setAttribute("aria-hidden", "true");
+  icon.setAttribute("class", "preview-session-interaction__audio-btn-icon");
+  const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  path.setAttribute(
+    "d",
+    "M12 3a5 5 0 00-5 5v3.2c0 .7-.2 1.4-.6 2L5 15h14l-1.4-1.8c-.4-.6-.6-1.3-.6-2V8a5 5 0 00-5-5zm0 18a2.5 2.5 0 002.45-2h-4.9A2.5 2.5 0 0012 21z"
+  );
+  path.setAttribute("fill", "currentColor");
+  icon.append(path);
+  return icon;
+}
+
 const DEFAULT_INTERCOM_REPLY_TIMEOUT_MS = 30_000;
 
 function intercomEventMatchesHumanAgentReply(
@@ -475,6 +651,54 @@ function formatIntercomResultText(payload: WorldIntercomEventPayload): string {
   return payload.status;
 }
 
+type IntercomContent = {
+  messageKind: "text" | "media";
+  text: string;
+  media?: {
+    mediaType?: string;
+    url: string;
+    title?: string;
+  };
+};
+
+function readIntercomContent(payload: WorldIntercomEventPayload): IntercomContent {
+  const baseText = formatIntercomResultText(payload);
+  const result = payload.result;
+  if (result === undefined) {
+    return { messageKind: "text", text: baseText };
+  }
+  const kind = result.messageKind;
+  if (kind === "media") {
+    const media = result.media;
+    const parsedMedia =
+      typeof media === "object" &&
+      media !== null &&
+      typeof (media as Record<string, unknown>).url === "string" &&
+      ((media as Record<string, unknown>).url as string).length > 0
+        ? (() => {
+            const mediaObj = media as Record<string, unknown>;
+            return {
+              mediaType:
+                typeof mediaObj.mediaType === "string"
+                  ? mediaObj.mediaType
+                  : undefined,
+              url: mediaObj.url as string,
+              title:
+                typeof mediaObj.title === "string" ? mediaObj.title : undefined,
+            };
+          })()
+        : undefined;
+    const text =
+      typeof result.message === "string" && result.message.trim().length > 0
+        ? result.message
+        : parsedMedia !== undefined
+          ? `Media: ${parsedMedia.url}`
+          : "Media message received.";
+    return { messageKind: "media", text, media: parsedMedia };
+  }
+  return { messageKind: "text", text: baseText };
+}
+
 function escapeAssistPlainText(s: string): string {
   return s
     .replace(/&/g, "&amp;")
@@ -493,12 +717,17 @@ export function createPreviewSessionInteractionPanel(options: {
   setAgents: (agents: readonly SessionInteractionAgent[]) => void;
   setContext: (agentId: string) => void;
   setMode: (mode: Mode) => void;
+  preparePushToTalkConnection: (agentId: string) => Promise<boolean>;
+  closeVoiceConnection: () => void;
+  focusChatInput: () => void;
+  scrollToBottom: () => void;
   refresh: () => void;
   applyIntercomEvent: (raw: unknown) => void;
 } {
   ensureStyles();
   const root = document.createElement("section");
   root.className = "preview-session-interaction";
+  root.tabIndex = -1;
   const header = document.createElement("div");
   header.className = "preview-session-interaction__header";
   const title = document.createElement("div");
@@ -604,7 +833,11 @@ export function createPreviewSessionInteractionPanel(options: {
   chatBtn.type = "button";
   chatBtn.className = "preview-session-interaction__mode-btn";
   chatBtn.textContent = "Chat Action";
-  modes.append(assistBtn, chatBtn);
+  const pttBtn = document.createElement("button");
+  pttBtn.type = "button";
+  pttBtn.className = "preview-session-interaction__mode-btn";
+  pttBtn.textContent = "Push to Talk";
+  modes.append(assistBtn, chatBtn, pttBtn);
 
   const progress = document.createElement("div");
   progress.className = "preview-session-interaction__progress";
@@ -647,6 +880,40 @@ export function createPreviewSessionInteractionPanel(options: {
     string,
     { mode: Mode; agentId: string; toolName?: string }
   >();
+  const realtimeCredentialWaiters = new Map<
+    string,
+    {
+      resolve: (value: RealtimeWebrtcSecret | null) => void;
+      reject: (reason?: unknown) => void;
+    }
+  >();
+  let draftAudio:
+    | {
+        blob: Blob;
+        url: string;
+        mimeType: string;
+        transcript: string;
+        durationMs: number;
+      }
+    | null = null;
+  let mediaRecorder: MediaRecorder | null = null;
+  let mediaStream: MediaStream | null = null;
+  let speechRecognition: { stop: () => void } | null = null;
+  let recordingStartedAtMs: number | null = null;
+  let recordingMaxTimeoutId: ReturnType<typeof setTimeout> | null = null;
+  let realtimeSession:
+    | {
+        connect: (options: { apiKey: string; mediaStream?: MediaStream }) => Promise<void>;
+        close?: () => void | Promise<void>;
+        disconnect?: () => void | Promise<void>;
+      }
+    | null = null;
+  let realtimeInputStream: MediaStream | null = null;
+  let realtimeAgentId: string | null = null;
+  let realtimeState: "idle" | "connecting" | "connected" | "failed" = "idle";
+  let shouldAutoStartRecording = false;
+  let shouldFocusChatInput = false;
+  let chatInputEl: HTMLInputElement | null = null;
 
   type ReplyWaitState = {
     requestId: string;
@@ -679,6 +946,11 @@ export function createPreviewSessionInteractionPanel(options: {
       const rid = replyWait.requestId;
       clearReplyWaitState();
       pendingByRequestId.delete(rid);
+      const waiter = realtimeCredentialWaiters.get(rid);
+      if (waiter !== undefined) {
+        realtimeCredentialWaiters.delete(rid);
+        waiter.resolve(null);
+      }
       setBusy(false);
       setInteractionError("Sorry — request timed out.", {
         step: "intercom:reply_timeout",
@@ -753,10 +1025,278 @@ export function createPreviewSessionInteractionPanel(options: {
   const applyModeButtons = (): void => {
     assistBtn.setAttribute("data-active", mode === "assist" ? "1" : "0");
     chatBtn.setAttribute("data-active", mode === "chat" ? "1" : "0");
+    pttBtn.setAttribute("data-active", mode === "push_to_talk" ? "1" : "0");
+  };
+
+  const clearDraftAudio = (): void => {
+    if (draftAudio !== null) {
+      URL.revokeObjectURL(draftAudio.url);
+    }
+    draftAudio = null;
+  };
+
+  const clearRecordingMaxTimeout = (): void => {
+    if (recordingMaxTimeoutId !== null) {
+      clearTimeout(recordingMaxTimeoutId);
+      recordingMaxTimeoutId = null;
+    }
+  };
+
+  const closeRealtimeConnection = (): void => {
+    if (realtimeSession !== null) {
+      try {
+        if (typeof realtimeSession.close === "function") {
+          void realtimeSession.close();
+        } else if (typeof realtimeSession.disconnect === "function") {
+          void realtimeSession.disconnect();
+        }
+      } catch {
+        // noop
+      }
+    }
+    realtimeSession = null;
+    if (realtimeInputStream !== null) {
+      for (const track of realtimeInputStream.getTracks()) {
+        track.stop();
+      }
+    }
+    realtimeInputStream = null;
+    realtimeAgentId = null;
+    realtimeState = "idle";
+  };
+
+  const requestRealtimeSecretFromIntercom = (
+    agentId: string,
+    sid: string | null,
+    mainNodeId: string | null
+  ): Promise<RealtimeWebrtcSecret | null> => {
+    return new Promise<RealtimeWebrtcSecret | null>((resolve, reject) => {
+      if (sid === null || mainNodeId === null) {
+        resolve(null);
+        return;
+      }
+      const requestId = crypto.randomUUID();
+      realtimeCredentialWaiters.set(requestId, { resolve, reject });
+      pendingByRequestId.set(requestId, { mode: "push_to_talk", agentId });
+      startReplyWait({
+        requestId,
+        mode: "push_to_talk",
+        agentId,
+        mainNodeId,
+      });
+      const rpcUrl = `${options.apiBase}/sdk/rpc?sid=${encodeURIComponent(sid)}`;
+      void fetch(rpcUrl, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          op: INTERCOM_COMMAND_OP,
+          payload: {
+            requestId,
+            mainNodeId,
+            fromPlayerId: mainNodeId,
+            toPlayerId: agentId,
+            kind: "realtime",
+          },
+        }),
+      }).catch((error: unknown) => {
+        realtimeCredentialWaiters.delete(requestId);
+        pendingByRequestId.delete(requestId);
+        reject(error);
+      });
+    });
+  };
+
+  type RealtimeSessionLike = {
+    connect: (options: { apiKey: string; mediaStream?: MediaStream }) => Promise<void>;
+    close?: () => void | Promise<void>;
+    disconnect?: () => void | Promise<void>;
+  };
+
+  class PlayWorldAgent {
+    private readonly agentId: string;
+    private readonly agentName: string;
+    private readonly instructions: string;
+
+    constructor(options: { agentId: string; agentName: string; instructions: string }) {
+      this.agentId = options.agentId;
+      this.agentName = options.agentName;
+      this.instructions = options.instructions;
+    }
+
+    async connect(credentials: RealtimeWebrtcSecret): Promise<{
+      session: RealtimeSessionLike;
+      stream: MediaStream;
+    }> {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: true,
+      });
+      const realtimeAgent = new RealtimeAgent({
+        name: this.agentName,
+        instructions: this.instructions,
+      });
+      const session = new RealtimeSession(realtimeAgent, {
+        model: credentials.model ?? "gpt-realtime",
+        voice: credentials.voice,
+      }) as RealtimeSessionLike;
+      await session.connect({ apiKey: credentials.clientSecret, mediaStream: stream });
+      return { session, stream };
+    }
+
+    getAgentId(): string {
+      return this.agentId;
+    }
+  }
+
+  const ensureRealtimeConnection = async (
+    agentId: string
+  ): Promise<boolean> => {
+    const agent = agentsById.get(agentId);
+    const sid = options.getSid();
+    const mainNodeId = options.getMainNodeId();
+    if (realtimeState === "connected" && realtimeAgentId === agentId) {
+      return true;
+    }
+    closeRealtimeConnection();
+    realtimeState = "connecting";
+    render();
+    try {
+      const secretResponse = await requestRealtimeSecretFromIntercom(
+        agentId,
+        sid,
+        mainNodeId
+      );
+      if (
+        secretResponse === null ||
+        typeof secretResponse.clientSecret !== "string" ||
+        secretResponse.clientSecret.length === 0
+      ) {
+        return false;
+      }
+      const instructions =
+        typeof agent?.realtimeInstructions === "string" &&
+        agent.realtimeInstructions.trim().length > 0
+          ? agent.realtimeInstructions
+          : `You are ${agent?.name ?? "the assistant"}.`;
+      const playWorldAgent = new PlayWorldAgent({
+        agentId,
+        agentName: agent?.name ?? agentId,
+        instructions,
+      });
+      const { session, stream } = await playWorldAgent.connect(secretResponse);
+      realtimeSession = session;
+      realtimeInputStream = stream;
+      realtimeAgentId = playWorldAgent.getAgentId();
+      realtimeState = "connected";
+      return true;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      const expiredToken = /ephemeral token expired/i.test(message);
+      if (expiredToken) {
+        try {
+          const refreshedSecret = await requestRealtimeSecretFromIntercom(
+            agentId,
+            sid,
+            mainNodeId
+          );
+          if (
+            refreshedSecret !== null &&
+            typeof refreshedSecret.clientSecret === "string" &&
+            refreshedSecret.clientSecret.length > 0
+          ) {
+            const instructions =
+              typeof agent?.realtimeInstructions === "string" &&
+              agent.realtimeInstructions.trim().length > 0
+                ? agent.realtimeInstructions
+                : `You are ${agent?.name ?? "the assistant"}.`;
+            const playWorldAgent = new PlayWorldAgent({
+              agentId,
+              agentName: agent?.name ?? agentId,
+              instructions,
+            });
+            const { session, stream } = await playWorldAgent.connect(refreshedSecret);
+            realtimeSession = session;
+            realtimeInputStream = stream;
+            realtimeAgentId = playWorldAgent.getAgentId();
+            realtimeState = "connected";
+            return true;
+          }
+        } catch {
+          // fall through to shared failure handling below
+        }
+      }
+      closeRealtimeConnection();
+      realtimeState = "failed";
+      setInteractionError("Unable to connect realtime voice.", {
+        step: "push_to_talk:realtime_connect",
+        agentId,
+        message,
+      });
+      return false;
+    } finally {
+      render();
+    }
+  };
+
+  const stopAudioCapture = (): void => {
+    clearRecordingMaxTimeout();
+    if (speechRecognition !== null) {
+      speechRecognition.stop();
+      speechRecognition = null;
+    }
+    if (mediaRecorder !== null && mediaRecorder.state !== "inactive") {
+      mediaRecorder.stop();
+    }
+    mediaRecorder = null;
+    recordingStartedAtMs = null;
+    if (mediaStream !== null) {
+      for (const track of mediaStream.getTracks()) {
+        track.stop();
+      }
+      mediaStream = null;
+    }
+  };
+
+  const startPushToTalkRecording = async (): Promise<void> => {
+    if (mediaRecorder !== null && mediaRecorder.state === "recording") {
+      return;
+    }
+    const p2aAgent =
+      activeAgentId === null ? undefined : agentsById.get(activeAgentId);
+    if (p2aAgent?.enableP2a !== "on") {
+      setInteractionError("Push to talk is not enabled for this agent.", {
+        step: "push_to_talk:agent_not_p2a",
+        agentId: activeAgentId,
+      });
+      return;
+    }
+    if (activeAgentId !== null) {
+      const ok = await ensureRealtimeConnection(activeAgentId);
+      if (!ok) {
+        return;
+      }
+      return;
+    }
+  };
+
+  const sendPushToTalkAudio = async (): Promise<void> => {
+    if (activeAgentId === null || draftAudio === null) return;
+    const sendAgent = agentsById.get(activeAgentId);
+    if (sendAgent?.enableP2a !== "on") {
+      setInteractionError("Push to talk is not enabled for this agent.", {
+        step: "push_to_talk:send_blocked",
+        agentId: activeAgentId,
+      });
+      return;
+    }
+    if (!(await ensureRealtimeConnection(activeAgentId))) {
+      return;
+    }
+    result.textContent = "Realtime voice connected.";
   };
 
   const renderChat = (): void => {
     body.replaceChildren();
+    chatInputEl = null;
     if (activeAgentId === null) {
       const empty = document.createElement("div");
       empty.className = "preview-session-interaction__empty";
@@ -770,7 +1310,34 @@ export function createPreviewSessionInteractionPanel(options: {
       const bubble = document.createElement("div");
       const isUser = line.role === "user";
       bubble.className = `preview-session-interaction__bubble ${isUser ? "preview-session-interaction__bubble--left" : "preview-session-interaction__bubble--right"}`;
-      bubble.textContent = line.text;
+      if (line.messageKind === "audio") {
+        const text = document.createElement("div");
+        text.textContent = line.text;
+        bubble.append(text);
+        const audio = document.createElement("audio");
+        audio.controls = true;
+        const sourceData = line.audio?.dataBase64;
+        if (typeof sourceData === "string" && sourceData.length > 0) {
+          const encoding = line.audio?.encoding ?? "mp3";
+          audio.src = `data:audio/${encoding};base64,${sourceData}`;
+        }
+        bubble.append(audio);
+      } else if (line.messageKind === "media") {
+        const text = document.createElement("div");
+        text.textContent = line.text;
+        bubble.append(text);
+        const url = line.media?.url;
+        if (typeof url === "string" && url.length > 0) {
+          const anchor = document.createElement("a");
+          anchor.href = url;
+          anchor.target = "_blank";
+          anchor.rel = "noreferrer";
+          anchor.textContent = line.media?.title ?? url;
+          bubble.append(anchor);
+        }
+      } else {
+        bubble.textContent = line.text;
+      }
       log.append(bubble);
     }
     if (
@@ -792,6 +1359,11 @@ export function createPreviewSessionInteractionPanel(options: {
     send.className = "preview-session-interaction__send-btn";
     send.textContent = "Send";
     compose.append(input, send);
+    chatInputEl = input;
+    if (shouldFocusChatInput) {
+      input.focus();
+      shouldFocusChatInput = false;
+    }
     compose.addEventListener("submit", (e) => {
       e.preventDefault();
       logSessionInteraction("chat:submit:precheck", "start", {
@@ -1193,6 +1765,99 @@ export function createPreviewSessionInteractionPanel(options: {
     body.append(heading, desc, form);
   };
 
+  const renderPushToTalk = (): void => {
+    body.replaceChildren();
+    if (activeAgentId === null) {
+      const empty = document.createElement("div");
+      empty.className = "preview-session-interaction__empty";
+      empty.textContent = "Move near an occupant and press P.";
+      body.append(empty);
+      return;
+    }
+    const p2aTarget = agentsById.get(activeAgentId);
+    if (p2aTarget?.enableP2a !== "on") {
+      shouldAutoStartRecording = false;
+      const warn = document.createElement("div");
+      warn.className = "preview-session-interaction__empty";
+      warn.textContent =
+        "Push to talk is not enabled for this agent. Register the agent with P2A enabled to use voice.";
+      body.append(warn);
+      return;
+    }
+    shouldAutoStartRecording = false;
+    const titleEl = document.createElement("div");
+    titleEl.className = "preview-session-interaction__assist-desc";
+    titleEl.textContent =
+      "Push to Talk requests fresh credentials over intercom before connecting.";
+    const stateRow = document.createElement("div");
+    stateRow.className = "preview-session-interaction__audio-status-row";
+    const stateBadge = document.createElement("div");
+    stateBadge.className = "preview-session-interaction__audio-status-badge";
+    const stateDot = document.createElement("span");
+    stateDot.className = "preview-session-interaction__audio-status-dot";
+    const stateLabel = document.createElement("span");
+    const badgeState =
+      realtimeState === "connected"
+        ? "connected"
+        : realtimeState === "connecting"
+          ? "connecting"
+          : realtimeState === "failed"
+            ? "failed"
+            : "disconnected";
+    stateBadge.setAttribute("data-state", badgeState);
+    stateLabel.textContent =
+      badgeState === "connected"
+        ? "Connected"
+        : badgeState === "connecting"
+          ? "Connecting"
+          : badgeState === "failed"
+            ? "Failed"
+            : "Disconnected";
+    stateBadge.append(stateDot, stateLabel);
+    stateRow.append(stateBadge);
+    if (badgeState === "connecting") {
+      const spinner = document.createElement("span");
+      spinner.className = "preview-session-interaction__audio-connecting-spinner";
+      spinner.setAttribute("aria-label", "Connecting");
+      stateRow.append(spinner);
+    }
+    const state = document.createElement("div");
+    state.className = "preview-session-interaction__audio-state";
+    state.textContent =
+      badgeState === "connected"
+        ? "Voice connected."
+        : badgeState === "connecting"
+          ? "Connecting voice..."
+          : badgeState === "failed"
+            ? "Voice connection failed."
+            : "Press P near the agent to connect voice.";
+    const actions = document.createElement("div");
+    actions.className = "preview-session-interaction__audio-buttons";
+    const connectBtn = document.createElement("button");
+    connectBtn.type = "button";
+    connectBtn.className = "preview-session-interaction__audio-btn";
+    connectBtn.append(createRingerIcon(), "Connect Voice");
+    connectBtn.addEventListener("click", () => {
+      if (activeAgentId !== null) {
+        void ensureRealtimeConnection(activeAgentId);
+      }
+    });
+    const disconnectBtn = document.createElement("button");
+    disconnectBtn.type = "button";
+    disconnectBtn.className = "preview-session-interaction__audio-btn";
+    disconnectBtn.textContent = "Disconnect";
+    disconnectBtn.addEventListener("click", () => {
+      closeRealtimeConnection();
+      render();
+    });
+    if (realtimeState === "connected") {
+      actions.append(disconnectBtn);
+    } else {
+      actions.append(connectBtn);
+    }
+    body.append(titleEl, stateRow, state, actions);
+  };
+
   const render = (): void => {
     renderNodeInfo();
     applyModeButtons();
@@ -1205,7 +1870,15 @@ export function createPreviewSessionInteractionPanel(options: {
       renderAssist();
       return;
     }
+    if (mode === "push_to_talk") {
+      renderPushToTalk();
+      return;
+    }
     renderChat();
+  };
+
+  const scrollToBottom = (): void => {
+    root.scrollTop = root.scrollHeight;
   };
 
   const applyIntercomEvent = (raw: unknown): void => {
@@ -1272,19 +1945,41 @@ export function createPreviewSessionInteractionPanel(options: {
       return;
     }
     if (payload.status === "stream") {
-      result.textContent = `${rid}: ${formatIntercomResultText(payload)}`;
+      result.textContent = `${rid}: ${readIntercomContent(payload).text}`;
       return;
     }
     if (payload.status === "completed") {
       clearReplyWaitState();
       setBusy(false);
       clearInteractionError();
+      if (pending.mode === "push_to_talk") {
+        const realtimeWebrtc =
+          typeof payload.result?.realtimeWebrtc === "object" &&
+          payload.result.realtimeWebrtc !== null
+            ? (payload.result.realtimeWebrtc as RealtimeWebrtcSecret)
+            : null;
+        const waiter = realtimeCredentialWaiters.get(rid);
+        if (waiter !== undefined) {
+          realtimeCredentialWaiters.delete(rid);
+          waiter.resolve(realtimeWebrtc);
+        }
+        pendingByRequestId.delete(rid);
+        result.textContent =
+          realtimeWebrtc !== null
+            ? `${rid}: realtime credentials received`
+            : `${rid}: missing realtime credentials`;
+        render();
+        return;
+      }
       if (pending.mode === "chat" && activeAgentId === pending.agentId) {
+        const content = readIntercomContent(payload);
         appendChatLogLine({
           agentId: pending.agentId,
           playerName: "Agent",
           role: "assistant",
-          text: formatIntercomResultText(payload),
+          text: content.text,
+          messageKind: content.messageKind,
+          media: content.media,
         });
       } else if (pending.mode === "assist") {
         const r = payload.result ?? {};
@@ -1316,15 +2011,23 @@ export function createPreviewSessionInteractionPanel(options: {
         error: errText,
       });
       result.textContent = `${rid}: ${errText}`;
-      setInteractionError("Intercom reported failure for this request.", {
-        step: "intercom:payload",
-        requestId: rid,
-        status: payload.status,
-        error: errText,
-        mode: pending.mode,
-        agentId: pending.agentId,
-      });
+      setInteractionError(
+        "Intercom reported failure for this request.",
+        {
+          step: "intercom:payload",
+          requestId: rid,
+          status: payload.status,
+          error: errText,
+          mode: pending.mode,
+          agentId: pending.agentId,
+        }
+      );
       pendingByRequestId.delete(rid);
+      const waiter = realtimeCredentialWaiters.get(rid);
+      if (waiter !== undefined) {
+        realtimeCredentialWaiters.delete(rid);
+        waiter.resolve(null);
+      }
       render();
     }
   };
@@ -1335,6 +2038,10 @@ export function createPreviewSessionInteractionPanel(options: {
   });
   chatBtn.addEventListener("click", () => {
     mode = "chat";
+    render();
+  });
+  pttBtn.addEventListener("click", () => {
+    mode = "push_to_talk";
     render();
   });
 
@@ -1367,14 +2074,58 @@ export function createPreviewSessionInteractionPanel(options: {
       activeAgentId = agentId;
       selectedTool = null;
       assistResultView = null;
+      stopAudioCapture();
+      closeRealtimeConnection();
+      clearDraftAudio();
+      if (mode === "push_to_talk") {
+        shouldAutoStartRecording = true;
+      }
       clearInteractionError();
       render();
+      scrollToBottom();
     },
     setMode: (nextMode) => {
+      if (nextMode !== "push_to_talk") {
+        stopAudioCapture();
+        closeRealtimeConnection();
+      }
       mode = nextMode;
+      shouldAutoStartRecording = nextMode === "push_to_talk";
+      shouldFocusChatInput = nextMode === "chat";
       render();
+      if (nextMode === "push_to_talk") {
+        root.focus({ preventScroll: true });
+      }
+      scrollToBottom();
+    },
+    focusChatInput: () => {
+      if (chatInputEl !== null) {
+        chatInputEl.focus();
+        return;
+      }
+      shouldFocusChatInput = true;
+      if (mode === "chat") {
+        render();
+      }
+    },
+    scrollToBottom: () => {
+      scrollToBottom();
     },
     refresh: () => {
+      render();
+    },
+    preparePushToTalkConnection: async (agentId) => {
+      const agent = agentsById.get(agentId);
+      if (agent?.enableP2a !== "on") {
+        return false;
+      }
+      if (typeof agent.realtimeWebrtc?.clientSecret !== "string") {
+        return ensureRealtimeConnection(agentId);
+      }
+      return ensureRealtimeConnection(agentId);
+    },
+    closeVoiceConnection: () => {
+      closeRealtimeConnection();
       render();
     },
     applyIntercomEvent,

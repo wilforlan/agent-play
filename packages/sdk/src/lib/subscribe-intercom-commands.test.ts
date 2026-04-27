@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { WORLD_INTERCOM_EVENT } from "@agent-play/intercom";
+import { INTERCOM_RESPONSE_OP, WORLD_INTERCOM_EVENT } from "@agent-play/intercom";
 import {
   RemotePlayWorld,
   type RemotePlayWorldNodeCredentials,
@@ -115,7 +115,13 @@ describe("subscribeIntercomCommands", () => {
         data: JSON.stringify(forwardedEnvelope),
       },
     ];
-    const executeTool = vi.fn(() => ({ mode: "chat", message: "hello" }));
+    const executeTool = vi.fn(
+      (input: { toolName: string; args: Record<string, unknown> }) => ({
+        mode: "chat",
+        message: "hello",
+        toolName: input.toolName,
+      })
+    );
     const fetchMock = vi.fn(async (url: string | URL, init?: RequestInit) => {
       const u = String(url);
       if (u.endsWith("/api/agent-play/session")) {
@@ -137,7 +143,8 @@ describe("subscribeIntercomCommands", () => {
     await vi.waitFor(() => {
       expect(executeTool).toHaveBeenCalledTimes(1);
     });
-    expect(executeTool.mock.calls[0]?.[0]).toEqual({
+    const firstCall = executeTool.mock.calls.at(0);
+    expect(firstCall?.[0]).toEqual({
       toolName: "chat_tool",
       args: { text: "hello" },
     });
@@ -260,4 +267,71 @@ describe("subscribeIntercomCommands", () => {
     });
     await world.close();
   });
+
+  it("passes through long-running assist-style media result payloads", async () => {
+    const agentId = "agent-media";
+    intercomSseMessages.items = [
+      {
+        event: WORLD_INTERCOM_EVENT,
+        data: JSON.stringify({
+          requestId: "r-media",
+          mainNodeId: "m1",
+          toPlayerId: "m1",
+          fromPlayerId: agentId,
+          kind: "assist",
+          status: "forwarded",
+          channelKey: "intercom:human:m1:agent:agent-media",
+          command: {
+            requestId: "r-media",
+            mainNodeId: "m1",
+            fromPlayerId: "m1",
+            toPlayerId: agentId,
+            kind: "assist",
+            toolName: "assist_pipeline_review",
+            args: {},
+          },
+          ts: "2026-01-01T00:00:00.000Z",
+        }),
+      },
+    ];
+    const executeTool = vi.fn(() => ({
+      messageKind: "media",
+      media: {
+        mediaType: "image",
+        url: "https://example.com/image.png",
+      },
+    }));
+    const fetchMock = vi.fn(async (url: string | URL, init?: RequestInit) => {
+      const u = String(url);
+      if (u.endsWith("/api/agent-play/session")) {
+        return sessionResponse();
+      }
+      if (u.includes("/api/agent-play/sdk/rpc") && init?.method === "POST") {
+        return new Response(JSON.stringify({ ok: true }), { status: 200 });
+      }
+      return new Response("not found", { status: 404 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const world = playWorld();
+    await world.connect();
+    world.subscribeIntercomCommands({
+      playerId: agentId,
+      executeTool,
+    });
+    await vi.waitFor(() => {
+      expect(executeTool).toHaveBeenCalledTimes(1);
+    });
+    const bodyStr = fetchMock.mock.calls.find((c) =>
+      String(c[0]).includes("/sdk/rpc")
+    )?.[1]?.body;
+    expect(typeof bodyStr).toBe("string");
+    const body = JSON.parse(String(bodyStr)) as {
+      payload?: { result?: { messageKind?: string; media?: { url?: string } } };
+    };
+    expect(body.payload?.result?.messageKind).toBe("media");
+    expect(body.payload?.result?.media?.url).toBe("https://example.com/image.png");
+    await world.close();
+  });
+
 });

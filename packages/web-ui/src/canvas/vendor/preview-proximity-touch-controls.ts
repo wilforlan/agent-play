@@ -9,6 +9,7 @@ export type CreatePreviewProximityTouchControlsOptions = {
   getCanAct: () => boolean;
   onAssist: () => void;
   onChat: () => void;
+  onPushToTalk: () => void;
 };
 
 export function createPreviewProximityTouchControls(
@@ -53,7 +54,19 @@ export function createPreviewProximityTouchControls(
   subC.textContent = "Chat";
   btnChat.append(labelC, subC);
 
-  row.append(btnAssist, btnChat);
+  const btnPushToTalk = document.createElement("button");
+  btnPushToTalk.type = "button";
+  btnPushToTalk.className =
+    "preview-proximity-touch-pad__key preview-proximity-touch-pad__key--ptt";
+  const labelP = document.createElement("span");
+  labelP.className = "preview-proximity-touch-pad__key-letter";
+  labelP.textContent = "P";
+  const subP = document.createElement("span");
+  subP.className = "preview-proximity-touch-pad__key-sub";
+  subP.textContent = "Push";
+  btnPushToTalk.append(labelP, subP);
+
+  row.append(btnAssist, btnChat, btnPushToTalk);
   root.append(dragHandle, row);
   options.parent.appendChild(root);
 
@@ -63,6 +76,7 @@ export function createPreviewProximityTouchControls(
     const can = options.getCanAct();
     btnAssist.disabled = !can;
     btnChat.disabled = !can;
+    btnPushToTalk.disabled = !can;
   };
 
   const refresh = (): void => {
@@ -76,6 +90,10 @@ export function createPreviewProximityTouchControls(
   btnChat.addEventListener("click", () => {
     if (btnChat.disabled) return;
     options.onChat();
+  });
+  btnPushToTalk.addEventListener("click", () => {
+    if (btnPushToTalk.disabled) return;
+    options.onPushToTalk();
   });
 
   let dragOffsetX = 0;

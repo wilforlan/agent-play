@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export * from "@agent-play/intercom";
+export * from "../../../../../intercom/src/index.js";
 
 export const WORLD_CHAT_PUBLISH_OP = "worldChatPublish" as const;
 export const WORLD_CHAT_HISTORY_OP = "worldChatHistory" as const;

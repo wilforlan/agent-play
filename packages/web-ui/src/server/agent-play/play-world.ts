@@ -128,6 +128,8 @@ export type LangChainAgentRegistration = {
   assistTools?: AssistToolSpec[];
 };
 
+export type P2aEnableFlag = "on" | "off";
+
 export type AddPlayerInput = PlatformAgentInformation & {
   agent: LangChainAgentRegistration;
   mainNodeId?: string;
@@ -135,6 +137,14 @@ export type AddPlayerInput = PlatformAgentInformation & {
   agentId: string;
   connectionId?: string;
   leaseTtlSeconds?: number;
+  enableP2a?: P2aEnableFlag;
+  realtimeInstructions?: string;
+  realtimeWebrtc?: {
+    clientSecret: string;
+    expiresAt?: string;
+    model: string;
+    voice?: string;
+  };
 };
 
 export type RegisteredAgentSummary = {
@@ -149,6 +159,13 @@ export type RegisteredAgentSummary = {
 export type RegisteredPlayer = PlayAgentInformation & {
   previewUrl: string;
   registeredAgent: RegisteredAgentSummary;
+  enableP2a: P2aEnableFlag;
+  realtimeWebrtc?: {
+    clientSecret: string;
+    expiresAt?: string;
+    model: string;
+    voice?: string;
+  };
 };
 
 function toRegisteredSummary(row: StoredAgentRecord): RegisteredAgentSummary {
@@ -906,6 +923,13 @@ export class PlayWorld {
           stationary: true,
           assistToolNames: extractAssistToolNames(effectiveToolNames),
           hasChatTool: effectiveToolNames.includes("chat_tool"),
+          enableP2a: input.enableP2a ?? "off",
+          ...(input.realtimeInstructions !== undefined
+            ? { realtimeInstructions: input.realtimeInstructions }
+            : {}),
+          ...(input.realtimeWebrtc !== undefined
+            ? { realtimeWebrtc: input.realtimeWebrtc }
+            : {}),
         };
         if (assistList.length > 0) {
           row.assistTools = assistList;
@@ -933,6 +957,7 @@ export class PlayWorld {
           ...player,
           previewUrl: this.getPreviewUrl(),
           registeredAgent: summaryForWorld,
+          enableP2a: input.enableP2a ?? "off",
         };
 
         const added = { player: row };

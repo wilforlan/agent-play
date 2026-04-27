@@ -48,6 +48,45 @@ function parseLangChainAgent(v: unknown): LangChainAgentRegistration | null {
   };
 }
 
+function parseRealtimeWebrtcFromBody(input: unknown):
+  | {
+      clientSecret: string;
+      expiresAt?: string;
+      model: string;
+      voice?: string;
+    }
+  | undefined {
+  if (!isRecord(input)) {
+    return undefined;
+  }
+  const raw = input.realtimeWebrtc;
+  if (!isRecord(raw)) {
+    return undefined;
+  }
+  if (typeof raw.clientSecret !== "string" || raw.clientSecret.length === 0) {
+    return undefined;
+  }
+  if (typeof raw.model !== "string" || raw.model.length === 0) {
+    return undefined;
+  }
+  const parsed: {
+    clientSecret: string;
+    expiresAt?: string;
+    model: string;
+    voice?: string;
+  } = {
+    clientSecret: raw.clientSecret,
+    model: raw.model,
+  };
+  if (typeof raw.expiresAt === "string" && raw.expiresAt.length > 0) {
+    parsed.expiresAt = raw.expiresAt;
+  }
+  if (typeof raw.voice === "string" && raw.voice.length > 0) {
+    parsed.voice = raw.voice;
+  }
+  return parsed;
+}
+
 export async function POST(req: NextRequest) {
   logAgentPlayApi("POST agent-play/players", req);
   const rawSid = req.nextUrl.searchParams.get("sid");
@@ -99,6 +138,15 @@ export async function POST(req: NextRequest) {
   const agentId = agentIdRaw;
   const name = body.name;
   const type = body.type;
+  const enableP2aRaw = body.enableP2a;
+  const enableP2a =
+    enableP2aRaw === "on" || enableP2aRaw === "off" ? enableP2aRaw : undefined;
+  const realtimeWebrtc = parseRealtimeWebrtcFromBody(body);
+  const realtimeInstructions =
+    typeof body.realtimeInstructions === "string" &&
+    body.realtimeInstructions.trim().length > 0
+      ? body.realtimeInstructions.trim()
+      : undefined;
 
   try {
     const registered = await world.addPlayer({
@@ -110,6 +158,11 @@ export async function POST(req: NextRequest) {
       agentId,
       connectionId,
       leaseTtlSeconds,
+      ...(enableP2a !== undefined ? { enableP2a } : {}),
+      ...(realtimeWebrtc !== undefined ? { realtimeWebrtc } : {}),
+      ...(realtimeInstructions !== undefined
+        ? { realtimeInstructions }
+        : {}),
     });
     return Response.json({
       playerId: registered.id,
@@ -117,6 +170,8 @@ export async function POST(req: NextRequest) {
       registeredAgent: registered.registeredAgent,
       connectionId: connectionId ?? null,
       leaseTtlSeconds: leaseTtlSeconds ?? null,
+      enableP2a: registered.enableP2a,
+      ...(realtimeWebrtc !== undefined ? { realtimeWebrtc } : {}),
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);

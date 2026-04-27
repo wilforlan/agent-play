@@ -1,5 +1,9 @@
-import type { AgentPlaySnapshot } from "@agent-play/sdk";
-import { langchainRegistration, RemotePlayWorld } from "@agent-play/sdk";
+import type { AgentPlaySnapshot, P2aEnableFlag } from "@agent-play/sdk";
+import {
+  agentPlayDebug,
+  langchainRegistration,
+  RemotePlayWorld,
+} from "@agent-play/sdk";
 import type { BuiltinAgentDefinition } from "../builtins/types.js";
 import { getBuiltinAgentDefinitions } from "../builtins/definitions.js";
 import { executeToolCapability } from "../tool-handlers/execute-tool-capability.js";
@@ -31,10 +35,19 @@ function resolveSkippedBuiltinPlayerId(
 export type RegisterBuiltinAgentsOptions = {
   skipExistingByName?: boolean;
   mainNodeId?: string;
+  /** Default **`enableP2a`** for builtins when the definition omits it. */
+  enableP2a?: P2aEnableFlag;
 };
 
 const DEFAULT_MAIN_NODE_ID =
   "87b6637b010478e48a83a8d445041ae4df5d607df7932153cdfee5c601e8e39e";
+
+function resolveEnableP2aForBuiltin(
+  def: BuiltinAgentDefinition,
+  options: RegisterBuiltinAgentsOptions
+): P2aEnableFlag {
+  return def.enableP2a ?? options.enableP2a ?? "off";
+}
 
 export async function registerBuiltinAgents(
   options: RegisterBuiltinAgentsOptions = {}
@@ -44,6 +57,21 @@ export async function registerBuiltinAgents(
   const world = new RemotePlayWorld({
     logging: "on",
     ...resolveAgentsRemotePlayWorldOptions(),
+  });
+  const openAiApiKey = process.env.OPENAI_API_KEY?.trim();
+  if (
+    process.env.P2A_WEBRTC_ENABLED === "1" &&
+    openAiApiKey !== undefined &&
+    openAiApiKey.length > 0
+  ) {
+    world.initAudio({
+      openai: {
+        apiKey: openAiApiKey,
+      },
+    });
+  }
+  agentPlayDebug("register-builtins", "p2a_audio_bridge_deprecated", {
+    via: "sdk-or-agents-endpoint",
   });
   await world.connect({ mainNodeId });
   const snap = await world.getWorldSnapshot();
@@ -59,11 +87,13 @@ export async function registerBuiltinAgents(
   for (const def of getBuiltinAgentDefinitions()) {
     const skipAdd = skipExisting && existingNames.has(def.name);
     if (!skipAdd) {
+      const enableP2a = resolveEnableP2aForBuiltin(def, options);
       const registered = await world.addAgent({
         name: def.name,
         type: def.type,
         agent: langchainRegistration(def.agent),
         nodeId: def.id,
+        enableP2a,
       });
       intercomPlayerIds.push(registered.id);
       continue;

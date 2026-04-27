@@ -82,6 +82,34 @@ export type PlatformAgentInformation = {
  * It is sent on the wire as `agentId` for server compatibility; treating it as a node id makes the
  * contract explicit for billing, validation, and event attribution.
  */
+export type P2aEnableFlag = "on" | "off";
+
+export type RealtimeWebrtcClientSecret = {
+  clientSecret: string;
+  expiresAt?: string;
+  model: string;
+  voice?: string;
+};
+
+/** OpenAI Realtime minting options used by {@link RemotePlayWorld.initAudio}. */
+export type RemotePlayWorldOpenAiAudioOptions = {
+  /** Server-side OpenAI key used to mint ephemeral browser client secrets. */
+  apiKey?: string;
+  /** Realtime model id, defaults to `gpt-realtime`. */
+  model?: string;
+  /** Realtime voice id, defaults to `marin`. */
+  voice?: string;
+  /** Explicit system instructions for the realtime session. */
+  instructions?: string;
+  /** Template fallback for instructions; `{{agentName}}` placeholder is supported. */
+  instructionsTemplate?: string;
+};
+
+/** Configuration payload for enabling SDK-managed realtime audio initialization. */
+export type RemotePlayWorldInitAudioOptions = {
+  openai: RemotePlayWorldOpenAiAudioOptions;
+};
+
 export type AddAgentInput = PlatformAgentInformation & {
   /** Registration from {@link langchainRegistration}. */
   agent: LangChainAgentRegistration;
@@ -89,6 +117,11 @@ export type AddAgentInput = PlatformAgentInformation & {
   mainNodeId?: string;
   /** Agent node id — same value the server stores as registered `agentId`. */
   nodeId: string;
+  /**
+   * When **`"on"`**, registration enables OpenAI Realtime provisioning for this agent.
+   * Omitted or **`"off"`** disables realtime voice for this registration.
+   */
+  enableP2a?: P2aEnableFlag;
 };
 
 /**
@@ -109,6 +142,8 @@ export type AddPlayerInput = PlatformAgentInformation & {
   mainNodeId?: string;
   /** Registered agent id (or session-local id without Redis). */
   agentId: string;
+  /** @inheritdoc AddAgentInput.enableP2a */
+  enableP2a?: P2aEnableFlag;
 };
 
 /** Zone counter event surfaced on snapshots and signals. */
@@ -138,6 +173,10 @@ export type RegisteredAgentSummary = {
 export type RegisteredPlayer = PlayAgentInformation & {
   previewUrl: string;
   registeredAgent: RegisteredAgentSummary;
+  /** Echo of registration-time P2A flag (defaults to **`"off"`**). */
+  enableP2a: P2aEnableFlag;
+  /** Optional OpenAI Realtime WebRTC client-secret payload for browser-side direct voice. */
+  realtimeWebrtc?: RealtimeWebrtcClientSecret;
   connectionId?: string;
   leaseTtlSeconds?: number;
 };
@@ -215,6 +254,9 @@ export type AgentPlayWorldMapAgentOccupant = {
   assistToolNames?: string[];
   assistTools?: AssistToolSpec[];
   hasChatTool?: boolean;
+  enableP2a?: P2aEnableFlag;
+  realtimeInstructions?: string;
+  realtimeWebrtc?: RealtimeWebrtcClientSecret;
   stationary?: boolean;
   lastUpdate?: unknown;
   recentInteractions?: Array<{

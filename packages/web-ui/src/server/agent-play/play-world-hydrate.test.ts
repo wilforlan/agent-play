@@ -36,6 +36,29 @@ describe("PlayWorld snapshot via shared session store", () => {
     ).toBe(1);
   });
 
+  it("stores enableP2a on agent occupant snapshot when addPlayer enables P2A", async () => {
+    const store = new TestSessionStore();
+    const w = new PlayWorld({ sessionStore: store });
+    await w.start();
+    await w.addPlayer({
+      name: "P2A Bot",
+      type: "langchain",
+      agent: { type: "langchain", toolNames: ["chat_tool"] },
+      agentId: "p2a-occ-agent",
+      enableP2a: "on",
+    });
+    const snap = await store.getSnapshotJson();
+    expect(snap).not.toBeNull();
+    if (snap === null) return;
+    const occ = snap.worldMap.occupants.find(
+      (o) => o.kind === "agent" && o.agentId === "p2a-occ-agent"
+    );
+    expect(occ?.kind).toBe("agent");
+    if (occ?.kind === "agent") {
+      expect(occ.enableP2a).toBe("on");
+    }
+  });
+
   it("keeps existing world snapshot at startup when already initialized", async () => {
     const store = new TestSessionStore();
     const sid = await store.loadOrCreateSessionId();

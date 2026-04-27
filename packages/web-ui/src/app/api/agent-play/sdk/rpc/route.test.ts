@@ -92,7 +92,11 @@ describe("POST /api/agent-play/sdk/rpc", () => {
         status: "completed",
         channelKey: "intercom:world:global",
         message: "hello room",
-        result: { seq: 7, totalCount: 1212 },
+        result: expect.objectContaining({
+          seq: 7,
+          totalCount: 1212,
+          messageKind: "text",
+        }),
       })
     );
     expect(world.recordInteraction).not.toHaveBeenCalled();
@@ -150,5 +154,63 @@ describe("POST /api/agent-play/sdk/rpc", () => {
     expect(body.messages[0]?.seq).toBe(201);
     expect(body.hasMore).toBe(true);
     expect(body.totalCount).toBe(4020);
+  });
+
+  it("normalizes intercomResponse payload into existing world:intercom event", async () => {
+    const world = {
+      recordInteraction: vi.fn(async () => null),
+    };
+    const store = {
+      getSnapshotRev: vi.fn(async () => 41),
+      appendWorldChatMessage: vi.fn(),
+      listWorldChatMessages: vi.fn(),
+      publishWorldFanout: vi.fn(async () => {}),
+    };
+    getPlayWorld.mockResolvedValue(world);
+    getSessionStore.mockReturnValue(store);
+    getRepository.mockResolvedValue(null);
+    validateAgentPlaySession.mockResolvedValue(true);
+
+    const res = await POST(
+      new NextRequest("http://localhost/api/agent-play/sdk/rpc?sid=s1", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          op: "intercomResponse",
+          payload: {
+            requestId: "req-media",
+            mainNodeId: "main-1",
+            toPlayerId: "main-1",
+            fromPlayerId: "agent-1",
+            kind: "assist",
+            status: "completed",
+            ts: "2026-04-20T13:00:00.000Z",
+            result: {
+              media: {
+                mediaType: "image",
+                url: "https://example.com/x.png",
+              },
+            },
+          },
+        }),
+      })
+    );
+
+    expect(res.status).toBe(200);
+    expect(store.publishWorldFanout).toHaveBeenCalledWith(
+      expect.any(Number),
+      "world:intercom",
+      expect.objectContaining({
+        requestId: "req-media",
+        status: "completed",
+        result: expect.objectContaining({
+          messageKind: "media",
+          media: expect.objectContaining({
+            mediaType: "image",
+            url: "https://example.com/x.png",
+          }),
+        }),
+      })
+    );
   });
 });
