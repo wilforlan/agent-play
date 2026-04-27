@@ -784,8 +784,6 @@ export class RemotePlayWorld {
     const leaseTtlSeconds = 45;
     let realtimeWebrtcFromInit: RealtimeWebrtcClientSecret | undefined;
     let realtimeInstructionsFromInit: string | undefined;
-    console.log("input.enableP2a", input.enableP2a);
-    console.log("this.audioInitOptions", this.audioInitOptions);
     if (input.enableP2a === "on" && this.audioInitOptions !== null) {
       console.log("resolving realtime instructions for agent", input.name);
       realtimeInstructionsFromInit = resolveRealtimeInstructions({
