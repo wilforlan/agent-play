@@ -25,7 +25,7 @@
     "@sanity/icons": "3.4.0",
     "@sanity/image-url": "1.0.2",
     "@sanity/preview-url-secret": "2.0.0",
-    "@sanity/vision": "3.62.0",
+    "@sanity/vision": "3.92.0",
     "@vercel/analytics": "^2.0.1",
     "dompurify": "^3.3.3",
     "ioredis": "^5.6.0",
