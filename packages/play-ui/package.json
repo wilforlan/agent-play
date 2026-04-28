@@ -1,6 +1,6 @@
 {
   "name": "@agent-play/play-ui",
-  "version": "3.6.0",
+  "version": "3.7.0",
   "description": "Vite-built watch canvas (Pixi.js) for Agent Play. Publishes static files under dist/ for self-hosting or embedding beside your own API.",
   "private": false,
   "type": "module",
