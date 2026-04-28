@@ -442,7 +442,12 @@ body > .preview-shell {
     pointer-events: auto;
   }
   .preview-mobile-side-toggles {
-    display: none;
+    display: flex;
+    position: absolute;
+    left: max(8px, env(safe-area-inset-left, 0px));
+    bottom: max(10px, env(safe-area-inset-bottom, 0px));
+    z-index: 55;
+    gap: 8px;
   }
   .preview-proximity-legend {
     display: none;

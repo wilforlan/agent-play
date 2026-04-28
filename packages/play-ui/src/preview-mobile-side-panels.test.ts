@@ -38,6 +38,19 @@ describe("attachMobileSidePanelControls", () => {
     expect(toggleRight.getAttribute("aria-expanded")).toBe("true");
   });
 
+  it("opens left panel when left toggle is clicked", () => {
+    attachMobileSidePanelControls({
+      shell,
+      toggleLeft,
+      toggleRight,
+      backdrop,
+    });
+    toggleLeft.click();
+    expect(shell.classList.contains("preview-side-left-open")).toBe(true);
+    expect(toggleLeft.getAttribute("aria-expanded")).toBe("true");
+    expect(toggleRight.getAttribute("aria-expanded")).toBe("false");
+  });
+
   it("does not force open panel on wide screens", () => {
     mm.matches = true;
     const controls = attachMobileSidePanelControls({
