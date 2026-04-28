@@ -1,0 +1,24 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "lib": ["ES2022", "DOM"],
+    "strict": true,
+    "skipLibCheck": true,
+    "noEmit": true,
+    "baseUrl": ".",
+    "paths": {
+      "@agent-play/node-tools": ["packages/node-tools/src/index.ts"],
+      "@agent-play/intercom": ["packages/intercom/src/index.ts"]
+    },
+    "types": ["node"]
+  },
+  "include": [
+    "packages/sdk/src/**/*.ts",
+    "packages/intercom/src/**/*.ts",
+    "packages/cli/src/**/*.ts",
+    "packages/node-tools/src/**/*.ts"
+  ],
+  "exclude": ["node_modules", "**/*.test.ts", "**/dist/**"]
+}

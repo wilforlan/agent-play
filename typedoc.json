@@ -1,6 +1,7 @@
 {
   "$schema": "https://typedoc.org/schema.json",
   "name": "Agent Play API",
+  "tsconfig": "./tsconfig.typedoc.json",
   "entryPoints": [
     "packages/sdk/src/index.ts",
     "packages/intercom/src/index.ts",
@@ -10,8 +11,5 @@
   "out": "docs/api-reference",
   "readme": "none",
   "excludePrivate": true,
-  "excludeProtected": true,
-  "compilerOptions": {
-    "skipLibCheck": true
-  }
+  "excludeProtected": true
 }
