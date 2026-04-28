@@ -86,6 +86,7 @@ import {
   getPreviewViewSettings,
   setPreviewViewSettings,
 } from "./preview-view-settings.js";
+import { reportP2aToggleIfChanged } from "./presentation-analytics.js";
 import { createSkyDecorLayer } from "./sky-decor.js";
 import { ENABLE_CROWD_LAYER, getActiveSceneTheme } from "./scene-theme.js";
 import {
@@ -1698,7 +1699,9 @@ export function bootstrap(): void {
       resolveSenderName: globalSenderName,
       getP2aEnabled: () => getPreviewViewSettings().p2aEnabled,
       setP2aEnabled: (enabled) => {
+        const previous = getPreviewViewSettings().p2aEnabled;
         setPreviewViewSettings({ p2aEnabled: enabled });
+        reportP2aToggleIfChanged(previous, enabled);
         if (enabled) {
           if (!isValidIntercomAddress(activeIntercomAddress)) {
             activeIntercomAddress = resolvePersonalIntercomAddress();

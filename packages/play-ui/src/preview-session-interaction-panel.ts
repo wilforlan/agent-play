@@ -19,6 +19,7 @@ import {
   resolveAssistFieldType,
 } from "./preview-assist-coerce.js";
 import { RealtimeAgent, RealtimeSession } from "@openai/agents/realtime";
+import { reportPresentationEvent } from "./presentation-analytics.js";
 import { getPreviewViewSettings } from "./preview-view-settings.js";
 
 const STYLE_ID = "agent-play-preview-session-interaction-styles";
@@ -1200,6 +1201,7 @@ export function createPreviewSessionInteractionPanel(options: {
       realtimeInputStream = stream;
       realtimeAgentId = playWorldAgent.getAgentId();
       realtimeState = "connected";
+      reportPresentationEvent("PTTAction");
       return true;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -1235,6 +1237,7 @@ export function createPreviewSessionInteractionPanel(options: {
             realtimeInputStream = stream;
             realtimeAgentId = playWorldAgent.getAgentId();
             realtimeState = "connected";
+            reportPresentationEvent("PTTAction");
             return true;
           }
         } catch {
@@ -1441,6 +1444,7 @@ export function createPreviewSessionInteractionPanel(options: {
         return;
       }
       clearInteractionError();
+      reportPresentationEvent("ChatAction");
       const requestId = crypto.randomUUID();
       const rpcUrl = `${options.apiBase}/sdk/rpc?sid=${encodeURIComponent(sid)}`;
       logSessionInteraction("chat:submit:request", "start", {
@@ -1699,6 +1703,7 @@ export function createPreviewSessionInteractionPanel(options: {
         return;
       }
       clearInteractionError();
+      reportPresentationEvent("AssistAction");
       assistResultView = null;
       const assistTool = selectedTool;
       const args = buildAssistArgsFromInputs({

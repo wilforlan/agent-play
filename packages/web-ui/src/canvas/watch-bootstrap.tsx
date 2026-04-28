@@ -2,9 +2,11 @@
 
 import { useEffect } from "react";
 
+const vendorMainPromise = import("./vendor/main");
+
 export default function WatchBootstrap() {
   useEffect(() => {
-    void import("./vendor/main").then((m) => {
+    void vendorMainPromise.then((m) => {
       if (typeof m.bootstrap === "function") {
         m.bootstrap();
       }
