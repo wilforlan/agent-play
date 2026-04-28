@@ -83,14 +83,14 @@ export default function HomePageShell() {
       return;
     }
 
-    let timeoutId: number | null = null;
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
     let idleId: number | null = null;
     const scheduleLanding = () => setIsLandingReady(true);
 
     if ("requestIdleCallback" in window) {
       idleId = window.requestIdleCallback(scheduleLanding, { timeout: 900 });
     } else {
-      timeoutId = window.setTimeout(scheduleLanding, 450);
+      timeoutId = setTimeout(scheduleLanding, 450);
     }
 
     return () => {
@@ -98,7 +98,7 @@ export default function HomePageShell() {
         window.cancelIdleCallback(idleId);
       }
       if (timeoutId !== null) {
-        window.clearTimeout(timeoutId);
+        clearTimeout(timeoutId);
       }
     };
   }, [isDesktop]);

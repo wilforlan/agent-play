@@ -1,5 +1,13 @@
 // @vitest-environment happy-dom
 import { beforeEach, describe, expect, it, vi } from "vitest";
+
+const reportPresentationEventMock = vi.hoisted(() => vi.fn());
+
+vi.mock("./presentation-analytics.js", () => ({
+  reportPresentationEvent: reportPresentationEventMock,
+  reportP2aToggleIfChanged: vi.fn(),
+}));
+
 import {
   createPreviewGlobalChatRoom,
   formatCompactCount,
@@ -31,6 +39,7 @@ describe("createPreviewGlobalChatRoom", () => {
   beforeEach(() => {
     p2aEnabled = false;
     intercomAddress = null;
+    reportPresentationEventMock.mockClear();
     vi.stubGlobal(
       "fetch",
       vi.fn(async (_input: unknown, init?: RequestInit) => {
@@ -81,6 +90,7 @@ describe("createPreviewGlobalChatRoom", () => {
     await Promise.resolve();
     await Promise.resolve();
 
+    expect(reportPresentationEventMock).toHaveBeenCalledWith("WorldMessageAction");
     const fetchMock = vi.mocked(fetch);
     expect(fetchMock).toHaveBeenCalledTimes(2);
     const init = fetchMock.mock.calls[1]?.[1] as RequestInit | undefined;

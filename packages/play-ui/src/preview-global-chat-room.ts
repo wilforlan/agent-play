@@ -1,3 +1,5 @@
+import { reportPresentationEvent } from "./presentation-analytics.js";
+
 const STYLE_ID = "agent-play-preview-global-chat-room-styles";
 const INITIAL_PAGE_SIZE = 100;
 const MAX_GLOBAL_LINES = 5000;
@@ -514,6 +516,7 @@ export function createPreviewGlobalChatRoom(options: {
     const sid = options.getSid();
     const mainNodeId = options.getMainNodeId();
     if (sid === null || mainNodeId === null) return;
+    reportPresentationEvent("WorldMessageAction");
     const requestId = crypto.randomUUID();
     appendSingleLine({
       seq: Number.MAX_SAFE_INTEGER,

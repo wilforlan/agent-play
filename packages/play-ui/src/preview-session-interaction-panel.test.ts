@@ -1,6 +1,14 @@
 // @vitest-environment happy-dom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { formatCredentialCreatedAt } from "./preview-human-credentials.js";
+
+const reportPresentationEventMock = vi.hoisted(() => vi.fn());
+
+vi.mock("./presentation-analytics.js", () => ({
+  reportPresentationEvent: reportPresentationEventMock,
+  reportP2aToggleIfChanged: vi.fn(),
+}));
+
 import { createPreviewSessionInteractionPanel } from "./preview-session-interaction-panel.js";
 import { resetPreviewViewSettings, setPreviewViewSettings } from "./preview-view-settings.js";
 
@@ -40,6 +48,7 @@ describe("createPreviewSessionInteractionPanel", () => {
     realtimeSessionConnectMock.mockClear();
     realtimeSessionCloseMock.mockClear();
     realtimeSessionConstructorMock.mockClear();
+    reportPresentationEventMock.mockClear();
   });
 
   afterEach(() => {
@@ -108,6 +117,41 @@ describe("createPreviewSessionInteractionPanel", () => {
     expect(body.payload?.kind).toBe("assist");
     expect(body.payload?.toolName).toBe("assist_plan_day");
     expect(body.payload?.args).toEqual({ task: "draft roadmap" });
+    expect(reportPresentationEventMock).toHaveBeenCalledWith("AssistAction");
+  });
+
+  it("posts intercomCommand chat and reports ChatAction", async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ ok: true })));
+    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal("crypto", {
+      randomUUID: () => "req-chat-uuid",
+    });
+    const panel = createPreviewSessionInteractionPanel({
+      getSid: () => "sid-1",
+      apiBase: "/api/agent-play",
+      getMainNodeId: () => "main-node-1",
+    });
+    panel.setAgents([
+      {
+        agentId: "agent-1",
+        name: "Agent 1",
+        assistTools: [],
+      },
+    ]);
+    panel.setContext("agent-1");
+    panel.setMode("chat");
+    document.body.append(panel.element);
+    const input = panel.element.querySelector(
+      ".preview-session-interaction__chat-input"
+    ) as HTMLInputElement;
+    input.value = "hello agent";
+    const form = panel.element.querySelector(
+      ".preview-session-interaction__chat-compose"
+    ) as HTMLFormElement;
+    form.dispatchEvent(new Event("submit", { cancelable: true, bubbles: true }));
+    await Promise.resolve();
+    expect(reportPresentationEventMock).toHaveBeenCalledWith("ChatAction");
+    expect(fetchMock).toHaveBeenCalled();
   });
 
   it("coerces assist args to numbers when fieldType is number", async () => {
@@ -502,6 +546,7 @@ describe("createPreviewSessionInteractionPanel", () => {
     });
     const ok = await preparePromise;
     expect(ok).toBe(true);
+    expect(reportPresentationEventMock).toHaveBeenCalledWith("PTTAction");
     expect(realtimeAgentConstructorMock).toHaveBeenCalledWith(
       expect.objectContaining({
         name: "Agent One",
