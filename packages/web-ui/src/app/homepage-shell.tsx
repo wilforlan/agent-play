@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import dynamic from "next/dynamic";
 import { useEffect, useMemo, useState } from "react";
 
 import GameShell from "./game-shell";
@@ -11,41 +11,17 @@ const DESKTOP_BREAKPOINT = 1024;
 const getIsDesktopViewport = (): boolean =>
   typeof window !== "undefined" && window.innerWidth >= DESKTOP_BREAKPOINT;
 
-const LandingPage = () => {
-  return (
-    <section
-      style={{
-        minHeight: "100vh",
-        background: "#0f172a",
-        color: "#e2e8f0",
-        padding: "4rem 2rem",
-      }}
-    >
-      <div style={{ maxWidth: 900, margin: "0 auto" }}>
-        <h1 style={{ fontSize: "2.5rem", marginBottom: "1rem" }}>Agent Play</h1>
-        <p style={{ fontSize: "1.1rem", color: "#cbd5e1", marginBottom: "2rem" }}>
-          Build, test, and interact with AI agents in a real-time world.
-        </p>
-        <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap" }}>
-          <Link href="/blog" style={{ color: "#93c5fd", textDecoration: "none" }}>
-            Visit Newsroom
-          </Link>
-          <Link href="/doc" style={{ color: "#93c5fd", textDecoration: "none" }}>
-            Explore Documentation
-          </Link>
-          <a href="https://github.com/wilforlan/agent-play" style={{ color: "#93c5fd", textDecoration: "none" }}>
-            View on Github
-          </a>
-        </div>
-      </div>
-    </section>
-  );
-};
+const HomeLanding = dynamic(() => import("./home-landing"), {
+  ssr: false,
+  loading: () => null,
+});
 
 export default function HomePageShell() {
   const [panel, setPanel] = useState<HomePanel>("game");
   const [isDesktop, setIsDesktop] = useState(false);
-  const offset = useMemo(() => (panel === "game" ? "0vh" : "-100vh"), [panel]);
+  const [isLandingReady, setIsLandingReady] = useState(false);
+  const effectivePanel = isLandingReady ? panel : "game";
+  const offset = useMemo(() => (effectivePanel === "game" ? "0vh" : "-100vh"), [effectivePanel]);
 
   useEffect(() => {
     const updateViewport = () => {
@@ -61,7 +37,7 @@ export default function HomePageShell() {
   }, []);
 
   useEffect(() => {
-    if (!isDesktop) {
+    if (!isDesktop || !isLandingReady) {
       return;
     }
 
@@ -99,15 +75,36 @@ export default function HomePageShell() {
       window.removeEventListener("touchstart", handleTouchStart);
       window.removeEventListener("touchend", handleTouchEnd);
     };
+  }, [isDesktop, isLandingReady]);
+
+  useEffect(() => {
+    if (!isDesktop) {
+      setIsLandingReady(false);
+      return;
+    }
+
+    let timeoutId: number | null = null;
+    let idleId: number | null = null;
+    const scheduleLanding = () => setIsLandingReady(true);
+
+    if ("requestIdleCallback" in window) {
+      idleId = window.requestIdleCallback(scheduleLanding, { timeout: 900 });
+    } else {
+      timeoutId = window.setTimeout(scheduleLanding, 450);
+    }
+
+    return () => {
+      if (idleId !== null && "cancelIdleCallback" in window) {
+        window.cancelIdleCallback(idleId);
+      }
+      if (timeoutId !== null) {
+        window.clearTimeout(timeoutId);
+      }
+    };
   }, [isDesktop]);
 
   if (!isDesktop) {
-    return (
-      <>
-        <GameShell />
-        <LandingPage />
-      </>
-    );
+    return <GameShell />;
   }
 
   return (
@@ -121,7 +118,7 @@ export default function HomePageShell() {
         <div style={{ minHeight: "100vh" }}>
           <GameShell />
         </div>
-        <LandingPage />
+        {isLandingReady ? <HomeLanding /> : null}
       </div>
     </div>
   );
