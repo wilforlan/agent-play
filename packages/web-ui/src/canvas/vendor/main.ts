@@ -1736,13 +1736,11 @@ export function bootstrap(): void {
     mobileBackdrop.className = "preview-mobile-side-backdrop";
     mobileBackdrop.setAttribute("aria-label", "Close side panel");
 
-    const mobileToggles = document.createElement("div");
-    mobileToggles.className = "preview-mobile-side-toggles";
     const toggleLeft = document.createElement("button");
     toggleLeft.type = "button";
     toggleLeft.className =
       "preview-mobile-side-toggle preview-mobile-side-toggle--left";
-    toggleLeft.textContent = "Chat";
+    toggleLeft.textContent = "Messages";
     toggleLeft.setAttribute("aria-controls", "preview-side-left");
     const toggleRight = document.createElement("button");
     toggleRight.type = "button";
@@ -1750,13 +1748,11 @@ export function bootstrap(): void {
       "preview-mobile-side-toggle preview-mobile-side-toggle--right";
     toggleRight.textContent = "Session";
     toggleRight.setAttribute("aria-controls", "preview-side-right");
-    mobileToggles.append(toggleLeft, toggleRight);
 
     centerCol.append(
       canvasWrap,
       joystickWrap,
-      mobileBackdrop,
-      mobileToggles
+      mobileBackdrop
     );
 
     const rightCol = document.createElement("div");
@@ -1892,26 +1888,49 @@ export function bootstrap(): void {
 
     joystickHandle = createPreviewDebugJoystick({ parent: joystickWrap });
 
-    shell.appendChild(
-      createPreviewBottomBar({
-        chatPanel,
-        sessionToolsPanel,
-        sessionProfilePanel,
-        onThemeApplied: () => {
-          rebuildSceneForTheme();
-        },
-        onAgentSettingsChanged: () => {
-          applyChatVisibility();
-          applyDebugVisibility();
-          applyJoystickVisibility();
-        },
-        includeThemePanel: false,
-      })
-    );
+    let messagesPanelVisible = true;
+    const applyMessagesPanelVisibility = (): void => {
+      leftCol.style.display = messagesPanelVisible ? "flex" : "none";
+      if (messagesPanelVisible && mobileSidePanelControls?.isMobileViewport() === true) {
+        mobileSidePanelControls.openLeftPanel();
+      }
+      if (!messagesPanelVisible) {
+        mobileSidePanelControls?.closePanels();
+      }
+      messagesButton.setAttribute("aria-pressed", messagesPanelVisible ? "true" : "false");
+    };
+
+    const bottomBar = createPreviewBottomBar({
+      chatPanel,
+      sessionToolsPanel,
+      sessionProfilePanel,
+      onThemeApplied: () => {
+        rebuildSceneForTheme();
+      },
+      onAgentSettingsChanged: () => {
+        applyChatVisibility();
+        applyDebugVisibility();
+        applyJoystickVisibility();
+      },
+      includeThemePanel: false,
+    });
+    const menuBar = bottomBar.querySelector(".preview-menu-bar");
+    const messagesButton = document.createElement("button");
+    messagesButton.type = "button";
+    messagesButton.className = "preview-chat-settings-toggle";
+    messagesButton.textContent = "Messages";
+    messagesButton.setAttribute("aria-controls", "preview-side-left");
+    messagesButton.addEventListener("click", () => {
+      messagesPanelVisible = !messagesPanelVisible;
+      applyMessagesPanelVisibility();
+    });
+    menuBar?.prepend(messagesButton);
+    shell.appendChild(bottomBar);
 
     applyChatVisibility();
     applyDebugVisibility();
     applyJoystickVisibility();
+    applyMessagesPanelVisibility();
 
     window.addEventListener("keydown", onDocumentKeyDown);
     window.addEventListener("keyup", onDocumentKeyUp);
