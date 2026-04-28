@@ -103,22 +103,18 @@ export default function HomePageShell() {
     };
   }, [isDesktop]);
 
-  if (!isDesktop) {
-    return <GameShell />;
-  }
-
   return (
-    <div style={{ height: "100vh", overflow: "hidden" }}>
+    <div style={{ height: "100vh", overflow: isDesktop ? "hidden" : undefined }}>
       <div
         style={{
-          transform: `translateY(${offset})`,
-          transition: "transform 260ms ease",
+          transform: isDesktop ? `translateY(${offset})` : undefined,
+          transition: isDesktop ? "transform 260ms ease" : undefined,
         }}
       >
         <div style={{ minHeight: "100vh" }}>
           <GameShell />
         </div>
-        {isLandingReady ? <HomeLanding /> : null}
+        {isDesktop && isLandingReady ? <HomeLanding /> : null}
       </div>
     </div>
   );
