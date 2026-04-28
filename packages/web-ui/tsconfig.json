@@ -17,7 +17,9 @@
     "paths": {
       "@/*": ["./src/*"],
       "@agent-play/sdk": ["../sdk/src/index.ts"],
-      "@agent-play/sdk/browser": ["../sdk/src/browser.ts"]
+      "@agent-play/sdk/browser": ["../sdk/src/browser.ts"],
+      "@agent-play/intercom": ["../intercom/src/index.ts"],
+      "@agent-play/node-tools": ["../node-tools/src/index.ts"]
     }
   },
   "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
