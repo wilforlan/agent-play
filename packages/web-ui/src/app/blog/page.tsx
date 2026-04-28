@@ -2,6 +2,7 @@ import Link from "next/link";
 import Image from "next/image";
 
 import { buildBlogSections, getBlogPosts } from "@/lib/sanity-blog";
+import styles from "./blog-page.module.css";
 
 const formatPublishedAt = (publishedAt: string | null): string => {
   if (!publishedAt) {
@@ -20,119 +21,97 @@ export default async function BlogPage() {
   const sections = buildBlogSections({ posts });
   const featured = sections.featured;
   const recent = sections.recent;
+  const categoryNames = sections.categories.map((section) => section.name);
 
   return (
-    <main style={{ maxWidth: 1220, margin: "0 auto", padding: "2rem 1rem 4rem" }}>
+    <main className={styles.page}>
       {posts.length === 0 ? (
-        <p>No blog posts are published yet.</p>
+        <p className={styles.empty}>No blog posts are published yet.</p>
       ) : (
-        <>
-          <section>
-            <nav
-              style={{
-                padding: "0.75rem 1rem",
-                borderRadius: 8,
-                display: "flex",
-                gap: "1rem",
-                alignItems: "center",
-                marginBottom: "1rem",
-              }}
-            >
-              <Link
-                href="/"
-                aria-label="Agent Play home"
-                style={{
-                  marginRight: "0.75rem",
-                  display: "inline-flex",
-                  width: 140,
-                  height: 32,
-                  position: "relative",
-                }}
-              >
+        <section className={styles.shell}>
+          <nav className={styles.nav}>
+            <div className={styles.navPrimary}>
+              <Link href="/" aria-label="Agent Play home" className={styles.logoLink}>
                 <Image src="/agent-play-logo.png" alt="Agent Play" fill style={{ objectFit: "contain" }} priority />
               </Link>
-              <Link href="/" style={{ textDecoration: "none" }} aria-label="Back to home">
+              <Link href="/" className={styles.navLink} aria-label="Back to home">
                 &#8592;
               </Link>
-              <a href="/agent-play/watch" style={{ textDecoration: "none" }}>
+            </div>
+            <div className={styles.navActions}>
+              <a href="/agent-play/watch" className={styles.navLink}>
                 Watch Canvas
               </a>
-              <a href="/doc" style={{ textDecoration: "none" }}>
+              <a href="/doc" className={styles.navLink}>
                 Documentation
               </a>
-              <a
-                href="https://github.com/wilforlan/agent-play"
-                target="_blank"
-                rel="noreferrer"
-                style={{ textDecoration: "none" }}
-              >
+              <a href="https://github.com/wilforlan/agent-play" target="_blank" rel="noreferrer" className={styles.navLink}>
                 Github
               </a>
-            </nav>
+            </div>
+          </nav>
 
-            <div>
-              {featured ? (
-                <section style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: "1rem" }}>
-                  <article style={{ border: "1px solid #e5e5e5", padding: "1.25rem", borderRadius: 8 }}>
-                    <p style={{ margin: 0, color: "#666", fontSize: 13 }}>Featured</p>
-                    <h2 style={{ marginTop: "0.5rem", marginBottom: "0.25rem" }}>
-                      <Link href={`/blog/${featured.slug}`}>{featured.title}</Link>
-                    </h2>
-                    <p style={{ marginTop: 0, color: "#666" }}>{formatPublishedAt(featured.publishedAt)}</p>
-                    {featured.excerpt ? <p style={{ marginBottom: 0 }}>{featured.excerpt}</p> : null}
-                  </article>
-                  <aside style={{ border: "1px solid #e5e5e5", padding: "1rem", borderRadius: 8 }}>
-                    <h3 style={{ marginTop: 0 }}>Recent</h3>
-                    {recent.length === 0 ? (
-                      <p style={{ marginBottom: 0, color: "#666" }}>No additional posts yet.</p>
-                    ) : (
-                      recent.slice(0, 4).map((post) => (
-                        <article key={post.id} style={{ marginTop: "0.85rem" }}>
-                          <h4 style={{ margin: 0, fontSize: 16 }}>
-                            <Link href={`/blog/${post.slug}`}>{post.title}</Link>
-                          </h4>
-                          <p style={{ margin: "0.3rem 0 0", color: "#666", fontSize: 13 }}>
-                            {formatPublishedAt(post.publishedAt)}
-                          </p>
-                        </article>
-                      ))
-                    )}
-                  </aside>
-                </section>
-              ) : null}
+          {featured ? (
+            <section className={styles.heroGrid}>
+              <article className={styles.featuredCard}>
+                <p className={styles.label}>Featured Story</p>
+                <h1 className={styles.featuredHeadline}>
+                  <Link href={`/blog/${featured.slug}`}>{featured.title}</Link>
+                </h1>
+                <p className={styles.meta}>{formatPublishedAt(featured.publishedAt)}</p>
+                {featured.excerpt ? <p className={styles.excerpt}>{featured.excerpt}</p> : null}
+              </article>
+              <aside className={styles.latestRail}>
+                <h2 className={styles.railHeading}>Latest</h2>
+                {recent.length === 0 ? (
+                  <p className={styles.empty}>No additional posts yet.</p>
+                ) : (
+                  recent.slice(0, 3).map((post) => (
+                    <article key={post.id} className={styles.railItem}>
+                      <h3 className={styles.postTitle}>
+                        <Link href={`/blog/${post.slug}`}>{post.title}</Link>
+                      </h3>
+                      <p className={styles.meta}>{formatPublishedAt(post.publishedAt)}</p>
+                    </article>
+                  ))
+                )}
+              </aside>
+            </section>
+          ) : null}
 
-              <section style={{ marginTop: "2rem" }}>
-                <h2 style={{ marginBottom: "1rem" }}>Categories</h2>
-                <div
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
-                    gap: "1rem",
-                  }}
+          <section className={styles.categoryStrip} aria-label="Category discovery">
+            {categoryNames.map((name) => (
+              <a key={name} href={`#category-${name.toLowerCase().replace(/\s+/g, "-")}`} className={styles.categoryChip}>
+                {name}
+              </a>
+            ))}
+          </section>
+
+          <section className={styles.categoriesSection}>
+            <h2 className={styles.categoriesHeading}>Browse by Category</h2>
+            <div className={styles.categoriesGrid}>
+              {sections.categories.map((section) => (
+                <section
+                  id={`category-${section.name.toLowerCase().replace(/\s+/g, "-")}`}
+                  key={section.name}
+                  className={styles.categoryCard}
                 >
-                  {sections.categories.map((section) => (
-                    <section
-                      key={section.name}
-                      style={{ border: "1px solid #e5e5e5", borderRadius: 8, padding: "1rem" }}
-                    >
-                      <h3 style={{ marginTop: 0 }}>{section.name}</h3>
-                      {section.posts.map((post) => (
-                        <article key={post.id} style={{ marginTop: "0.75rem" }}>
-                          <h4 style={{ margin: 0, fontSize: 16 }}>
-                            <Link href={`/blog/${post.slug}`}>{post.title}</Link>
-                          </h4>
-                          <p style={{ margin: "0.3rem 0 0", color: "#666", fontSize: 13 }}>
-                            {formatPublishedAt(post.publishedAt)}
-                          </p>
-                        </article>
-                      ))}
-                    </section>
-                  ))}
-                </div>
-              </section>
+                  <h3 className={styles.categoryTitle}>{section.name}</h3>
+                  <div className={styles.categoryList}>
+                    {section.posts.map((post) => (
+                      <article key={post.id} className={styles.categoryItem}>
+                        <h4 className={styles.postTitle}>
+                          <Link href={`/blog/${post.slug}`}>{post.title}</Link>
+                        </h4>
+                        <p className={styles.meta}>{formatPublishedAt(post.publishedAt)}</p>
+                      </article>
+                    ))}
+                  </div>
+                </section>
+              ))}
             </div>
           </section>
-        </>
+        </section>
       )}
     </main>
   );
