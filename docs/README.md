@@ -28,6 +28,7 @@ The repository uses npm workspaces. **`packages/sdk`** is the Node.js package `@
 | [Multiplayer](multiplayer.md) | Human movement, proximity, A/C/Z/Y actions |
 | [Redis / repository](redis-world.md) | `AgentRepository`, Redis key layout, no agent position streams |
 | [CLI](cli.md) | `agent-play create` / `delete` |
+| [Initialize agent server and template](initialize-agent-server-and-template.md) | End-to-end guide for `agent-play initialize`, node bootstrap, env hydration, and running generated LangChain starter |
 | [API keys](api-keys.md) | Issuing keys, SDK usage, rotation |
 | [MCP registration](mcp.md) | `PlayWorld.registerMCP` and snapshot |
 | [P2A implementation architecture](agent-play-p2a-implementation.md) | Peer to Agent audio architecture: assist-background execution, response processor, ringer play rooms, and canvas UX controls |

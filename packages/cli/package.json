@@ -1,7 +1,7 @@
 {
   "name": "@agent-play/cli",
-  "version": "3.1.0",
-  "description": "Command-line tool for Agent Play: login, API keys, and agent registration against the web UI.",
+  "version": "3.2.0",
+  "description": "Command-line tool for Agent Play: node configurations, agent starter kit, and agent registration against the web UI.",
   "private": false,
   "type": "module",
   "bin": {
@@ -9,6 +9,7 @@
   },
   "files": [
     "dist",
+    "templates",
     "README.md"
   ],
   "repository": {
@@ -20,7 +21,9 @@
     "access": "public"
   },
   "scripts": {
-    "build": "tsup src/cli.ts --format esm --platform node --target node20 --out-dir dist --clean --external @agent-play/node-tools && node ../../scripts/copy-root-file.mjs cli"
+    "build": "tsup src/cli.ts --format esm --platform node --target node20 --out-dir dist --clean --external @agent-play/node-tools && node ../../scripts/copy-root-file.mjs cli && cp README.md dist/README.md",
+    "test": "vitest run",
+    "smoke:initialize": "node ./scripts/smoke-initialize.mjs"
   },
   "dependencies": {
     "@agent-play/node-tools": "1.0.0"
@@ -28,6 +31,7 @@
   "devDependencies": {
     "@types/node": "^22.10.0",
     "tsup": "^8.5.1",
-    "typescript": "~5.9.3"
+    "typescript": "~5.9.3",
+    "vitest": "^4.1.1"
   }
 }

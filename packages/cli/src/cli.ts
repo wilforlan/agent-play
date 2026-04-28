@@ -22,6 +22,7 @@ import {
   loadAgentPlayCredentialsFileFromPath,
   loadRootKey,
 } from "@agent-play/node-tools";
+import { cmdInitialize as runInitializeScaffold } from "./initialize.js";
 
 type BootstrapCliOpts = {
   rootFilePath?: string;
@@ -131,6 +132,120 @@ async function promptBootstrapEnvironment(
     console.log(
       "Invalid choice. Enter 1, 2, or 3, or one of: local-server, test-server, main-server."
     );
+  }
+}
+
+function parseInitializeBootstrapAnswer(raw: string): boolean | null {
+  const trimmed = raw.trim().toLowerCase();
+  if (trimmed === "" || trimmed === "y" || trimmed === "yes") {
+    return true;
+  }
+  if (trimmed === "n" || trimmed === "no") {
+    return false;
+  }
+  return null;
+}
+
+async function promptInitializeBootstrapChoice(
+  rl: ReturnType<typeof createInterface>
+): Promise<boolean> {
+  for (;;) {
+    const answer = await rl.question("Create node identities now? [Y/n]: ");
+    const parsed = parseInitializeBootstrapAnswer(answer);
+    if (parsed !== null) {
+      return parsed;
+    }
+    console.log("Please answer yes or no.");
+  }
+}
+
+function parseInitializeAgentCount(raw: string): 1 | 2 | null {
+  const trimmed = raw.trim();
+  if (trimmed === "" || trimmed === "1") {
+    return 1;
+  }
+  if (trimmed === "2") {
+    return 2;
+  }
+  return null;
+}
+
+async function promptInitializeAgentCount(
+  rl: ReturnType<typeof createInterface>
+): Promise<1 | 2> {
+  for (;;) {
+    const answer = await rl.question("How many agents do you want to deploy? (1-2) [1]: ");
+    const parsed = parseInitializeAgentCount(answer);
+    if (parsed !== null) {
+      return parsed;
+    }
+    console.log("Invalid value. Enter 1 or 2.");
+  }
+}
+
+function parseInitializeEnvironmentAnswer(
+  raw: string
+): "development" | "test" | "production" | null {
+  const trimmed = raw.trim().toLowerCase();
+  if (trimmed === "" || trimmed === "1" || trimmed === "development" || trimmed === "dev") {
+    return "development";
+  }
+  if (trimmed === "2" || trimmed === "test") {
+    return "test";
+  }
+  if (trimmed === "3" || trimmed === "production" || trimmed === "prod") {
+    return "production";
+  }
+  return null;
+}
+
+async function promptInitializeEnvironment(
+  rl: ReturnType<typeof createInterface>
+): Promise<"development" | "test" | "production"> {
+  const lines = [
+    "Choose environment for initialization:",
+    "  1) development → http://127.0.0.1:3000",
+    "  2) test        → https://test-agent-play.com",
+    "  3) production  → https://agent-play.com",
+    "Enter 1-3, or development/test/production [1]: ",
+  ].join("\n");
+  for (;;) {
+    const answer = await rl.question(lines);
+    const parsed = parseInitializeEnvironmentAnswer(answer);
+    if (parsed !== null) {
+      return parsed;
+    }
+    console.log("Invalid choice. Enter 1, 2, 3, development, test, or production.");
+  }
+}
+
+function parseInitializeServerTypeAnswer(raw: string): "bare" | "express" | null {
+  const trimmed = raw.trim().toLowerCase();
+  if (trimmed === "" || trimmed === "1" || trimmed === "bare") {
+    return "bare";
+  }
+  if (trimmed === "2" || trimmed === "express") {
+    return "express";
+  }
+  return null;
+}
+
+async function promptInitializeServerType(
+  rl: ReturnType<typeof createInterface>
+): Promise<"bare" | "express"> {
+  const lines = [
+    "Choose server runtime:",
+    "  1) bare    → simple process entrypoint (minimal)",
+    "  2) express → deployable HTTP server with /health endpoint",
+    "Enter 1-2, or bare/express [1]: ",
+  ].join("\n");
+  for (;;) {
+    const answer = await rl.question(lines);
+    const parsed = parseInitializeServerTypeAnswer(answer);
+    if (parsed !== null) {
+      return parsed;
+    }
+    console.log("Invalid choice. Enter 1, 2, bare, or express.");
   }
 }
 
@@ -378,6 +493,76 @@ async function cmdCreateAgentNode(): Promise<void> {
   );
   console.log("Keep this material safe. Losing it means losing access.");
   console.log("");
+}
+
+async function ensureMainCredentialsForInitialize(
+  serverUrl: string
+): Promise<AgentPlayCredentialsFile> {
+  const existing = await loadCredentials();
+  if (
+    existing !== null &&
+    existing.serverUrl.replace(/\/$/, "") === serverUrl.replace(/\/$/, "")
+  ) {
+    return existing;
+  }
+  const rootKey = loadRootKey(resolveAgentPlayRootPath({}));
+  const generatedPassw = generateNodePassw();
+  const hashedPassw = hashNodePassword(generatedPassw);
+  const credential = createNodeCredentialFromPassw({ passw: hashedPassw, rootKey });
+  await registerNodeOnServer(serverUrl, hashedPassw, credential.nodeId);
+  const created: AgentPlayCredentialsFile = {
+    serverUrl,
+    nodeId: credential.nodeId,
+    passw: generatedPassw,
+  };
+  await saveCredentials(created);
+  return created;
+}
+
+async function createAgentNodeForInitialize(
+  cred: AgentPlayCredentialsFile
+): Promise<string> {
+  const rootKey = loadRootKey(resolveAgentPlayRootPath({}));
+  const agentPassw = generateNodePassw();
+  const hashedAgentPassw = hashNodePassword(agentPassw);
+  const agentNodeId = deriveNodeIdFromPassword({
+    password: hashedAgentPassw,
+    rootKey,
+  });
+  const res = await fetch(`${cred.serverUrl}/api/nodes/agent-node`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      ...nodeAuthHeaders(cred),
+    },
+    body: JSON.stringify({
+      kind: "agent",
+      parentNodeId: cred.nodeId,
+      agentNodeId,
+      agentNodePassw: hashedAgentPassw,
+    }),
+  });
+  const text = await res.text();
+  if (!res.ok) {
+    throw new Error(`Create failed (${String(res.status)}): ${text}`);
+  }
+  const json = JSON.parse(text) as { agentId?: unknown };
+  if (typeof json.agentId !== "string" || json.agentId !== agentNodeId) {
+    throw new Error("Invalid agent creation response.");
+  }
+  const nextAgentNodes: AgentNodeCredential[] = [
+    ...(cred.agentNodes ?? []).filter((n) => n.nodeId !== agentNodeId),
+    {
+      nodeId: agentNodeId,
+      passw: agentPassw,
+      createdAt: new Date().toISOString(),
+    },
+  ];
+  await saveCredentials({
+    ...cred,
+    agentNodes: nextAgentNodes,
+  });
+  return agentNodeId;
 }
 
 async function cmdInspectNode(): Promise<void> {
@@ -735,6 +920,38 @@ async function cmdValidateAgentNode(argv: string[]): Promise<void> {
   console.log(`Validated ${String(dedupedIds.length)} agent node(s) successfully.`);
 }
 
+async function cmdInitialize(argv: string[]): Promise<void> {
+  const rl = createInterface({ input, output });
+  try {
+    await runInitializeScaffold({
+      argv,
+      promptApi: {
+        askEnvironment: () => promptInitializeEnvironment(rl),
+        askServerType: () => promptInitializeServerType(rl),
+        askBootstrapNodes: () => promptInitializeBootstrapChoice(rl),
+        askAgentCount: () => promptInitializeAgentCount(rl),
+      },
+      runtimeApi: {
+        bootstrapNodeIds: async (options) => {
+          const mainCred = await ensureMainCredentialsForInitialize(options.serverUrl);
+          const agentNodeIds: string[] = [];
+          for (let i = 0; i < options.agentCount; i++) {
+            const refreshedCred = (await loadCredentials()) ?? mainCred;
+            const nodeId = await createAgentNodeForInitialize(refreshedCred);
+            agentNodeIds.push(nodeId);
+          }
+          return {
+            mainNodeId: mainCred.nodeId,
+            agentNodeIds,
+          };
+        },
+      },
+    });
+  } finally {
+    rl.close();
+  }
+}
+
 async function main(): Promise<void> {
   const cmd = process.argv[2];
   if (cmd === "bootstrap-node" || cmd === "create-main-node") {
@@ -773,6 +990,10 @@ async function main(): Promise<void> {
     await cmdValidateAgentNode(process.argv.slice(3));
     return;
   }
+  if (cmd === "initialize" || cmd === "init") {
+    await cmdInitialize(process.argv.slice(3));
+    return;
+  }
   console.error(
     [
       "Usage:",
@@ -785,6 +1006,7 @@ async function main(): Promise<void> {
       "  agent-play validate-main-node",
       "  agent-play validate-agent-node --all",
       "  agent-play validate-agent-node --agent-node-ids <id1,id2,...>",
+      "  agent-play initialize | init [--dir <path>] [--name <project-name>] [--template langchain] [--environment <development|test|production>] [--server-type <bare|express>] [--yes] [--force] [--bootstrap-nodes] [--agent-count <1|2>]",
       "  agent-play clear-node-credentials",
     ].join("\n")
   );

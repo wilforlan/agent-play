@@ -52,6 +52,7 @@ For Redis-direct checks (ops/CI), use **`node-tools`** script **`scripts/validat
 | **`delete-main-node`** | — | **DELETE /api/nodes** — confirm by typing main node id; cascades. |
 | **`validate-main-node`** | — | **POST /api/nodes/validate** for main node id. |
 | **`validate-agent-node`** | — | **`--all`** or **`--agent-node-ids id1,id2,...`** — validate agent node ids. |
+| **`initialize`** | `init` | Interactive scaffold for a starter agent codebase, optional node bootstrap, asks for agent count (1-2), and writes env-variable node ids into `.env` when bootstrapped. |
 | **`clear-node-credentials`** | — | Removes **`~/.agent-play/credentials.json`**. |
 
 ## Genesis and main node
@@ -68,6 +69,7 @@ npx agent-play validate-main-node
 npx agent-play inspect-node
 npx agent-play create-agent-node
 npx agent-play validate-agent-node --all
+npx agent-play initialize
 npx agent-play list-agent-nodes
 npx agent-play delete-agent-node
 npx agent-play delete-agent-node <agent-uuid>
@@ -76,3 +78,14 @@ npx agent-play clear-node-credentials
 ```
 
 For SDK usage after bootstrap, use **`RemotePlayWorld`** and register players with **`mainNodeId`** and **`agentId`** from the CLI output.
+
+## Initialize quick start
+
+- `npx agent-play initialize` (or `npx agent-play init`) scaffolds starter files.
+- The flow asks whether to create nodes now and how many agent nodes to provision (max `2`).
+- If bootstrap is selected, it writes:
+  - `AGENT_PLAY_MAIN_NODE_ID`
+  - `AGENT_PLAY_AGENT_NODE_ID_1`
+  - `AGENT_PLAY_AGENT_NODE_ID_2` (when requested)
+  into generated `.env`.
+- Generated code references these env vars directly (no hardcoded ids).

@@ -100,6 +100,7 @@ Deprecated for new work: **`buffer.txt`**-only flows and **`validateNodeDerivati
 - **`delete-main-node`** — **`DELETE /api/nodes`** with confirmation.
 - **`validate-main-node`** — server validation for main node (see [Node validation](#node-validation)).
 - **`validate-agent-node`** — **`--all`** or **`--agent-node-ids id1,id2,...`** (see [Node validation](#node-validation)).
+- **`initialize`** (alias **`init`**) — interactive starter scaffold, optional node bootstrap, prompts for agent count (max `2`), and hydrates `.env` node-id env vars when bootstrapped.
 - **`clear-node-credentials`** — remove local credentials file.
 
 ---
@@ -127,6 +128,7 @@ From the repository root after **`npm install`** and **`npm run build:cli`**:
 
 ```bash
 npx agent-play create-main-node
+npx agent-play initialize
 npx agent-play validate-main-node
 npx agent-play inspect-node
 npx agent-play create-agent-node
@@ -138,3 +140,23 @@ npx agent-play clear-node-credentials
 ```
 
 When registering players in code, use **`mainNodeId`**, agent **`agentId`**, and node credentials with **`RemotePlayWorld`** / **`addPlayer`** as described in the SDK docs.
+
+## Initialize quick start
+
+`npx agent-play initialize` creates a starter agent repository skeleton and asks:
+
+1. which environment to target (`development`, `test`, `production`)
+2. server runtime to scaffold (`bare` or `express`)
+3. whether to bootstrap node identities now
+4. how many agent nodes to prepare (`1` or `2`)
+
+When bootstrap is selected, generated `.env` is hydrated with:
+
+- `AGENT_PLAY_WEB_UI_URL` (derived from selected environment)
+- `AGENT_PLAY_MAIN_NODE_ID`
+- `AGENT_PLAY_AGENT_NODE_ID_1`
+- `AGENT_PLAY_AGENT_NODE_ID_2` (if `2` agents selected)
+
+The scaffolded runtime reads these env vars directly, so node IDs stay configurable per environment.
+
+For a full end-to-end walkthrough (initializer prompts, bootstrap paths, generated project layout, and troubleshooting), see [Initialize agent server and template](initialize-agent-server-and-template.md).
