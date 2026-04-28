@@ -11,6 +11,25 @@ export type ProfileAvatarPresetId = "default" | "ember" | "forest";
 
 export type ProfileGender = "unspecified" | "feminine" | "masculine" | "neutral";
 
+export const PREVIEW_LANGUAGE_OPTIONS = [
+  "English",
+  "Yoruba",
+  "Igbo",
+  "Hausa",
+  "French",
+  "Spanish",
+  "Portuguese",
+  "German",
+  "Italian",
+  "Arabic",
+  "Swahili",
+  "Mandarin Chinese",
+  "Hindi",
+  "Japanese",
+] as const;
+
+export type PreviewLanguage = (typeof PREVIEW_LANGUAGE_OPTIONS)[number];
+
 export type PreviewViewSettings = {
   themeId: SceneThemeId;
   showChatUi: boolean;
@@ -19,6 +38,7 @@ export type PreviewViewSettings = {
   p2aEnabled: boolean;
   profileAvatarPresetId: ProfileAvatarPresetId;
   profileGender: ProfileGender;
+  language: PreviewLanguage;
 };
 
 function defaultDebugModeForHost(): boolean {
@@ -45,6 +65,10 @@ function isProfileGender(v: string): v is ProfileGender {
   );
 }
 
+function isPreviewLanguage(v: string): v is PreviewLanguage {
+  return (PREVIEW_LANGUAGE_OPTIONS as readonly string[]).includes(v);
+}
+
 export function getDefaultViewSettings(): PreviewViewSettings {
   return {
     themeId: "park",
@@ -54,6 +78,7 @@ export function getDefaultViewSettings(): PreviewViewSettings {
     p2aEnabled: false,
     profileAvatarPresetId: "default",
     profileGender: "unspecified",
+    language: "English",
   };
 }
 
@@ -92,6 +117,9 @@ function parseStored(raw: string | null): Partial<PreviewViewSettings> | null {
     if (typeof o.profileGender === "string" && isProfileGender(o.profileGender)) {
       out.profileGender = o.profileGender;
     }
+    if (typeof o.language === "string" && isPreviewLanguage(o.language)) {
+      out.language = o.language;
+    }
     return Object.keys(out).length > 0 ? out : null;
   } catch {
     return null;
@@ -110,6 +138,9 @@ function sanitize(s: PreviewViewSettings): PreviewViewSettings {
   const profileGender = isProfileGender(s.profileGender)
     ? s.profileGender
     : getDefaultViewSettings().profileGender;
+  const language = isPreviewLanguage(s.language)
+    ? s.language
+    : getDefaultViewSettings().language;
   return {
     themeId,
     showChatUi: s.showChatUi,
@@ -118,6 +149,7 @@ function sanitize(s: PreviewViewSettings): PreviewViewSettings {
     p2aEnabled: s.p2aEnabled,
     profileAvatarPresetId,
     profileGender,
+    language,
   };
 }
 

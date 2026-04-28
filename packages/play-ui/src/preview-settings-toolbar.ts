@@ -5,6 +5,7 @@
 import { createPreviewAgentSettingsPanel } from "./preview-agent-settings-panel.js";
 import { getPreviewAppMeta } from "./preview-app-meta.js";
 import { ensurePreviewChatSettingsPanelStyles } from "./preview-chat-settings-panel.js";
+import { createPreviewLanguageSettingsPanel } from "./preview-language-settings-panel.js";
 import { createPreviewThemeSettingsPanel } from "./preview-theme-settings-panel.js";
 
 const TOOLBAR_STYLE_ID = "agent-play-preview-settings-toolbar-styles";
@@ -661,6 +662,7 @@ export function createPreviewBottomBar(options: {
   const includeThemePanel = options.includeThemePanel === true;
   menu.append(
     options.chatPanel,
+    createPreviewLanguageSettingsPanel({}),
     options.sessionToolsPanel,
     options.sessionProfilePanel,
     ...(includeThemePanel

@@ -19,6 +19,7 @@ import {
   resolveAssistFieldType,
 } from "./preview-assist-coerce.js";
 import { RealtimeAgent, RealtimeSession } from "@openai/agents/realtime";
+import { getPreviewViewSettings } from "./preview-view-settings.js";
 
 const STYLE_ID = "agent-play-preview-session-interaction-styles";
 
@@ -621,6 +622,14 @@ function createRingerIcon(): SVGSVGElement {
   return icon;
 }
 
+function composeRealtimeInstructions(options: {
+  baseInstructions: string;
+  language: string;
+}): string {
+  const languageInstruction = `Respond only in ${options.language}.`;
+  return `${options.baseInstructions.trim()}\n${languageInstruction}`;
+}
+
 const DEFAULT_INTERCOM_REPLY_TIMEOUT_MS = 30_000;
 
 function intercomEventMatchesHumanAgentReply(
@@ -1177,10 +1186,14 @@ export function createPreviewSessionInteractionPanel(options: {
         agent.realtimeInstructions.trim().length > 0
           ? agent.realtimeInstructions
           : `You are ${agent?.name ?? "the assistant"}.`;
+      const language = getPreviewViewSettings().language;
       const playWorldAgent = new PlayWorldAgent({
         agentId,
         agentName: agent?.name ?? agentId,
-        instructions,
+        instructions: composeRealtimeInstructions({
+          baseInstructions: instructions,
+          language,
+        }),
       });
       const { session, stream } = await playWorldAgent.connect(secretResponse);
       realtimeSession = session;
@@ -1208,10 +1221,14 @@ export function createPreviewSessionInteractionPanel(options: {
               agent.realtimeInstructions.trim().length > 0
                 ? agent.realtimeInstructions
                 : `You are ${agent?.name ?? "the assistant"}.`;
+            const language = getPreviewViewSettings().language;
             const playWorldAgent = new PlayWorldAgent({
               agentId,
               agentName: agent?.name ?? agentId,
-              instructions,
+              instructions: composeRealtimeInstructions({
+                baseInstructions: instructions,
+                language,
+              }),
             });
             const { session, stream } = await playWorldAgent.connect(refreshedSecret);
             realtimeSession = session;

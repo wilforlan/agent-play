@@ -27,9 +27,9 @@
   },
   "dependencies": {
     "@agent-play/node-tools": "^3.1.0",
-    "@agent-play/sdk": "^3.1.0",
-    "dotenv": "^17.3.1",
+    "@agent-play/sdk": "^3.2.1",
     "@langchain/openai": "^1.3.0",
+    "dotenv": "^17.3.1",
     "express": "^4.21.2",
     "langchain": "^1.2.36",
     "zod": "^3.24.2"

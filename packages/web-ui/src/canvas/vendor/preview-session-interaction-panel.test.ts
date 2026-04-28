@@ -2,6 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { formatCredentialCreatedAt } from "./preview-human-credentials.js";
 import { createPreviewSessionInteractionPanel } from "./preview-session-interaction-panel.js";
+import { resetPreviewViewSettings, setPreviewViewSettings } from "./preview-view-settings.js";
 
 const CREDENTIALS_KEY = "agent-play.humanCredentials";
 const realtimeAgentConstructorMock = vi.fn();
@@ -34,6 +35,7 @@ vi.mock("@openai/agents/realtime", () => ({
 describe("createPreviewSessionInteractionPanel", () => {
   beforeEach(() => {
     vi.useRealTimers();
+    resetPreviewViewSettings();
     realtimeAgentConstructorMock.mockClear();
     realtimeSessionConnectMock.mockClear();
     realtimeSessionCloseMock.mockClear();
@@ -503,7 +505,8 @@ describe("createPreviewSessionInteractionPanel", () => {
     expect(realtimeAgentConstructorMock).toHaveBeenCalledWith(
       expect.objectContaining({
         name: "Agent One",
-        instructions: "Be concise and helpful.",
+        instructions:
+          "Be concise and helpful.\nRespond only in English.",
       })
     );
     expect(realtimeSessionConstructorMock).toHaveBeenCalledWith(
@@ -515,6 +518,60 @@ describe("createPreviewSessionInteractionPanel", () => {
     expect(realtimeSessionConnectMock).toHaveBeenCalledWith(
       expect.objectContaining({
         apiKey: "cs_test_123",
+      })
+    );
+  });
+
+  it("enforces selected language in push-to-talk realtime instructions", async () => {
+    setPreviewViewSettings({ language: "Yoruba" });
+    vi.stubGlobal("navigator", {
+      mediaDevices: {
+        getUserMedia: vi.fn(async () => ({
+          getTracks: () => [{ stop: vi.fn() }],
+        })),
+      },
+    });
+    vi.stubGlobal("crypto", {
+      randomUUID: () => "req-ptt-language",
+    });
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ ok: true }))));
+    const panel = createPreviewSessionInteractionPanel({
+      getSid: () => "sid-1",
+      apiBase: "/api/agent-play",
+      getMainNodeId: () => "main-node-1",
+    });
+    panel.setAgents([
+      {
+        agentId: "agent-1",
+        name: "Agent One",
+        enableP2a: "on",
+        realtimeInstructions: "Answer naturally.",
+      },
+    ]);
+    const preparePromise = panel.preparePushToTalkConnection("agent-1");
+    await Promise.resolve();
+    panel.applyIntercomEvent({
+      requestId: "req-ptt-language",
+      mainNodeId: "main-node-1",
+      toPlayerId: "main-node-1",
+      fromPlayerId: "agent-1",
+      kind: "chat",
+      status: "completed",
+      result: {
+        messageKind: "text",
+        message: "Realtime credentials ready.",
+        realtimeWebrtc: {
+          clientSecret: "cs_test_123",
+          model: "gpt-realtime",
+        },
+      },
+      ts: "2026-04-10T12:00:00.000Z",
+    });
+    const ok = await preparePromise;
+    expect(ok).toBe(true);
+    expect(realtimeAgentConstructorMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        instructions: "Answer naturally.\nRespond only in Yoruba.",
       })
     );
   });

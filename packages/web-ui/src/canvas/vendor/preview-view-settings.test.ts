@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import {
+  getDefaultViewSettings,
   getPreviewViewSettings,
   resetPreviewViewSettings,
   setPreviewViewSettings,
@@ -28,5 +29,12 @@ describe("setPreviewViewSettings", () => {
     expect(s.debugMode).toBe(true);
     expect(s.joystickEnabled).toBe(true);
     expect(s.p2aEnabled).toBe(true);
+  });
+
+  it("defaults language to English and persists selected language", () => {
+    expect(getDefaultViewSettings().language).toBe("English");
+    const next = setPreviewViewSettings({ language: "Yoruba" });
+    expect(next.language).toBe("Yoruba");
+    expect(getPreviewViewSettings().language).toBe("Yoruba");
   });
 });
