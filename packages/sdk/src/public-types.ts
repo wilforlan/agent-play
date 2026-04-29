@@ -142,7 +142,12 @@ export type AddPlayerInput = PlatformAgentInformation & {
   mainNodeId?: string;
   /** Registered agent id (or session-local id without Redis). */
   agentId: string;
-  /** @inheritdoc AddAgentInput.enableP2a */
+  /**
+   * When **`"on"`**, registration enables OpenAI Realtime provisioning for this agent.
+   * Omitted or **`"off"`** disables realtime voice for this registration.
+   *
+   * Same semantics as {@link AddAgentInput} **`enableP2a`**.
+   */
   enableP2a?: P2aEnableFlag;
 };
 
