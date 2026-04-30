@@ -120,6 +120,68 @@ The example registers a player and drives `RemotePlayWorld` RPCs against your lo
 
 ---
 
+## Developer tools
+
+### PixiJS Devtools (Chrome)
+
+Use [PixiJS Devtools](https://chromewebstore.google.com/detail/pixijs-devtools/aamddddknhcagpehecnhphigffljadon) to inspect the watch canvas scene graph and tune map/debug behavior faster.
+
+#### Install
+
+1. Open the extension page in Chrome and click **Add to Chrome**.
+2. Restart the browser tab running Agent Play if needed.
+
+#### Use with Agent Play watch UI
+
+1. Start the app with `npm run dev`.
+2. Open `http://127.0.0.1:3000/agent-play/watch`.
+3. Open Chrome DevTools and switch to the **PixiJS** panel.
+4. Expand the scene graph and inspect:
+   - `worldRoot` for map/grid/object placement.
+   - `parkBackdropLayer` for grass/water/tree/bench background geometry.
+   - `gridGraphics` and `gridLabelLayer` when **Show Map Grids** is enabled.
+   - `agentsLayer` for agent containers and labels.
+   - `sky-decor` for airplane/banner nodes.
+5. Use node property editing to validate position/size assumptions while adjusting the in-app debug controls.
+6. Double-click nodes in the outliner to inspect them in console via `$pixi`.
+
+#### Recommended debugging flow
+
+1. In the watch UI, enable **Debug mode** and open the debug panel.
+2. Toggle **Show Map Grids** to verify coordinate alignment.
+3. Toggle **Show Map Components** and adjust water/grass/tree/bench/airplane sliders.
+4. In PixiJS Devtools, confirm container hierarchy and transformed bounds match the expected world coordinates.
+
+### Deep browser logging
+
+Agent Play supports deep browser logs for structured text, object dumps, and scene tree snapshots.
+
+- Default behavior:
+  - `localhost` / `127.0.0.1` / `::1` / `[::1]` => enabled
+  - non-local hosts (including `agent-play.com`) => disabled
+- Explicit override precedence:
+  1. query param `?deepLogs=on|off`
+  2. localStorage key `agent-play-deep-logs`
+  3. host default
+
+Examples:
+
+```text
+http://127.0.0.1:3000/agent-play/watch?deepLogs=on
+https://agent-play.com/agent-play/watch?deepLogs=off
+```
+
+You can also persist an override in the console:
+
+```js
+localStorage.setItem("agent-play-deep-logs", "on");
+localStorage.setItem("agent-play-deep-logs", "off");
+```
+
+When enabled, logs are prefixed with `[agent-play:deep]` and include startup context, snapshot/meta payloads, and bounded Pixi scene tree snapshots.
+
+---
+
 ## Environment variables (web UI)
 
 The canonical template is **`packages/web-ui/.env.local.example`**. Copy to **`packages/web-ui/.env.local`**.

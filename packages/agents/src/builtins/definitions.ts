@@ -33,14 +33,14 @@ function buildBuiltinAgentDefinitions(): BuiltinAgentDefinition[] {
 
   return [
     {
-      id: "b2bffffd3e73e975c3aef60f6c15bdd84165fc548583c8553fb8119f92550f4d",
+      id: "500572843b9fade22e718ea7664442ecf4becf7fdbacd87ef2a7c0b609ec6f31",
       name: "CFO AI",
       type: "langchain",
       agent: cfoLcAgent,
       enableP2a: "on",
     },
     {
-      id: "4fda036ff28e27a1df7529ebd765bc23dec4228b1e9be3fff4cea57bbc9b8dc4",
+      id: "418c897754d09e6f464e5bc67701f85ffc2c0fae67a9e30a0bcd3ae9d245348e",
       name: "Sales AI",
       type: "langchain",
       agent: salesLcAgent,

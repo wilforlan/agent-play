@@ -3,6 +3,7 @@
  * pixi multiverse — preview canvas module (Pixi + DOM).
  */
 import { Application } from "pixi.js";
+import { deepLogObject, deepLogText } from "./browser-deep-logs.js";
 
 export type PixiPreviewHandle = {
   app: Application;
@@ -17,6 +18,10 @@ export async function createPixiPreview(options: {
   onTick: (dt: number) => void;
   onFrame: () => void;
 }): Promise<PixiPreviewHandle> {
+  deepLogText("createPixiPreview:start", {
+    width: options.width,
+    height: options.height,
+  });
   const app = new Application();
   await app.init({
     width: options.width,
@@ -36,6 +41,11 @@ export async function createPixiPreview(options: {
   canvas.style.touchAction = "none";
   canvas.style.imageRendering = "pixelated";
   options.parent.appendChild(canvas);
+  deepLogObject("createPixiPreview:mounted", {
+    rendererType: app.renderer.type,
+    canvasRole: canvas.getAttribute("role"),
+    canvasAriaLabel: canvas.getAttribute("aria-label"),
+  });
   app.ticker.add(() => {
     const dt = app.ticker.deltaMS / 1000;
     options.onTick(Math.min(0.05, dt));

@@ -40,7 +40,7 @@ export type RegisterBuiltinAgentsOptions = {
 };
 
 const DEFAULT_MAIN_NODE_ID =
-  "87b6637b010478e48a83a8d445041ae4df5d607df7932153cdfee5c601e8e39e";
+  "326fc96838fb998ba0bd3c71cf1e1a8968960dc59d80a2ee6a0d8dc046e37728";
 
 function resolveEnableP2aForBuiltin(
   def: BuiltinAgentDefinition,

@@ -17,6 +17,7 @@
  */
 import { Color, Container, Graphics, Text } from "pixi.js";
 import { nextAvatarMotion } from "./avatar-anim.js";
+import { deepLogObject, deepLogText, deepLogTree } from "./browser-deep-logs.js";
 import { buildCrowdLayer } from "./crowd-draw.js";
 import { layoutCrowdClusters } from "./crowd-layout.js";
 import { drawPlatformHero, type HeroPaletteVariant } from "./hero-puppet.js";
@@ -411,6 +412,7 @@ function rebuildParkWorldBackdrop(): void {
   const gy0 = worldOriginScreenY;
   const w = ORIGIN_X + cols * cellScale + 56;
   const h = Math.max(VIEW_H, gy0 + rows * cellScale + WORLD_BOTTOM_MARGIN);
+  deepLogObject("rebuildParkWorldBackdrop", { w, h, cols, rows });
   parkBackdropLayer.addChild(buildParkWorldBackdrop(w, h, 0x5cafe));
 }
 
@@ -975,6 +977,11 @@ function applyJourneyUpdate(u: JourneyUpdate): void {
 
 function ingestSnapshot(snap: Snapshot): void {
   snapshot = snap;
+  deepLogObject("ingestSnapshot", {
+    sid: snap.sid,
+    occupantCount: snap.worldMap.occupants.length,
+    bounds: snap.worldMap.bounds,
+  });
   const b = snapshot.worldMap.bounds;
   if (b !== undefined) applyBounds(b);
   else {
@@ -1429,6 +1436,10 @@ function applyJoystickVisibility(): void {
 function rebuildSceneForTheme(): void {
   if (appStage === null || pixiHandle === null) return;
   const theme = getActiveSceneTheme();
+  deepLogText("rebuildSceneForTheme", {
+    themeId: theme.id,
+    grassBandTopRatio: theme.grassBandTopRatio,
+  });
   palette = mergeMultiversePalette(theme.palettePartial);
   pixiHandle.app.renderer.background.color = new Color(theme.appBackgroundColor);
   if (sceneRootContainer !== null) {
@@ -1655,6 +1666,13 @@ export function bootstrap(): void {
   previewBootstrapLock = (async () => {
     const sid = await ensurePreviewSessionId();
     if (!sid) return;
+    deepLogText("bootstrap:start", {
+      sid,
+      apiBase: API_BASE,
+      host:
+        typeof window !== "undefined" ? window.location.hostname : "unknown",
+      settings: getPreviewViewSettings(),
+    });
     await ensureHumanNodeOnboarding({
       apiBase: API_BASE,
       getSid: () => sid,
@@ -1834,6 +1852,7 @@ export function bootstrap(): void {
     });
     pixiHandle = handle;
     appStage = handle.app.stage;
+    deepLogTree("pixiStage", handle.app.stage as unknown);
     applyBounds(MINIMUM_PLAY_WORLD_BOUNDS);
     updateCameraAndWorldRoot();
     if (ENABLE_CROWD_LAYER) {
