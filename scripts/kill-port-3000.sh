@@ -24,6 +24,11 @@ pid_state() {
 
 kill_process_group() {
   local pid="$1"
+  local state
+  state="$(pid_state "$pid")"
+  if [[ "$state" == U* ]]; then
+    echo "PID $pid is in uninterruptible sleep (state=$state); signal delivery may be delayed."
+  fi
   local pgid
   pgid="$(trim "$(ps -o pgid= -p "$pid" 2>/dev/null || true)")"
   if [[ -z "$pgid" ]]; then
@@ -94,6 +99,10 @@ fi
 
 echo "Force killing remaining process groups on port $PORT: ${remaining[*]}"
 for pid in "${remaining[@]}"; do
+  state="$(pid_state "$pid")"
+  if [[ "$state" == U* ]]; then
+    echo "PID $pid remains in uninterruptible sleep (state=$state)."
+  fi
   pgid="$(trim "$(ps -o pgid= -p "$pid" 2>/dev/null || true)")"
   if [[ -n "$pgid" ]]; then
     kill -KILL -- "-$pgid" 2>/dev/null || true
@@ -112,4 +121,5 @@ if [[ "${#final_check[@]}" -eq 0 ]]; then
 fi
 
 echo "Unable to fully clear port $PORT. Remaining PIDs: ${final_check[*]}" >&2
+echo "If any remaining process is in state 'U', the kernel is blocking kill until I/O completes." >&2
 exit 1

@@ -180,6 +180,94 @@ localStorage.setItem("agent-play-deep-logs", "off");
 
 When enabled, logs are prefixed with `[agent-play:deep]` and include startup context, snapshot/meta payloads, and bounded Pixi scene tree snapshots.
 
+### World grid + agent position cheat sheet
+
+Use this section to map between world coordinates, render coordinates, and occupancy keys.
+
+Core constants in canvas runtime:
+
+- `CELL = 48`
+- `ORIGIN_X = 24`
+- `VIEW_W = 720`
+- `VIEW_H = 520`
+- `WORLD_BOTTOM_MARGIN = 14`
+
+Runtime world bounds are tracked as:
+
+- `mapMinX`, `mapMinY`, `mapMaxX`, `mapMaxY`
+- `worldOriginScreenY`
+
+#### Coordinate spaces
+
+1. World grid space: `(wx, wy)` from snapshot/player state.
+2. World-root local pixels: position inside `worldRoot`.
+3. Screen pixels: world-root local position with camera offset applied.
+
+#### World to local formula
+
+```text
+localX = ORIGIN_X + (wx - mapMinX) * CELL
+localY = worldOriginScreenY + (mapMaxY - wy) * CELL
+```
+
+#### Local to screen formula
+
+```text
+screenX = cameraX + localX
+screenY = cameraY + localY
+```
+
+#### Screen to world inverse
+
+```text
+localX = screenX - cameraX
+localY = screenY - cameraY
+wx = mapMinX + (localX - ORIGIN_X) / CELL
+wy = mapMaxY - (localY - worldOriginScreenY) / CELL
+```
+
+#### Occupancy bucket key
+
+Server-side occupied keys are derived with rounding:
+
+```text
+occupiedKey = `${Math.round(wx)},${Math.round(wy)}`
+```
+
+#### Layer order inside `worldRoot`
+
+1. `parkBackdropLayer`
+2. `gridGraphics`
+3. `structureLayer`
+4. `agentsLayer`
+
+Later layers render on top of earlier layers.
+
+#### Console control API (localhost only)
+
+On localhost, the watch canvas exposes `globalThis.world` for direct position debugging.
+This object is not exposed on non-local hosts.
+
+Available methods:
+
+- `world.occupant.id()` -> current default occupant id
+- `world.occupant.move([x, y])` -> move default occupant
+- `world.occupants.list()` -> list all occupant ids and world positions
+- `world.occupants.get(id)` -> read one occupant position
+- `world.occupants.move(id, [x, y])` -> move a specific occupant
+- `world.grid()` -> current grid/cell/bound metadata
+
+Examples:
+
+```js
+world.occupant.move([6.5, 2.25]);
+world.occupants.move("__human__", [10, 3]);
+world.occupants.list();
+world.grid();
+```
+
+`move(...)` calls clamp to world bounds, clears queued waypoints for that occupant, updates camera transform, and prints a structured console payload including world/local/screen coordinates and scale metadata.
+
 ---
 
 ## Environment variables (web UI)

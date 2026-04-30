@@ -1,4 +1,5 @@
 import type { PreviewSnapshotJson } from "./preview-serialize.js";
+import { agentPlayDebug } from "./agent-play-debug.js";
 
 type GridPoint = {
   x: number;
@@ -11,24 +12,43 @@ type OccupancyRegion = {
 };
 
 const CONTINUOUS_RENDER_OFFSET = 0.2;
+const OCCUPANCY_POINT_MULTIPLIER = 5;
 
 const ALLOWED_OCCUPANCY_REGIONS: readonly OccupancyRegion[] = [
   { from: { x: 0, y: 1 }, to: { x: 0, y: 2 } },
   { from: { x: 18, y: -1 }, to: { x: 18, y: 1 } },
 ];
 
-const ALLOWED_OCCUPANCY_POINTS: readonly GridPoint[] = ALLOWED_OCCUPANCY_REGIONS.flatMap(
+const ALLOWED_OCCUPANCY_CELLS: readonly GridPoint[] = ALLOWED_OCCUPANCY_REGIONS.flatMap(
   (region) => {
     const minX = Math.min(region.from.x, region.to.x);
     const maxX = Math.max(region.from.x, region.to.x);
     const minY = Math.min(region.from.y, region.to.y);
     const maxY = Math.max(region.from.y, region.to.y);
-    const points: GridPoint[] = [];
+    const cells: GridPoint[] = [];
     for (let x = minX; x <= maxX; x += 1) {
       for (let y = minY; y <= maxY; y += 1) {
+        cells.push({ x, y });
+      }
+    }
+    return cells;
+  }
+);
+
+const ALLOWED_OCCUPANCY_POINTS: readonly GridPoint[] = ALLOWED_OCCUPANCY_CELLS.flatMap(
+  (cell) => {
+    const points: GridPoint[] = [];
+    for (let dx = 0; dx < OCCUPANCY_POINT_MULTIPLIER; dx += 1) {
+      for (let dy = 0; dy < OCCUPANCY_POINT_MULTIPLIER; dy += 1) {
         points.push({
-          x: x + CONTINUOUS_RENDER_OFFSET,
-          y: y + CONTINUOUS_RENDER_OFFSET,
+          x:
+            cell.x +
+            CONTINUOUS_RENDER_OFFSET +
+            (dx + 0.5) / OCCUPANCY_POINT_MULTIPLIER,
+          y:
+            cell.y +
+            CONTINUOUS_RENDER_OFFSET +
+            (dy + 0.5) / OCCUPANCY_POINT_MULTIPLIER,
         });
       }
     }
@@ -36,12 +56,20 @@ const ALLOWED_OCCUPANCY_POINTS: readonly GridPoint[] = ALLOWED_OCCUPANCY_REGIONS
   }
 );
 
+function quantizePosition(v: number): number {
+  return Math.round(v * OCCUPANCY_POINT_MULTIPLIER) / OCCUPANCY_POINT_MULTIPLIER;
+}
+
+function occupancyKeyForPosition(x: number, y: number): string {
+  return `${quantizePosition(x).toFixed(3)},${quantizePosition(y).toFixed(3)}`;
+}
+
 export function occupiedKeysFromSnapshot(
   snapshot: PreviewSnapshotJson
 ): Set<string> {
   const s = new Set<string>();
   for (const o of snapshot.worldMap.occupants) {
-    s.add(`${Math.round(o.x)},${Math.round(o.y)}`);
+    s.add(occupancyKeyForPosition(o.x, o.y));
   }
   return s;
 }
@@ -53,8 +81,18 @@ export function computeRandomFreeMapCell(
   }
 ): { x: number; y: number } {
   const rng = options?.rng ?? Math.random;
+  agentPlayDebug("grid-allocate", "computeRandomFreeMapCell:candidates", {
+    multiplier: OCCUPANCY_POINT_MULTIPLIER,
+    candidateCount: ALLOWED_OCCUPANCY_POINTS.length,
+    candidates: ALLOWED_OCCUPANCY_POINTS.map((p) => ({
+      x: Number(p.x.toFixed(3)),
+      y: Number(p.y.toFixed(3)),
+      cell: `${Math.floor(p.x)},${Math.floor(p.y)}`,
+      key: occupancyKeyForPosition(p.x, p.y),
+    })),
+  });
   const freePoints = ALLOWED_OCCUPANCY_POINTS.filter((point) => {
-    const key = `${Math.round(point.x)},${Math.round(point.y)}`;
+    const key = occupancyKeyForPosition(point.x, point.y);
     return !occupied.has(key);
   });
   if (freePoints.length > 0) {
@@ -64,6 +102,17 @@ export function computeRandomFreeMapCell(
     );
     const point = freePoints[index];
     if (point !== undefined) {
+      agentPlayDebug("grid-allocate", "computeRandomFreeMapCell:selected", {
+        occupiedCount: occupied.size,
+        freeCount: freePoints.length,
+        selectedIndex: index,
+        selected: {
+          x: Number(point.x.toFixed(3)),
+          y: Number(point.y.toFixed(3)),
+          cell: `${Math.floor(point.x)},${Math.floor(point.y)}`,
+          key: occupancyKeyForPosition(point.x, point.y),
+        },
+      });
       return { x: point.x, y: point.y };
     }
   }

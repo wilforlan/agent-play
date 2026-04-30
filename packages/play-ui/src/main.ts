@@ -109,6 +109,34 @@ import {
   type ProximityActionKind,
 } from "./proximity-interaction.js";
 
+type ConsoleWorldApi = {
+  occupant: {
+    move: (next: [number, number]) => { x: number; y: number } | null;
+    id: () => string | null;
+  };
+  occupants: {
+    list: () => Array<{ id: string; x: number; y: number }>;
+    move: (
+      id: string,
+      next: [number, number]
+    ) => { id: string; x: number; y: number } | null;
+    get: (id: string) => { id: string; x: number; y: number } | null;
+  };
+  grid: () => {
+    cellScale: number;
+    originX: number;
+    worldOriginScreenY: number;
+    minX: number;
+    minY: number;
+    maxX: number;
+    maxY: number;
+  };
+};
+
+declare global {
+  var world: ConsoleWorldApi | undefined;
+}
+
 const BASE =
   typeof process !== "undefined" &&
   typeof process.env?.NEXT_PUBLIC_AGENT_PLAY_BASE === "string"
@@ -512,6 +540,95 @@ let snapshot: Snapshot | null = null;
  */
 function getHumanPlayerId(): string | null {
   return snapshot === null ? null : HUMAN_VIEWER_PLAYER_ID;
+}
+
+function isLocalHostRuntime(): boolean {
+  if (typeof window === "undefined") return false;
+  const h = window.location.hostname.toLowerCase();
+  return h === "localhost" || h === "127.0.0.1" || h === "::1" || h === "[::1]";
+}
+
+function resolveConsoleDefaultOccupantId(): string | null {
+  const humanId = getHumanPlayerId();
+  if (humanId !== null && playerWorldPos.has(humanId)) {
+    return humanId;
+  }
+  const first = playerWorldPos.keys().next();
+  return first.done ? null : first.value;
+}
+
+function moveOccupantFromConsole(
+  id: string,
+  next: [number, number]
+): { id: string; x: number; y: number } | null {
+  if (!playerWorldPos.has(id)) {
+    console.warn("[agent-play:world] unknown occupant", { id });
+    return null;
+  }
+  const wb = getWorldBoundsForClamp();
+  const target = { x: next[0], y: next[1] };
+  const clamped = wb !== null ? clampWorldPosition(target, wb) : target;
+  playerWorldPos.set(id, clamped);
+  waypointQueues.delete(id);
+  updateCameraAndWorldRoot();
+  const local = worldToWorldRootLocal(clamped.x, clamped.y);
+  const screen = worldRootLocalToCanvas(local.x, local.y);
+  const payload = {
+    id,
+    world: clamped,
+    worldRounded: { x: Math.round(clamped.x), y: Math.round(clamped.y) },
+    localPx: local,
+    screenPx: screen,
+    scale: {
+      cellScale,
+      view: { width: VIEW_W, height: VIEW_H },
+    },
+    bounds:
+      wb !== null
+        ? { minX: wb.minX, minY: wb.minY, maxX: wb.maxX, maxY: wb.maxY }
+        : null,
+  };
+  console.info("[agent-play:world] occupant moved", payload);
+  return { id, x: clamped.x, y: clamped.y };
+}
+
+function exposeWorldConsoleApi(): void {
+  if (!isLocalHostRuntime()) {
+    delete globalThis.world;
+    return;
+  }
+  globalThis.world = {
+    occupant: {
+      move: (next) => {
+        const id = resolveConsoleDefaultOccupantId();
+        if (id === null) {
+          console.warn("[agent-play:world] no default occupant available");
+          return null;
+        }
+        const moved = moveOccupantFromConsole(id, next);
+        return moved === null ? null : { x: moved.x, y: moved.y };
+      },
+      id: () => resolveConsoleDefaultOccupantId(),
+    },
+    occupants: {
+      list: () =>
+        [...playerWorldPos.entries()].map(([id, p]) => ({ id, x: p.x, y: p.y })),
+      move: (id, next) => moveOccupantFromConsole(id, next),
+      get: (id) => {
+        const p = playerWorldPos.get(id);
+        return p === undefined ? null : { id, x: p.x, y: p.y };
+      },
+    },
+    grid: () => ({
+      cellScale,
+      originX: ORIGIN_X,
+      worldOriginScreenY,
+      minX: mapMinX,
+      minY: mapMinY,
+      maxX: mapMaxX,
+      maxY: mapMaxY,
+    }),
+  };
 }
 
 /**
@@ -1953,6 +2070,7 @@ export function bootstrap(): void {
     applyDebugVisibility();
     applyJoystickVisibility();
     applyMessagesPanelVisibility();
+    exposeWorldConsoleApi();
 
     window.addEventListener("keydown", onDocumentKeyDown);
     window.addEventListener("keyup", onDocumentKeyUp);
