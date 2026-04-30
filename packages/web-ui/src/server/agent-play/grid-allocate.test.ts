@@ -67,6 +67,16 @@ describe("computeRandomFreeMapCell", () => {
       "computeRandomFreeMapCell: no free grid cell"
     );
   });
+
+  it("keeps new arrivals away from existing occupants with minDistance", () => {
+    const next = computeRandomFreeMapCell(new Set(), {
+      rng: () => 0,
+      existingOccupants: [{ x: 0.4, y: 1.4 }],
+      minDistance: 1.5,
+    });
+    const distance = Math.hypot(next.x - 0.4, next.y - 1.4);
+    expect(distance).toBeGreaterThanOrEqual(1.5);
+  });
 });
 
 describe("computeFreeMapCell (deprecated)", () => {

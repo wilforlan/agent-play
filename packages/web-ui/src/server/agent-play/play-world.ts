@@ -879,7 +879,6 @@ export class PlayWorld {
           );
         }
 
-        const pos = computeRandomFreeMapCell(occupiedKeysFromSnapshot(base));
         const registeredSummary: RegisteredAgentSummary =
           stored !== null
             ? toRegisteredSummary(stored)
@@ -902,6 +901,18 @@ export class PlayWorld {
           name: summaryName,
           toolNames: [...effectiveToolNames],
         };
+        const existingOccupants = base.worldMap.occupants.map((o) => ({
+          x: o.x,
+          y: o.y,
+        }));
+        const pos = computeRandomFreeMapCell(occupiedKeysFromSnapshot(base), {
+          existingOccupants,
+          occupantInfo: {
+            id: playerId,
+            kind: "agent",
+            name: summaryName,
+          },
+        });
 
         const assistList =
           input.agent.assistTools !== undefined
@@ -1117,7 +1128,18 @@ export class PlayWorld {
           );
         }
         id = randomUUID();
-        const pos = computeRandomFreeMapCell(occupiedKeysFromSnapshot(base));
+        const existingOccupants = base.worldMap.occupants.map((o) => ({
+          x: o.x,
+          y: o.y,
+        }));
+        const pos = computeRandomFreeMapCell(occupiedKeysFromSnapshot(base), {
+          existingOccupants,
+          occupantInfo: {
+            id,
+            kind: "mcp",
+            name: options.name,
+          },
+        });
         const mcpOcc = {
           kind: "mcp" as const,
           id,

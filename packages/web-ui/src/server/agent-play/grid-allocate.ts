@@ -13,6 +13,7 @@ type OccupancyRegion = {
 
 const CONTINUOUS_RENDER_OFFSET = 0.2;
 const OCCUPANCY_POINT_MULTIPLIER = 5;
+const DEFAULT_MIN_OCCUPANT_DISTANCE = 0.9;
 
 const ALLOWED_OCCUPANCY_REGIONS: readonly OccupancyRegion[] = [
   { from: { x: 0, y: 1 }, to: { x: 0, y: 2 } },
@@ -78,11 +79,23 @@ export function computeRandomFreeMapCell(
   occupied: ReadonlySet<string>,
   options?: {
     rng?: () => number;
+    existingOccupants?: ReadonlyArray<{ x: number; y: number }>;
+    minDistance?: number;
+    occupantInfo?: {
+      id: string;
+      kind: "agent" | "mcp" | "unknown";
+      name?: string;
+    };
   }
 ): { x: number; y: number } {
   const rng = options?.rng ?? Math.random;
+  const minDistance = options?.minDistance ?? DEFAULT_MIN_OCCUPANT_DISTANCE;
+  const existingOccupants = options?.existingOccupants ?? [];
   agentPlayDebug("grid-allocate", "computeRandomFreeMapCell:candidates", {
+    occupant: options?.occupantInfo,
     multiplier: OCCUPANCY_POINT_MULTIPLIER,
+    minDistance,
+    existingOccupantCount: existingOccupants.length,
     candidateCount: ALLOWED_OCCUPANCY_POINTS.length,
     candidates: ALLOWED_OCCUPANCY_POINTS.map((p) => ({
       x: Number(p.x.toFixed(3)),
@@ -93,7 +106,16 @@ export function computeRandomFreeMapCell(
   });
   const freePoints = ALLOWED_OCCUPANCY_POINTS.filter((point) => {
     const key = occupancyKeyForPosition(point.x, point.y);
-    return !occupied.has(key);
+    if (occupied.has(key)) {
+      return false;
+    }
+    for (const existing of existingOccupants) {
+      const dist = Math.hypot(point.x - existing.x, point.y - existing.y);
+      if (dist < minDistance) {
+        return false;
+      }
+    }
+    return true;
   });
   if (freePoints.length > 0) {
     const index = Math.min(
@@ -103,6 +125,7 @@ export function computeRandomFreeMapCell(
     const point = freePoints[index];
     if (point !== undefined) {
       agentPlayDebug("grid-allocate", "computeRandomFreeMapCell:selected", {
+        occupant: options?.occupantInfo,
         occupiedCount: occupied.size,
         freeCount: freePoints.length,
         selectedIndex: index,
@@ -112,6 +135,16 @@ export function computeRandomFreeMapCell(
           cell: `${Math.floor(point.x)},${Math.floor(point.y)}`,
           key: occupancyKeyForPosition(point.x, point.y),
         },
+        nearestDistance:
+          existingOccupants.length === 0
+            ? null
+            : Number(
+                Math.min(
+                  ...existingOccupants.map((existing) =>
+                    Math.hypot(point.x - existing.x, point.y - existing.y)
+                  )
+                ).toFixed(3)
+              ),
       });
       return { x: point.x, y: point.y };
     }
