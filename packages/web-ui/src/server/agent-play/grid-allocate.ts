@@ -65,6 +65,17 @@ function occupancyKeyForPosition(x: number, y: number): string {
   return `${quantizePosition(x).toFixed(3)},${quantizePosition(y).toFixed(3)}`;
 }
 
+function toQuartileSizes(total: number): [number, number, number, number] {
+  const base = Math.floor(total / 4);
+  const remainder = total % 4;
+  return [0, 1, 2, 3].map((idx) => base + (idx < remainder ? 1 : 0)) as [
+    number,
+    number,
+    number,
+    number,
+  ];
+}
+
 export function occupiedKeysFromSnapshot(
   snapshot: PreviewSnapshotJson
 ): Set<string> {
@@ -88,7 +99,7 @@ export function computeRandomFreeMapCell(
     };
   }
 ): { x: number; y: number } {
-  const rng = options?.rng ?? Math.random;
+  void options?.rng;
   const minDistance = options?.minDistance ?? DEFAULT_MIN_OCCUPANT_DISTANCE;
   const existingOccupants = options?.existingOccupants ?? [];
   agentPlayDebug("grid-allocate", "computeRandomFreeMapCell:candidates", {
@@ -104,7 +115,7 @@ export function computeRandomFreeMapCell(
       key: occupancyKeyForPosition(p.x, p.y),
     })),
   });
-  const freePoints = ALLOWED_OCCUPANCY_POINTS.filter((point) => {
+  const isPointAvailable = (point: GridPoint): boolean => {
     const key = occupancyKeyForPosition(point.x, point.y);
     if (occupied.has(key)) {
       return false;
@@ -116,19 +127,52 @@ export function computeRandomFreeMapCell(
       }
     }
     return true;
+  };
+  const rankedCandidates = [...ALLOWED_OCCUPANCY_POINTS].sort((left, right) => {
+    const leftDistance = Math.hypot(left.x, left.y);
+    const rightDistance = Math.hypot(right.x, right.y);
+    if (leftDistance !== rightDistance) {
+      return leftDistance - rightDistance;
+    }
+    if (left.x !== right.x) {
+      return left.x - right.x;
+    }
+    return left.y - right.y;
   });
-  if (freePoints.length > 0) {
-    const index = Math.min(
-      freePoints.length - 1,
-      Math.floor(rng() * freePoints.length)
+  const quartileSizes = toQuartileSizes(rankedCandidates.length);
+  let offset = 0;
+  let selectedQuartileIndex = -1;
+  let selectedIndex = -1;
+  let point: GridPoint | undefined;
+  for (let quartileIdx = 0; quartileIdx < quartileSizes.length; quartileIdx += 1) {
+    const size = quartileSizes[quartileIdx];
+    if (size > 0) {
+      const quartile = rankedCandidates.slice(offset, offset + size);
+      const indexInQuartile = quartile.findIndex((candidate) =>
+        isPointAvailable(candidate)
+      );
+      if (indexInQuartile !== -1) {
+        point = quartile[indexInQuartile];
+        selectedQuartileIndex = quartileIdx;
+        selectedIndex = offset + indexInQuartile;
+        break;
+      }
+    }
+    offset += size;
+  }
+  if (point !== undefined) {
+    const freeCount = rankedCandidates.reduce(
+      (count, candidate) => (isPointAvailable(candidate) ? count + 1 : count),
+      0
     );
-    const point = freePoints[index];
     if (point !== undefined) {
       agentPlayDebug("grid-allocate", "computeRandomFreeMapCell:selected", {
         occupant: options?.occupantInfo,
         occupiedCount: occupied.size,
-        freeCount: freePoints.length,
-        selectedIndex: index,
+        freeCount,
+        selectedIndex,
+        quartileSizes,
+        selectedQuartile: selectedQuartileIndex + 1,
         selected: {
           x: Number(point.x.toFixed(3)),
           y: Number(point.y.toFixed(3)),
