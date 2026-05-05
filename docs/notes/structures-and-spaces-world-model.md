@@ -1,59 +1,65 @@
 # Structures and Spaces World Model
 
-This note introduces a world organization layer where a structure node can route a player into one of multiple attached spaces.
+This note describes how outer-world **structures** attach to authored **spaces**, how metadata and amenities are represented, and how snapshots, the player chain, and the preview canvas stay aligned.
 
-## Goal
+## Naming
 
-Support many unique world experiences without duplicating outer-world layout:
+- **Journey step** `type: "structure"` (in `@types/world.ts`) refers to LLM tool-call steps on an agent path. That is unrelated to map occupant `kind: "structure"`.
 
-- `StructureNode` anchors a place in the world map (for example, a supermarket building).
-- `SpaceNode` defines a distinct authored experience (for example, a grocery interior or pharmacy annex).
-- Player transitions resolve from a structure entry into a selected attached space.
+## Snapshot shape
 
-## Data Model
+### Space catalog (`snapshot.spaces`)
 
-`packages/web-ui/src/server/agent-play/@types/world.ts`:
+Canonical metadata for each space, deduped by `id`. Defined as `SpaceCatalogEntryJson` in `packages/web-ui/src/server/agent-play/preview-serialize.ts`:
 
-- `SpaceNode`
-  - `id`, `name`, `designKey`, `activityObjectIds`
-- `StructureNode`
-  - `id`, `name`, `x`, `y`, `worldId`, `spaceIds`
-- `WorldPlayerLocation`
-  - `playerId`, `worldId`, optional `structureId` and `spaceId`
-- `WorldSpaceTransition`
-  - `playerId`, `from`, `to`, `at`
+- `id`, `name`, `description`, `designKey`
+- `owner`: `{ displayName, playerId?, nodeId? }`
+- `amenities`: ordered array of `supermarket` | `shop` | `car_wash` (see `space-amenity.ts`)
+- Optional `activityObjectIds`
 
-## Runtime APIs
+Normalized with `normalizePreviewSnapshot`: missing `spaces` is treated as `[]`.
 
-`packages/web-ui/src/server/agent-play/play-world.ts` now includes:
+### Structure occupant (`worldMap.occupants`)
 
-- `registerSpaceNode(input)`
-- `listSpaceNodes()`
-- `registerStructureNode(input)`
-- `listStructureNodes()`
-- `getPlayerLocation(playerId)`
-- `enterStructureSpace(input)`
+Map anchors use occupant `kind: "structure"` (`PreviewWorldMapStructureOccupantJson`):
 
-Transition fanout event:
+- `id`, `name`, `x`, `y`, `worldId`, `spaceIds`
+- Denormalized for clients: `primaryAmenity`, `amenities` (derived from attached catalog rows for rendering)
 
-- `WORLD_SPACE_TRANSITION_EVENT` in `play-transport.ts`
+## Player chain leaves
 
-Transition behavior:
+In `packages/web-ui/src/server/agent-play/player-chain/index.ts`:
 
-1. Validate that player exists in the active world snapshot.
-2. Resolve structure and target space id (`spaceId` override or structure default first space).
-3. Validate that selected space is attached to the structure.
-4. Update in-memory player location map.
-5. Emit and publish `world:space_transition`.
+- Occupants use `stableOccupantSortKey`: includes `structure:{id}` for structure rows.
+- After occupants, catalog rows are hashed as separate leaves: `space:{id}` (sorted by `id`), digest of canonical `stableStringify(spaceRow)`.
 
-## Current Scope
+`readPlayerChainNode` resolves `space:{id}` keys to catalog rows (`kind: "space"` in the RPC response).
 
-- Structure/space registry is in-memory within `PlayWorld`.
-- Transition events are published to world fanout and HTTP transport.
-- Player location context is independent from occupant coordinates.
+## PlayWorld APIs
 
-## Next Steps
+`packages/web-ui/src/server/agent-play/play-world.ts`:
 
-- Persist structures, spaces, and player location context in session snapshot or session settings.
-- Add optional return transitions (`leaveSpace`) and nested space stack support.
-- Expose REST endpoints for authoring and querying structure-space topology.
+- `registerSpaceNode` / `registerStructureNode` persist via `runStoredWorldMutation` into `snapshot.spaces` and structure occupants.
+- `listSpaceNodes` / `listStructureNodes` read from the snapshot (async).
+- `enterStructureSpace` resolves the structure from snapshot occupants and emits `world:space_transition`.
+- Player location remains tracked in-memory (`locationsByPlayerId`) for transitions.
+
+Registration requires at least one amenity per space.
+
+## Preview canvas (Pixi)
+
+`packages/play-ui/src/main.ts` (mirrored under `packages/web-ui/src/canvas/vendor/`):
+
+- `collectStructuresForRender` merges MCP tool stalls (`kind: "tool"`) with `kind: "structure"` occupants.
+- `syncStructureNodes` draws amenity-specific vector art (`drawSupermarketStructure`, `drawShopStructure`, `drawCarWashStructure` in `structure-art.ts`).
+- Primary facade uses `primaryAmenity` (default `shop`). Multiple amenities append a short parenthetical caption.
+
+## SDK
+
+`packages/sdk/src/public-types.ts` exposes `AgentPlayWorldMapStructureOccupant`, `AgentPlaySpaceCatalogEntry`, optional `AgentPlaySnapshot.spaces`, and player-chain node variants for `space:{id}`. Parsing lives in `parse-occupant-row.ts`, `remote-play-world.ts`, and `player-chain-merge.ts`.
+
+## Follow-ups
+
+- REST routes for authoring topology from external tools.
+- `leaveSpace` and nested context stack if needed.
+- Persist player location in snapshot or settings if reconnect must restore interior state.

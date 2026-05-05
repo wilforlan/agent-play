@@ -16,6 +16,8 @@ export type PreviewDebugStructureRow = {
   y: number;
   toolName?: string;
   playerId?: string;
+  primaryAmenity?: string;
+  amenities?: readonly string[];
 };
 
 export function createPreviewDebugPanel(options: {
@@ -106,7 +108,15 @@ export function createPreviewDebugPanel(options: {
         s.playerId !== undefined && s.playerId.length > 0
           ? ` player=${esc(s.playerId)}`
           : "";
-      html += `<li><strong>${esc(s.kind)}</strong> ${esc(s.id)}<br/>(${s.x}, ${s.y})${tool}${pid}</li>`;
+      const amen =
+        s.primaryAmenity !== undefined && s.primaryAmenity.length > 0
+          ? ` primary=${esc(s.primaryAmenity)}`
+          : "";
+      const amens =
+        s.amenities !== undefined && s.amenities.length > 0
+          ? ` amenities=${esc(s.amenities.join(","))}`
+          : "";
+      html += `<li><strong>${esc(s.kind)}</strong> ${esc(s.id)}<br/>(${s.x}, ${s.y})${tool}${pid}${amen}${amens}</li>`;
     }
     html += "</ul>";
     body.innerHTML = html;

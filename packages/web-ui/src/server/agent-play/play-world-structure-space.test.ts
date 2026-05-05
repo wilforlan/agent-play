@@ -14,11 +14,12 @@ describe("PlayWorld structure to space transitions", () => {
       agent: { type: "langchain", toolNames: ["chat_tool"] },
       agentId: "shopper-agent",
     });
-    const grocery = w.registerSpaceNode({
+    const grocery = await w.registerSpaceNode({
       name: "Grocery Interior",
       designKey: "supermarket-v1",
+      amenities: ["supermarket"],
     });
-    const structure = w.registerStructureNode({
+    const structure = await w.registerStructureNode({
       name: "Supermarket",
       x: 12,
       y: 20,
@@ -38,6 +39,14 @@ describe("PlayWorld structure to space transitions", () => {
 
     expect(transition.to.spaceId).toBe(grocery.id);
     expect(receivedSpaceId).toBe(grocery.id);
+
+    const snap = await w.getSnapshotJson();
+    expect(snap.spaces?.some((s) => s.id === grocery.id)).toBe(true);
+    expect(
+      snap.worldMap.occupants.some(
+        (o) => o.kind === "structure" && o.id === structure.id
+      )
+    ).toBe(true);
   });
 
   it("supports selecting one of multiple attached spaces", async () => {
@@ -50,15 +59,17 @@ describe("PlayWorld structure to space transitions", () => {
       agent: { type: "langchain", toolNames: ["chat_tool"] },
       agentId: "shopper-agent-2",
     });
-    const grocery = w.registerSpaceNode({
+    const grocery = await w.registerSpaceNode({
       name: "Grocery Interior",
       designKey: "supermarket-v1",
+      amenities: ["supermarket"],
     });
-    const pharmacy = w.registerSpaceNode({
+    const pharmacy = await w.registerSpaceNode({
       name: "Pharmacy Annex",
       designKey: "pharmacy-v1",
+      amenities: ["shop"],
     });
-    const structure = w.registerStructureNode({
+    const structure = await w.registerStructureNode({
       name: "Supermarket",
       x: 5,
       y: 7,

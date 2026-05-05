@@ -1,3 +1,5 @@
+import type { SpaceAmenityKind } from "../space-amenity.js";
+
 export type OriginJourneyStep = {
   type: "origin";
   content: string;
@@ -41,10 +43,19 @@ export type WorldJourneyUpdate = {
   path: PositionedStep[];
 };
 
+export type SpaceOwner = {
+  displayName: string;
+  playerId?: string;
+  nodeId?: string;
+};
+
 export type SpaceNode = {
   id: string;
   name: string;
+  description: string;
   designKey: string;
+  owner: SpaceOwner;
+  amenities: SpaceAmenityKind[];
   activityObjectIds: string[];
 };
 
