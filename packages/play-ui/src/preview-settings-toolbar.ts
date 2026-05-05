@@ -93,6 +93,42 @@ body > .preview-shell {
   align-items: center;
   position: relative;
 }
+.preview-game-col--left > .preview-global-chat-room:not([hidden]) {
+  flex: 0 1 auto;
+  min-height: 0;
+  max-height: min(48vh, 440px);
+}
+.preview-game-col--left > .preview-debug-mount.preview-debug-mount--visible {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+.preview-debug-mount.preview-debug-mount--visible.preview-debug-mount--messages-hidden
+  .preview-debug-panel:not(.preview-debug-panel--expanded) {
+  flex: 0 0 auto;
+  max-height: 48px;
+  overflow: hidden;
+}
+.preview-debug-mount.preview-debug-mount--visible.preview-debug-mount--messages-hidden
+  .preview-debug-panel:not(.preview-debug-panel--expanded)
+  .preview-debug-panel__body {
+  display: none;
+}
+.preview-debug-mount--messages-hidden .preview-debug-panel__title {
+  cursor: pointer;
+  user-select: none;
+}
+.preview-debug-mount--messages-hidden
+  .preview-debug-panel.preview-debug-panel--expanded {
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: min(640px, 78vh);
+  overflow: auto;
+}
+.preview-debug-mount--messages-hidden
+  .preview-debug-panel.preview-debug-panel--expanded
+  .preview-debug-panel__body {
+  display: block;
+}
 .preview-mobile-side-backdrop {
   display: none;
 }
@@ -147,7 +183,14 @@ body > .preview-shell {
   display: none;
 }
 .preview-debug-mount.preview-debug-mount--visible {
-  display: block;
+  display: flex;
+  flex-direction: column;
+}
+.preview-debug-mount.preview-debug-mount--visible .preview-debug-panel {
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: none;
+  overflow: auto;
 }
 .preview-control-stack {
   display: flex;
@@ -595,7 +638,6 @@ body > .preview-shell {
   font-family: ui-monospace, monospace;
   font-size: 12px;
   line-height: 1.5;
-  max-height: min(640px, 78vh);
   overflow: auto;
 }
 .preview-debug-panel__title {

@@ -1,6 +1,14 @@
 import { randomUUID } from "node:crypto";
 import type { PlayAgentInformation, PlatformAgentInformation } from "./@types/agent.js";
-import type { Journey, PositionedStep, WorldJourneyUpdate } from "./@types/world.js";
+import type {
+  Journey,
+  PositionedStep,
+  SpaceNode,
+  StructureNode,
+  WorldJourneyUpdate,
+  WorldPlayerLocation,
+  WorldSpaceTransition,
+} from "./@types/world.js";
 import {
   configureAgentPlayDebug,
   agentPlayDebug,
@@ -13,12 +21,14 @@ import {
   WORLD_AGENT_SIGNAL_EVENT,
   WORLD_INTERACTION_EVENT,
   WORLD_JOURNEY_EVENT,
+  WORLD_SPACE_TRANSITION_EVENT,
   WORLD_FANOUT_PLAYER_ID,
 } from "./play-transport.js";
 import type {
   WorldAgentSignalPayload,
   WorldInteractionPayload,
   WorldInteractionRole,
+  WorldSpaceTransitionPayload,
 } from "./play-transport.js";
 import type { AgentRepository } from "./agent-repository.js";
 import type { SessionStore } from "./session-store.js";
@@ -258,6 +268,28 @@ export type RecordProximityActionInput = {
   action: ProximityActionKind;
 };
 
+export type RegisterSpaceNodeInput = {
+  id?: string;
+  name: string;
+  designKey: string;
+  activityObjectIds?: string[];
+};
+
+export type RegisterStructureNodeInput = {
+  id?: string;
+  name: string;
+  x: number;
+  y: number;
+  worldId?: string;
+  spaceIds: string[];
+};
+
+export type EnterStructureSpaceInput = {
+  playerId: string;
+  structureId: string;
+  spaceId?: string;
+};
+
 const PROXIMITY_ACTION_LABEL: Record<ProximityActionKind, string> = {
   assist: "Assist",
   chat: "Chat",
@@ -270,6 +302,9 @@ export class PlayWorld {
   private httpTransport: HttpPlayTransport | null = null;
   private readonly repository: AgentRepository | null;
   private readonly sessionStore: SessionStore;
+  private readonly spacesById = new Map<string, SpaceNode>();
+  private readonly structuresById = new Map<string, StructureNode>();
+  private readonly locationsByPlayerId = new Map<string, WorldPlayerLocation>();
   private mainNodeId: string | null = null;
   private presenceSweepTimer: ReturnType<typeof setInterval> | null = null;
 
@@ -1001,6 +1036,10 @@ export class PlayWorld {
           input.leaseTtlSeconds ?? PRESENCE_LEASE_TTL_SECONDS_DEFAULT,
       });
     }
+    this.locationsByPlayerId.set(registered.id, {
+      playerId: registered.id,
+      worldId: "overworld",
+    });
     return registered;
   }
 
@@ -1111,6 +1150,147 @@ export class PlayWorld {
         return { next, fanout: this.metadataFanout() };
       },
     });
+    this.locationsByPlayerId.delete(id);
+  }
+
+  registerSpaceNode(input: RegisterSpaceNodeInput): SpaceNode {
+    const id = input.id?.trim() ?? randomUUID();
+    const name = input.name.trim();
+    const designKey = input.designKey.trim();
+    if (id.length === 0) {
+      throw new Error("registerSpaceNode: id must not be empty");
+    }
+    if (name.length === 0) {
+      throw new Error("registerSpaceNode: name must not be empty");
+    }
+    if (designKey.length === 0) {
+      throw new Error("registerSpaceNode: designKey must not be empty");
+    }
+    if (this.spacesById.has(id)) {
+      throw new Error(`registerSpaceNode: id already exists "${id}"`);
+    }
+    const space: SpaceNode = {
+      id,
+      name,
+      designKey,
+      activityObjectIds: [...(input.activityObjectIds ?? [])],
+    };
+    this.spacesById.set(space.id, space);
+    return space;
+  }
+
+  listSpaceNodes(): readonly SpaceNode[] {
+    return Array.from(this.spacesById.values()).map((space) => ({
+      ...space,
+      activityObjectIds: [...space.activityObjectIds],
+    }));
+  }
+
+  registerStructureNode(input: RegisterStructureNodeInput): StructureNode {
+    const id = input.id?.trim() ?? randomUUID();
+    const name = input.name.trim();
+    const worldId = input.worldId?.trim() ?? "overworld";
+    if (id.length === 0) {
+      throw new Error("registerStructureNode: id must not be empty");
+    }
+    if (name.length === 0) {
+      throw new Error("registerStructureNode: name must not be empty");
+    }
+    if (input.spaceIds.length === 0) {
+      throw new Error("registerStructureNode: at least one spaceId is required");
+    }
+    if (this.structuresById.has(id)) {
+      throw new Error(`registerStructureNode: id already exists "${id}"`);
+    }
+    const uniqueSpaceIds = Array.from(
+      new Set(input.spaceIds.map((spaceId) => spaceId.trim()))
+    );
+    if (uniqueSpaceIds.some((spaceId) => !this.spacesById.has(spaceId))) {
+      throw new Error("registerStructureNode: unknown spaceId");
+    }
+    const structure: StructureNode = {
+      id,
+      name,
+      x: input.x,
+      y: input.y,
+      worldId,
+      spaceIds: uniqueSpaceIds,
+    };
+    this.structuresById.set(structure.id, structure);
+    return structure;
+  }
+
+  listStructureNodes(): readonly StructureNode[] {
+    return Array.from(this.structuresById.values()).map((structure) => ({
+      ...structure,
+      spaceIds: [...structure.spaceIds],
+    }));
+  }
+
+  getPlayerLocation(playerId: string): WorldPlayerLocation | null {
+    const current = this.locationsByPlayerId.get(playerId);
+    if (current === undefined) {
+      return null;
+    }
+    return { ...current };
+  }
+
+  async enterStructureSpace(
+    input: EnterStructureSpaceInput
+  ): Promise<WorldSpaceTransitionPayload> {
+    const snap = await this.getSnapshotJson();
+    const playerExists = snap.worldMap.occupants.some(
+      (o) => o.kind === "agent" && o.agentId === input.playerId
+    );
+    if (!playerExists) {
+      throw new Error(
+        `enterStructureSpace: unknown playerId "${input.playerId}"`
+      );
+    }
+    const structure = this.structuresById.get(input.structureId);
+    if (structure === undefined) {
+      throw new Error(
+        `enterStructureSpace: unknown structureId "${input.structureId}"`
+      );
+    }
+    const selectedSpaceId = input.spaceId ?? structure.spaceIds[0];
+    if (selectedSpaceId === undefined) {
+      throw new Error(
+        `enterStructureSpace: structure "${input.structureId}" has no attached spaces`
+      );
+    }
+    if (!structure.spaceIds.includes(selectedSpaceId)) {
+      throw new Error(
+        `enterStructureSpace: space "${selectedSpaceId}" is not attached to structure "${input.structureId}"`
+      );
+    }
+    const current = this.locationsByPlayerId.get(input.playerId) ?? {
+      playerId: input.playerId,
+      worldId: structure.worldId,
+    };
+    const nextLocation: WorldPlayerLocation = {
+      playerId: input.playerId,
+      worldId: structure.worldId,
+      structureId: structure.id,
+      spaceId: selectedSpaceId,
+    };
+    this.locationsByPlayerId.set(input.playerId, nextLocation);
+    const transition: WorldSpaceTransition = {
+      playerId: input.playerId,
+      from: current,
+      to: nextLocation,
+      at: new Date().toISOString(),
+    };
+    const payload: WorldSpaceTransitionPayload = transition;
+    this.bus.emit(WORLD_SPACE_TRANSITION_EVENT, payload);
+    void this.forwardHttp(WORLD_SPACE_TRANSITION_EVENT, payload);
+    const rev = await this.sessionStore.getSnapshotRev();
+    await this.sessionStore.publishWorldFanout(
+      rev,
+      WORLD_SPACE_TRANSITION_EVENT,
+      payload
+    );
+    return payload;
   }
 
   async registerMCP(options: { name: string; url?: string }): Promise<string> {

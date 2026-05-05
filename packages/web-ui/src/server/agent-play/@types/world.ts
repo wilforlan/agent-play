@@ -40,3 +40,33 @@ export type WorldJourneyUpdate = {
   journey: Journey;
   path: PositionedStep[];
 };
+
+export type SpaceNode = {
+  id: string;
+  name: string;
+  designKey: string;
+  activityObjectIds: string[];
+};
+
+export type StructureNode = {
+  id: string;
+  name: string;
+  x: number;
+  y: number;
+  worldId: string;
+  spaceIds: string[];
+};
+
+export type WorldPlayerLocation = {
+  playerId: string;
+  worldId: string;
+  structureId?: string;
+  spaceId?: string;
+};
+
+export type WorldSpaceTransition = {
+  playerId: string;
+  from: WorldPlayerLocation;
+  to: WorldPlayerLocation;
+  at: string;
+};

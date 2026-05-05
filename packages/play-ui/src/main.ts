@@ -871,6 +871,7 @@ let sceneRootContainer: Container | null = null;
 let crowdLayerContainer: Container | null = null;
 let skyDecor: ReturnType<typeof createSkyDecorLayer> | null = null;
 let debugPanelUpdate: (() => void) | null = null;
+let debugPanelSyncCompanionLayout: (() => void) | null = null;
 let debugMountEl: HTMLElement | null = null;
 let joystickHandle: ReturnType<typeof createPreviewDebugJoystick> | null = null;
 let previewBootstrapStarted = false;
@@ -1538,6 +1539,7 @@ function applyDebugVisibility(): void {
   debugMountEl.classList.toggle("preview-debug-mount--visible", on);
   if (on) {
     debugPanelUpdate?.();
+    debugPanelSyncCompanionLayout?.();
   }
 }
 
@@ -1826,6 +1828,7 @@ export function bootstrap(): void {
       getSnapshot: getDebugSnapshot,
     });
     debugPanelUpdate = debug.update;
+    debugPanelSyncCompanionLayout = debug.syncCompanionLayout;
     debugMount.appendChild(debug.element);
     globalChatRoom = createPreviewGlobalChatRoom({
       apiBase: API_BASE,
@@ -2029,7 +2032,22 @@ export function bootstrap(): void {
 
     let messagesPanelVisible = true;
     const applyMessagesPanelVisibility = (): void => {
-      leftCol.style.display = messagesPanelVisible ? "flex" : "none";
+      leftCol.style.display = "";
+      leftCol.classList.toggle(
+        "preview-game-col--messages-hidden",
+        !messagesPanelVisible
+      );
+      if (globalChatRoom !== null) {
+        globalChatRoom.element.hidden = !messagesPanelVisible;
+      }
+      debugMount.classList.toggle(
+        "preview-debug-mount--messages-hidden",
+        !messagesPanelVisible
+      );
+      if (messagesPanelVisible) {
+        debug.element.classList.remove("preview-debug-panel--expanded");
+      }
+      debug.syncCompanionLayout();
       if (messagesPanelVisible && mobileSidePanelControls?.isMobileViewport() === true) {
         mobileSidePanelControls.openLeftPanel();
       }

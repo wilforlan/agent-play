@@ -1,52 +1,71 @@
 // @vitest-environment happy-dom
 
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import { createPreviewDebugPanel } from "./preview-debug-panel.js";
 
 describe("createPreviewDebugPanel", () => {
-  it("renders map toggles and updates settings", () => {
-    const onGridToggle = vi.fn();
-    const onComponentToggle = vi.fn();
-    const onComponentSettingsChange = vi.fn();
+  it("renders snapshot agents and structures in the body", () => {
     const panel = createPreviewDebugPanel({
       getSnapshot: () => ({
-        agents: [],
-        structures: [],
+        agents: [
+          {
+            playerId: "p1",
+            name: "Alpha",
+            worldX: 1.25,
+            worldY: 2.5,
+          },
+        ],
+        structures: [
+          {
+            id: "s1",
+            kind: "tree",
+            x: 3,
+            y: 4,
+            toolName: "t1",
+            playerId: "p1",
+          },
+        ],
       }),
-      getDebugOptions: () => ({
-        showMapGrids: false,
-        showMapComponents: false,
-        mapWaterAreaScale: 1,
-        mapGrassBandTopRatio: 0.58,
-        mapTreeDensity: 1,
-        mapBenchDensity: 1,
-        mapAirplaneCount: 3,
-      }),
-      onGridToggle,
-      onComponentToggle,
-      onComponentSettingsChange,
     });
-    const gridToggle = panel.element.querySelector(
-      '[data-debug-toggle="show-map-grids"]'
-    ) as HTMLInputElement | null;
-    const componentToggle = panel.element.querySelector(
-      '[data-debug-toggle="show-map-components"]'
-    ) as HTMLInputElement | null;
-    expect(gridToggle).not.toBeNull();
-    expect(componentToggle).not.toBeNull();
-    gridToggle?.click();
-    componentToggle?.click();
-    expect(onGridToggle).toHaveBeenCalledWith(true);
-    expect(onComponentToggle).toHaveBeenCalledWith(true);
+    expect(panel.element.querySelector(".preview-debug-panel__body")?.textContent).toContain(
+      "Alpha"
+    );
+    expect(panel.element.querySelector(".preview-debug-panel__body")?.textContent).toContain(
+      "p1"
+    );
+    expect(panel.element.querySelector(".preview-debug-panel__body")?.textContent).toContain(
+      "tree"
+    );
+  });
 
-    const waterScale = panel.element.querySelector(
-      '[data-map-setting="water"]'
-    ) as HTMLInputElement | null;
-    expect(waterScale).not.toBeNull();
-    if (waterScale !== null) {
-      waterScale.value = "1.4";
-      waterScale.dispatchEvent(new Event("input", { bubbles: true }));
-    }
-    expect(onComponentSettingsChange).toHaveBeenCalled();
+  it("exposes title as a control when messages companion is hidden and toggles expand", () => {
+    const mount = document.createElement("div");
+    mount.className = "preview-debug-mount preview-debug-mount--visible preview-debug-mount--messages-hidden";
+    const panel = createPreviewDebugPanel({
+      getSnapshot: () => ({ agents: [], structures: [] }),
+    });
+    mount.appendChild(panel.element);
+    panel.syncCompanionLayout();
+    const title = panel.element.querySelector(".preview-debug-panel__title");
+    expect(title?.getAttribute("role")).toBe("button");
+    expect(title?.getAttribute("aria-expanded")).toBe("false");
+    title?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    expect(panel.element.classList.contains("preview-debug-panel--expanded")).toBe(true);
+    expect(title?.getAttribute("aria-expanded")).toBe("true");
+    title?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    expect(panel.element.classList.contains("preview-debug-panel--expanded")).toBe(false);
+  });
+
+  it("does not mark the title as a button when the messages companion is visible", () => {
+    const mount = document.createElement("div");
+    mount.className = "preview-debug-mount preview-debug-mount--visible";
+    const panel = createPreviewDebugPanel({
+      getSnapshot: () => ({ agents: [], structures: [] }),
+    });
+    mount.appendChild(panel.element);
+    panel.syncCompanionLayout();
+    const title = panel.element.querySelector(".preview-debug-panel__title");
+    expect(title?.getAttribute("role")).toBeNull();
+    expect(title?.getAttribute("aria-expanded")).toBeNull();
   });
 });
