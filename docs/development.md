@@ -120,6 +120,156 @@ The example registers a player and drives `RemotePlayWorld` RPCs against your lo
 
 ---
 
+## Developer tools
+
+### PixiJS Devtools (Chrome)
+
+Use [PixiJS Devtools](https://chromewebstore.google.com/detail/pixijs-devtools/aamddddknhcagpehecnhphigffljadon) to inspect the watch canvas scene graph and tune map/debug behavior faster.
+
+#### Install
+
+1. Open the extension page in Chrome and click **Add to Chrome**.
+2. Restart the browser tab running Agent Play if needed.
+
+#### Use with Agent Play watch UI
+
+1. Start the app with `npm run dev`.
+2. Open `http://127.0.0.1:3000/agent-play/watch`.
+3. Open Chrome DevTools and switch to the **PixiJS** panel.
+4. Expand the scene graph and inspect:
+   - `worldRoot` for map/grid/object placement.
+   - `parkBackdropLayer` for grass/water/tree/bench background geometry.
+   - `gridGraphics` and `gridLabelLayer` when **Show Map Grids** is enabled.
+   - `agentsLayer` for agent containers and labels.
+   - `sky-decor` for airplane/banner nodes.
+5. Use node property editing to validate position/size assumptions while adjusting the in-app debug controls.
+6. Double-click nodes in the outliner to inspect them in console via `$pixi`.
+
+#### Recommended debugging flow
+
+1. In the watch UI, enable **Debug mode** and open the debug panel.
+2. Toggle **Show Map Grids** to verify coordinate alignment.
+3. Toggle **Show Map Components** and adjust water/grass/tree/bench/airplane sliders.
+4. In PixiJS Devtools, confirm container hierarchy and transformed bounds match the expected world coordinates.
+
+### Deep browser logging
+
+Agent Play supports deep browser logs for structured text, object dumps, and scene tree snapshots.
+
+- Default behavior:
+  - `localhost` / `127.0.0.1` / `::1` / `[::1]` => enabled
+  - non-local hosts (including `agent-play.com`) => disabled
+- Explicit override precedence:
+  1. query param `?deepLogs=on|off`
+  2. localStorage key `agent-play-deep-logs`
+  3. host default
+
+Examples:
+
+```text
+http://127.0.0.1:3000/agent-play/watch?deepLogs=on
+https://agent-play.com/agent-play/watch?deepLogs=off
+```
+
+You can also persist an override in the console:
+
+```js
+localStorage.setItem("agent-play-deep-logs", "on");
+localStorage.setItem("agent-play-deep-logs", "off");
+```
+
+When enabled, logs are prefixed with `[agent-play:deep]` and include startup context, snapshot/meta payloads, and bounded Pixi scene tree snapshots.
+
+### World grid + agent position cheat sheet
+
+Use this section to map between world coordinates, render coordinates, and occupancy keys.
+
+Core constants in canvas runtime:
+
+- `CELL = 48`
+- `ORIGIN_X = 24`
+- `VIEW_W = 720`
+- `VIEW_H = 520`
+- `WORLD_BOTTOM_MARGIN = 14`
+
+Runtime world bounds are tracked as:
+
+- `mapMinX`, `mapMinY`, `mapMaxX`, `mapMaxY`
+- `worldOriginScreenY`
+
+#### Coordinate spaces
+
+1. World grid space: `(wx, wy)` from snapshot/player state.
+2. World-root local pixels: position inside `worldRoot`.
+3. Screen pixels: world-root local position with camera offset applied.
+
+#### World to local formula
+
+```text
+localX = ORIGIN_X + (wx - mapMinX) * CELL
+localY = worldOriginScreenY + (mapMaxY - wy) * CELL
+```
+
+#### Local to screen formula
+
+```text
+screenX = cameraX + localX
+screenY = cameraY + localY
+```
+
+#### Screen to world inverse
+
+```text
+localX = screenX - cameraX
+localY = screenY - cameraY
+wx = mapMinX + (localX - ORIGIN_X) / CELL
+wy = mapMaxY - (localY - worldOriginScreenY) / CELL
+```
+
+#### Occupancy bucket key
+
+Server-side occupied keys are derived with rounding:
+
+```text
+occupiedKey = `${Math.round(wx)},${Math.round(wy)}`
+```
+
+#### Layer order inside `worldRoot`
+
+1. `parkBackdropLayer`
+2. `gridGraphics`
+3. `structureLayer`
+4. `agentsLayer`
+
+Later layers render on top of earlier layers.
+
+#### Console control API (localhost only)
+
+On localhost, the watch canvas exposes `globalThis.world` for direct position debugging.
+This object is not exposed on non-local hosts.
+
+Available methods:
+
+- `world.occupant.id()` -> current default occupant id
+- `world.occupant.move([x, y])` -> move default occupant
+- `world.occupants.list()` -> list all occupant ids and world positions
+- `world.occupants.get(id)` -> read one occupant position
+- `world.occupants.move(id, [x, y])` -> move a specific occupant
+- `world.grid()` -> current grid/cell/bound metadata
+
+Examples:
+
+```js
+world.occupant.move([6.5, 2.25]);
+world.occupants.move("__human__", [10, 3]);
+world.occupants.list();
+world.grid();
+```
+
+`move(...)` calls clamp to world bounds, clears queued waypoints for that occupant, updates camera transform, and prints a structured console payload including world/local/screen coordinates and scale metadata.
+
+---
+
 ## Environment variables (web UI)
 
 The canonical template is **`packages/web-ui/.env.local.example`**. Copy to **`packages/web-ui/.env.local`**.

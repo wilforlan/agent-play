@@ -40,7 +40,10 @@ import type { RedisFanoutItem } from "./world-redis-sync.js";
 import { runStoredWorldMutation } from "./world-mutation-pipeline.js";
 import { clampWorldPosition, type WorldBounds } from "@agent-play/sdk";
 import type { StoredAgentRecord } from "./agent-repository.js";
-import { computeFreeMapCell, occupiedKeysFromSnapshot } from "./grid-allocate.js";
+import {
+  computeRandomFreeMapCell,
+  occupiedKeysFromSnapshot,
+} from "./grid-allocate.js";
 import { buildPlayerChainFanoutNotify } from "./player-chain/index.js";
 import {
   emptySnapshot,
@@ -876,13 +879,6 @@ export class PlayWorld {
           );
         }
 
-        const laneIndex = base.worldMap.occupants.filter(
-          (o) => o.kind === "agent"
-        ).length;
-        const pos = computeFreeMapCell(
-          occupiedKeysFromSnapshot(base),
-          laneIndex
-        );
         const registeredSummary: RegisteredAgentSummary =
           stored !== null
             ? toRegisteredSummary(stored)
@@ -905,6 +901,18 @@ export class PlayWorld {
           name: summaryName,
           toolNames: [...effectiveToolNames],
         };
+        const existingOccupants = base.worldMap.occupants.map((o) => ({
+          x: o.x,
+          y: o.y,
+        }));
+        const pos = computeRandomFreeMapCell(occupiedKeysFromSnapshot(base), {
+          existingOccupants,
+          occupantInfo: {
+            id: playerId,
+            kind: "agent",
+            name: summaryName,
+          },
+        });
 
         const assistList =
           input.agent.assistTools !== undefined
@@ -1120,11 +1128,18 @@ export class PlayWorld {
           );
         }
         id = randomUUID();
-        const laneIndex = base.worldMap.occupants.length;
-        const pos = computeFreeMapCell(
-          occupiedKeysFromSnapshot(base),
-          laneIndex
-        );
+        const existingOccupants = base.worldMap.occupants.map((o) => ({
+          x: o.x,
+          y: o.y,
+        }));
+        const pos = computeRandomFreeMapCell(occupiedKeysFromSnapshot(base), {
+          existingOccupants,
+          occupantInfo: {
+            id,
+            kind: "mcp",
+            name: options.name,
+          },
+        });
         const mcpOcc = {
           kind: "mcp" as const,
           id,

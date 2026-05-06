@@ -2,6 +2,7 @@
  * @module @agent-play/play-ui/preview-session-interaction-log
  * preview session interaction log — preview canvas module (Pixi + DOM).
  */
+import { isDeepLogsEnabled } from "./browser-deep-logs.js";
 const PREFIX = "[agent-play:session-interaction]";
 
 export type SessionInteractionLogPhase =
@@ -12,16 +13,7 @@ export type SessionInteractionLogPhase =
   | "event";
 
 export function isSessionInteractionLoggingEnabled(): boolean {
-  if (typeof import.meta !== "undefined" && import.meta.env?.PROD === true) {
-    return false;
-  }
-  if (
-    typeof process !== "undefined" &&
-    process.env?.NODE_ENV === "production"
-  ) {
-    return false;
-  }
-  return true;
+  return isDeepLogsEnabled();
 }
 
 export function logSessionInteraction(

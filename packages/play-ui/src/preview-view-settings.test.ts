@@ -23,12 +23,14 @@ describe("setPreviewViewSettings", () => {
       debugMode: true,
       joystickEnabled: true,
       p2aEnabled: true,
+      deepLogsEnabled: true,
     });
     const s = getPreviewViewSettings();
     expect(s.showChatUi).toBe(false);
     expect(s.debugMode).toBe(true);
     expect(s.joystickEnabled).toBe(true);
     expect(s.p2aEnabled).toBe(true);
+    expect(s.deepLogsEnabled).toBe(true);
   });
 
   it("defaults language to English and persists selected language", () => {
