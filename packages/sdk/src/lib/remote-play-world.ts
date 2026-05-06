@@ -32,6 +32,8 @@ import {
   parseHumanOccupantRow,
   parseAgentOccupantRow,
   parseMcpOccupantRow,
+  parseSpaceCatalogEntry,
+  parseStructureOccupantRow,
 } from "./parse-occupant-row.js";
 import {
   mergeSnapshotWithPlayerChainNode,
@@ -145,10 +147,13 @@ function parseWorldMap(raw: unknown): AgentPlayWorldMap {
   for (const row of occ) {
     if (
       !isRecord(row) ||
-      (row.kind !== "human" && row.kind !== "agent" && row.kind !== "mcp")
+      (row.kind !== "human" &&
+        row.kind !== "agent" &&
+        row.kind !== "mcp" &&
+        row.kind !== "structure")
     ) {
       throw new Error(
-        "getWorldSnapshot: each occupant must have kind human, agent, or mcp"
+        "getWorldSnapshot: each occupant must have kind human, agent, mcp, or structure"
       );
     }
     const xy =
@@ -166,8 +171,10 @@ function parseWorldMap(raw: unknown): AgentPlayWorldMap {
       occupants.push(parseHumanOccupantRow(row));
     } else if (row.kind === "agent") {
       occupants.push(parseAgentOccupantRow(row));
-    } else {
+    } else if (row.kind === "mcp") {
       occupants.push(parseMcpOccupantRow(row));
+    } else {
+      occupants.push(parseStructureOccupantRow(row));
     }
   }
   return { bounds, occupants };
@@ -193,6 +200,18 @@ function parseAgentPlaySnapshot(snapshot: unknown): AgentPlaySnapshot {
       servers.push(row);
     }
     if (servers.length > 0) out.mcpServers = servers;
+  }
+  if ("spaces" in snapshot && Array.isArray(snapshot.spaces)) {
+    const catalog: NonNullable<AgentPlaySnapshot["spaces"]> = [];
+    for (const row of snapshot.spaces) {
+      if (!isRecord(row)) {
+        continue;
+      }
+      catalog.push(parseSpaceCatalogEntry(row));
+    }
+    if (catalog.length > 0) {
+      out.spaces = catalog.sort((a, b) => a.id.localeCompare(b.id));
+    }
   }
   return out;
 }

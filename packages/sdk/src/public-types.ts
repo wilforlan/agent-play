@@ -297,6 +297,37 @@ export type AgentPlayWorldMapMcpOccupant = {
   url?: string;
 };
 
+export type AgentPlaySpaceAmenityKind = "supermarket" | "shop" | "car_wash";
+
+export type AgentPlaySpaceOwner = {
+  displayName: string;
+  playerId?: string;
+  nodeId?: string;
+};
+
+export type AgentPlaySpaceCatalogEntry = {
+  id: string;
+  name: string;
+  description: string;
+  designKey: string;
+  owner: AgentPlaySpaceOwner;
+  amenities: AgentPlaySpaceAmenityKind[];
+  activityObjectIds?: string[];
+};
+
+/** Map anchor linking one or more authored spaces (see {@link AgentPlaySpaceCatalogEntry}). */
+export type AgentPlayWorldMapStructureOccupant = {
+  kind: "structure";
+  id: string;
+  name: string;
+  x: number;
+  y: number;
+  worldId: string;
+  spaceIds: string[];
+  primaryAmenity?: AgentPlaySpaceAmenityKind;
+  amenities?: AgentPlaySpaceAmenityKind[];
+};
+
 /** Spatial index: axis-aligned bounds plus every agent and MCP registration placed on the grid. */
 export type AgentPlayWorldMap = {
   bounds: AgentPlayWorldMapBounds;
@@ -304,6 +335,7 @@ export type AgentPlayWorldMap = {
     | AgentPlayWorldMapHumanOccupant
     | AgentPlayWorldMapAgentOccupant
     | AgentPlayWorldMapMcpOccupant
+    | AgentPlayWorldMapStructureOccupant
   )[];
 };
 
@@ -314,6 +346,7 @@ export type AgentPlayWorldMap = {
 export type AgentPlaySnapshot = {
   sid: string;
   worldMap: AgentPlayWorldMap;
+  spaces?: AgentPlaySpaceCatalogEntry[];
   mcpServers?: Array<{ id: string; name: string; url?: string }>;
 };
 
@@ -358,14 +391,30 @@ export type PlayerChainOccupantPresentNode = {
   occupant:
     | AgentPlayWorldMapHumanOccupant
     | AgentPlayWorldMapAgentOccupant
-    | AgentPlayWorldMapMcpOccupant;
+    | AgentPlayWorldMapMcpOccupant
+    | AgentPlayWorldMapStructureOccupant;
+};
+
+export type PlayerChainSpaceRemovedNode = {
+  kind: "space";
+  stableKey: string;
+  removed: true;
+};
+
+export type PlayerChainSpacePresentNode = {
+  kind: "space";
+  stableKey: string;
+  removed: false;
+  space: AgentPlaySpaceCatalogEntry;
 };
 
 export type PlayerChainNodeResponse =
   | PlayerChainGenesisNode
   | PlayerChainHeaderNode
   | PlayerChainOccupantRemovedNode
-  | PlayerChainOccupantPresentNode;
+  | PlayerChainOccupantPresentNode
+  | PlayerChainSpaceRemovedNode
+  | PlayerChainSpacePresentNode;
 
 /** Full journey + path update (SSE `world:journey`); coordinates are embedded in `path` steps. */
 export type WorldJourneyUpdate = {

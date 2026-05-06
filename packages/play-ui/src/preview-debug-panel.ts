@@ -16,6 +16,8 @@ export type PreviewDebugStructureRow = {
   y: number;
   toolName?: string;
   playerId?: string;
+  primaryAmenity?: string;
+  amenities?: readonly string[];
 };
 
 export function createPreviewDebugPanel(options: {
@@ -23,7 +25,11 @@ export function createPreviewDebugPanel(options: {
     agents: readonly PreviewDebugAgentRow[];
     structures: readonly PreviewDebugStructureRow[];
   };
-}): { element: HTMLElement; update: () => void } {
+}): {
+  element: HTMLElement;
+  update: () => void;
+  syncCompanionLayout: () => void;
+} {
   const el = document.createElement("div");
   el.className = "preview-debug-panel";
   el.setAttribute("role", "complementary");
@@ -37,6 +43,47 @@ export function createPreviewDebugPanel(options: {
   const body = document.createElement("div");
   body.className = "preview-debug-panel__body";
   el.appendChild(body);
+
+  const syncCompanionLayout = (): void => {
+    const mount = el.parentElement;
+    const messagesHidden =
+      mount?.classList.contains("preview-debug-mount--messages-hidden") === true;
+    if (!messagesHidden) {
+      title.removeAttribute("role");
+      title.removeAttribute("tabindex");
+      title.removeAttribute("aria-expanded");
+      return;
+    }
+    title.setAttribute("role", "button");
+    title.tabIndex = 0;
+    title.setAttribute(
+      "aria-expanded",
+      el.classList.contains("preview-debug-panel--expanded") ? "true" : "false"
+    );
+  };
+
+  const toggleExpandedFromTitle = (): void => {
+    const mount = el.parentElement;
+    if (
+      mount === null ||
+      !mount.classList.contains("preview-debug-mount--messages-hidden")
+    ) {
+      return;
+    }
+    el.classList.toggle("preview-debug-panel--expanded");
+    syncCompanionLayout();
+  };
+
+  title.addEventListener("click", () => {
+    toggleExpandedFromTitle();
+  });
+  title.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter" && event.key !== " ") {
+      return;
+    }
+    event.preventDefault();
+    toggleExpandedFromTitle();
+  });
 
   const update = (): void => {
     const { agents, structures } = options.getSnapshot();
@@ -61,12 +108,21 @@ export function createPreviewDebugPanel(options: {
         s.playerId !== undefined && s.playerId.length > 0
           ? ` player=${esc(s.playerId)}`
           : "";
-      html += `<li><strong>${esc(s.kind)}</strong> ${esc(s.id)}<br/>(${s.x}, ${s.y})${tool}${pid}</li>`;
+      const amen =
+        s.primaryAmenity !== undefined && s.primaryAmenity.length > 0
+          ? ` primary=${esc(s.primaryAmenity)}`
+          : "";
+      const amens =
+        s.amenities !== undefined && s.amenities.length > 0
+          ? ` amenities=${esc(s.amenities.join(","))}`
+          : "";
+      html += `<li><strong>${esc(s.kind)}</strong> ${esc(s.id)}<br/>(${s.x}, ${s.y})${tool}${pid}${amen}${amens}</li>`;
     }
     html += "</ul>";
     body.innerHTML = html;
   };
 
   update();
-  return { element: el, update };
+  syncCompanionLayout();
+  return { element: el, update, syncCompanionLayout };
 }

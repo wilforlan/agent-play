@@ -1,6 +1,15 @@
 import { randomUUID } from "node:crypto";
 import type { PlayAgentInformation, PlatformAgentInformation } from "./@types/agent.js";
-import type { Journey, PositionedStep, WorldJourneyUpdate } from "./@types/world.js";
+import type {
+  Journey,
+  PositionedStep,
+  SpaceNode,
+  SpaceOwner,
+  StructureNode,
+  WorldJourneyUpdate,
+  WorldPlayerLocation,
+  WorldSpaceTransition,
+} from "./@types/world.js";
 import {
   configureAgentPlayDebug,
   agentPlayDebug,
@@ -13,12 +22,14 @@ import {
   WORLD_AGENT_SIGNAL_EVENT,
   WORLD_INTERACTION_EVENT,
   WORLD_JOURNEY_EVENT,
+  WORLD_SPACE_TRANSITION_EVENT,
   WORLD_FANOUT_PLAYER_ID,
 } from "./play-transport.js";
 import type {
   WorldAgentSignalPayload,
   WorldInteractionPayload,
   WorldInteractionRole,
+  WorldSpaceTransitionPayload,
 } from "./play-transport.js";
 import type { AgentRepository } from "./agent-repository.js";
 import type { SessionStore } from "./session-store.js";
@@ -26,14 +37,19 @@ import {
   assertAgentToolContract,
   extractAssistToolNames,
 } from "./agent-tool-contract.js";
-import type { PreviewSnapshotJson } from "./preview-serialize.js";
+import type {
+  PreviewSnapshotJson,
+  SpaceCatalogEntryJson,
+} from "./preview-serialize.js";
 import {
   serializeWorldJourneyUpdate,
   buildSnapshotWorldMap,
+  normalizePreviewSnapshot,
   type PreviewWorldMapAgentOccupantJson,
   type PreviewWorldMapMcpOccupantJson,
   type PreviewWorldMapHumanOccupantJson,
   type PreviewWorldMapOccupantJson,
+  type PreviewWorldMapStructureOccupantJson,
   type WorldJourneyUpdateJson,
 } from "./preview-serialize.js";
 import type { RedisFanoutItem } from "./world-redis-sync.js";
@@ -45,11 +61,15 @@ import {
   occupiedKeysFromSnapshot,
 } from "./grid-allocate.js";
 import { buildPlayerChainFanoutNotify } from "./player-chain/index.js";
+import type { SpaceAmenityKind } from "./space-amenity.js";
 import {
+  deriveStructureAmenityFields,
   emptySnapshot,
   ensureWorldSnapshot,
-  upsertAgentOccupant,
   removeOccupantsForPlayer,
+  upsertAgentOccupant,
+  upsertSpaceCatalogEntry,
+  upsertStructureOccupant,
 } from "./world-snapshot-helpers.js";
 
 function clampPathToBounds(
@@ -95,8 +115,9 @@ function snapshotWithOccupants(
   base: PreviewSnapshotJson,
   occupants: PreviewWorldMapOccupantJson[]
 ): PreviewSnapshotJson {
+  const normalized = normalizePreviewSnapshot(base);
   return {
-    ...base,
+    ...normalized,
     worldMap: buildSnapshotWorldMap(occupants),
   };
 }
@@ -258,6 +279,87 @@ export type RecordProximityActionInput = {
   action: ProximityActionKind;
 };
 
+export type RegisterSpaceNodeInput = {
+  id?: string;
+  name: string;
+  description?: string;
+  designKey: string;
+  owner?: SpaceOwner;
+  amenities: SpaceAmenityKind[];
+  activityObjectIds?: string[];
+};
+
+export type RegisterStructureNodeInput = {
+  id?: string;
+  name: string;
+  x: number;
+  y: number;
+  worldId?: string;
+  spaceIds: string[];
+};
+
+export type EnterStructureSpaceInput = {
+  playerId: string;
+  structureId: string;
+  spaceId?: string;
+};
+
+function spaceCatalogEntryFromRegisterInput(
+  input: RegisterSpaceNodeInput,
+  id: string
+): SpaceCatalogEntryJson {
+  const amenities = input.amenities;
+  if (amenities.length === 0) {
+    throw new Error("registerSpaceNode: at least one amenity is required");
+  }
+  const owner: SpaceOwner = input.owner ?? { displayName: "Unknown" };
+  const displayName = owner.displayName.trim();
+  if (displayName.length === 0) {
+    throw new Error("registerSpaceNode: owner.displayName must not be empty");
+  }
+  const description = input.description?.trim() ?? "";
+  const designKey = input.designKey.trim();
+  if (designKey.length === 0) {
+    throw new Error("registerSpaceNode: designKey must not be empty");
+  }
+  const name = input.name.trim();
+  if (name.length === 0) {
+    throw new Error("registerSpaceNode: name must not be empty");
+  }
+  const entry: SpaceCatalogEntryJson = {
+    id,
+    name,
+    description,
+    designKey,
+    owner: {
+      displayName,
+      ...(owner.playerId !== undefined && owner.playerId.trim().length > 0
+        ? { playerId: owner.playerId.trim() }
+        : {}),
+      ...(owner.nodeId !== undefined && owner.nodeId.trim().length > 0
+        ? { nodeId: owner.nodeId.trim() }
+        : {}),
+    },
+    amenities: [...amenities],
+  };
+  if (input.activityObjectIds !== undefined && input.activityObjectIds.length > 0) {
+    entry.activityObjectIds = [...input.activityObjectIds];
+  }
+  return entry;
+}
+
+function spaceNodeFromCatalog(entry: SpaceCatalogEntryJson): SpaceNode {
+  return {
+    id: entry.id,
+    name: entry.name,
+    description: entry.description,
+    designKey: entry.designKey,
+    owner: { ...entry.owner },
+    amenities: [...entry.amenities],
+    activityObjectIds: [...(entry.activityObjectIds ?? [])],
+  };
+}
+
 const PROXIMITY_ACTION_LABEL: Record<ProximityActionKind, string> = {
   assist: "Assist",
   chat: "Chat",
@@ -270,6 +372,7 @@ export class PlayWorld {
   private httpTransport: HttpPlayTransport | null = null;
   private readonly repository: AgentRepository | null;
   private readonly sessionStore: SessionStore;
+  private readonly locationsByPlayerId = new Map<string, WorldPlayerLocation>();
   private mainNodeId: string | null = null;
   private presenceSweepTimer: ReturnType<typeof setInterval> | null = null;
 
@@ -394,7 +497,7 @@ export class PlayWorld {
     if (raw === null) {
       return emptySnapshot(mainNodeId);
     }
-    return raw;
+    return normalizePreviewSnapshot(raw);
   }
 
   /**
@@ -1001,6 +1104,10 @@ export class PlayWorld {
           input.leaseTtlSeconds ?? PRESENCE_LEASE_TTL_SECONDS_DEFAULT,
       });
     }
+    this.locationsByPlayerId.set(registered.id, {
+      playerId: registered.id,
+      worldId: "overworld",
+    });
     return registered;
   }
 
@@ -1111,6 +1218,222 @@ export class PlayWorld {
         return { next, fanout: this.metadataFanout() };
       },
     });
+    this.locationsByPlayerId.delete(id);
+  }
+
+  async registerSpaceNode(input: RegisterSpaceNodeInput): Promise<SpaceNode> {
+    let created: SpaceNode | undefined;
+    await runStoredWorldMutation({
+      store: this.sessionStore,
+      mutate: async (cached) => {
+        const base = ensureWorldSnapshot(
+          cached,
+          this.sessionStore.playerChainGenesis
+        );
+        const normalized = normalizePreviewSnapshot(base);
+        const id = input.id?.trim() ?? randomUUID();
+        if (id.length === 0) {
+          throw new Error("registerSpaceNode: id must not be empty");
+        }
+        const spaces = normalized.spaces ?? [];
+        if (spaces.some((s) => s.id === id)) {
+          throw new Error(`registerSpaceNode: id already exists "${id}"`);
+        }
+        const catalogEntry = spaceCatalogEntryFromRegisterInput(input, id);
+        const nextSpaces = upsertSpaceCatalogEntry(spaces, catalogEntry);
+        const next: PreviewSnapshotJson = {
+          ...normalized,
+          spaces: nextSpaces,
+        };
+        created = spaceNodeFromCatalog(catalogEntry);
+        agentPlayDebug("play-world", "registerSpaceNode", { spaceId: id });
+        return { next, fanout: this.metadataFanout() };
+      },
+    });
+    if (created === undefined) {
+      throw new Error("registerSpaceNode failed");
+    }
+    return created;
+  }
+
+  async listSpaceNodes(): Promise<readonly SpaceNode[]> {
+    const snap = await this.getSnapshotJson();
+    return (snap.spaces ?? []).map((row) => spaceNodeFromCatalog(row));
+  }
+
+  async registerStructureNode(
+    input: RegisterStructureNodeInput
+  ): Promise<StructureNode> {
+    let created: StructureNode | undefined;
+    await runStoredWorldMutation({
+      store: this.sessionStore,
+      mutate: async (cached) => {
+        const base = ensureWorldSnapshot(
+          cached,
+          this.sessionStore.playerChainGenesis
+        );
+        const normalized = normalizePreviewSnapshot(base);
+        const occupantList = normalized.worldMap.occupants;
+        const id = input.id?.trim() ?? randomUUID();
+        const name = input.name.trim();
+        const worldId = input.worldId?.trim() ?? "overworld";
+        if (id.length === 0) {
+          throw new Error("registerStructureNode: id must not be empty");
+        }
+        if (name.length === 0) {
+          throw new Error("registerStructureNode: name must not be empty");
+        }
+        if (input.spaceIds.length === 0) {
+          throw new Error(
+            "registerStructureNode: at least one spaceId is required"
+          );
+        }
+        const uniqueSpaceIds = Array.from(
+          new Set(input.spaceIds.map((spaceId) => spaceId.trim()))
+        );
+        const catalog = normalized.spaces ?? [];
+        if (
+          uniqueSpaceIds.some(
+            (spaceId) => !catalog.some((row) => row.id === spaceId)
+          )
+        ) {
+          throw new Error("registerStructureNode: unknown spaceId");
+        }
+        const alreadyStructure = occupantList.some(
+          (o) => o.kind === "structure" && o.id === id
+        );
+        if (!alreadyStructure && occupantList.length >= MAX_WORLD_OCCUPANTS) {
+          throw new Error(
+            `registerStructureNode: world occupant limit reached (${MAX_WORLD_OCCUPANTS})`
+          );
+        }
+        const bounds = normalized.worldMap.bounds;
+        const rawPos = clampWorldPosition({ x: input.x, y: input.y }, bounds);
+        const amenityFields = deriveStructureAmenityFields(
+          uniqueSpaceIds,
+          catalog
+        );
+        const row: PreviewWorldMapStructureOccupantJson = {
+          kind: "structure",
+          id,
+          name,
+          x: rawPos.x,
+          y: rawPos.y,
+          worldId,
+          spaceIds: uniqueSpaceIds,
+          ...(amenityFields.primaryAmenity !== undefined
+            ? { primaryAmenity: amenityFields.primaryAmenity }
+            : {}),
+          ...(amenityFields.amenities.length > 0
+            ? { amenities: amenityFields.amenities }
+            : {}),
+        };
+        const nextOccupants = upsertStructureOccupant(occupantList, row);
+        const next = snapshotWithOccupants(normalized, nextOccupants);
+        created = {
+          id,
+          name,
+          x: row.x,
+          y: row.y,
+          worldId,
+          spaceIds: uniqueSpaceIds,
+        };
+        agentPlayDebug("play-world", "registerStructureNode", {
+          structureId: id,
+        });
+        return { next, fanout: this.metadataFanout() };
+      },
+    });
+    if (created === undefined) {
+      throw new Error("registerStructureNode failed");
+    }
+    return created;
+  }
+
+  async listStructureNodes(): Promise<readonly StructureNode[]> {
+    const snap = await this.getSnapshotJson();
+    return snap.worldMap.occupants
+      .filter(
+        (o): o is PreviewWorldMapStructureOccupantJson =>
+          o.kind === "structure"
+      )
+      .map((o) => ({
+        id: o.id,
+        name: o.name,
+        x: o.x,
+        y: o.y,
+        worldId: o.worldId,
+        spaceIds: [...o.spaceIds],
+      }));
+  }
+
+  getPlayerLocation(playerId: string): WorldPlayerLocation | null {
+    const current = this.locationsByPlayerId.get(playerId);
+    if (current === undefined) {
+      return null;
+    }
+    return { ...current };
+  }
+
+  async enterStructureSpace(
+    input: EnterStructureSpaceInput
+  ): Promise<WorldSpaceTransitionPayload> {
+    const snap = await this.getSnapshotJson();
+    const playerExists = snap.worldMap.occupants.some(
+      (o) => o.kind === "agent" && o.agentId === input.playerId
+    );
+    if (!playerExists) {
+      throw new Error(
+        `enterStructureSpace: unknown playerId "${input.playerId}"`
+      );
+    }
+    const structureOcc = snap.worldMap.occupants.find(
+      (o): o is PreviewWorldMapStructureOccupantJson =>
+        o.kind === "structure" && o.id === input.structureId
+    );
+    if (structureOcc === undefined) {
+      throw new Error(
+        `enterStructureSpace: unknown structureId "${input.structureId}"`
+      );
+    }
+    const selectedSpaceId = input.spaceId ?? structureOcc.spaceIds[0];
+    if (selectedSpaceId === undefined) {
+      throw new Error(
+        `enterStructureSpace: structure "${input.structureId}" has no attached spaces`
+      );
+    }
+    if (!structureOcc.spaceIds.includes(selectedSpaceId)) {
+      throw new Error(
+        `enterStructureSpace: space "${selectedSpaceId}" is not attached to structure "${input.structureId}"`
+      );
+    }
+    const current = this.locationsByPlayerId.get(input.playerId) ?? {
+      playerId: input.playerId,
+      worldId: structureOcc.worldId,
+    };
+    const nextLocation: WorldPlayerLocation = {
+      playerId: input.playerId,
+      worldId: structureOcc.worldId,
+      structureId: structureOcc.id,
+      spaceId: selectedSpaceId,
+    };
+    this.locationsByPlayerId.set(input.playerId, nextLocation);
+    const transition: WorldSpaceTransition = {
+      playerId: input.playerId,
+      from: current,
+      to: nextLocation,
+      at: new Date().toISOString(),
+    };
+    const payload: WorldSpaceTransitionPayload = transition;
+    this.bus.emit(WORLD_SPACE_TRANSITION_EVENT, payload);
+    void this.forwardHttp(WORLD_SPACE_TRANSITION_EVENT, payload);
+    const rev = await this.sessionStore.getSnapshotRev();
+    await this.sessionStore.publishWorldFanout(
+      rev,
+      WORLD_SPACE_TRANSITION_EVENT,
+      payload
+    );
+    return payload;
   }
 
   async registerMCP(options: { name: string; url?: string }): Promise<string> {

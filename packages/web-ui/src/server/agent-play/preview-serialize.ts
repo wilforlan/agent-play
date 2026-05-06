@@ -1,6 +1,9 @@
 import type { Journey, WorldJourneyUpdate } from "./@types/world.js";
 import type { WorldInteractionRole } from "./play-transport.js";
+import type { SpaceAmenityKind } from "./space-amenity.js";
 import { buildWorldMapFromOccupants as computeWorldMapBounds } from "./world-map.js";
+
+export type { SpaceAmenityKind } from "./space-amenity.js";
 
 export type JourneyJson = {
   steps: Journey["steps"];
@@ -73,10 +76,39 @@ export type PreviewWorldMapMcpOccupantJson = {
   url?: string;
 };
 
+export type PreviewWorldMapStructureOccupantJson = {
+  kind: "structure";
+  id: string;
+  name: string;
+  x: number;
+  y: number;
+  worldId: string;
+  spaceIds: string[];
+  primaryAmenity?: SpaceAmenityKind;
+  amenities?: SpaceAmenityKind[];
+};
+
 export type PreviewWorldMapOccupantJson =
   | PreviewWorldMapHumanOccupantJson
   | PreviewWorldMapAgentOccupantJson
-  | PreviewWorldMapMcpOccupantJson;
+  | PreviewWorldMapMcpOccupantJson
+  | PreviewWorldMapStructureOccupantJson;
+
+export type SpaceOwnerJson = {
+  displayName: string;
+  playerId?: string;
+  nodeId?: string;
+};
+
+export type SpaceCatalogEntryJson = {
+  id: string;
+  name: string;
+  description: string;
+  designKey: string;
+  owner: SpaceOwnerJson;
+  amenities: SpaceAmenityKind[];
+  activityObjectIds?: string[];
+};
 
 export type PreviewWorldMapJson = {
   bounds: { minX: number; minY: number; maxX: number; maxY: number };
@@ -93,8 +125,18 @@ export type PreviewSnapshotJson = {
   sid: string;
   mainNodeId?: string;
   worldMap: PreviewWorldMapJson;
+  spaces?: SpaceCatalogEntryJson[];
   mcpServers?: PreviewMcpRegistrationJson[];
 };
+
+export function normalizePreviewSnapshot(
+  snapshot: PreviewSnapshotJson
+): PreviewSnapshotJson {
+  return {
+    ...snapshot,
+    spaces: snapshot.spaces ?? [],
+  };
+}
 
 export function serializeJourney(journey: Journey): JourneyJson {
   return {

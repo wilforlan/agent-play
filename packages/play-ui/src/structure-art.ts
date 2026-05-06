@@ -133,3 +133,98 @@ export function drawMcpStore(
     .fill({ color: colors.accent, alpha: 0.5 });
   g.rect(ox, oy, w, h).stroke({ width: 1.5, color: colors.trim });
 }
+
+export type AmenityBuildingPalette = {
+  facade: number;
+  roof: number;
+  trim: number;
+  accent: number;
+  glass?: number;
+};
+
+export function drawSupermarketStructure(
+  graph: Graphics,
+  box: number,
+  colors: AmenityBuildingPalette
+): void {
+  graph.clear();
+  const w = box * 1.5;
+  const h = box * 1.2;
+  const ox = -w * 0.48;
+  const oy = -h * 0.68;
+  graph.rect(ox, oy, w, h * 0.72).fill({ color: colors.facade });
+  graph
+    .moveTo(ox - w * 0.04, oy)
+    .lineTo(ox + w * 0.5, oy - h * 0.22)
+    .lineTo(ox + w * 1.04, oy)
+    .closePath()
+    .fill({ color: colors.roof });
+  const signY = oy + h * 0.08;
+  graph.rect(ox + w * 0.12, signY, w * 0.76, h * 0.14).fill({ color: colors.accent });
+  graph.rect(ox + w * 0.12, signY, w * 0.76, h * 0.14).stroke({
+    width: 1,
+    color: colors.trim,
+  });
+  const gw = w * 0.22;
+  const gtop = oy + h * 0.34;
+  const gh = h * 0.34;
+  for (let i = 0; i < 4; i += 1) {
+    const gx = ox + w * 0.1 + i * (gw + w * 0.04);
+    graph.rect(gx, gtop, gw, gh).fill({
+      color: colors.glass ?? colors.accent,
+      alpha: 0.35,
+    });
+    graph.rect(gx, gtop, gw, gh).stroke({ width: 1, color: colors.trim });
+  }
+  graph.rect(ox, oy, w, h * 0.72).stroke({ width: 1.5, color: colors.trim });
+}
+
+export function drawShopStructure(
+  graph: Graphics,
+  box: number,
+  colors: AmenityBuildingPalette
+): void {
+  graph.clear();
+  const w = box * 1.25;
+  const h = box * 1.05;
+  const ox = -w * 0.46;
+  const oy = -h * 0.58;
+  graph.rect(ox, oy, w, h * 0.68).fill({ color: colors.facade });
+  graph
+    .moveTo(ox - w * 0.05, oy + h * 0.02)
+    .lineTo(ox + w * 0.5, oy - h * 0.18)
+    .lineTo(ox + w * 1.05, oy + h * 0.02)
+    .closePath()
+    .fill({ color: colors.roof });
+  graph.rect(ox + w * 0.62, oy + h * 0.28, w * 0.28, h * 0.38).fill({
+    color: colors.accent,
+  });
+  graph.rect(ox + w * 0.1, oy + h * 0.32, w * 0.38, h * 0.28).fill({
+    color: colors.glass ?? colors.accent,
+    alpha: 0.4,
+  });
+  graph.rect(ox, oy, w, h * 0.68).stroke({ width: 1.2, color: colors.trim });
+}
+
+export function drawCarWashStructure(
+  graph: Graphics,
+  box: number,
+  colors: AmenityBuildingPalette
+): void {
+  graph.clear();
+  const w = box * 1.55;
+  const h = box * 0.95;
+  const ox = -w * 0.48;
+  const oy = -h * 0.52;
+  graph.rect(ox, oy, w, h * 0.55).fill({ color: colors.facade });
+  graph
+    .arc(ox + w * 0.5, oy + h * 0.62, w * 0.42, Math.PI, 0, false)
+    .stroke({ width: h * 0.08, color: colors.accent });
+  graph
+    .arc(ox + w * 0.5, oy + h * 0.62, w * 0.32, Math.PI, 0, false)
+    .stroke({ width: h * 0.05, color: colors.trim });
+  graph.rect(ox + w * 0.35, oy + h * 0.08, w * 0.3, h * 0.12).fill({
+    color: colors.roof,
+  });
+  graph.rect(ox, oy, w, h * 0.55).stroke({ width: 1.2, color: colors.trim });
+}

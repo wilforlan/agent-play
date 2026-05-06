@@ -10,6 +10,8 @@ export const WORLD_INTERACTION_EVENT = "world:interaction" as const;
 
 export const WORLD_AGENT_SIGNAL_EVENT = "world:agent_signal" as const;
 
+export const WORLD_SPACE_TRANSITION_EVENT = "world:space_transition" as const;
+
 export const WORLD_FANOUT_PLAYER_ID = "__world__";
 
 export type WorldAgentSignalPayload = {
@@ -26,6 +28,23 @@ export type WorldInteractionPayload = {
   text: string;
   at: string;
   seq: number;
+};
+
+export type WorldSpaceTransitionPayload = {
+  playerId: string;
+  from: {
+    playerId: string;
+    worldId: string;
+    structureId?: string;
+    spaceId?: string;
+  };
+  to: {
+    playerId: string;
+    worldId: string;
+    structureId?: string;
+    spaceId?: string;
+  };
+  at: string;
 };
 
 export class InMemoryPlayBus extends EventEmitter {

@@ -91,9 +91,13 @@ import { reportP2aToggleIfChanged } from "./presentation-analytics.js";
 import { createSkyDecorLayer } from "./sky-decor.js";
 import { ENABLE_CROWD_LAYER, getActiveSceneTheme } from "./scene-theme.js";
 import {
+  drawCarWashStructure,
   drawHomeStructure,
   drawMcpStore,
+  drawShopStructure,
+  drawSupermarketStructure,
   drawVendorStall,
+  type AmenityBuildingPalette,
 } from "./structure-art.js";
 import { buildParkWorldBackdrop } from "./scene-backgrounds.js";
 import {
@@ -189,6 +193,8 @@ type Structure = {
   toolName?: string;
   agentId?: string;
   playerId?: string;
+  primaryAmenity?: string;
+  amenities?: string[];
 };
 
 type PathStep = {
@@ -269,9 +275,25 @@ type SnapshotMcpOccupant = {
   url?: string;
 };
 
+type SnapshotStructureOccupant = {
+  kind: "structure";
+  id: string;
+  name: string;
+  x: number;
+  y: number;
+  worldId: string;
+  spaceIds: string[];
+  primaryAmenity?: string;
+  amenities?: string[];
+};
+
 type WorldMapJson = {
   bounds: { minX: number; minY: number; maxX: number; maxY: number };
-  occupants: (SnapshotAgentOccupant | SnapshotMcpOccupant)[];
+  occupants: (
+    | SnapshotAgentOccupant
+    | SnapshotMcpOccupant
+    | SnapshotStructureOccupant
+  )[];
 };
 
 type SnapshotMcpRegistration = {
@@ -871,6 +893,7 @@ let sceneRootContainer: Container | null = null;
 let crowdLayerContainer: Container | null = null;
 let skyDecor: ReturnType<typeof createSkyDecorLayer> | null = null;
 let debugPanelUpdate: (() => void) | null = null;
+let debugPanelSyncCompanionLayout: (() => void) | null = null;
 let debugMountEl: HTMLElement | null = null;
 let joystickHandle: ReturnType<typeof createPreviewDebugJoystick> | null = null;
 let previewBootstrapStarted = false;
@@ -1013,14 +1036,25 @@ function hydrateChatFromSnapshot(s: Snapshot): void {
 function collectStructuresForRender(s: Snapshot): Structure[] {
   const out: Structure[] = [];
   for (const o of s.worldMap.occupants) {
-    if (o.kind !== "mcp") continue;
-    out.push({
-      id: `mcp:${o.id}`,
-      kind: "tool",
-      x: o.x,
-      y: o.y,
-      label: o.name,
-    });
+    if (o.kind === "mcp") {
+      out.push({
+        id: `mcp:${o.id}`,
+        kind: "tool",
+        x: o.x,
+        y: o.y,
+        label: o.name,
+      });
+    } else if (o.kind === "structure") {
+      out.push({
+        id: o.id,
+        kind: "structure",
+        x: o.x,
+        y: o.y,
+        label: o.name,
+        primaryAmenity: o.primaryAmenity,
+        amenities: o.amenities,
+      });
+    }
   }
   out.sort((a, b) => a.id.localeCompare(b.id));
   return out;
@@ -1366,6 +1400,33 @@ function makeAgentVisual(): AgentVisual {
   return { root, hero, nameTag };
 }
 
+function amenityPaletteForStructure(amenity: string): AmenityBuildingPalette {
+  if (amenity === "supermarket") {
+    return {
+      facade: 0xe2e8f0,
+      roof: 0x1d4ed8,
+      trim: 0x0f172a,
+      accent: 0xf97316,
+      glass: 0x38bdf8,
+    };
+  }
+  if (amenity === "car_wash") {
+    return {
+      facade: 0x64748b,
+      roof: 0x0ea5e9,
+      trim: 0xf8fafc,
+      accent: 0x22d3ee,
+    };
+  }
+  return {
+    facade: 0xd6d3d1,
+    roof: 0x92400e,
+    trim: 0x1c1917,
+    accent: 0xf59e0b,
+    glass: 0xa8a29e,
+  };
+}
+
 function syncStructureNodes(structs: Structure[]): void {
   const theme = getActiveSceneTheme();
   const alive = new Set(structs.map((s) => s.id));
@@ -1403,13 +1464,39 @@ function syncStructureNodes(structs: Structure[]): void {
       structureLayer.addChild(cap);
     }
     const { x: sx, y: sy } = worldToWorldRootLocal(st.x, st.y);
-    const strokeCol = cssColorToPixi(palette.stroke);
     const isMcpStore = st.id.startsWith("mcp:");
     if (st.kind === "home") {
       drawHomeStructure(n.box, box, theme.house);
       n.box.position.set(sx, sy);
       n.caption.text = (st.label ?? "Home").slice(0, 24);
       n.caption.position.set(sx - n.caption.width / 2, sy - box * 1.15);
+    } else if (st.kind === "structure") {
+      const amenity =
+        st.primaryAmenity !== undefined && st.primaryAmenity.length > 0
+          ? st.primaryAmenity
+          : "shop";
+      const pal = amenityPaletteForStructure(amenity);
+      const buildingBox = box * 1.12;
+      if (amenity === "supermarket") {
+        drawSupermarketStructure(n.box, buildingBox, pal);
+      } else if (amenity === "car_wash") {
+        drawCarWashStructure(n.box, buildingBox, pal);
+      } else {
+        drawShopStructure(n.box, buildingBox, pal);
+      }
+      n.box.position.set(sx - buildingBox * 0.42, sy - buildingBox * 0.48);
+      let capText = (st.label ?? "Structure").slice(0, 22);
+      if (
+        st.amenities !== undefined &&
+        st.amenities.length > 1
+      ) {
+        capText = `${capText} (${st.amenities.join(", ")})`.slice(0, 40);
+      }
+      n.caption.text = capText;
+      n.caption.position.set(
+        sx - n.caption.width / 2,
+        sy - buildingBox * 0.92
+      );
     } else if (isMcpStore) {
       const storePal = mcpStorePalette(palette);
       const storeBox = box * 1.12;
@@ -1490,6 +1577,8 @@ function getDebugSnapshot(): {
     y: number;
     toolName?: string;
     playerId?: string;
+    primaryAmenity?: string;
+    amenities?: readonly string[];
   }[];
 } {
   if (snapshot === null) {
@@ -1520,6 +1609,8 @@ function getDebugSnapshot(): {
     y: s.y,
     toolName: s.toolName,
     playerId: s.agentId ?? s.playerId,
+    primaryAmenity: s.primaryAmenity,
+    amenities: s.amenities,
   }));
   return { agents, structures };
 }
@@ -1538,6 +1629,7 @@ function applyDebugVisibility(): void {
   debugMountEl.classList.toggle("preview-debug-mount--visible", on);
   if (on) {
     debugPanelUpdate?.();
+    debugPanelSyncCompanionLayout?.();
   }
 }
 
@@ -1826,6 +1918,7 @@ export function bootstrap(): void {
       getSnapshot: getDebugSnapshot,
     });
     debugPanelUpdate = debug.update;
+    debugPanelSyncCompanionLayout = debug.syncCompanionLayout;
     debugMount.appendChild(debug.element);
     globalChatRoom = createPreviewGlobalChatRoom({
       apiBase: API_BASE,
@@ -2029,7 +2122,22 @@ export function bootstrap(): void {
 
     let messagesPanelVisible = true;
     const applyMessagesPanelVisibility = (): void => {
-      leftCol.style.display = messagesPanelVisible ? "flex" : "none";
+      leftCol.style.display = "";
+      leftCol.classList.toggle(
+        "preview-game-col--messages-hidden",
+        !messagesPanelVisible
+      );
+      if (globalChatRoom !== null) {
+        globalChatRoom.element.hidden = !messagesPanelVisible;
+      }
+      debugMount.classList.toggle(
+        "preview-debug-mount--messages-hidden",
+        !messagesPanelVisible
+      );
+      if (messagesPanelVisible) {
+        debug.element.classList.remove("preview-debug-panel--expanded");
+      }
+      debug.syncCompanionLayout();
       if (messagesPanelVisible && mobileSidePanelControls?.isMobileViewport() === true) {
         mobileSidePanelControls.openLeftPanel();
       }
