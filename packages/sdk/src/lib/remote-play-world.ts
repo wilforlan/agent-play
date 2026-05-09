@@ -87,8 +87,8 @@ export type RemotePlayWorldOptions = {
 /** Options for {@link RemotePlayWorld.connect}. */
 export type RemotePlayWorldConnectOptions = {
   /**
-   * Parent **main** node id. When set, `connect` runs `POST /api/nodes/validate` first, then `GET /api/agent-play/session`.
-   * When omitted, only `GET /api/agent-play/session` runs.
+   * Main node id used for `POST /api/nodes/validate` as **`nodeId`** (not the derived credential id) and remembered for {@link RemotePlayWorld.addAgent} (`mainNodeId` on validate and register).
+   * When omitted, connect skips validate and addAgent uses the derived node id for main-parent fields.
    */
   mainNodeId?: string;
 };
@@ -388,6 +388,7 @@ export class RemotePlayWorld {
     | undefined;
   private readonly transportLog: boolean;
   private sid: string | null = null;
+  private configuredMainNodeId: string | null = null;
   private closed = false;
   private readonly closeListeners = new Set<() => void>();
   private readonly playerConnectionInfo = new Map<
@@ -535,18 +536,21 @@ export class RemotePlayWorld {
 
   /**
    * Establishes the HTTP session via `GET /api/agent-play/session`. With {@link RemotePlayWorldConnectOptions.mainNodeId},
-   * validates node identity with `POST /api/nodes/validate` first.
+   * validates that node with `POST /api/nodes/validate` using **`nodeId: mainNodeId`** first.
    */
   async connect(options?: RemotePlayWorldConnectOptions): Promise<void> {
     const mainNodeIdOpt = options?.mainNodeId?.trim();
     if (mainNodeIdOpt !== undefined && mainNodeIdOpt.length > 0) {
+      this.configuredMainNodeId = mainNodeIdOpt;
       const validation = await this.validateNodeIdentity({
-        nodeId: this.derivedNodeId,
-        mainNodeId: mainNodeIdOpt,
+        nodeId: mainNodeIdOpt,
+        mainNodeId: undefined,
       });
       console.info(
         `[agent-play] Node identity validated (${validation.nodeKind ?? "unknown"}).`
       );
+    } else {
+      this.configuredMainNodeId = null;
     }
     const res = await fetch(`${this.apiBase}/api/agent-play/session`, {
       headers: this.authHeaders(),
@@ -779,15 +783,16 @@ export class RemotePlayWorld {
   /**
    * Registers an automation agent using **agent node id** (`nodeId`), sent to the server as `agentId`.
    *
+   * Runs `POST /api/nodes/validate` with **`nodeId`** / **`mainNodeId`** from {@link AddAgentInput} before registering.
+   *
    * If {@link initAudio} was called and **`enableP2a`** is **`"on"`**, this call mints a per-agent
    * OpenAI Realtime client secret and forwards it as `realtimeWebrtc`.
    */
   async addAgent(input: AddAgentInput): Promise<RegisteredPlayer> {
     const sid = this.getSessionId();
-    const effectiveMainNodeId = this.derivedNodeId;
     const validation = await this.validateNodeIdentity({
       nodeId: input.nodeId,
-      mainNodeId: effectiveMainNodeId,
+      mainNodeId: input.mainNodeId,
     });
     console.info(
       [
@@ -795,7 +800,7 @@ export class RemotePlayWorld {
         `  status   : validated`,
         `  nodeId   : ${input.nodeId}`,
         `  nodeKind : ${validation.nodeKind ?? "unknown"}`,
-        `  mainNode : ${effectiveMainNodeId}`,
+        `  mainNode : ${input.mainNodeId ?? "n/a"}`,
       ].join("\n")
     );
     const url = `${this.apiBase}/api/agent-play/players?sid=${encodeURIComponent(sid)}`;
@@ -825,7 +830,7 @@ export class RemotePlayWorld {
       name: input.name,
       type: input.type,
       agent: input.agent,
-      mainNodeId: effectiveMainNodeId,
+      mainNodeId: input.mainNodeId,
       password: this.password,
       agentId: input.nodeId,
       connectionId,

@@ -154,10 +154,10 @@ describe("RemotePlayWorld", () => {
           rootKey?: string;
           mainNodeId?: string;
         };
-        expect(body.nodeId).toBe(derivedNodeId);
+        expect(body.nodeId).toBe(mainParentId);
         expect(body.rootKey).toBe(DEFAULT_NODE_ID);
-        expect(body.mainNodeId).toBe(mainParentId);
-        return new Response(JSON.stringify({ ok: true, nodeKind: "agent" }), { status: 200 });
+        expect(body.mainNodeId).toBeUndefined();
+        return new Response(JSON.stringify({ ok: true, nodeKind: "main" }), { status: 200 });
       }
       if (u.endsWith("/api/agent-play/session")) {
         return sessionResponse();
@@ -172,7 +172,7 @@ describe("RemotePlayWorld", () => {
     expect(fetchMock.mock.calls[0]?.[0]).toBe(VALIDATE_URL);
     expect(fetchMock.mock.calls[1]?.[0]).toBe(SESSION_URL);
     expect(infoSpy).toHaveBeenCalledWith(
-      "[agent-play] Node identity validated (agent)."
+      "[agent-play] Node identity validated (main)."
     );
     infoSpy.mockRestore();
     await world.close();
@@ -286,6 +286,10 @@ describe("RemotePlayWorld", () => {
   });
 
   it("addAgent posts nodeId as agentId to players route with sid and world password", async () => {
+    const derivedMain = deriveNodeIdFromPassword({
+      password: nodeCredentialsMaterialFromHumanPassphrase("key"),
+      rootKey: DEFAULT_NODE_ID,
+    });
     const fetchMock = vi.fn(
       async (url: string | URL, init?: RequestInit) => {
         const u = String(url);
@@ -300,12 +304,7 @@ describe("RemotePlayWorld", () => {
           };
           expect(body.nodeId).toBe("aid-1");
           expect(body.rootKey).toBe(DEFAULT_NODE_ID);
-          expect(body.mainNodeId).toBe(
-            deriveNodeIdFromPassword({
-              password: nodeCredentialsMaterialFromHumanPassphrase("key"),
-              rootKey: DEFAULT_NODE_ID,
-            })
-          );
+          expect(body.mainNodeId).toBe(derivedMain);
           return new Response(JSON.stringify({ ok: true, nodeKind: "agent" }), {
             status: 200,
           });
@@ -318,12 +317,7 @@ describe("RemotePlayWorld", () => {
           };
           const material = nodeCredentialsMaterialFromHumanPassphrase("key");
           expect(body.password).toBe(material);
-          expect(body.mainNodeId).toBe(
-            deriveNodeIdFromPassword({
-              password: material,
-              rootKey: DEFAULT_NODE_ID,
-            })
-          );
+          expect(body.mainNodeId).toBe(derivedMain);
           expect(body.agentId).toBe("aid-1");
           return new Response(
             JSON.stringify({
@@ -346,6 +340,7 @@ describe("RemotePlayWorld", () => {
       type: "langchain",
       agent: { type: "langchain", toolNames: ["chat_tool"] },
       nodeId: "aid-1",
+      mainNodeId: derivedMain,
     });
     expect(player.id).toBe("p1");
     expect(player.previewUrl).toBe(`${BASE_URL}/agent-play/watch`);
@@ -792,25 +787,36 @@ describe("RemotePlayWorld", () => {
     vi.useRealTimers();
   });
 
-  it("addAgent ignores input.mainNodeId and always uses derived node id", async () => {
+  it("addAgent validate and players requests use AddAgentInput nodeId and mainNodeId", async () => {
+    const configuredMain = "main-from-connect";
+    const agentParentMain = "parent-main-for-agent";
     const fetchMock = vi.fn(async (url: string | URL, init?: RequestInit) => {
       const u = String(url);
       if (u.endsWith("/api/agent-play/session")) {
         return sessionResponse();
       }
       if (u.endsWith("/api/nodes/validate") && init?.method === "POST") {
-        const body = JSON.parse(String(init.body)) as { mainNodeId?: string };
-        expect(body.mainNodeId).toBe(
-          deriveNodeIdFromPassword({
-            password: nodeCredentialsMaterialFromHumanPassphrase("key"),
-            rootKey: DEFAULT_NODE_ID,
-          })
-        );
+        const body = JSON.parse(String(init.body)) as {
+          nodeId?: string;
+          mainNodeId?: string;
+        };
+        if (
+          body.nodeId === configuredMain &&
+          (body.mainNodeId === undefined || body.mainNodeId === "")
+        ) {
+          return new Response(JSON.stringify({ ok: true, nodeKind: "main" }), {
+            status: 200,
+          });
+        }
+        expect(body.nodeId).toBe("aid-1");
+        expect(body.mainNodeId).toBe(agentParentMain);
         return new Response(JSON.stringify({ ok: true, nodeKind: "agent" }), {
           status: 200,
         });
       }
       if (u.includes("/api/agent-play/players") && init?.method === "POST") {
+        const body = JSON.parse(String(init.body)) as { mainNodeId?: string };
+        expect(body.mainNodeId).toBe(agentParentMain);
         return new Response(
           JSON.stringify({
             playerId: "p1",
@@ -824,13 +830,13 @@ describe("RemotePlayWorld", () => {
     });
     vi.stubGlobal("fetch", fetchMock);
     const world = playWorld("key");
-    await world.connect();
+    await world.connect({ mainNodeId: configuredMain });
     await world.addAgent({
       name: "a",
       type: "langchain",
       agent: { type: "langchain", toolNames: ["chat_tool"] },
       nodeId: "aid-1",
-      mainNodeId: "should-be-ignored",
+      mainNodeId: agentParentMain,
     });
     await world.close();
   });
