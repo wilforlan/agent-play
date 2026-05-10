@@ -26,6 +26,15 @@ function minimalSnapshot(sid: string, occupants: AgentPlaySnapshot["worldMap"]["
   };
 }
 
+const sampleCatalogSpace = (id: string): NonNullable<AgentPlaySnapshot["spaces"]>[number] => ({
+  id,
+  name: "Test space",
+  description: "",
+  designKey: "default",
+  owner: { displayName: "Owner", nodeId: "node-1" },
+  amenities: [],
+});
+
 const sampleAgent = (agentId: string, x = 0, y = 0) =>
   ({
     kind: "agent" as const,
@@ -100,6 +109,19 @@ describe("mergeSnapshotWithPlayerChainNode", () => {
       removed: true,
     });
     expect(next.worldMap.occupants).toHaveLength(0);
+  });
+
+  it("drops a catalog space when the space player-chain node is removed", () => {
+    const before: AgentPlaySnapshot = {
+      ...minimalSnapshot("s"),
+      spaces: [sampleCatalogSpace("sp-1")],
+    };
+    const next = mergeSnapshotWithPlayerChainNode(before, {
+      kind: "space",
+      stableKey: "space:sp-1",
+      removed: true,
+    });
+    expect(next.spaces ?? []).toHaveLength(0);
   });
 
   it("throws when occupant node has neither removed true nor false (defensive)", () => {

@@ -232,6 +232,9 @@ export function parseStructureOccupantRow(
     worldId: raw.worldId,
     spaceIds,
   };
+  if (raw.stationary === true) {
+    base.stationary = true;
+  }
   const pa = raw.primaryAmenity;
   if (typeof pa === "string" && isSpaceAmenityKind(pa)) {
     base.primaryAmenity = pa;

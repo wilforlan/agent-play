@@ -32,7 +32,11 @@ import type {
   WorldSpaceTransitionPayload,
 } from "./play-transport.js";
 import type { AgentRepository } from "./agent-repository.js";
-import type { SessionStore } from "./session-store.js";
+import type {
+  SessionStore,
+  SpaceAmenityLogEntry,
+  SpaceLeaseRecord,
+} from "./session-store.js";
 import {
   assertAgentToolContract,
   extractAssistToolNames,
@@ -58,10 +62,12 @@ import { clampWorldPosition, type WorldBounds } from "@agent-play/sdk";
 import type { StoredAgentRecord } from "./agent-repository.js";
 import {
   computeRandomFreeMapCell,
+  computeSpaceStructureAnchor,
   occupiedKeysFromSnapshot,
 } from "./grid-allocate.js";
 import { buildPlayerChainFanoutNotify } from "./player-chain/index.js";
 import type { SpaceAmenityKind } from "./space-amenity.js";
+import { MAX_SPACE_AMENITIES } from "./space-amenity.js";
 import {
   deriveStructureAmenityFields,
   emptySnapshot,
@@ -120,6 +126,26 @@ function snapshotWithOccupants(
     ...normalized,
     worldMap: buildSnapshotWorldMap(occupants),
   };
+}
+
+function refreshStructureOccupantsForCatalog(
+  occupants: PreviewWorldMapOccupantJson[],
+  catalog: readonly SpaceCatalogEntryJson[]
+): PreviewWorldMapOccupantJson[] {
+  return occupants.map((o) => {
+    if (o.kind !== "structure") {
+      return o;
+    }
+    const fields = deriveStructureAmenityFields(o.spaceIds, catalog);
+    const next: PreviewWorldMapStructureOccupantJson = {
+      ...o,
+      ...(fields.primaryAmenity !== undefined
+        ? { primaryAmenity: fields.primaryAmenity }
+        : {}),
+      ...(fields.amenities.length > 0 ? { amenities: fields.amenities } : {}),
+    };
+    return next;
+  });
 }
 
 function patchAgentLastUpdate(
@@ -299,6 +325,8 @@ export type RegisterStructureNodeInput = {
   y: number;
   worldId?: string;
   spaceIds: string[];
+  /** Defaults true (fixed map anchor for authored spaces). */
+  stationary?: boolean;
 };
 
 export type EnterStructureSpaceInput = {
@@ -307,14 +335,19 @@ export type EnterStructureSpaceInput = {
   spaceId?: string;
 };
 
+export type CreateSpaceWithNodeInput = {
+  name: string;
+  description?: string;
+  designKey: string;
+  ownerDisplayName: string;
+  structureName?: string;
+};
+
 function spaceCatalogEntryFromRegisterInput(
   input: RegisterSpaceNodeInput,
   id: string
 ): SpaceCatalogEntryJson {
   const amenities = input.amenities;
-  if (amenities.length === 0) {
-    throw new Error("registerSpaceNode: at least one amenity is required");
-  }
   const owner: SpaceOwner = input.owner ?? { displayName: "Unknown" };
   const displayName = owner.displayName.trim();
   if (displayName.length === 0) {
@@ -1259,9 +1292,354 @@ export class PlayWorld {
     return created;
   }
 
+  async createSpaceWithNode(input: CreateSpaceWithNodeInput): Promise<{
+    spaceId: string;
+    nodeId: string;
+    phrase: string;
+    structure: StructureNode;
+  }> {
+    if (this.repository === null) {
+      throw new Error("createSpaceWithNode: repository not configured");
+    }
+    const spaceId = randomUUID();
+    const created = await this.repository.createNode({
+      kind: "space",
+      spaceId,
+    });
+    if (created.phrase === undefined) {
+      throw new Error("createSpaceWithNode: expected server-generated passphrase");
+    }
+    await this.registerSpaceNode({
+      id: spaceId,
+      name: input.name,
+      description: input.description,
+      designKey: input.designKey,
+      owner: { displayName: input.ownerDisplayName, nodeId: created.nodeId },
+      amenities: [],
+    });
+    const baseSnap = await this.getSnapshotJson();
+    if (baseSnap === null) {
+      throw new Error("createSpaceWithNode: snapshot missing");
+    }
+    const normalized = normalizePreviewSnapshot(baseSnap);
+    const occupied = occupiedKeysFromSnapshot(normalized);
+    const structureAnchors = normalized.worldMap.occupants
+      .filter(
+        (o): o is PreviewWorldMapStructureOccupantJson =>
+          o.kind === "structure"
+      )
+      .map((o) => ({ x: o.x, y: o.y }));
+    const existingOccupants = normalized.worldMap.occupants.map((o) => ({
+      x: o.x,
+      y: o.y,
+    }));
+    const pos = computeSpaceStructureAnchor({
+      occupied,
+      existingOccupants,
+      structureAnchors,
+    });
+    const structure = await this.registerStructureNode({
+      id: `st-${spaceId}`,
+      name:
+        input.structureName?.trim() !== undefined &&
+        input.structureName.trim().length > 0
+          ? input.structureName.trim()
+          : input.name.trim(),
+      x: pos.x,
+      y: pos.y,
+      spaceIds: [spaceId],
+      stationary: true,
+    });
+    await this.sessionStore.appendSpaceAmenityLog({
+      spaceId,
+      amenityKind: "supermarket",
+      entry: {
+        at: new Date().toISOString(),
+        action: "space_created",
+        detail: { nodeId: created.nodeId, structureId: structure.id },
+      },
+    });
+    return {
+      spaceId,
+      nodeId: created.nodeId,
+      phrase: created.phrase,
+      structure,
+    };
+  }
+
+  async addSpaceAmenity(
+    spaceId: string,
+    kind: SpaceAmenityKind
+  ): Promise<SpaceNode> {
+    let updated: SpaceNode | undefined;
+    await runStoredWorldMutation({
+      store: this.sessionStore,
+      mutate: async (cached) => {
+        const base = ensureWorldSnapshot(
+          cached,
+          this.sessionStore.playerChainGenesis
+        );
+        const normalized = normalizePreviewSnapshot(base);
+        const catalog = normalized.spaces ?? [];
+        const row = catalog.find((s) => s.id === spaceId);
+        if (row === undefined) {
+          throw new Error(`addSpaceAmenity: unknown space "${spaceId}"`);
+        }
+        if (row.amenities.includes(kind)) {
+          throw new Error("addSpaceAmenity: amenity kind already present");
+        }
+        if (row.amenities.length >= MAX_SPACE_AMENITIES) {
+          throw new Error(
+            `addSpaceAmenity: at most ${String(MAX_SPACE_AMENITIES)} amenities`
+          );
+        }
+        const nextEntry: SpaceCatalogEntryJson = {
+          ...row,
+          amenities: [...row.amenities, kind].sort((a, b) => a.localeCompare(b)),
+        };
+        const nextSpaces = upsertSpaceCatalogEntry(catalog, nextEntry);
+        const occ = refreshStructureOccupantsForCatalog(
+          normalized.worldMap.occupants,
+          nextSpaces
+        );
+        const next = snapshotWithOccupants({ ...normalized, spaces: nextSpaces }, occ);
+        updated = spaceNodeFromCatalog(nextEntry);
+        agentPlayDebug("play-world", "addSpaceAmenity", { spaceId, kind });
+        return { next, fanout: this.metadataFanout() };
+      },
+    });
+    if (updated === undefined) {
+      throw new Error("addSpaceAmenity failed");
+    }
+    await this.sessionStore.appendSpaceAmenityLog({
+      spaceId,
+      amenityKind: kind,
+      entry: {
+        at: new Date().toISOString(),
+        action: "amenity_added",
+        detail: { kind },
+      },
+    });
+    return updated;
+  }
+
+  async removeSpaceAmenity(
+    spaceId: string,
+    kind: SpaceAmenityKind
+  ): Promise<SpaceNode> {
+    let updated: SpaceNode | undefined;
+    await runStoredWorldMutation({
+      store: this.sessionStore,
+      mutate: async (cached) => {
+        const base = ensureWorldSnapshot(
+          cached,
+          this.sessionStore.playerChainGenesis
+        );
+        const normalized = normalizePreviewSnapshot(base);
+        const catalog = normalized.spaces ?? [];
+        const row = catalog.find((s) => s.id === spaceId);
+        if (row === undefined) {
+          throw new Error(`removeSpaceAmenity: unknown space "${spaceId}"`);
+        }
+        if (!row.amenities.includes(kind)) {
+          throw new Error("removeSpaceAmenity: amenity kind not present");
+        }
+        const nextEntry: SpaceCatalogEntryJson = {
+          ...row,
+          amenities: row.amenities.filter((k) => k !== kind),
+        };
+        const nextSpaces = upsertSpaceCatalogEntry(catalog, nextEntry);
+        const occ = refreshStructureOccupantsForCatalog(
+          normalized.worldMap.occupants,
+          nextSpaces
+        );
+        const next = snapshotWithOccupants({ ...normalized, spaces: nextSpaces }, occ);
+        updated = spaceNodeFromCatalog(nextEntry);
+        agentPlayDebug("play-world", "removeSpaceAmenity", { spaceId, kind });
+        return { next, fanout: this.metadataFanout() };
+      },
+    });
+    if (updated === undefined) {
+      throw new Error("removeSpaceAmenity failed");
+    }
+    await this.sessionStore.appendSpaceAmenityLog({
+      spaceId,
+      amenityKind: kind,
+      entry: {
+        at: new Date().toISOString(),
+        action: "amenity_removed",
+        detail: { kind },
+      },
+    });
+    return updated;
+  }
+
+  async removeSpaceNode(
+    spaceId: string,
+    options?: { force?: boolean }
+  ): Promise<void> {
+    const leases = await this.sessionStore.listSpaceLeases(spaceId);
+    if (
+      !options?.force &&
+      leases.some((l) => l.status === "active" || l.status === "pending")
+    ) {
+      throw new Error(
+        "removeSpaceNode: pending or active leases exist (pass force to override)"
+      );
+    }
+    const snapBefore = await this.getSnapshotJson();
+    const ownerNodeId =
+      snapBefore?.spaces?.find((s) => s.id === spaceId)?.owner.nodeId?.trim() ??
+      "";
+    await runStoredWorldMutation({
+      store: this.sessionStore,
+      mutate: async (cached) => {
+        const base = ensureWorldSnapshot(
+          cached,
+          this.sessionStore.playerChainGenesis
+        );
+        const normalized = normalizePreviewSnapshot(base);
+        const spaces = (normalized.spaces ?? []).filter((s) => s.id !== spaceId);
+        const occ = normalized.worldMap.occupants
+          .map((o) => {
+            if (o.kind !== "structure") {
+              return o;
+            }
+            if (!o.spaceIds.includes(spaceId)) {
+              return o;
+            }
+            const nextIds = o.spaceIds.filter((id) => id !== spaceId);
+            if (nextIds.length === 0) {
+              return null;
+            }
+            const fields = deriveStructureAmenityFields(nextIds, spaces);
+            const nextRow: PreviewWorldMapStructureOccupantJson = {
+              ...o,
+              spaceIds: nextIds,
+              ...(fields.primaryAmenity !== undefined
+                ? { primaryAmenity: fields.primaryAmenity }
+                : {}),
+              ...(fields.amenities.length > 0
+                ? { amenities: fields.amenities }
+                : {}),
+            };
+            return nextRow;
+          })
+          .filter((o): o is PreviewWorldMapOccupantJson => o !== null);
+        const next = snapshotWithOccupants({ ...normalized, spaces }, occ);
+        agentPlayDebug("play-world", "removeSpaceNode", { spaceId });
+        return { next, fanout: this.metadataFanout() };
+      },
+    });
+    await this.sessionStore.deleteSpaceSidecar(spaceId);
+    if (ownerNodeId.length > 0 && this.repository !== null) {
+      await this.repository.deleteMainNodeCascade(ownerNodeId);
+    }
+  }
+
   async listSpaceNodes(): Promise<readonly SpaceNode[]> {
     const snap = await this.getSnapshotJson();
     return (snap.spaces ?? []).map((row) => spaceNodeFromCatalog(row));
+  }
+
+  async getSpaceDetail(spaceId: string): Promise<{
+    catalog: SpaceNode | null;
+    leases: SpaceLeaseRecord[];
+    logs: SpaceAmenityLogEntry[];
+  }> {
+    const snap = await this.getSnapshotJson();
+    const row = snap.spaces?.find((s) => s.id === spaceId);
+    const leases = await this.sessionStore.listSpaceLeases(spaceId);
+    const logs = await this.sessionStore.listSpaceAmenityLogs({
+      spaceId,
+      limit: 200,
+    });
+    return {
+      catalog: row !== undefined ? spaceNodeFromCatalog(row) : null,
+      leases,
+      logs,
+    };
+  }
+
+  async createAmenityLease(input: {
+    spaceId: string;
+    amenityKind: SpaceAmenityKind;
+    tenantEmail: string;
+    tenantAddress: string;
+    humanPlayerId?: string;
+    durationMonths: number;
+  }): Promise<SpaceLeaseRecord> {
+    const snap = await this.getSnapshotJson();
+    if (snap === null) {
+      throw new Error("createAmenityLease: snapshot unavailable");
+    }
+    const catalogRow = snap.spaces?.find((s) => s.id === input.spaceId);
+    if (catalogRow === undefined) {
+      throw new Error("createAmenityLease: unknown space");
+    }
+    if (!catalogRow.amenities.includes(input.amenityKind)) {
+      throw new Error(
+        "createAmenityLease: this amenity is not on the space; add it before creating a lease"
+      );
+    }
+    const leaseId = randomUUID();
+    const now = new Date().toISOString();
+    const record: SpaceLeaseRecord = {
+      leaseId,
+      spaceId: input.spaceId,
+      amenityKind: input.amenityKind,
+      tenantEmail: input.tenantEmail.trim(),
+      tenantAddress: input.tenantAddress.trim(),
+      durationMonths: input.durationMonths,
+      ...(input.humanPlayerId !== undefined &&
+      input.humanPlayerId.trim().length > 0
+        ? { humanPlayerId: input.humanPlayerId.trim() }
+        : {}),
+      status: "active",
+      createdAt: now,
+      updatedAt: now,
+    };
+    await this.sessionStore.upsertSpaceLease(record);
+    await this.sessionStore.appendSpaceAmenityLog({
+      spaceId: input.spaceId,
+      amenityKind: input.amenityKind,
+      entry: {
+        at: now,
+        action: "lease_created",
+        detail: { leaseId, durationMonths: input.durationMonths },
+      },
+    });
+    return record;
+  }
+
+  async cancelAmenityLease(input: {
+    spaceId: string;
+    leaseId: string;
+  }): Promise<void> {
+    const leases = await this.sessionStore.listSpaceLeases(input.spaceId);
+    const existing = leases.find((l) => l.leaseId === input.leaseId);
+    if (existing === undefined) {
+      throw new Error("cancelAmenityLease: lease not found");
+    }
+    if (existing.status === "terminated") {
+      return;
+    }
+    const now = new Date().toISOString();
+    const updated: SpaceLeaseRecord = {
+      ...existing,
+      status: "terminated",
+      updatedAt: now,
+    };
+    await this.sessionStore.upsertSpaceLease(updated);
+    await this.sessionStore.appendSpaceAmenityLog({
+      spaceId: input.spaceId,
+      amenityKind: existing.amenityKind,
+      entry: {
+        at: now,
+        action: "lease_cancelled",
+        detail: { leaseId: input.leaseId },
+      },
+    });
   }
 
   async registerStructureNode(
@@ -1316,6 +1694,7 @@ export class PlayWorld {
           uniqueSpaceIds,
           catalog
         );
+        const stationary = input.stationary !== false;
         const row: PreviewWorldMapStructureOccupantJson = {
           kind: "structure",
           id,
@@ -1324,6 +1703,7 @@ export class PlayWorld {
           y: rawPos.y,
           worldId,
           spaceIds: uniqueSpaceIds,
+          ...(stationary ? { stationary: true } : {}),
           ...(amenityFields.primaryAmenity !== undefined
             ? { primaryAmenity: amenityFields.primaryAmenity }
             : {}),

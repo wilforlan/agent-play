@@ -1,5 +1,8 @@
 export const SPACE_AMENITY_KINDS = ["supermarket", "shop", "car_wash"] as const;
 
+/** At most one structure per kind per catalog space. */
+export const MAX_SPACE_AMENITIES = 3;
+
 export type SpaceAmenityKind = (typeof SPACE_AMENITY_KINDS)[number];
 
 export function isSpaceAmenityKind(value: string): value is SpaceAmenityKind {

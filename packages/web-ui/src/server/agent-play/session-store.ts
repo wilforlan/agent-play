@@ -44,6 +44,25 @@ export type WorldChatMessage = {
   ts: string;
 };
 
+export type SpaceAmenityLogEntry = {
+  at: string;
+  action: string;
+  detail?: unknown;
+};
+
+export type SpaceLeaseRecord = {
+  leaseId: string;
+  spaceId: string;
+  amenityKind: string;
+  tenantEmail: string;
+  tenantAddress: string;
+  humanPlayerId?: string;
+  durationMonths?: number;
+  status: "pending" | "active" | "terminated";
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type SessionStore = {
   readonly fanoutDelivery: "redis" | "local";
   readonly playerChainGenesis: string;
@@ -97,4 +116,21 @@ export type SessionStore = {
     limit: number;
     beforeSeq?: number;
   }): Promise<{ messages: WorldChatMessage[]; hasMore: boolean; totalCount: number }>;
+  appendSpaceAmenityLog(input: {
+    spaceId: string;
+    amenityKind: string;
+    entry: SpaceAmenityLogEntry;
+  }): Promise<void>;
+  listSpaceAmenityLogs(input: {
+    spaceId: string;
+    amenityKind?: string;
+    limit: number;
+  }): Promise<SpaceAmenityLogEntry[]>;
+  upsertSpaceLease(record: SpaceLeaseRecord): Promise<void>;
+  listSpaceLeases(spaceId: string): Promise<SpaceLeaseRecord[]>;
+  deleteSpaceLease(input: {
+    spaceId: string;
+    leaseId: string;
+  }): Promise<boolean>;
+  deleteSpaceSidecar(spaceId: string): Promise<void>;
 };

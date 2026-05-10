@@ -9,11 +9,14 @@ import type {
   PersistSnapshotRev,
   PublishedSessionMetadata,
   SessionStore,
+  SpaceAmenityLogEntry,
+  SpaceLeaseRecord,
   WorldChatMessage,
   WorldFanoutOptions,
 } from "./session-store.js";
 
 const EVENT_LOG_MAX = 200;
+const SPACE_AMENITY_LOG_MAX = 500;
 
 export type TestSessionStoreOptions = {
   playerChainGenesis?: string;
@@ -35,6 +38,8 @@ export class TestSessionStore implements SessionStore {
     string,
     PresenceLease & { expiresAtMs: number }
   >();
+  private readonly spaceAmenityLogs = new Map<string, SpaceAmenityLogEntry[]>();
+  private readonly spaceLeases = new Map<string, SpaceLeaseRecord[]>();
 
   constructor(options: TestSessionStoreOptions = {}) {
     this.playerChainGenesis =
@@ -309,5 +314,84 @@ export class TestSessionStore implements SessionStore {
       connectionId: lease.connectionId,
       lastSeenAt: lease.lastSeenAt,
     }));
+  }
+
+  private spaceAmenityLogCompositeKey(spaceId: string, kind: string): string {
+    return `${spaceId}\u0000${kind}`;
+  }
+
+  async appendSpaceAmenityLog(input: {
+    spaceId: string;
+    amenityKind: string;
+    entry: SpaceAmenityLogEntry;
+  }): Promise<void> {
+    const key = this.spaceAmenityLogCompositeKey(input.spaceId, input.amenityKind);
+    const list = this.spaceAmenityLogs.get(key) ?? [];
+    list.unshift(input.entry);
+    while (list.length > SPACE_AMENITY_LOG_MAX) {
+      list.pop();
+    }
+    this.spaceAmenityLogs.set(key, list);
+  }
+
+  async listSpaceAmenityLogs(input: {
+    spaceId: string;
+    amenityKind?: string;
+    limit: number;
+  }): Promise<SpaceAmenityLogEntry[]> {
+    const lim = Math.min(Math.max(input.limit, 1), SPACE_AMENITY_LOG_MAX);
+    if (input.amenityKind !== undefined) {
+      const list =
+        this.spaceAmenityLogs.get(
+          this.spaceAmenityLogCompositeKey(input.spaceId, input.amenityKind)
+        ) ?? [];
+      return list.slice(0, lim).map((e) => ({ ...e }));
+    }
+    const merged: SpaceAmenityLogEntry[] = [];
+    for (const kind of ["supermarket", "shop", "car_wash"]) {
+      merged.push(
+        ...(this.spaceAmenityLogs.get(
+          this.spaceAmenityLogCompositeKey(input.spaceId, kind)
+        ) ?? [])
+      );
+    }
+    merged.sort((a, b) => b.at.localeCompare(a.at));
+    return merged.slice(0, lim);
+  }
+
+  async upsertSpaceLease(record: SpaceLeaseRecord): Promise<void> {
+    const list = this.spaceLeases.get(record.spaceId) ?? [];
+    const next = list.filter((l) => l.leaseId !== record.leaseId);
+    next.push(record);
+    this.spaceLeases.set(record.spaceId, next);
+  }
+
+  async listSpaceLeases(spaceId: string): Promise<SpaceLeaseRecord[]> {
+    return [...(this.spaceLeases.get(spaceId) ?? [])];
+  }
+
+  async deleteSpaceLease(input: {
+    spaceId: string;
+    leaseId: string;
+  }): Promise<boolean> {
+    const list = this.spaceLeases.get(input.spaceId);
+    if (list === undefined) {
+      return false;
+    }
+    const next = list.filter((l) => l.leaseId !== input.leaseId);
+    if (next.length === list.length) {
+      return false;
+    }
+    this.spaceLeases.set(input.spaceId, next);
+    return true;
+  }
+
+  async deleteSpaceSidecar(spaceId: string): Promise<void> {
+    this.spaceLeases.delete(spaceId);
+    for (const key of [...this.spaceAmenityLogs.keys()]) {
+      if (key.startsWith(`${spaceId}\u0000`)) {
+        this.spaceAmenityLogs.delete(key);
+      }
+    }
   }
 }

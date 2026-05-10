@@ -12,6 +12,14 @@ export type AqlAutocompleteResult = {
 
 const KEYWORD_SUGGESTIONS: AqlSuggestion[] = [
   { label: "INSPECT MAIN NODE", insertText: "INSPECT MAIN NODE", kind: "keyword" },
+  { label: "INSPECT SPACE", insertText: "INSPECT SPACE", kind: "keyword" },
+  { label: "INSPECT AMENITY", insertText: "INSPECT AMENITY ", kind: "keyword" },
+  { label: "CREATE SPACE", insertText: "CREATE SPACE ", kind: "keyword" },
+  { label: "USE SPACE NODE", insertText: "USE SPACE NODE ", kind: "keyword" },
+  { label: "ADD AMENITY", insertText: "ADD AMENITY ", kind: "keyword" },
+  { label: "REMOVE SPACE", insertText: "REMOVE SPACE ", kind: "keyword" },
+  { label: "REMOVE AMENITY", insertText: "REMOVE AMENITY ", kind: "keyword" },
+  { label: "CREATE LEASE AMENITY", insertText: "CREATE LEASE AMENITY ", kind: "keyword" },
   { label: "INSPECT AGENT NODE", insertText: "INSPECT AGENT NODE", kind: "keyword" },
   { label: "INSPECT AGENT", insertText: "INSPECT AGENT", kind: "keyword" },
   { label: "USE AGENT NODE", insertText: "USE AGENT NODE ", kind: "keyword" },

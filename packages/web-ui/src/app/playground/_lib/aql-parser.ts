@@ -46,12 +46,18 @@ class Parser {
     switch (token.value) {
       case "LET":
         return this.parseLet();
+      case "CREATE":
+        return this.parseCreate();
       case "CONNECT":
         return this.parseConnect();
       case "INSPECT":
         return this.parseInspect();
       case "USE":
         return this.parseUse();
+      case "ADD":
+        return this.parseAdd();
+      case "REMOVE":
+        return this.parseRemove();
       case "SHIFT":
         return this.parseShift();
       case "SEND":
@@ -100,13 +106,29 @@ class Parser {
     this.advance();
     const token = this.peek();
     if (token === null || token.kind !== "keyword") {
-      this.error(token, "AQL_PARSE_ERROR", "Expected MAIN or AGENT after INSPECT");
+      this.error(token, "AQL_PARSE_ERROR", "Expected MAIN, SPACE, AMENITY, or AGENT after INSPECT");
       return null;
     }
     if (token.value === "MAIN") {
       this.advance();
       if (!this.matchKeyword("NODE")) return null;
       return { kind: "InspectMainNodeStmt" };
+    }
+    if (token.value === "SPACE") {
+      this.advance();
+      return { kind: "InspectSpaceStmt" };
+    }
+    if (token.value === "AMENITY") {
+      this.advance();
+      const probe = this.peek();
+      if (
+        probe !== null &&
+        (probe.kind === "string" || probe.kind === "number" || probe.kind === "variable")
+      ) {
+        const kindFilter = this.parseExpr();
+        return kindFilter === null ? null : { kind: "InspectAmenityStmt", kindFilter };
+      }
+      return { kind: "InspectAmenityStmt", kindFilter: undefined };
     }
     if (token.value === "AGENT") {
       this.advance();
@@ -116,12 +138,115 @@ class Parser {
       }
       return { kind: "InspectAgentStmt" };
     }
-    this.error(token, "AQL_PARSE_ERROR", "Expected MAIN or AGENT after INSPECT");
+    this.error(token, "AQL_PARSE_ERROR", "Expected MAIN, SPACE, AMENITY, or AGENT after INSPECT");
     return null;
+  }
+
+  private parseCreate(): AqlStatement | null {
+    this.advance();
+    const head = this.peek();
+    if (head !== null && head.kind === "keyword" && head.value === "LEASE") {
+      this.advance();
+      if (!this.matchKeyword("AMENITY")) return null;
+      const amenityKind = this.parseExpr();
+      if (amenityKind === null) return null;
+      if (!this.matchKeyword("EMAIL")) return null;
+      const email = this.parseExpr();
+      if (email === null) return null;
+      if (!this.matchKeyword("ADDRESS")) return null;
+      const address = this.parseExpr();
+      if (address === null) return null;
+      if (!this.matchKeyword("MONTHS")) return null;
+      const durationMonths = this.parseExpr();
+      if (durationMonths === null) return null;
+      let humanPlayerId: AqlExpr | undefined;
+      if (this.checkKeyword("HUMAN")) {
+        this.advance();
+        const hid = this.parseExpr();
+        if (hid === null) return null;
+        humanPlayerId = hid;
+      }
+      return {
+        kind: "CreateLeaseStmt",
+        amenityKind,
+        email,
+        address,
+        durationMonths,
+        ...(humanPlayerId !== undefined ? { humanPlayerId } : {}),
+      };
+    }
+    if (!this.matchKeyword("SPACE")) return null;
+    const name = this.parseExpr();
+    if (name === null) return null;
+    if (!this.matchKeyword("DESIGN")) return null;
+    const designKey = this.parseExpr();
+    if (designKey === null) return null;
+    if (!this.matchKeyword("OWNER")) return null;
+    const ownerDisplayName = this.parseExpr();
+    if (ownerDisplayName === null) return null;
+    let description: AqlExpr | undefined;
+    if (this.checkKeyword("DESCRIPTION")) {
+      this.advance();
+      const d = this.parseExpr();
+      if (d === null) return null;
+      description = d;
+    }
+    let structureName: AqlExpr | undefined;
+    if (this.checkKeyword("STRUCTURE")) {
+      this.advance();
+      const sn = this.parseExpr();
+      if (sn === null) return null;
+      structureName = sn;
+    }
+    return {
+      kind: "CreateSpaceStmt",
+      name,
+      designKey,
+      ownerDisplayName,
+      ...(description !== undefined ? { description } : {}),
+      ...(structureName !== undefined ? { structureName } : {}),
+    };
+  }
+
+  private parseRemove(): AqlStatement | null {
+    this.advance();
+    const token = this.peek();
+    if (token !== null && token.kind === "keyword" && token.value === "SPACE") {
+      this.advance();
+      const spaceId = this.parseExpr();
+      return spaceId === null ? null : { kind: "RemoveSpaceStmt", spaceId };
+    }
+    if (token !== null && token.kind === "keyword" && token.value === "AMENITY") {
+      this.advance();
+      const spaceId = this.parseExpr();
+      if (spaceId === null) return null;
+      const amenityKind = this.parseExpr();
+      return amenityKind === null
+        ? null
+        : { kind: "RemoveSpaceAmenityStmt", spaceId, amenityKind };
+    }
+    this.error(token, "AQL_PARSE_ERROR", "Expected SPACE or AMENITY after REMOVE");
+    return null;
+  }
+
+  private parseAdd(): AqlStatement | null {
+    this.advance();
+    if (!this.matchKeyword("AMENITY")) return null;
+    const amenityKind = this.parseExpr();
+    return amenityKind === null ? null : { kind: "AddSpaceAmenityStmt", amenityKind };
   }
 
   private parseUse(): AqlStatement | null {
     this.advance();
+    if (this.checkKeyword("SPACE")) {
+      this.advance();
+      if (!this.matchKeyword("NODE")) return null;
+      const nodeId = this.parseExpr();
+      if (nodeId === null) return null;
+      if (!this.matchKeyword("PASSPHRASE")) return null;
+      const passphrase = this.parseExpr();
+      return passphrase === null ? null : { kind: "UseSpaceNodeStmt", nodeId, passphrase };
+    }
     if (!this.matchKeyword("AGENT")) return null;
     if (!this.matchKeyword("NODE")) return null;
     const nodeId = this.parseExpr();

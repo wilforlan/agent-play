@@ -18,6 +18,7 @@ export function validateAql(program: AqlProgram): ValidationResult {
   const vars = new Set<string>();
   const macros = new Map<string, { paramCount: number; minArgs: number }>();
   let hasAgentTarget = false;
+  let hasSpaceUse = false;
 
   const validateExpr = (expr: AqlExpr): void => {
     const varName = exprVarName(expr);
@@ -42,10 +43,90 @@ export function validateAql(program: AqlProgram): ValidationResult {
       case "ShiftAgentNodeStmt":
         validateExpr(stmt.nodeId);
         hasAgentTarget = true;
+        hasSpaceUse = false;
+        return;
+      case "UseSpaceNodeStmt":
+        validateExpr(stmt.nodeId);
+        validateExpr(stmt.passphrase);
+        hasSpaceUse = true;
+        hasAgentTarget = false;
+        return;
+      case "CreateSpaceStmt":
+        validateExpr(stmt.name);
+        validateExpr(stmt.designKey);
+        validateExpr(stmt.ownerDisplayName);
+        if (stmt.description !== undefined) {
+          validateExpr(stmt.description);
+        }
+        if (stmt.structureName !== undefined) {
+          validateExpr(stmt.structureName);
+        }
+        return;
+      case "CreateLeaseStmt":
+        validateExpr(stmt.amenityKind);
+        validateExpr(stmt.email);
+        validateExpr(stmt.address);
+        validateExpr(stmt.durationMonths);
+        if (stmt.humanPlayerId !== undefined) {
+          validateExpr(stmt.humanPlayerId);
+        }
+        if (!hasSpaceUse) {
+          diagnostics.push({
+            code: "AQL_SEMANTIC_ERROR",
+            severity: "error",
+            message: "CREATE LEASE AMENITY requires USE SPACE NODE first",
+            line: 1,
+            column: 1,
+          });
+        }
         return;
       case "InspectMainNodeStmt":
       case "InspectAgentNodeStmt":
       case "InspectAgentStmt":
+        return;
+      case "InspectSpaceStmt":
+        if (!hasSpaceUse) {
+          diagnostics.push({
+            code: "AQL_SEMANTIC_ERROR",
+            severity: "error",
+            message: "INSPECT SPACE requires USE SPACE NODE first",
+            line: 1,
+            column: 1,
+          });
+        }
+        return;
+      case "InspectAmenityStmt":
+        if (stmt.kindFilter !== undefined) {
+          validateExpr(stmt.kindFilter);
+        }
+        if (!hasSpaceUse) {
+          diagnostics.push({
+            code: "AQL_SEMANTIC_ERROR",
+            severity: "error",
+            message: "INSPECT AMENITY requires USE SPACE NODE first",
+            line: 1,
+            column: 1,
+          });
+        }
+        return;
+      case "AddSpaceAmenityStmt":
+        validateExpr(stmt.amenityKind);
+        if (!hasSpaceUse) {
+          diagnostics.push({
+            code: "AQL_SEMANTIC_ERROR",
+            severity: "error",
+            message: "ADD AMENITY requires USE SPACE NODE first",
+            line: 1,
+            column: 1,
+          });
+        }
+        return;
+      case "RemoveSpaceAmenityStmt":
+        validateExpr(stmt.spaceId);
+        validateExpr(stmt.amenityKind);
+        return;
+      case "RemoveSpaceStmt":
+        validateExpr(stmt.spaceId);
         return;
       case "SendStmt":
         validateExpr(stmt.message);
@@ -108,9 +189,12 @@ export function validateAql(program: AqlProgram): ValidationResult {
           scopedVars.add(param.name);
         }
         const previousVars = new Set(vars);
+        const previousHasSpaceUse = hasSpaceUse;
         vars.clear();
         for (const scoped of scopedVars) vars.add(scoped);
+        hasSpaceUse = false;
         for (const inner of stmt.body) visitStatement(inner);
+        hasSpaceUse = previousHasSpaceUse;
         vars.clear();
         for (const v of previousVars) vars.add(v);
         return;

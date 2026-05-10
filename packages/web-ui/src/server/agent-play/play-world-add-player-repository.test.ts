@@ -5,9 +5,10 @@ import {
 } from "@agent-play/node-tools";
 import type {
   AgentRepository,
-  CreateAgentRecordInput,
   CreateAgentNodeRecordInput,
+  CreateAgentRecordInput,
   CreateAgentRecordResult,
+  CreateNodeRecordInput,
   CreateNodeResult,
   NodeAuthRecord,
   StoredAgentRecord,
@@ -44,8 +45,9 @@ class TestAgentRepository implements AgentRepository {
     return { ok: false, reason: "not used in this test" };
   }
 
-  async createNode(input: { kind: "main"; passw: string }): Promise<CreateNodeResult> {
-    const passw = input.passw;
+  async createNode(input: CreateNodeRecordInput): Promise<CreateNodeResult> {
+    const passw =
+      input.kind === "main" ? input.passw : (input.passw ?? "x".repeat(64));
     const nodeId = deriveNodeIdFromPassword({
       password: passw,
       rootKey: this.rootKey,
@@ -55,7 +57,8 @@ class TestAgentRepository implements AgentRepository {
     }
     this.nodes.set(nodeId, {
       nodeId,
-      kind: "main",
+      kind: input.kind === "main" ? "main" : "space",
+      ...(input.kind === "space" ? { spaceId: input.spaceId } : {}),
       parentNodeId: this.rootKey,
       createdAt: new Date().toISOString(),
     });

@@ -14,12 +14,15 @@ import type {
   PersistSnapshotRev,
   PublishedSessionMetadata,
   SessionStore,
+  SpaceAmenityLogEntry,
+  SpaceLeaseRecord,
   WorldChatMessage,
   WorldFanoutOptions,
 } from "./session-store.js";
 
 const EVENT_LOG_MAX = 200;
 const WORLD_CHAT_MAX = 5000;
+const SPACE_AMENITY_LOG_MAX = 500;
 
 function sessionHashKey(hostId: string): string {
   return `agent-play:${hostId}:session`;
@@ -47,6 +50,18 @@ function gridOccupiedKey(hostId: string): string {
 
 function presenceLeaseKey(hostId: string, playerId: string): string {
   return `agent-play:${hostId}:presence:${playerId}`;
+}
+
+function spaceAmenityLogKey(
+  hostId: string,
+  spaceId: string,
+  kind: string
+): string {
+  return `agent-play:${hostId}:space:${spaceId}:amenity:${kind}:log`;
+}
+
+function spaceLeasesHashKey(hostId: string, spaceId: string): string {
+  return `agent-play:${hostId}:space:${spaceId}:leases`;
 }
 
 export type RedisSessionStoreOptions = {
@@ -608,6 +623,95 @@ export class RedisSessionStore implements SessionStore {
       }
     }
     return out;
+  }
+
+  async appendSpaceAmenityLog(input: {
+    spaceId: string;
+    amenityKind: string;
+    entry: SpaceAmenityLogEntry;
+  }): Promise<void> {
+    const key = spaceAmenityLogKey(
+      this.hostId,
+      input.spaceId,
+      input.amenityKind
+    );
+    const line = JSON.stringify(input.entry);
+    await this.redis.lpush(key, line);
+    await this.redis.ltrim(key, 0, SPACE_AMENITY_LOG_MAX - 1);
+  }
+
+  async listSpaceAmenityLogs(input: {
+    spaceId: string;
+    amenityKind?: string;
+    limit: number;
+  }): Promise<SpaceAmenityLogEntry[]> {
+    const lim = Math.min(Math.max(input.limit, 1), SPACE_AMENITY_LOG_MAX);
+    if (input.amenityKind !== undefined) {
+      const key = spaceAmenityLogKey(
+        this.hostId,
+        input.spaceId,
+        input.amenityKind
+      );
+      const raw = await this.redis.lrange(key, 0, lim - 1);
+      return raw
+        .map((line) => {
+          try {
+            return JSON.parse(line) as SpaceAmenityLogEntry;
+          } catch {
+            return null;
+          }
+        })
+        .filter((x): x is SpaceAmenityLogEntry => x !== null);
+    }
+    const merged: SpaceAmenityLogEntry[] = [];
+    for (const kind of ["supermarket", "shop", "car_wash"]) {
+      const key = spaceAmenityLogKey(this.hostId, input.spaceId, kind);
+      const raw = await this.redis.lrange(key, 0, SPACE_AMENITY_LOG_MAX - 1);
+      for (const line of raw) {
+        try {
+          merged.push(JSON.parse(line) as SpaceAmenityLogEntry);
+        } catch {
+          continue;
+        }
+      }
+    }
+    merged.sort((a, b) => b.at.localeCompare(a.at));
+    return merged.slice(0, lim);
+  }
+
+  async upsertSpaceLease(record: SpaceLeaseRecord): Promise<void> {
+    const key = spaceLeasesHashKey(this.hostId, record.spaceId);
+    await this.redis.hset(key, record.leaseId, JSON.stringify(record));
+  }
+
+  async listSpaceLeases(spaceId: string): Promise<SpaceLeaseRecord[]> {
+    const key = spaceLeasesHashKey(this.hostId, spaceId);
+    const raw = await this.redis.hgetall(key);
+    const out: SpaceLeaseRecord[] = [];
+    for (const value of Object.values(raw)) {
+      try {
+        out.push(JSON.parse(value) as SpaceLeaseRecord);
+      } catch {
+        continue;
+      }
+    }
+    return out.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  }
+
+  async deleteSpaceLease(input: {
+    spaceId: string;
+    leaseId: string;
+  }): Promise<boolean> {
+    const key = spaceLeasesHashKey(this.hostId, input.spaceId);
+    const removed = await this.redis.hdel(key, input.leaseId);
+    return removed === 1;
+  }
+
+  async deleteSpaceSidecar(spaceId: string): Promise<void> {
+    await this.redis.del(spaceLeasesHashKey(this.hostId, spaceId));
+    for (const kind of ["supermarket", "shop", "car_wash"] as const) {
+      await this.redis.del(spaceAmenityLogKey(this.hostId, spaceId, kind));
+    }
   }
 
   getHostId(): string {

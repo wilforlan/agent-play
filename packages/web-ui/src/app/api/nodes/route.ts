@@ -115,10 +115,15 @@ export async function POST(req: NextRequest) {
   }
   console.log("parsed input on POST /api/nodes", parsed);
   try {
-    const result = await createNodeAccount(repository, {
-      kind: parsed.kind,
-      passw: parsed.passw,
-    });
+    const input =
+      parsed.kind === "main"
+        ? { kind: "main" as const, passw: parsed.passw }
+        : {
+            kind: "space" as const,
+            spaceId: parsed.spaceId,
+            ...(parsed.passw !== undefined ? { passw: parsed.passw } : {}),
+          };
+    const result = await createNodeAccount(repository, input);
     return Response.json(result);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);

@@ -25,11 +25,59 @@ import {
 import { createNodeAccount } from "@/server/agent-play/create-node-account";
 import { getRepository } from "@/server/get-world";
 import { publishWorldIntercomEvent } from "@/server/agent-play/intercom/fanout";
+import { isSpaceAmenityKind } from "@/server/agent-play/space-amenity";
 
 function requireSid(req: NextRequest): string | null {
   const raw = req.nextUrl.searchParams.get("sid");
   if (raw === null || raw.trim().length === 0) return null;
   return raw.trim();
+}
+
+async function verifyMainNodeHeaders(req: NextRequest): Promise<Response | null> {
+  const repository = await getRepository();
+  if (repository === null) {
+    return Response.json({ error: "repository unavailable" }, { status: 503 });
+  }
+  const nodeId = req.headers.get("x-node-id")?.trim() ?? "";
+  const passw = req.headers.get("x-node-passw") ?? "";
+  if (nodeId.length === 0 || passw.length === 0) {
+    return Response.json({ error: "missing x-node-id / x-node-passw" }, { status: 401 });
+  }
+  if (!(await repository.verifyNodePassw(nodeId, passw))) {
+    return Response.json({ error: "unauthorized" }, { status: 401 });
+  }
+  const row = await repository.getNode(nodeId);
+  if (row === null || row.kind !== "main") {
+    return Response.json({ error: "main node required" }, { status: 403 });
+  }
+  return null;
+}
+
+async function verifySpaceNodeHeaders(
+  req: NextRequest,
+  expectedSpaceId: string
+): Promise<Response | null> {
+  const repository = await getRepository();
+  if (repository === null) {
+    return Response.json({ error: "repository unavailable" }, { status: 503 });
+  }
+  const nodeId = req.headers.get("x-node-id")?.trim() ?? "";
+  const passw = req.headers.get("x-node-passw") ?? "";
+  if (nodeId.length === 0 || passw.length === 0) {
+    return Response.json({ error: "missing x-node-id / x-node-passw" }, { status: 401 });
+  }
+  if (!(await repository.verifyNodePassw(nodeId, passw))) {
+    return Response.json({ error: "unauthorized" }, { status: 401 });
+  }
+  const row = await repository.getNode(nodeId);
+  if (row === null || row.kind !== "space") {
+    return Response.json({ error: "space node required" }, { status: 403 });
+  }
+  const want = expectedSpaceId.trim();
+  if (row.spaceId !== want) {
+    return Response.json({ error: "space scope mismatch" }, { status: 403 });
+  }
+  return null;
 }
 
 export async function POST(req: NextRequest) {
@@ -196,6 +244,186 @@ export async function POST(req: NextRequest) {
         const rjPlayerId = p.playerId;
         const rjJourney = p.journey as Journey;
         await world.recordJourney(rjPlayerId, rjJourney);
+        return Response.json({ ok: true });
+      }
+      case "createSpace": {
+        const gate = await verifyMainNodeHeaders(req);
+        if (gate !== null) {
+          return gate;
+        }
+        const p = body.payload as {
+          name?: unknown;
+          designKey?: unknown;
+          ownerDisplayName?: unknown;
+          description?: unknown;
+          structureName?: unknown;
+        };
+        if (
+          typeof p.name !== "string" ||
+          typeof p.designKey !== "string" ||
+          typeof p.ownerDisplayName !== "string"
+        ) {
+          return Response.json({ error: "invalid payload" }, { status: 400 });
+        }
+        const created = await world.createSpaceWithNode({
+          name: p.name.trim(),
+          designKey: p.designKey.trim(),
+          ownerDisplayName: p.ownerDisplayName.trim(),
+          ...(typeof p.description === "string"
+            ? { description: p.description }
+            : {}),
+          ...(typeof p.structureName === "string"
+            ? { structureName: p.structureName }
+            : {}),
+        });
+        return Response.json(created);
+      }
+      case "addSpaceAmenity": {
+        const p = body.payload as { spaceId?: unknown; kind?: unknown };
+        if (typeof p.spaceId !== "string" || typeof p.kind !== "string") {
+          return Response.json({ error: "invalid payload" }, { status: 400 });
+        }
+        const gate = await verifySpaceNodeHeaders(req, p.spaceId);
+        if (gate !== null) {
+          return gate;
+        }
+        if (!isSpaceAmenityKind(p.kind)) {
+          return Response.json({ error: "invalid amenity kind" }, { status: 400 });
+        }
+        const row = await world.addSpaceAmenity(p.spaceId.trim(), p.kind);
+        return Response.json({ space: row });
+      }
+      case "removeSpaceAmenity": {
+        const p = body.payload as { spaceId?: unknown; kind?: unknown };
+        if (typeof p.spaceId !== "string" || typeof p.kind !== "string") {
+          return Response.json({ error: "invalid payload" }, { status: 400 });
+        }
+        const gate = await verifySpaceNodeHeaders(req, p.spaceId);
+        if (gate !== null) {
+          return gate;
+        }
+        if (!isSpaceAmenityKind(p.kind)) {
+          return Response.json({ error: "invalid amenity kind" }, { status: 400 });
+        }
+        const row = await world.removeSpaceAmenity(p.spaceId.trim(), p.kind);
+        return Response.json({ space: row });
+      }
+      case "removeSpace": {
+        const gate = await verifyMainNodeHeaders(req);
+        if (gate !== null) {
+          return gate;
+        }
+        const p = body.payload as { spaceId?: unknown; force?: unknown };
+        if (typeof p.spaceId !== "string") {
+          return Response.json({ error: "invalid payload" }, { status: 400 });
+        }
+        await world.removeSpaceNode(p.spaceId.trim(), {
+          force: p.force === true,
+        });
+        return Response.json({ ok: true });
+      }
+      case "inspectSpace": {
+        const p = body.payload as { spaceId?: unknown };
+        if (typeof p.spaceId !== "string") {
+          return Response.json({ error: "invalid payload" }, { status: 400 });
+        }
+        const gate = await verifySpaceNodeHeaders(req, p.spaceId);
+        if (gate !== null) {
+          return gate;
+        }
+        const detail = await world.getSpaceDetail(p.spaceId.trim());
+        return Response.json(detail);
+      }
+      case "inspectAmenity": {
+        const p = body.payload as { spaceId?: unknown; kind?: unknown };
+        if (typeof p.spaceId !== "string") {
+          return Response.json({ error: "invalid payload" }, { status: 400 });
+        }
+        const gate = await verifySpaceNodeHeaders(req, p.spaceId);
+        if (gate !== null) {
+          return gate;
+        }
+        const kind =
+          typeof p.kind === "string" && isSpaceAmenityKind(p.kind)
+            ? p.kind
+            : undefined;
+        const logs = await store.listSpaceAmenityLogs({
+          spaceId: p.spaceId.trim(),
+          ...(kind !== undefined ? { amenityKind: kind } : {}),
+          limit: 200,
+        });
+        const leases = (await store.listSpaceLeases(p.spaceId.trim())).filter(
+          (l) => kind === undefined || l.amenityKind === kind
+        );
+        return Response.json({ logs, leases });
+      }
+      case "createAmenityLease": {
+        const p = body.payload as {
+          spaceId?: unknown;
+          amenityKind?: unknown;
+          tenantEmail?: unknown;
+          tenantAddress?: unknown;
+          humanPlayerId?: unknown;
+          durationMonths?: unknown;
+        };
+        if (
+          typeof p.spaceId !== "string" ||
+          typeof p.amenityKind !== "string" ||
+          typeof p.tenantEmail !== "string" ||
+          typeof p.tenantAddress !== "string"
+        ) {
+          return Response.json({ error: "invalid payload" }, { status: 400 });
+        }
+        const gate = await verifySpaceNodeHeaders(req, p.spaceId);
+        if (gate !== null) {
+          return gate;
+        }
+        if (!isSpaceAmenityKind(p.amenityKind)) {
+          return Response.json({ error: "invalid amenity kind" }, { status: 400 });
+        }
+        const dmRaw = p.durationMonths;
+        const durationMonths =
+          typeof dmRaw === "number"
+            ? dmRaw
+            : typeof dmRaw === "string"
+              ? Number.parseInt(dmRaw, 10)
+              : NaN;
+        if (
+          !Number.isFinite(durationMonths) ||
+          durationMonths < 1 ||
+          durationMonths > 240 ||
+          !Number.isInteger(durationMonths)
+        ) {
+          return Response.json(
+            { error: "durationMonths must be an integer from 1 to 240" },
+            { status: 400 }
+          );
+        }
+        const lease = await world.createAmenityLease({
+          spaceId: p.spaceId.trim(),
+          amenityKind: p.amenityKind,
+          tenantEmail: p.tenantEmail,
+          tenantAddress: p.tenantAddress,
+          durationMonths,
+          ...(typeof p.humanPlayerId === "string"
+            ? { humanPlayerId: p.humanPlayerId }
+            : {}),
+        });
+        return Response.json({ lease });
+      }
+      case "cancelAmenityLease": {
+        const p = body.payload as { spaceId?: unknown; leaseId?: unknown };
+        if (typeof p.spaceId !== "string" || typeof p.leaseId !== "string") {
+          return Response.json({ error: "invalid payload" }, { status: 400 });
+        }
+        const gate = await verifySpaceNodeHeaders(req, p.spaceId);
+        if (gate !== null) {
+          return gate;
+        }
+        await world.cancelAmenityLease({
+          spaceId: p.spaceId.trim(),
+          leaseId: p.leaseId.trim(),
+        });
         return Response.json({ ok: true });
       }
       default:

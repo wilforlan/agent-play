@@ -84,6 +84,8 @@ export type PreviewWorldMapStructureOccupantJson = {
   y: number;
   worldId: string;
   spaceIds: string[];
+  /** Fixed map anchor (space-backed structures use true). */
+  stationary?: boolean;
   primaryAmenity?: SpaceAmenityKind;
   amenities?: SpaceAmenityKind[];
 };

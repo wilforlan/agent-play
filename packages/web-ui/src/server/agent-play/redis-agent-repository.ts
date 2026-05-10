@@ -1,19 +1,22 @@
 import type {
   AgentRepository,
-  CreateNodeRecordInput,
   CreateAgentNodeRecordInput,
   CreateAgentRecordResult,
+  CreateNodeRecordInput,
   CreateNodeResult,
-  NodeKind,
   NodeAuthRecord,
+  NodeKind,
   StoredAgentRecord,
 } from "./agent-repository.js";
 import Redis from "ioredis";
 import { MAX_AGENTS_PER_ACCOUNT } from "./account-limits.js";
 import {
   deriveNodeIdFromPassword,
-  loadRootKey,
+  generateNodePassw,
+  hashNodePassword,
+  normalizeNodePassphrase,
 } from "@agent-play/node-tools";
+import { getPlayerChainGenesisSync } from "./load-player-chain-genesis.js";
 
 const ZONE_FLAG_THRESHOLD = 100;
 
@@ -53,7 +56,12 @@ function parseAgentNodeIds(raw: string | undefined): string[] {
 }
 
 function parseNodeKind(raw: string | undefined): NodeKind {
-  if (raw === "root" || raw === "main" || raw === "agent") {
+  if (
+    raw === "root" ||
+    raw === "main" ||
+    raw === "agent" ||
+    raw === "space"
+  ) {
     return raw;
   }
   return "main";
@@ -258,11 +266,41 @@ export class RedisAgentRepository implements AgentRepository {
 
   async createNode(input: CreateNodeRecordInput): Promise<CreateNodeResult> {
     await this.ensureRootNodeExists();
-    if (input.kind !== "main") {
-      throw new Error("createNode: only kind=main is supported");
+    if (input.kind === "main") {
+      const nodeId = deriveNodeIdFromPassword({
+        password: input.passw,
+        rootKey: this.rootKey,
+      });
+      const authKey = nodeAuthKey(this.hostId, nodeId);
+      const exists = await this.redis.exists(authKey);
+      if (exists === 1) {
+        throw new Error("createNode: node already exists");
+      }
+      const createdAt = new Date().toISOString();
+      await this.redis.hset(authKey, {
+        nodeId,
+        kind: "main",
+        parentNodeId: this.rootKey,
+        createdAt,
+        passw: input.passw,
+        passwHash: input.passw,
+        agentNodeIds: JSON.stringify([]),
+      });
+      return { nodeId };
+    }
+    const spaceId = input.spaceId.trim();
+    if (spaceId.length === 0) {
+      throw new Error("createNode: spaceId required for kind=space");
+    }
+    let passMaterial = input.passw ?? "";
+    let phraseOut: string | undefined;
+    if (passMaterial.length === 0) {
+      const phrase = generateNodePassw();
+      passMaterial = hashNodePassword(normalizeNodePassphrase(phrase));
+      phraseOut = normalizeNodePassphrase(phrase);
     }
     const nodeId = deriveNodeIdFromPassword({
-      password: input.passw,
+      password: passMaterial,
       rootKey: this.rootKey,
     });
     const authKey = nodeAuthKey(this.hostId, nodeId);
@@ -273,14 +311,15 @@ export class RedisAgentRepository implements AgentRepository {
     const createdAt = new Date().toISOString();
     await this.redis.hset(authKey, {
       nodeId,
-      kind: "main",
+      kind: "space",
+      spaceId,
       parentNodeId: this.rootKey,
       createdAt,
-      passw: input.passw,
-      passwHash: input.passw,
+      passw: passMaterial,
+      passwHash: passMaterial,
       agentNodeIds: JSON.stringify([]),
     });
-    return { nodeId };
+    return phraseOut !== undefined ? { nodeId, phrase: phraseOut } : { nodeId };
   }
 
   async verifyNodePassw(nodeId: string, passw: string): Promise<boolean> {
@@ -314,15 +353,20 @@ export class RedisAgentRepository implements AgentRepository {
     ) {
       return null;
     }
-    return {
+    const kind = parseNodeKind(raw.kind);
+    const record: NodeAuthRecord = {
       nodeId,
-      kind: parseNodeKind(raw.kind),
+      kind,
       parentNodeId: raw.parentNodeId,
       passw: raw.passw,
       passwHash: raw.passwHash,
       createdAt: raw.createdAt,
       agentNodeIds: parseAgentNodeIds(raw.agentNodeIds),
     };
+    if (kind === "space" && typeof raw.spaceId === "string" && raw.spaceId.length > 0) {
+      record.spaceId = raw.spaceId;
+    }
+    return record;
   }
 
   async createAgentNode(
@@ -445,7 +489,7 @@ export function createRedisAgentRepository(options: {
   const rootKey =
     typeof options.rootKey === "string" && options.rootKey.length > 0
       ? options.rootKey
-      : loadRootKey();
+      : getPlayerChainGenesisSync();
   if (options.redis !== undefined) {
     return new RedisAgentRepository({
       redis: options.redis,

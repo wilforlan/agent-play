@@ -324,6 +324,8 @@ export type AgentPlayWorldMapStructureOccupant = {
   y: number;
   worldId: string;
   spaceIds: string[];
+  /** When true, the anchor is fixed map furniture (e.g. authored spaces). */
+  stationary?: boolean;
   primaryAmenity?: AgentPlaySpaceAmenityKind;
   amenities?: AgentPlaySpaceAmenityKind[];
 };

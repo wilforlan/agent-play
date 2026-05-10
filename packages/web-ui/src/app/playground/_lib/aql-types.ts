@@ -37,11 +37,36 @@ export type AqlStatement =
       serverUrl: AqlExpr;
       mainNodeId: AqlExpr;
     }
+  | {
+      kind: "CreateSpaceStmt";
+      name: AqlExpr;
+      designKey: AqlExpr;
+      ownerDisplayName: AqlExpr;
+      description?: AqlExpr;
+      structureName?: AqlExpr;
+    }
+  | {
+      kind: "CreateLeaseStmt";
+      amenityKind: AqlExpr;
+      email: AqlExpr;
+      address: AqlExpr;
+      durationMonths: AqlExpr;
+      humanPlayerId?: AqlExpr;
+    }
   | { kind: "InspectMainNodeStmt" }
+  | { kind: "InspectSpaceStmt" }
+  | {
+      kind: "InspectAmenityStmt";
+      kindFilter?: AqlExpr;
+    }
   | { kind: "InspectAgentNodeStmt" }
   | { kind: "UseAgentNodeStmt"; nodeId: AqlExpr }
+  | { kind: "UseSpaceNodeStmt"; nodeId: AqlExpr; passphrase: AqlExpr }
   | { kind: "ShiftAgentNodeStmt"; nodeId: AqlExpr }
   | { kind: "InspectAgentStmt" }
+  | { kind: "AddSpaceAmenityStmt"; amenityKind: AqlExpr }
+  | { kind: "RemoveSpaceAmenityStmt"; spaceId: AqlExpr; amenityKind: AqlExpr }
+  | { kind: "RemoveSpaceStmt"; spaceId: AqlExpr }
   | { kind: "SendStmt"; message: AqlExpr }
   | { kind: "WithHeaderStmt"; key: AqlExpr; value: AqlExpr }
   | { kind: "WithTimeoutStmt"; timeoutMs: AqlExpr }
@@ -75,6 +100,11 @@ export type AqlExecutionState = {
   sid: string | null;
   /** Hex password material derived from validated main-node passphrase. */
   nodePasswordMaterial: string | null;
+  /** Catalog space id resolved after USE SPACE NODE (GET /api/nodes). */
+  spaceCatalogId: string | null;
+  spaceNodeId: string | null;
+  /** Hex passphrase material for the space node (USE SPACE NODE). */
+  spacePasswordMaterial: string | null;
   targetAgentId: string | null;
   targetNodeId: string | null;
   timeoutMs: number;

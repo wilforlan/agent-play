@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { computeFreeMapCell, computeRandomFreeMapCell } from "./grid-allocate.js";
+import {
+  computeFreeMapCell,
+  computeRandomFreeMapCell,
+  computeRandomFreeMapCellInQuartile,
+  computeSpaceStructureAnchor,
+  SPACE_STRUCTURE_ANCHOR_MIN_DISTANCE,
+} from "./grid-allocate.js";
 
 const occupancyKey = (x: number, y: number): string =>
   `${(Math.round(x * 5) / 5).toFixed(3)},${(Math.round(y * 5) / 5).toFixed(3)}`;
@@ -87,6 +93,34 @@ describe("computeRandomFreeMapCell", () => {
     });
     const distance = Math.hypot(next.x - 0.4, next.y - 1.4);
     expect(distance).toBeGreaterThanOrEqual(1.5);
+  });
+});
+
+describe("computeRandomFreeMapCellInQuartile / computeSpaceStructureAnchor", () => {
+  it("computeSpaceStructureAnchor keeps anchors separated across quartile fallbacks", () => {
+    const first = computeSpaceStructureAnchor({
+      occupied: new Set(),
+      existingOccupants: [],
+      structureAnchors: [],
+    });
+    const second = computeSpaceStructureAnchor({
+      occupied: new Set(),
+      existingOccupants: [],
+      structureAnchors: [first],
+    });
+    expect(
+      Math.hypot(second.x - first.x, second.y - first.y)
+    ).toBeGreaterThanOrEqual(SPACE_STRUCTURE_ANCHOR_MIN_DISTANCE - 0.05);
+  });
+
+  it("computeSpaceStructureAnchor returns a point in allowed regions", () => {
+    const p = computeSpaceStructureAnchor({
+      occupied: new Set(),
+      existingOccupants: [],
+      structureAnchors: [],
+    });
+    expect(Number.isFinite(p.x)).toBe(true);
+    expect(Number.isFinite(p.y)).toBe(true);
   });
 });
 

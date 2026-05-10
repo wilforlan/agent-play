@@ -23,12 +23,19 @@ export type CreateAgentNodeRecordInput = {
   passw: string;
 };
 
-export type NodeKind = "root" | "main" | "agent";
+export type NodeKind = "root" | "main" | "agent" | "space";
 
-export type CreateNodeRecordInput = {
-  kind: "main";
-  passw: string;
-};
+export type CreateNodeRecordInput =
+  | {
+      kind: "main";
+      passw: string;
+    }
+  | {
+      kind: "space";
+      spaceId: string;
+      /** Hashed passphrase material; omit for server-generated phrase (returns once in result). */
+      passw?: string;
+    };
 
 export type CreateAgentRecordResult = {
   agentId: string;
@@ -36,12 +43,16 @@ export type CreateAgentRecordResult = {
 
 export type CreateNodeResult = {
   nodeId: string;
+  /** Human-readable passphrase returned once when creating a space node server-side. */
+  phrase?: string;
 };
 
 export type NodeAuthRecord = {
   nodeId: string;
   kind: NodeKind;
   parentNodeId?: string;
+  /** Catalog space id when kind is space (dashboard authorization). */
+  spaceId?: string;
   passw?: string;
   passwHash?: string;
   createdAt: string;

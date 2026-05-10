@@ -8,6 +8,7 @@ import type {
   AqlValue,
 } from "./aql-types";
 import type { PlaygroundRuntimeClient } from "./aql-runtime-client";
+import { nodeCredentialsMaterialFromHumanPassphrase } from "@agent-play/node-tools/browser";
 
 type MacroDef = Extract<AqlStatement, { kind: "MacroDefStmt" }>;
 
@@ -68,6 +69,13 @@ function evalExpr(expr: AqlExpr, vars: Map<string, AqlValue>): AqlValue {
 
 function nowRequestId(): string {
   return `aql-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
+}
+
+function sdkRpcExtraHeaders(state: AqlExecutionState): Record<string, string> {
+  return {
+    "Content-Type": "application/json",
+    ...state.headers,
+  };
 }
 
 function splitHttpMeta(input: Record<string, unknown>): {
@@ -199,6 +207,61 @@ async function execStatement(
       context.outputs.lastHeaders = {};
       return;
     }
+    case "CreateSpaceStmt": {
+      const sid = context.state.sid;
+      if (sid === null) {
+        throw new Error("AQL_RUNTIME_ERROR: run CONNECT before CREATE SPACE");
+      }
+      const material = context.state.nodePasswordMaterial;
+      const mainId = context.state.mainNodeId.trim();
+      if (material === null || material.length === 0 || mainId.length === 0) {
+        throw new Error(
+          "AQL_RUNTIME_ERROR: main-node credentials missing; connect with validated passphrase first"
+        );
+      }
+      const name = String(evalExpr(statement.name, context.vars)).trim();
+      const designKey = String(evalExpr(statement.designKey, context.vars)).trim();
+      const ownerDisplayName = String(evalExpr(statement.ownerDisplayName, context.vars)).trim();
+      const description =
+        statement.description !== undefined
+          ? String(evalExpr(statement.description, context.vars))
+          : undefined;
+      const structureName =
+        statement.structureName !== undefined
+          ? String(evalExpr(statement.structureName, context.vars)).trim()
+          : undefined;
+      const startedAt = performance.now();
+      const payload: Record<string, unknown> = {
+        name,
+        designKey,
+        ownerDisplayName,
+      };
+      if (description !== undefined && description.trim().length > 0) {
+        payload.description = description.trim();
+      }
+      if (structureName !== undefined && structureName.length > 0) {
+        payload.structureName = structureName;
+      }
+      const rawResponse = await context.rpc.sdkRpc({
+        sid,
+        op: "createSpace",
+        payload,
+        nodeId: mainId,
+        passwordMaterial: material,
+        extraHeaders: sdkRpcExtraHeaders(context.state),
+      });
+      const { payload: response, headers } = splitHttpMeta(rawResponse);
+      const timingMs = Math.round(performance.now() - startedAt);
+      context.outputs.lastOutput = {
+        response,
+        headers,
+        status: 200,
+        timingMs,
+      };
+      context.outputs.lastResponse = response;
+      context.outputs.lastHeaders = headers;
+      return;
+    }
     case "InspectMainNodeStmt": {
       const nodeId = context.state.mainNodeId.trim();
       if (nodeId.length === 0) {
@@ -253,6 +316,50 @@ async function execStatement(
       context.outputs.lastHeaders = headers;
       return;
     }
+    case "UseSpaceNodeStmt": {
+      const sid = context.state.sid;
+      if (sid === null) {
+        throw new Error("AQL_RUNTIME_ERROR: run CONNECT before USE SPACE NODE");
+      }
+      const nodeId = String(evalExpr(statement.nodeId, context.vars)).trim();
+      const phrase = String(evalExpr(statement.passphrase, context.vars));
+      const passwordMaterial = nodeCredentialsMaterialFromHumanPassphrase(phrase);
+      const startedAt = performance.now();
+      const rawNode = await context.rpc.inspectMainNode({
+        nodeId,
+        passwordMaterial,
+      });
+      const { payload: nodePayload, headers } = splitHttpMeta(rawNode);
+      const timingMs = Math.round(performance.now() - startedAt);
+      const mainNode = nodePayload.mainNode as
+        | { kind?: string; spaceId?: string }
+        | undefined;
+      if (mainNode?.kind !== "space") {
+        throw new Error("AQL_RUNTIME_ERROR: node is not a space node");
+      }
+      const catalogId =
+        typeof mainNode.spaceId === "string" && mainNode.spaceId.length > 0
+          ? mainNode.spaceId
+          : null;
+      if (catalogId === null) {
+        throw new Error("AQL_RUNTIME_ERROR: space node record missing spaceId");
+      }
+      context.state.spaceNodeId = nodeId;
+      context.state.spacePasswordMaterial = passwordMaterial;
+      context.state.spaceCatalogId = catalogId;
+      context.state.targetAgentId = null;
+      context.state.targetNodeId = null;
+      context.vars.set("spaceNode", nodePayload);
+      context.outputs.lastOutput = {
+        response: nodePayload,
+        headers,
+        status: 200,
+        timingMs,
+      };
+      context.outputs.lastResponse = nodePayload;
+      context.outputs.lastHeaders = headers;
+      return;
+    }
     case "UseAgentNodeStmt":
     case "ShiftAgentNodeStmt": {
       const sid = context.state.sid;
@@ -262,6 +369,9 @@ async function execStatement(
       if (statement.kind === "ShiftAgentNodeStmt" && context.state.targetNodeId === null) {
         throw new Error("AQL_RUNTIME_ERROR: run USE AGENT NODE before SHIFT AGENT NODE");
       }
+      context.state.spaceCatalogId = null;
+      context.state.spaceNodeId = null;
+      context.state.spacePasswordMaterial = null;
       const nodeId = String(evalExpr(statement.nodeId, context.vars));
       const snapshot = await context.rpc.fetchSnapshot({ sid });
       const { node, agentId } = resolveAgentFromNode(snapshot, nodeId);
@@ -274,6 +384,93 @@ async function execStatement(
         shifted: statement.kind === "ShiftAgentNodeStmt",
       };
       context.outputs.lastHeaders = {};
+      return;
+    }
+    case "InspectSpaceStmt": {
+      const sid = context.state.sid;
+      if (sid === null) {
+        throw new Error("AQL_RUNTIME_ERROR: run CONNECT before INSPECT SPACE");
+      }
+      const spaceId = context.state.spaceCatalogId;
+      const spaceNodeId = context.state.spaceNodeId;
+      const spaceMaterial = context.state.spacePasswordMaterial;
+      if (
+        spaceId === null ||
+        spaceNodeId === null ||
+        spaceMaterial === null ||
+        spaceMaterial.length === 0
+      ) {
+        throw new Error("AQL_RUNTIME_ERROR: run USE SPACE NODE before INSPECT SPACE");
+      }
+      const startedAt = performance.now();
+      const rawResponse = await context.rpc.sdkRpc({
+        sid,
+        op: "inspectSpace",
+        payload: { spaceId },
+        nodeId: spaceNodeId,
+        passwordMaterial: spaceMaterial,
+        extraHeaders: sdkRpcExtraHeaders(context.state),
+      });
+      const { payload: response, headers } = splitHttpMeta(rawResponse);
+      const timingMs = Math.round(performance.now() - startedAt);
+      context.vars.set("spaceDetail", response);
+      context.outputs.lastOutput = {
+        response,
+        headers,
+        status: 200,
+        timingMs,
+      };
+      context.outputs.lastResponse = response;
+      context.outputs.lastHeaders = headers;
+      return;
+    }
+    case "InspectAmenityStmt": {
+      const sid = context.state.sid;
+      if (sid === null) {
+        throw new Error("AQL_RUNTIME_ERROR: run CONNECT before INSPECT AMENITY");
+      }
+      const spaceId = context.state.spaceCatalogId;
+      const spaceNodeId = context.state.spaceNodeId;
+      const spaceMaterial = context.state.spacePasswordMaterial;
+      if (
+        spaceId === null ||
+        spaceNodeId === null ||
+        spaceMaterial === null ||
+        spaceMaterial.length === 0
+      ) {
+        throw new Error("AQL_RUNTIME_ERROR: run USE SPACE NODE before INSPECT AMENITY");
+      }
+      let kind: string | undefined;
+      if (statement.kindFilter !== undefined) {
+        kind = String(evalExpr(statement.kindFilter, context.vars)).trim();
+        if (kind.length === 0) {
+          kind = undefined;
+        }
+      }
+      const startedAt = performance.now();
+      const payload: Record<string, unknown> = { spaceId };
+      if (kind !== undefined) {
+        payload.kind = kind;
+      }
+      const rawResponse = await context.rpc.sdkRpc({
+        sid,
+        op: "inspectAmenity",
+        payload,
+        nodeId: spaceNodeId,
+        passwordMaterial: spaceMaterial,
+        extraHeaders: sdkRpcExtraHeaders(context.state),
+      });
+      const { payload: response, headers } = splitHttpMeta(rawResponse);
+      const timingMs = Math.round(performance.now() - startedAt);
+      context.vars.set("amenityDetail", response);
+      context.outputs.lastOutput = {
+        response,
+        headers,
+        status: 200,
+        timingMs,
+      };
+      context.outputs.lastResponse = response;
+      context.outputs.lastHeaders = headers;
       return;
     }
     case "InspectAgentStmt": {
@@ -298,6 +495,179 @@ async function execStatement(
       };
       context.outputs.lastResponse = node;
       context.outputs.lastHeaders = {};
+      return;
+    }
+    case "AddSpaceAmenityStmt": {
+      const sid = context.state.sid;
+      if (sid === null) {
+        throw new Error("AQL_RUNTIME_ERROR: run CONNECT before ADD AMENITY");
+      }
+      const spaceId = context.state.spaceCatalogId;
+      const spaceNodeId = context.state.spaceNodeId;
+      const spaceMaterial = context.state.spacePasswordMaterial;
+      if (
+        spaceId === null ||
+        spaceNodeId === null ||
+        spaceMaterial === null ||
+        spaceMaterial.length === 0
+      ) {
+        throw new Error("AQL_RUNTIME_ERROR: run USE SPACE NODE before ADD AMENITY");
+      }
+      const amenityKind = String(evalExpr(statement.amenityKind, context.vars)).trim();
+      const startedAt = performance.now();
+      const rawResponse = await context.rpc.sdkRpc({
+        sid,
+        op: "addSpaceAmenity",
+        payload: { spaceId, kind: amenityKind },
+        nodeId: spaceNodeId,
+        passwordMaterial: spaceMaterial,
+        extraHeaders: sdkRpcExtraHeaders(context.state),
+      });
+      const { payload: response, headers } = splitHttpMeta(rawResponse);
+      const timingMs = Math.round(performance.now() - startedAt);
+      context.outputs.lastOutput = {
+        response,
+        headers,
+        status: 200,
+        timingMs,
+      };
+      context.outputs.lastResponse = response;
+      context.outputs.lastHeaders = headers;
+      return;
+    }
+    case "RemoveSpaceAmenityStmt": {
+      const sid = context.state.sid;
+      if (sid === null) {
+        throw new Error("AQL_RUNTIME_ERROR: run CONNECT before REMOVE AMENITY");
+      }
+      const spaceNodeId = context.state.spaceNodeId;
+      const spaceMaterial = context.state.spacePasswordMaterial;
+      if (spaceNodeId === null || spaceMaterial === null || spaceMaterial.length === 0) {
+        throw new Error("AQL_RUNTIME_ERROR: run USE SPACE NODE before REMOVE AMENITY");
+      }
+      const spaceId = String(evalExpr(statement.spaceId, context.vars)).trim();
+      const amenityKind = String(evalExpr(statement.amenityKind, context.vars)).trim();
+      const startedAt = performance.now();
+      const rawResponse = await context.rpc.sdkRpc({
+        sid,
+        op: "removeSpaceAmenity",
+        payload: { spaceId, kind: amenityKind },
+        nodeId: spaceNodeId,
+        passwordMaterial: spaceMaterial,
+        extraHeaders: sdkRpcExtraHeaders(context.state),
+      });
+      const { payload: response, headers } = splitHttpMeta(rawResponse);
+      const timingMs = Math.round(performance.now() - startedAt);
+      context.outputs.lastOutput = {
+        response,
+        headers,
+        status: 200,
+        timingMs,
+      };
+      context.outputs.lastResponse = response;
+      context.outputs.lastHeaders = headers;
+      return;
+    }
+    case "RemoveSpaceStmt": {
+      const sid = context.state.sid;
+      if (sid === null) {
+        throw new Error("AQL_RUNTIME_ERROR: run CONNECT before REMOVE SPACE");
+      }
+      const material = context.state.nodePasswordMaterial;
+      const mainId = context.state.mainNodeId.trim();
+      if (material === null || material.length === 0 || mainId.length === 0) {
+        throw new Error(
+          "AQL_RUNTIME_ERROR: main-node credentials missing; connect with validated passphrase first"
+        );
+      }
+      const spaceId = String(evalExpr(statement.spaceId, context.vars)).trim();
+      const startedAt = performance.now();
+      const rawResponse = await context.rpc.sdkRpc({
+        sid,
+        op: "removeSpace",
+        payload: { spaceId },
+        nodeId: mainId,
+        passwordMaterial: material,
+        extraHeaders: sdkRpcExtraHeaders(context.state),
+      });
+      const { payload: response, headers } = splitHttpMeta(rawResponse);
+      const timingMs = Math.round(performance.now() - startedAt);
+      context.outputs.lastOutput = {
+        response,
+        headers,
+        status: 200,
+        timingMs,
+      };
+      context.outputs.lastResponse = response;
+      context.outputs.lastHeaders = headers;
+      return;
+    }
+    case "CreateLeaseStmt": {
+      const sid = context.state.sid;
+      if (sid === null) {
+        throw new Error("AQL_RUNTIME_ERROR: run CONNECT before CREATE LEASE AMENITY");
+      }
+      const spaceId = context.state.spaceCatalogId;
+      const spaceNodeId = context.state.spaceNodeId;
+      const spaceMaterial = context.state.spacePasswordMaterial;
+      if (
+        spaceId === null ||
+        spaceNodeId === null ||
+        spaceMaterial === null ||
+        spaceMaterial.length === 0
+      ) {
+        throw new Error("AQL_RUNTIME_ERROR: run USE SPACE NODE before CREATE LEASE AMENITY");
+      }
+      const amenityKind = String(evalExpr(statement.amenityKind, context.vars)).trim();
+      const tenantEmail = String(evalExpr(statement.email, context.vars)).trim();
+      const tenantAddress = String(evalExpr(statement.address, context.vars)).trim();
+      const durationRaw = evalExpr(statement.durationMonths, context.vars);
+      const durationMonths =
+        typeof durationRaw === "number"
+          ? durationRaw
+          : Number.parseInt(String(durationRaw), 10);
+      if (
+        !Number.isFinite(durationMonths) ||
+        durationMonths < 1 ||
+        durationMonths > 240 ||
+        !Number.isInteger(durationMonths)
+      ) {
+        throw new Error(
+          "AQL_RUNTIME_ERROR: MONTHS must be an integer from 1 to 240"
+        );
+      }
+      const payload: Record<string, unknown> = {
+        spaceId,
+        amenityKind,
+        tenantEmail,
+        tenantAddress,
+        durationMonths,
+      };
+      if (statement.humanPlayerId !== undefined) {
+        const hid = String(evalExpr(statement.humanPlayerId, context.vars)).trim();
+        if (hid.length > 0) {
+          payload.humanPlayerId = hid;
+        }
+      }
+      const startedAt = performance.now();
+      const rawResponse = await context.rpc.sdkRpc({
+        sid,
+        op: "createAmenityLease",
+        payload,
+        nodeId: spaceNodeId,
+        passwordMaterial: spaceMaterial,
+        extraHeaders: sdkRpcExtraHeaders(context.state),
+      });
+      const { payload: response, headers } = splitHttpMeta(rawResponse);
+      const timingMs = Math.round(performance.now() - startedAt);
+      context.outputs.lastOutput = {
+        response,
+        headers,
+        status: 200,
+        timingMs,
+      };
+      context.outputs.lastResponse = response;
+      context.outputs.lastHeaders = headers;
       return;
     }
     case "WithHeaderStmt": {

@@ -11,6 +11,14 @@ export type PlaygroundRuntimeClient = {
   fetchSnapshot: (input: { sid: string }) => Promise<JsonObject>;
   fetchSessionDetails: (input: { sid: string }) => Promise<JsonObject>;
   inspectMainNode: (input: { nodeId: string; passwordMaterial: string }) => Promise<JsonObject>;
+  sdkRpc: (input: {
+    sid: string;
+    op: string;
+    payload: Record<string, unknown>;
+    nodeId: string;
+    passwordMaterial: string;
+    extraHeaders?: Record<string, string>;
+  }) => Promise<JsonObject>;
   sendIntercomCommand: (input: {
     sid: string;
     requestId: string;
@@ -84,6 +92,20 @@ export function createRuntimeClient(baseUrl: string): PlaygroundRuntimeClient {
           "x-node-passw": passwordMaterial,
         },
       }),
+    sdkRpc: async (input) =>
+      requestJson(
+        `${normalizedBase}/api/agent-play/sdk/rpc?sid=${encodeURIComponent(input.sid)}`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...(input.extraHeaders ?? {}),
+            "x-node-id": input.nodeId,
+            "x-node-passw": input.passwordMaterial,
+          },
+          body: JSON.stringify({ op: input.op, payload: input.payload }),
+        }
+      ),
     sendIntercomCommand: async (input) =>
       requestJson(
         `${normalizedBase}/api/agent-play/sdk/rpc?sid=${encodeURIComponent(input.sid)}`,

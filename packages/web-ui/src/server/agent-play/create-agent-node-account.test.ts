@@ -3,6 +3,7 @@ import type {
   AgentRepository,
   CreateAgentNodeRecordInput,
   CreateAgentRecordResult,
+  CreateNodeRecordInput,
   CreateNodeResult,
   NodeAuthRecord,
   StoredAgentRecord,
@@ -27,7 +28,7 @@ class TestAgentNodeRepository implements AgentRepository {
     return { ok: false, reason: "not used in this test" };
   }
 
-  async createNode(_input: { kind: "main"; passw: string }): Promise<CreateNodeResult> {
+  async createNode(_input: CreateNodeRecordInput): Promise<CreateNodeResult> {
     throw new Error("not used in this test");
   }
 

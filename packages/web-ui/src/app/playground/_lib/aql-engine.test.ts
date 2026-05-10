@@ -37,6 +37,42 @@ INSPECT AGENT`;
     expect(parsed.diagnostics.length).toBeGreaterThan(0);
   });
 
+  it("parses CREATE SPACE, USE SPACE NODE, amenities, leases, and REMOVE", () => {
+    const phrase = "one two three four five six seven eight nine ten";
+    const source = `CREATE SPACE "n" DESIGN "d" OWNER "o" DESCRIPTION "x" STRUCTURE "sn"
+USE SPACE NODE "nid" PASSPHRASE "${phrase}"
+ADD AMENITY "shop"
+INSPECT SPACE
+INSPECT AMENITY "shop"
+INSPECT AMENITY
+REMOVE AMENITY "space-id" "shop"
+REMOVE SPACE "space-id"
+CREATE LEASE AMENITY "shop" EMAIL "e@x.co" ADDRESS "1 Rd" MONTHS 12 HUMAN "hid"`;
+    const parsed = parseAql(tokenizeAql(source));
+    expect(parsed.diagnostics).toHaveLength(0);
+    expect(parsed.program.statements.map((s) => s.kind)).toEqual([
+      "CreateSpaceStmt",
+      "UseSpaceNodeStmt",
+      "AddSpaceAmenityStmt",
+      "InspectSpaceStmt",
+      "InspectAmenityStmt",
+      "InspectAmenityStmt",
+      "RemoveSpaceAmenityStmt",
+      "RemoveSpaceStmt",
+      "CreateLeaseStmt",
+    ]);
+  });
+
+  it("validates CREATE LEASE after USE SPACE NODE", () => {
+    const phrase = "one two three four five six seven eight nine ten";
+    const source = `USE SPACE NODE "nid" PASSPHRASE "${phrase}"
+CREATE LEASE AMENITY "shop" EMAIL "e@x.co" ADDRESS "a" MONTHS 6`;
+    const parsed = parseAql(tokenizeAql(source));
+    expect(parsed.diagnostics).toHaveLength(0);
+    const validated = validateAql(parsed.program);
+    expect(validated.diagnostics).toHaveLength(0);
+  });
+
   it("parses macros and variables", () => {
     const source = `LET agent = "node-1"
 MACRO ask(target, msg = "ping") {
@@ -71,6 +107,9 @@ SHOW RESPONSE`;
       mainNodeId: "",
       sid: null,
       nodePasswordMaterial: null,
+      spaceCatalogId: null,
+      spaceNodeId: null,
+      spacePasswordMaterial: null,
       targetAgentId: null,
       targetNodeId: null,
       timeoutMs: 8000,
@@ -80,6 +119,7 @@ SHOW RESPONSE`;
     const runtimeClient = {
       ensureSession: async () => ({ sid: "sid-1" }),
       inspectMainNode: async () => ({ mainNode: { nodeId: "main-1" } }),
+      sdkRpc: async () => ({ ok: true }),
       fetchSnapshot: async () => ({
         snapshot: { worldMap: { occupants: [{ kind: "agent", nodeId: "node-1", agentId: "agent-1" }] } },
       }),
@@ -112,6 +152,7 @@ SHOW RESPONSE`;
         return { sid: "should-not-run" };
       },
       inspectMainNode: async () => ({ mainNode: { nodeId: "m1" } }),
+      sdkRpc: async () => ({ ok: true }),
       fetchSnapshot: async () => ({ snapshot: {} }),
       fetchSessionDetails: async () => ({ meta: {} }),
       sendIntercomCommand: async () => ({ ok: false }),
@@ -124,6 +165,9 @@ SHOW RESPONSE`;
         mainNodeId: "",
         sid: "existing-sid",
         nodePasswordMaterial: null,
+        spaceCatalogId: null,
+        spaceNodeId: null,
+        spacePasswordMaterial: null,
         targetAgentId: null,
         targetNodeId: null,
         timeoutMs: 8000,
@@ -147,6 +191,7 @@ SHOW $agent.name`;
     const runtimeClient = {
       ensureSession: async () => ({ sid: "s1" }),
       inspectMainNode: async () => ({ mainNode: { nodeId: "main-1" } }),
+      sdkRpc: async () => ({ ok: true }),
       fetchSnapshot: async () => ({
         snapshot: {
           worldMap: {
@@ -165,6 +210,9 @@ SHOW $agent.name`;
         mainNodeId: "",
         sid: "s",
         nodePasswordMaterial: "deadbeef",
+        spaceCatalogId: null,
+        spaceNodeId: null,
+        spacePasswordMaterial: null,
         targetAgentId: null,
         targetNodeId: null,
         timeoutMs: 8000,
@@ -182,6 +230,7 @@ SHOW $agent.name`;
     const runtimeClient = {
       ensureSession: async () => ({ sid: "sid-reg" }),
       inspectMainNode: async () => ({ mainNode: { nodeId: "main-1" } }),
+      sdkRpc: async () => ({ ok: true }),
       fetchSnapshot: async () => ({ snapshot: { worldMap: { occupants: [] } } }),
       fetchSessionDetails: async () => ({ meta: {} }),
       sendIntercomCommand: async () => ({ ok: false }),
@@ -192,6 +241,9 @@ SHOW $agent.name`;
       mainNodeId: "",
       sid: "sid-ready",
       nodePasswordMaterial: null,
+      spaceCatalogId: null,
+      spaceNodeId: null,
+      spacePasswordMaterial: null,
       targetAgentId: null,
       targetNodeId: null,
       timeoutMs: 8000,
@@ -220,6 +272,7 @@ SHOW $mainNode.mainNode.nodeId`;
         mainNode: { nodeId: "main-1", kind: "main" },
         agentNodes: [],
       }),
+      sdkRpc: async () => ({ ok: true }),
       fetchSnapshot: async () => ({ snapshot: { worldMap: { occupants: [] } } }),
       fetchSessionDetails: async () => ({ meta: {} }),
       sendIntercomCommand: async () => ({ ok: false }),
@@ -232,6 +285,9 @@ SHOW $mainNode.mainNode.nodeId`;
         mainNodeId: "",
         sid: null,
         nodePasswordMaterial: "material-1",
+        spaceCatalogId: null,
+        spaceNodeId: null,
+        spacePasswordMaterial: null,
         targetAgentId: null,
         targetNodeId: null,
         timeoutMs: 8000,
@@ -240,5 +296,51 @@ SHOW $mainNode.mainNode.nodeId`;
     });
     expect(result.diagnostics).toHaveLength(0);
     expect(result.response).toBe("main-1");
+  });
+
+  it("USE SPACE NODE binds catalog id and INSPECT SPACE calls sdkRpc", async () => {
+    const phrase = "one two three four five six seven eight nine ten";
+    const source = `USE SPACE NODE "sn1" PASSPHRASE "${phrase}"
+INSPECT SPACE`;
+    const parsed = parseAql(tokenizeAql(source));
+    expect(parsed.diagnostics).toHaveLength(0);
+    let sdkCalls = 0;
+    const runtimeClient = {
+      ensureSession: async () => ({ sid: "new" }),
+      inspectMainNode: async () => ({
+        genesisNodeId: "g",
+        mainNode: { nodeId: "sn1", kind: "space", spaceId: "catalog-1" },
+        agentNodes: [],
+      }),
+      sdkRpc: async (input: { op: string; payload: Record<string, unknown> }) => {
+        sdkCalls += 1;
+        expect(input.op).toBe("inspectSpace");
+        expect(input.payload).toEqual({ spaceId: "catalog-1" });
+        return { catalog: null, leases: [], logs: [] };
+      },
+      fetchSnapshot: async () => ({ snapshot: {} }),
+      fetchSessionDetails: async () => ({ meta: {} }),
+      sendIntercomCommand: async () => ({ ok: false }),
+    };
+    const result = await executeAqlProgram({
+      program: parsed.program,
+      runtimeClient,
+      initialState: {
+        serverUrl: "http://localhost:3000",
+        mainNodeId: "",
+        sid: "sid-x",
+        nodePasswordMaterial: null,
+        spaceCatalogId: null,
+        spaceNodeId: null,
+        spacePasswordMaterial: null,
+        targetAgentId: null,
+        targetNodeId: null,
+        timeoutMs: 8000,
+        headers: {},
+      },
+    });
+    expect(result.diagnostics).toHaveLength(0);
+    expect(sdkCalls).toBe(1);
+    expect(result.state.spaceCatalogId).toBe("catalog-1");
   });
 });

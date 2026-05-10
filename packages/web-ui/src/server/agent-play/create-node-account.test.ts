@@ -2,9 +2,10 @@ import { describe, expect, it } from "vitest";
 import { deriveNodeIdFromPassword } from "@agent-play/node-tools";
 import type {
   AgentRepository,
-  CreateAgentRecordInput,
   CreateAgentNodeRecordInput,
+  CreateAgentRecordInput,
   CreateAgentRecordResult,
+  CreateNodeRecordInput,
   CreateNodeResult,
   NodeAuthRecord,
   StoredAgentRecord,
@@ -34,10 +35,27 @@ class TestNodeRepository implements AgentRepository {
     return { ok: false, reason: "not used in this test" };
   }
 
-  async createNode(input: { kind: "main"; passw: string }): Promise<CreateNodeResult> {
-    const passw = input.passw;
+  async createNode(input: CreateNodeRecordInput): Promise<CreateNodeResult> {
+    if (input.kind === "main") {
+      const passw = input.passw;
+      const nodeId = deriveNodeIdFromPassword({
+        password: passw,
+        rootKey: this.rootKey,
+      });
+      if (this.nodes.has(nodeId)) {
+        throw new Error("createNode: node already exists");
+      }
+      this.nodes.set(nodeId, {
+        nodeId,
+        kind: "main",
+        parentNodeId: this.rootKey,
+        createdAt: new Date().toISOString(),
+      });
+      return { nodeId };
+    }
+    const passMaterial = input.passw ?? "material";
     const nodeId = deriveNodeIdFromPassword({
-      password: passw,
+      password: passMaterial,
       rootKey: this.rootKey,
     });
     if (this.nodes.has(nodeId)) {
@@ -45,11 +63,14 @@ class TestNodeRepository implements AgentRepository {
     }
     this.nodes.set(nodeId, {
       nodeId,
-      kind: "main",
+      kind: "space",
+      spaceId: input.spaceId,
       parentNodeId: this.rootKey,
       createdAt: new Date().toISOString(),
     });
-    return { nodeId };
+    return input.passw === undefined
+      ? { nodeId, phrase: "word ".repeat(10).trim() }
+      : { nodeId };
   }
 
   async verifyNodePassw(_nodeId: string, _passw: string): Promise<boolean> {
@@ -105,6 +126,11 @@ describe("parseCreateNodeBody", () => {
   it("accepts a non-empty passw string", () => {
     const r = parseCreateNodeBody({ kind: "main", passw: "hello world phrase" });
     expect(r).toEqual({ ok: true, kind: "main", passw: "hello world phrase" });
+  });
+
+  it("accepts kind space with spaceId", () => {
+    const r = parseCreateNodeBody({ kind: "space", spaceId: "space-1" });
+    expect(r).toEqual({ ok: true, kind: "space", spaceId: "space-1" });
   });
 
   it("rejects missing passw", () => {
