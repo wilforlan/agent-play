@@ -39,4 +39,11 @@ describe("setPreviewViewSettings", () => {
     expect(next.language).toBe("Yoruba");
     expect(getPreviewViewSettings().language).toBe("Yoruba");
   });
+
+  it("persists stationaryPanels preference", () => {
+    expect(getDefaultViewSettings().stationaryPanels).toBe(false);
+    const next = setPreviewViewSettings({ stationaryPanels: true });
+    expect(next.stationaryPanels).toBe(true);
+    expect(getPreviewViewSettings().stationaryPanels).toBe(true);
+  });
 });

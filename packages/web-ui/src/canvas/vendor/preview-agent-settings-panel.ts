@@ -10,7 +10,7 @@ import {
 
 type CheckboxKey = keyof Pick<
   PreviewViewSettings,
-  "showChatUi" | "debugMode" | "joystickEnabled"
+  "showChatUi" | "debugMode" | "joystickEnabled" | "stationaryPanels"
 >;
 
 export function createPreviewAgentSettingsPanel(options: {
@@ -75,8 +75,13 @@ export function createPreviewAgentSettingsPanel(options: {
     "joystickEnabled",
     "Drag the on-canvas stick to move your avatar in world space. Arrow keys also move you."
   );
+  const stationary = mkCheck(
+    "Prefer stationary panels",
+    "stationaryPanels",
+    "Dock world messages on the left, session tools on the right, and debug below the session stack on wide screens."
+  );
 
-  panel.append(showChat.row, debug.row, joystick.row);
+  panel.append(showChat.row, debug.row, joystick.row, stationary.row);
 
   toggle.addEventListener("click", () => {
     panel.classList.toggle("preview-chat-settings-panel--open");

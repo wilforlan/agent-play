@@ -2,6 +2,8 @@
  * @module @agent-play/play-ui/preview-app-meta
  * preview app meta — preview canvas module (Pixi + DOM).
  */
+import rootPackage from "../../../package.json";
+
 const DEFAULT_VERSION = "0.1.0";
 const DEFAULT_REPO_URL = "https://github.com/wilforlan/agent-play";
 
@@ -17,6 +19,11 @@ export function getPreviewAppMeta(): PreviewAppMeta {
   };
 }
 
+function readRootPackageVersion(): string | null {
+  const v = rootPackage.version;
+  return typeof v === "string" && v.length > 0 ? v : null;
+}
+
 function resolveVersion(): string {
   if (
     typeof import.meta !== "undefined" &&
@@ -25,6 +32,10 @@ function resolveVersion(): string {
     import.meta.env.VITE_APP_VERSION.length > 0
   ) {
     return import.meta.env.VITE_APP_VERSION;
+  }
+  const fromRoot = readRootPackageVersion();
+  if (fromRoot !== null) {
+    return fromRoot;
   }
   return DEFAULT_VERSION;
 }

@@ -56,7 +56,7 @@ describe("attachPreviewFloatingPanelDrag", () => {
     document.body.innerHTML = "";
   });
 
-  it("adds a touch-pad style drag handle and initial collapsed overlay position", () => {
+  it("adds a drag handle and shows the panel body by default", () => {
     const content = document.createElement("p");
     content.textContent = "Panel content";
     panel.appendChild(content);
@@ -66,6 +66,7 @@ describe("attachPreviewFloatingPanelDrag", () => {
       getBoundsElement: () => bounds,
       label: "World messages",
       initialPlacement: { leftPx: 24, topPx: 32 },
+      resolvePlacement: () => ({ leftPx: 24, topPx: 32 }),
     });
 
     const handle = getButton(panel, ".preview-floating-panel__drag");
@@ -75,9 +76,9 @@ describe("attachPreviewFloatingPanelDrag", () => {
     expect(panel.style.left).toBe("24px");
     expect(panel.style.top).toBe("32px");
     expect(panel.classList.contains("preview-floating-panel--collapsed")).toBe(
-      true
+      false
     );
-    expect(handle.getAttribute("aria-expanded")).toBe("false");
+    expect(handle.getAttribute("aria-expanded")).toBe("true");
     expect(panel.querySelector(".preview-floating-panel__body")?.textContent).toBe(
       "Panel content"
     );
@@ -85,7 +86,7 @@ describe("attachPreviewFloatingPanelDrag", () => {
       panel
         .querySelector(".preview-floating-panel__body")
         ?.getAttribute("aria-hidden")
-    ).toBe("true");
+    ).toBe("false");
   });
 
   it("moves the panel by dragging and clamps it inside the world layer", () => {
@@ -94,6 +95,7 @@ describe("attachPreviewFloatingPanelDrag", () => {
       getBoundsElement: () => bounds,
       label: "Debug",
       initialPlacement: { leftPx: 24, topPx: 32 },
+      resolvePlacement: () => ({ leftPx: 24, topPx: 32 }),
     });
     const handle = getButton(panel, ".preview-floating-panel__drag");
 
@@ -119,7 +121,7 @@ describe("attachPreviewFloatingPanelDrag", () => {
     expect(panel.style.top).toBe("140px");
   });
 
-  it("expands and collapses the panel body when the header is clicked", () => {
+  it("collapses and expands the panel body when the header is clicked", () => {
     const content = document.createElement("p");
     content.textContent = "Debug content";
     panel.appendChild(content);
@@ -128,31 +130,32 @@ describe("attachPreviewFloatingPanelDrag", () => {
       getBoundsElement: () => bounds,
       label: "Debug",
       initialPlacement: { leftPx: 24, topPx: 32 },
+      resolvePlacement: () => ({ leftPx: 24, topPx: 32 }),
     });
     const handle = getButton(panel, ".preview-floating-panel__drag");
 
     expect(panel.classList.contains("preview-floating-panel--collapsed")).toBe(
+      false
+    );
+    expect(handle.getAttribute("aria-expanded")).toBe("true");
+    handle.click();
+    expect(panel.classList.contains("preview-floating-panel--collapsed")).toBe(
       true
     );
     expect(handle.getAttribute("aria-expanded")).toBe("false");
+    expect(
+      panel
+        .querySelector(".preview-floating-panel__body")
+        ?.getAttribute("aria-hidden")
+    ).toBe("true");
     handle.click();
     expect(panel.classList.contains("preview-floating-panel--collapsed")).toBe(
       false
     );
     expect(handle.getAttribute("aria-expanded")).toBe("true");
-    expect(
-      panel
-        .querySelector(".preview-floating-panel__body")
-        ?.getAttribute("aria-hidden")
-    ).toBe("false");
-    handle.click();
-    expect(panel.classList.contains("preview-floating-panel--collapsed")).toBe(
-      true
-    );
-    expect(handle.getAttribute("aria-expanded")).toBe("false");
   });
 
-  it("treats pointer down and up without movement as a header expand tap", () => {
+  it("treats pointer down and up without movement as a header collapse tap", () => {
     const content = document.createElement("p");
     content.textContent = "Messages";
     panel.appendChild(content);
@@ -161,6 +164,7 @@ describe("attachPreviewFloatingPanelDrag", () => {
       getBoundsElement: () => bounds,
       label: "World messages",
       initialPlacement: { leftPx: 24, topPx: 32 },
+      resolvePlacement: () => ({ leftPx: 24, topPx: 32 }),
     });
     const handle = getButton(panel, ".preview-floating-panel__drag");
 
@@ -183,9 +187,56 @@ describe("attachPreviewFloatingPanelDrag", () => {
     );
 
     expect(panel.classList.contains("preview-floating-panel--collapsed")).toBe(
+      true
+    );
+    expect(handle.getAttribute("aria-expanded")).toBe("false");
+  });
+
+  it("uses stationary placement from resolvePlacement and stays expanded until toggled", () => {
+    const content = document.createElement("p");
+    content.textContent = "Docked";
+    panel.appendChild(content);
+    attachPreviewFloatingPanelDrag({
+      element: panel,
+      getBoundsElement: () => bounds,
+      label: "World messages",
+      initialPlacement: { leftPx: 24, topPx: 32 },
+      layoutMode: "stationary",
+      resolvePlacement: (mode) =>
+        mode === "stationary"
+          ? { leftPx: 8, topPx: 12 }
+          : { leftPx: 24, topPx: 32 },
+    });
+
+    expect(panel.style.left).toBe("8px");
+    expect(panel.style.top).toBe("12px");
+    expect(panel.classList.contains("preview-floating-panel--collapsed")).toBe(
       false
     );
-    expect(handle.getAttribute("aria-expanded")).toBe("true");
+  });
+
+  it("setLayoutMode switches placement via resolvePlacement without changing collapsed state", () => {
+    const content = document.createElement("p");
+    content.textContent = "Body";
+    panel.appendChild(content);
+    const { setLayoutMode } = attachPreviewFloatingPanelDrag({
+      element: panel,
+      getBoundsElement: () => bounds,
+      label: "Debug",
+      initialPlacement: { leftPx: 24, topPx: 32 },
+      layoutMode: "stationary",
+      resolvePlacement: (mode) =>
+        mode === "stationary"
+          ? { leftPx: 8, topPx: 12 }
+          : { leftPx: 24, topPx: 32 },
+    });
+    expect(panel.style.left).toBe("8px");
+    setLayoutMode("floating");
+    expect(panel.style.left).toBe("24px");
+    expect(panel.style.top).toBe("32px");
+    expect(panel.classList.contains("preview-floating-panel--collapsed")).toBe(
+      false
+    );
   });
 });
 

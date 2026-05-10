@@ -8,7 +8,9 @@ export type PreviewFloatingPanelPlacement = {
   topPx: number;
 };
 
-const WORLD_VIEWPORT_SCALE_MARGIN = 0.7;
+export type PreviewFloatingPanelLayoutMode = "floating" | "stationary";
+
+const WORLD_VIEWPORT_SCALE_MARGIN = 0.9;
 
 export function syncPreviewCanvasHostScale(options: {
   stage: HTMLElement;
@@ -37,9 +39,14 @@ export function attachPreviewFloatingPanelDrag(options: {
   label: string;
   initialPlacement: PreviewFloatingPanelPlacement;
   className?: string;
+  layoutMode?: PreviewFloatingPanelLayoutMode;
+  resolvePlacement: (
+    mode: PreviewFloatingPanelLayoutMode
+  ) => PreviewFloatingPanelPlacement;
 }): {
   dragHandle: HTMLButtonElement;
   refreshBounds: () => void;
+  setLayoutMode: (mode: PreviewFloatingPanelLayoutMode) => void;
 } {
   const dragHandle = document.createElement("button");
   dragHandle.type = "button";
@@ -66,8 +73,6 @@ export function attachPreviewFloatingPanelDrag(options: {
     options.element.classList.add(options.className);
   }
   options.element.append(dragHandle, body);
-  options.element.style.left = `${options.initialPlacement.leftPx}px`;
-  options.element.style.top = `${options.initialPlacement.topPx}px`;
 
   let dragOffsetX = 0;
   let dragOffsetY = 0;
@@ -82,7 +87,20 @@ export function attachPreviewFloatingPanelDrag(options: {
     body.setAttribute("aria-hidden", collapsed ? "true" : "false");
   };
 
-  setCollapsed(true);
+  const applyPlacementForMode = (
+    mode: PreviewFloatingPanelLayoutMode
+  ): void => {
+    const p = options.resolvePlacement(mode);
+    options.element.style.left = `${p.leftPx}px`;
+    options.element.style.top = `${p.topPx}px`;
+  };
+
+  const setLayoutMode = (mode: PreviewFloatingPanelLayoutMode): void => {
+    applyPlacementForMode(mode);
+  };
+
+  setLayoutMode(options.layoutMode ?? "floating");
+  setCollapsed(false);
 
   const moveToClientPoint = (event: PointerEvent): void => {
     const bounds = options.getBoundsElement().getBoundingClientRect();
@@ -169,5 +187,5 @@ export function attachPreviewFloatingPanelDrag(options: {
     );
   });
 
-  return { dragHandle, refreshBounds };
+  return { dragHandle, refreshBounds, setLayoutMode };
 }

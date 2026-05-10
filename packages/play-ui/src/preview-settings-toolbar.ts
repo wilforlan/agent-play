@@ -27,7 +27,7 @@ function appendGithubIcon(link: HTMLAnchorElement): void {
   );
   svg.appendChild(path);
   const label = document.createElement("span");
-  label.textContent = "Source";
+  label.textContent = "Contribute";
   link.append(svg, label);
 }
 
@@ -95,6 +95,44 @@ body > .preview-shell {
 .preview-game-col--left > *,
 .preview-game-col--right > * {
   pointer-events: auto;
+}
+.preview-canvas-stage.preview-canvas-stage--stationary-panels .preview-game-col--center {
+  left: min(280px, 22vw);
+  right: min(320px, 26vw);
+  top: 0;
+  bottom: 0;
+}
+.preview-canvas-stage.preview-canvas-stage--stationary-panels .preview-game-col--left {
+  inset: 0 auto 0 0;
+  width: min(280px, 22vw);
+  overflow: visible;
+}
+.preview-canvas-stage.preview-canvas-stage--stationary-panels .preview-game-col--right {
+  inset: 0 0 0 auto;
+  width: min(320px, 26vw);
+  overflow: visible;
+}
+.preview-canvas-stage.preview-canvas-stage--stationary-panels .preview-game-col--left .preview-floating-panel,
+.preview-canvas-stage.preview-canvas-stage--stationary-panels .preview-game-col--right .preview-floating-panel {
+  max-width: 100%;
+  box-sizing: border-box;
+}
+.preview-canvas-stage.preview-canvas-stage--stationary-panels .preview-game-col--left .preview-floating-panel--messages {
+  width: min(360px, 100%);
+  max-height: min(76dvh, calc(100dvh - 112px));
+}
+.preview-canvas-stage.preview-canvas-stage--stationary-panels .preview-game-col--right .preview-floating-panel--session {
+  width: min(380px, 100%);
+  max-height: min(72dvh, calc((100dvh - 120px) / 2));
+}
+.preview-canvas-stage.preview-canvas-stage--stationary-panels .preview-game-col--right .preview-floating-panel--debug {
+  width: min(360px, 100%);
+  max-height: min(72dvh, calc((100dvh - 120px) / 2));
+}
+.preview-canvas-stage.preview-canvas-stage--stationary-panels .preview-game-col--left .preview-floating-panel .preview-floating-panel__body,
+.preview-canvas-stage.preview-canvas-stage--stationary-panels .preview-game-col--right .preview-floating-panel .preview-floating-panel__body {
+  min-height: 0;
+  overflow-y: auto;
 }
 .preview-floating-panel {
   position: absolute;
@@ -250,8 +288,10 @@ body > .preview-shell {
 }
 .preview-joystick-wrap {
   position: absolute;
-  left: max(16px, env(safe-area-inset-left, 0px));
-  bottom: max(96px, calc(16px + env(safe-area-inset-bottom, 0px)));
+  left: 50%;
+  bottom: max(76px, calc(12px + env(safe-area-inset-bottom, 0px)));
+  transform: translateX(-50%);
+  top: auto;
   z-index: 55;
   width: auto;
   pointer-events: auto;
@@ -428,12 +468,47 @@ body > .preview-shell {
   margin: 0;
   box-sizing: border-box;
   z-index: 50;
-  border-radius: 14px;
-  border: 1px solid rgba(148, 163, 184, 0.45);
-  background: rgba(15, 23, 42, 0.88);
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
-  backdrop-filter: blur(10px);
+  border-radius: 0;
+  border: none;
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
   pointer-events: auto;
+}
+.preview-bottom-bar__collapse-toggle {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  min-width: 34px;
+  margin: 0;
+  padding: 0;
+  border-radius: 0;
+  border: none;
+  background: transparent;
+  color: #f1f5f9;
+  box-shadow: none;
+  cursor: pointer;
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  font-size: 0.75rem;
+  font-weight: 800;
+  line-height: 1;
+}
+.preview-bottom-bar__collapse-toggle:focus-visible {
+  outline: 2px solid rgba(129, 140, 248, 0.85);
+  outline-offset: 2px;
+}
+.preview-bottom-bar__collapse-caret {
+  width: 0;
+  height: 0;
+  border-left: 5px solid transparent;
+  border-right: 5px solid transparent;
+  border-top: 6px solid currentColor;
+  transition: transform 160ms ease;
+}
+.preview-bottom-bar__collapse-caret--collapsed {
+  transform: rotate(180deg);
 }
 .preview-informatics-bar {
   display: flex;
@@ -456,11 +531,11 @@ body > .preview-shell {
 .preview-bottom-bar .preview-session-profile-toggle {
   min-height: 42px;
   padding: 6px 12px;
-  border-radius: 12px;
-  border: 1px solid rgba(148, 163, 184, 0.4);
-  background: rgba(30, 41, 59, 0.95);
+  border-radius: 0;
+  border: none;
+  background: transparent;
   color: #f1f5f9;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  box-shadow: none;
   font-family: ui-sans-serif, system-ui, sans-serif;
   font-size: 0.625rem;
   font-weight: 700;
@@ -470,8 +545,9 @@ body > .preview-shell {
 .preview-bottom-bar .preview-chat-settings-toggle:hover,
 .preview-bottom-bar .preview-session-tools-toggle:hover,
 .preview-bottom-bar .preview-session-profile-toggle:hover {
-  background: rgba(51, 65, 85, 0.95);
-  border-color: rgba(129, 140, 248, 0.55);
+  background: transparent;
+  border-color: transparent;
+  color: #f8fafc;
 }
 .preview-menu-bar .preview-chat-settings-wrap,
 .preview-menu-bar .preview-session-tools-wrap,
@@ -505,16 +581,39 @@ body > .preview-shell {
     width: min(340px, calc(100vw - 20px));
   }
   .preview-joystick-wrap {
-    left: max(12px, env(safe-area-inset-left, 0px));
-    bottom: max(84px, calc(12px + env(safe-area-inset-bottom, 0px)));
+    left: 50%;
+    bottom: max(64px, calc(10px + env(safe-area-inset-bottom, 0px)));
+    transform: translateX(-50%);
+    top: auto;
   }
   .preview-bottom-bar {
     left: max(10px, env(safe-area-inset-left, 0px));
     right: max(10px, env(safe-area-inset-right, 0px));
     bottom: max(10px, env(safe-area-inset-bottom, 0px));
+    flex-direction: column;
+    flex-wrap: nowrap;
     align-items: stretch;
-    gap: 8px;
-    padding: 6px;
+    align-content: stretch;
+    gap: 3px;
+    padding: 3px 4px;
+  }
+  .preview-bottom-bar--collapsed {
+    gap: 0;
+    padding: 2px 4px;
+  }
+  .preview-bottom-bar__collapse-toggle {
+    display: inline-flex;
+    align-self: flex-end;
+    flex-shrink: 0;
+    width: 28px;
+    height: 28px;
+    min-width: 28px;
+    border-radius: 0;
+  }
+  .preview-bottom-bar__collapse-caret {
+    border-left-width: 4px;
+    border-right-width: 4px;
+    border-top-width: 5px;
   }
   .preview-informatics-bar {
     display: none;
@@ -522,10 +621,26 @@ body > .preview-shell {
   .preview-menu-bar {
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 6px;
+    gap: 3px;
     width: 100%;
+    flex: 1 1 auto;
+    min-height: 0;
     justify-content: stretch;
     justify-items: stretch;
+    overflow: hidden;
+    transition:
+      max-height 180ms ease,
+      opacity 140ms ease,
+      transform 180ms ease;
+    max-height: 112px;
+    opacity: 1;
+    transform: translateY(0);
+  }
+  .preview-bottom-bar--collapsed .preview-menu-bar {
+    max-height: 0;
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(6px);
   }
   .preview-menu-bar > * {
     min-width: 0;
@@ -542,7 +657,11 @@ body > .preview-shell {
     width: 100%;
     box-sizing: border-box;
     text-align: center;
-    min-height: 44px;
+    min-height: 28px;
+    padding: 3px 5px;
+    border-radius: 0;
+    font-size: 0.5rem;
+    line-height: 1.15;
   }
   .preview-menu-bar .preview-chat-settings-panel,
   .preview-menu-bar .preview-session-tools-panel,
@@ -568,6 +687,25 @@ body > .preview-shell {
 @media (max-width: 480px) {
   .preview-menu-bar {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 3px;
+    max-height: 104px;
+  }
+  .preview-bottom-bar {
+    left: max(6px, env(safe-area-inset-left, 0px));
+    right: max(6px, env(safe-area-inset-right, 0px));
+    bottom: max(6px, env(safe-area-inset-bottom, 0px));
+    padding: 2px 3px;
+    gap: 2px;
+  }
+  .preview-bottom-bar.preview-bottom-bar--collapsed {
+    gap: 0;
+    padding: 2px 3px;
+  }
+  .preview-bottom-bar__collapse-toggle {
+    width: 26px;
+    height: 26px;
+    min-width: 26px;
+    border-radius: 0;
   }
   .preview-proximity-touch-pad {
     max-width: calc(100vw - 24px);
@@ -616,23 +754,21 @@ body > .preview-shell {
   color: #f8fafc;
 }
 .preview-app-footer__docs {
-  display: inline-flex;
-  align-items: center;
-  padding: 0.45rem 0.85rem;
-  border-radius: 8px;
+  display: inline;
+  padding: 0;
+  border: none;
+  border-radius: 0;
   font-size: 0.8125rem;
   font-weight: 500;
   font-family: ui-sans-serif, system-ui, sans-serif;
   color: #e2e8f0;
-  background: rgba(15, 23, 42, 0.85);
-  border: 1px solid rgba(148, 163, 184, 0.35);
-  text-decoration: none;
+  background: none;
+  text-decoration: underline;
+  text-underline-offset: 2px;
   white-space: nowrap;
 }
 .preview-app-footer__docs:hover {
   color: #fff;
-  border-color: rgba(129, 140, 248, 0.6);
-  background: rgba(30, 41, 59, 0.92);
 }
 .preview-app-footer__github-icon {
   flex-shrink: 0;
@@ -694,12 +830,21 @@ export function createPreviewBottomBar(options: {
   ensurePreviewLayoutStyles();
   const bar = document.createElement("div");
   bar.className = "preview-bottom-bar";
+  const collapseToggle = document.createElement("button");
+  collapseToggle.type = "button";
+  collapseToggle.className = "preview-bottom-bar__collapse-toggle";
+  collapseToggle.setAttribute("aria-label", "Hide toolbar menu");
+  collapseToggle.setAttribute("aria-expanded", "true");
+  const collapseCaret = document.createElement("span");
+  collapseCaret.className = "preview-bottom-bar__collapse-caret";
+  collapseCaret.setAttribute("aria-hidden", "true");
+  collapseToggle.appendChild(collapseCaret);
   const informatics = document.createElement("div");
   informatics.className = "preview-informatics-bar";
   const docLink = document.createElement("a");
   docLink.className = "preview-app-footer__docs";
   docLink.href = DOC_BROWSER_HREF;
-  docLink.textContent = "Documentation";
+  docLink.textContent = "Read the docs";
   const meta = getPreviewAppMeta();
   const footer = document.createElement("div");
   footer.className = "preview-app-footer";
@@ -734,6 +879,19 @@ export function createPreviewBottomBar(options: {
       onAgentSettingsChanged: options.onAgentSettingsChanged,
     })
   );
-  bar.append(informatics, menu);
+  collapseToggle.addEventListener("click", () => {
+    const collapsed = !bar.classList.contains("preview-bottom-bar--collapsed");
+    bar.classList.toggle("preview-bottom-bar--collapsed", collapsed);
+    collapseToggle.setAttribute("aria-expanded", collapsed ? "false" : "true");
+    collapseToggle.setAttribute(
+      "aria-label",
+      collapsed ? "Show toolbar menu" : "Hide toolbar menu"
+    );
+    collapseCaret.classList.toggle(
+      "preview-bottom-bar__collapse-caret--collapsed",
+      collapsed
+    );
+  });
+  bar.append(collapseToggle, informatics, menu);
   return bar;
 }

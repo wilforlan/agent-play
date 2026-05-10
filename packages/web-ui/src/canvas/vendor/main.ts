@@ -75,7 +75,10 @@ import {
 } from "./preview-debug-joystick.js";
 import { createPreviewDebugPanel } from "./preview-debug-panel.js";
 import { createPixiPreview, type PixiPreviewHandle } from "./pixi-multiverse.js";
-import { attachMobileSidePanelControls } from "./preview-mobile-side-panels.js";
+import {
+  attachMobileSidePanelControls,
+  PREVIEW_WIDE_SIDEBAR_MEDIA_QUERY,
+} from "./preview-mobile-side-panels.js";
 import { createPreviewProximityTouchControls } from "./preview-proximity-touch-controls.js";
 import { createPreviewGlobalChatRoom } from "./preview-global-chat-room";
 import { createPreviewRingerEngine } from "./preview-ringer-engine.js";
@@ -1950,7 +1953,6 @@ export function bootstrap(): void {
         return activeIntercomAddress;
       },
     });
-    leftCol.append(globalChatRoom.element, debugMount);
 
     const centerCol = document.createElement("div");
     centerCol.className = "preview-game-col preview-game-col--center";
@@ -2035,7 +2037,18 @@ export function bootstrap(): void {
     });
 
     controlStack.append(proximityLegend, sessionInteractionPanel.element);
-    rightCol.appendChild(controlStack);
+    const wideOnBoot = window.matchMedia(
+      PREVIEW_WIDE_SIDEBAR_MEDIA_QUERY
+    ).matches;
+    const stationaryOnBoot =
+      getPreviewViewSettings().stationaryPanels && wideOnBoot;
+    if (stationaryOnBoot) {
+      leftCol.append(globalChatRoom.element);
+      rightCol.append(controlStack, debugMount);
+    } else {
+      leftCol.append(globalChatRoom.element, debugMount);
+      rightCol.append(controlStack);
+    }
 
     canvasStage.append(leftCol, centerCol, rightCol);
     gameRow.appendChild(canvasStage);
@@ -2137,32 +2150,140 @@ export function bootstrap(): void {
     });
 
     joystickHandle = createPreviewDebugJoystick({ parent: joystickWrap });
-    const floatingPanels = [
-      attachPreviewFloatingPanelDrag({
+    const wideSidebarMq = window.matchMedia(PREVIEW_WIDE_SIDEBAR_MEDIA_QUERY);
+    const previewDockStationaryActive = (): boolean =>
+      getPreviewViewSettings().stationaryPanels && wideSidebarMq.matches;
+
+    const previewMessagesFloatingPlacement = (): {
+      leftPx: number;
+      topPx: number;
+    } => ({ leftPx: 16, topPx: 16 });
+
+    const previewSessionFloatingPlacement = (): {
+      leftPx: number;
+      topPx: number;
+    } => ({
+      leftPx: Math.max(16, window.innerWidth - 376),
+      topPx: 16,
+    });
+
+    const previewDebugFloatingPlacement = (): {
+      leftPx: number;
+      topPx: number;
+    } => ({ leftPx: 16, topPx: 380 });
+
+    const previewMessagesStationaryPlacement = (): {
+      leftPx: number;
+      topPx: number;
+    } => ({ leftPx: 16, topPx: 16 });
+
+    const previewSessionStationaryPlacement = (): {
+      leftPx: number;
+      topPx: number;
+    } => {
+      const w = rightCol.clientWidth;
+      const panelW = Math.min(380, Math.max(200, w - 24));
+      return {
+        leftPx: Math.max(16, w - panelW - 16),
+        topPx: 16,
+      };
+    };
+
+    const previewDebugStationaryPlacement = (): {
+      leftPx: number;
+      topPx: number;
+    } => {
+      const w = rightCol.clientWidth;
+      const panelW = Math.min(360, Math.max(200, w - 24));
+      const leftPx = Math.max(16, w - panelW - 16);
+      const gap = 12;
+      const topPx = controlStack.offsetTop + controlStack.offsetHeight + gap;
+      return { leftPx, topPx };
+    };
+
+    const floatingPanelHandles = {
+      messages: attachPreviewFloatingPanelDrag({
         element: globalChatRoom.element,
-        getBoundsElement: () => canvasStage,
+        getBoundsElement: () =>
+          previewDockStationaryActive() ? leftCol : canvasStage,
         label: "World messages",
         initialPlacement: { leftPx: 16, topPx: 16 },
         className: "preview-floating-panel--messages",
+        layoutMode: stationaryOnBoot ? "stationary" : "floating",
+        resolvePlacement: (mode) =>
+          mode === "stationary"
+            ? previewMessagesStationaryPlacement()
+            : previewMessagesFloatingPlacement(),
       }),
-      attachPreviewFloatingPanelDrag({
+      session: attachPreviewFloatingPanelDrag({
         element: controlStack,
-        getBoundsElement: () => canvasStage,
+        getBoundsElement: () =>
+          previewDockStationaryActive() ? rightCol : canvasStage,
         label: "Human agent interaction",
         initialPlacement: {
           leftPx: Math.max(16, window.innerWidth - 376),
           topPx: 16,
         },
         className: "preview-floating-panel--session",
+        layoutMode: stationaryOnBoot ? "stationary" : "floating",
+        resolvePlacement: (mode) =>
+          mode === "stationary"
+            ? previewSessionStationaryPlacement()
+            : previewSessionFloatingPlacement(),
       }),
-      attachPreviewFloatingPanelDrag({
+      debug: attachPreviewFloatingPanelDrag({
         element: debugMount,
-        getBoundsElement: () => canvasStage,
+        getBoundsElement: () =>
+          previewDockStationaryActive() ? rightCol : canvasStage,
         label: "Debug",
         initialPlacement: { leftPx: 16, topPx: 380 },
         className: "preview-floating-panel--debug",
+        layoutMode: stationaryOnBoot ? "stationary" : "floating",
+        resolvePlacement: (mode) =>
+          mode === "stationary"
+            ? previewDebugStationaryPlacement()
+            : previewDebugFloatingPlacement(),
       }),
+    };
+    const floatingPanels = [
+      floatingPanelHandles.messages,
+      floatingPanelHandles.session,
+      floatingPanelHandles.debug,
     ];
+    const applyPreviewPanelLayout = (): void => {
+      const room = globalChatRoom;
+      if (room === null) return;
+      const wantStationary =
+        getPreviewViewSettings().stationaryPanels && wideSidebarMq.matches;
+      canvasStage.classList.toggle(
+        "preview-canvas-stage--stationary-panels",
+        wantStationary
+      );
+      shell.classList.toggle(
+        "preview-shell--stationary-panels",
+        wantStationary
+      );
+      if (wantStationary) {
+        leftCol.append(room.element);
+        rightCol.append(controlStack, debugMount);
+      } else {
+        leftCol.append(room.element, debugMount);
+        rightCol.append(controlStack);
+      }
+      const mode = wantStationary ? "stationary" : "floating";
+      floatingPanelHandles.messages.setLayoutMode(mode);
+      floatingPanelHandles.session.setLayoutMode(mode);
+      floatingPanelHandles.messages.refreshBounds();
+      floatingPanelHandles.session.refreshBounds();
+      requestAnimationFrame(() => {
+        floatingPanelHandles.debug.setLayoutMode(mode);
+        floatingPanelHandles.debug.refreshBounds();
+        floatingPanels.forEach((panel) => panel.refreshBounds());
+        debugPanelSyncCompanionLayout?.();
+      });
+    };
+    applyPreviewPanelLayout();
+    wideSidebarMq.addEventListener("change", applyPreviewPanelLayout);
     window.addEventListener("resize", () => {
       floatingPanels.forEach((panel) => panel.refreshBounds());
     });
@@ -2205,6 +2326,7 @@ export function bootstrap(): void {
         applyChatVisibility();
         applyDebugVisibility();
         applyJoystickVisibility();
+        applyPreviewPanelLayout();
       },
       includeThemePanel: false,
     });
