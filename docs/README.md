@@ -23,6 +23,7 @@ The repository uses npm workspaces. **`packages/sdk`** is the Node.js package `@
 | [Overview](overview.md) | How the SDK and UI relate, and why they are separate deployables |
 | [Monorepo](monorepo.md) | Workspaces, build order, root scripts |
 | [Release 3.1.0](releases/agent-play-3.1.0.md) | npm intercom package, TypeDoc fixes, Docker/agents, play-ui and SDK highlights since 3.0.x |
+| [AQL](aql/README.md) | **Agent Query Language**: playground scripting, language reference, integration |
 | [SDK](sdk.md) | **`RemotePlayWorld`**, player-chain incremental sync (`getPlayerChainNode`, `subscribeWorldState`, merge helpers), LangChain adapter |
 | [Play UI](play-ui.md) | Static build, same-origin vs split deployment, `VITE_PLAY_API_BASE` |
 | [Multiplayer](multiplayer.md) | Human movement, proximity, A/C/Z/Y actions |
