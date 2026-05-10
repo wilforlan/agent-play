@@ -216,7 +216,8 @@ export const HUMAN_VIEWER_PLAYER_ID = "__human__";
 type OccupantRefIndexValue =
   | PreviewWorldMapHumanOccupantJson
   | PreviewWorldMapAgentOccupantJson
-  | PreviewWorldMapMcpOccupantJson;
+  | PreviewWorldMapMcpOccupantJson
+  | PreviewWorldMapStructureOccupantJson;
 
 function buildOccupantRefIndex(
   snap: PreviewSnapshotJson
@@ -227,8 +228,10 @@ function buildOccupantRefIndex(
       byRef.set(`human:${occ.id}`, occ);
     } else if (occ.kind === "agent") {
       byRef.set(`agent:${occ.agentId}`, occ);
-    } else {
+    } else if (occ.kind === "mcp") {
       byRef.set(`mcp:${occ.id}`, occ);
+    } else {
+      byRef.set(`structure:${occ.id}`, occ);
     }
   }
   return byRef;
