@@ -37,6 +37,17 @@ export function resetChatLogFromSnapshot(snapshot: {
           recentInteractions?: { role: string; text: string; seq?: number }[];
         }
       | { kind: "mcp" }
+      | {
+          kind: "structure";
+          id: string;
+          name: string;
+          x: number;
+          y: number;
+          worldId: string;
+          spaceIds: string[];
+          primaryAmenity?: string;
+          amenities?: string[];
+        }
     >;
   };
 }): void {

@@ -1,6 +1,6 @@
 {
   "name": "@agent-play/cli",
-  "version": "3.2.0",
+  "version": "3.2.1",
   "description": "Command-line tool for Agent Play: node configurations, agent starter kit, and agent registration against the web UI.",
   "private": false,
   "type": "module",

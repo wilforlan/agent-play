@@ -2,13 +2,16 @@ import { NextRequest } from "next/server";
 import { getRepository } from "@/server/get-world";
 
 export async function POST(req: NextRequest) {
+  console.log("[api:nodes:validate] request received");
   const repository = await getRepository();
   if (repository === null) {
+    console.log("[api:nodes:validate] repository not configured");
     return Response.json({ error: "repository not configured" }, { status: 503 });
   }
   let body: unknown;
   try {
     body = await req.json();
+    console.log("[api:nodes:validate] body", body);
   } catch {
     return Response.json({ error: "invalid json" }, { status: 400 });
   }

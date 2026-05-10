@@ -1,0 +1,144 @@
+:root {
+  --ios-bg: #0b1020;
+  --ios-surface: rgba(15, 23, 42, 0.72);
+  --ios-surface-elevated: rgba(30, 41, 59, 0.74);
+  --ios-border: rgba(148, 163, 184, 0.28);
+  --ios-text-primary: #f8fafc;
+  --ios-text-secondary: #cbd5e1;
+  --ios-text-muted: #94a3b8;
+  --ios-accent: #60a5fa;
+  --ios-accent-strong: #3b82f6;
+  --ios-success: #22c55e;
+  --ios-warning: #f59e0b;
+  --ios-error: #ef4444;
+  --ios-radius-lg: 18px;
+  --ios-radius-md: 14px;
+  --ios-radius-sm: 10px;
+  --ios-space-1: 4px;
+  --ios-space-2: 8px;
+  --ios-space-3: 12px;
+  --ios-space-4: 16px;
+  --ios-space-5: 20px;
+  --ios-space-6: 24px;
+  --ios-shadow-soft: 0 10px 34px rgba(2, 6, 23, 0.42);
+  --ios-shadow-strong: 0 16px 42px rgba(2, 6, 23, 0.5);
+  --ios-ease: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: radial-gradient(
+      1200px 700px at 20% -10%,
+      rgba(96, 165, 250, 0.16),
+      transparent 68%
+    ),
+    radial-gradient(
+      1000px 620px at 85% 110%,
+      rgba(14, 116, 144, 0.18),
+      transparent 70%
+    ),
+    var(--ios-bg);
+  color: var(--ios-text-primary);
+  font-family:
+    -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto,
+    sans-serif;
+}
+
+.ios-panel {
+  border-radius: var(--ios-radius-lg);
+  border: 1px solid var(--ios-border);
+  background: linear-gradient(
+    160deg,
+    rgba(15, 23, 42, 0.86),
+    rgba(30, 41, 59, 0.78)
+  );
+  box-shadow: var(--ios-shadow-soft);
+  backdrop-filter: blur(18px);
+}
+
+.ios-button {
+  border: 1px solid rgba(147, 197, 253, 0.35);
+  background: linear-gradient(
+    160deg,
+    rgba(59, 130, 246, 0.32),
+    rgba(37, 99, 235, 0.28)
+  );
+  color: var(--ios-text-primary);
+  border-radius: var(--ios-radius-sm);
+  font-weight: 600;
+  padding: 10px 14px;
+  cursor: pointer;
+  transition:
+    transform 0.2s var(--ios-ease),
+    background 0.2s var(--ios-ease),
+    border-color 0.2s var(--ios-ease);
+}
+
+.ios-button:hover {
+  border-color: rgba(147, 197, 253, 0.6);
+}
+
+.ios-button:active {
+  transform: scale(0.98);
+}
+
+.ios-button:focus-visible,
+.ios-input:focus-visible {
+  outline: 2px solid rgba(147, 197, 253, 0.9);
+  outline-offset: 2px;
+}
+
+.ios-input {
+  border-radius: var(--ios-radius-sm);
+  border: 1px solid var(--ios-border);
+  background: rgba(15, 23, 42, 0.72);
+  color: var(--ios-text-primary);
+  padding: 10px 12px;
+  min-height: 44px;
+}
+
+.ios-label {
+  font-size: 12px;
+  color: var(--ios-text-secondary);
+  letter-spacing: 0.02em;
+}
+
+/* GameShell chrome adaptation: keep world visuals unchanged, refresh shell surfaces */
+.ios-ds-enabled .preview-shell .preview-game-panel,
+.ios-ds-enabled .preview-shell .preview-bottom-bar,
+.ios-ds-enabled .preview-shell .preview-mobile-side-toggle,
+.ios-ds-enabled .preview-shell .preview-chat-settings-panel,
+.ios-ds-enabled .preview-shell .preview-session-tools-panel,
+.ios-ds-enabled .preview-shell .preview-session-profile-panel,
+.ios-ds-enabled .preview-shell .preview-global-chat-room,
+.ios-ds-enabled .preview-shell .preview-debug-panel {
+  border-color: var(--ios-border) !important;
+  border-radius: var(--ios-radius-md) !important;
+  backdrop-filter: blur(16px);
+}
+
+.ios-ds-enabled .preview-shell .preview-bottom-bar,
+.ios-ds-enabled .preview-shell .preview-global-chat-room,
+.ios-ds-enabled .preview-shell .preview-debug-panel {
+  background: linear-gradient(
+    160deg,
+    rgba(15, 23, 42, 0.82),
+    rgba(30, 41, 59, 0.72)
+  ) !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition-duration: 1ms !important;
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}

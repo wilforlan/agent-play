@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
+import "./globals.css";
 
 const siteOrigin =
   typeof process.env.NEXT_PUBLIC_SITE_ORIGIN === "string" &&
