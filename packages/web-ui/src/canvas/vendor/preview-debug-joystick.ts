@@ -84,9 +84,10 @@ function ensureJoystickStyles(): void {
   position: absolute;
   inset: 0;
   border-radius: 50%;
-  background: rgba(15, 23, 42, 0.55);
-  border: 2px solid rgba(148, 163, 184, 0.5);
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+  background: rgba(15, 23, 42, 0.88);
+  border: 1px solid rgba(148, 163, 184, 0.45);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+  backdrop-filter: blur(10px);
 }
 .preview-debug-joystick__stick {
   position: absolute;
@@ -97,9 +98,9 @@ function ensureJoystickStyles(): void {
   margin-left: -18px;
   margin-top: -18px;
   border-radius: 50%;
-  background: rgba(226, 232, 240, 0.92);
-  border: 2px solid rgba(71, 85, 105, 0.8);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+  background: rgba(241, 245, 249, 0.94);
+  border: 1px solid rgba(148, 163, 184, 0.6);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.25), 0 2px 8px rgba(0, 0, 0, 0.2);
   pointer-events: none;
 }
 .preview-debug-joystick__label {
@@ -108,8 +109,11 @@ function ensureJoystickStyles(): void {
   bottom: calc(100% + 6px);
   transform: translateX(-50%);
   white-space: nowrap;
-  font-size: 10px;
+  font-size: 0.625rem;
   font-family: ui-sans-serif, system-ui, sans-serif;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
   color: rgba(226, 232, 240, 0.95);
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
   pointer-events: none;

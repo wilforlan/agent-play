@@ -2,7 +2,10 @@
 
 import { describe, expect, it } from "vitest";
 
-import { createPreviewBottomBar } from "./preview-settings-toolbar.js";
+import {
+  createPreviewBottomBar,
+  ensurePreviewLayoutStyles,
+} from "./preview-settings-toolbar.js";
 import {
   getPreviewViewSettings,
   resetPreviewViewSettings,
@@ -10,6 +13,24 @@ import {
 } from "./preview-view-settings.js";
 
 describe("createPreviewBottomBar", () => {
+  it("injects fullscreen world and floating overlay layout styles", () => {
+    ensurePreviewLayoutStyles();
+
+    const styleText =
+      document.getElementById("agent-play-preview-settings-toolbar-styles")
+        ?.textContent ?? "";
+
+    expect(styleText).toContain(".preview-game-panel");
+    expect(styleText).toContain("height: 100dvh");
+    expect(styleText).toContain(".preview-canvas-stage");
+    expect(styleText).toContain("inset: 0");
+    expect(styleText).toContain(".preview-floating-panel");
+    expect(styleText).toContain(".preview-bottom-bar");
+    expect(styleText).toContain("position: absolute");
+    expect(styleText).toContain(".preview-global-chat-room.preview-floating-panel");
+    expect(styleText).toContain("min-height: 0");
+  });
+
   it("places the documentation link as the first control on the left informatics cluster", () => {
     resetPreviewViewSettings();
     const chatPanel = document.createElement("div");

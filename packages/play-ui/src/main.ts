@@ -84,6 +84,10 @@ import {
   ensurePreviewLayoutStyles,
 } from "./preview-settings-toolbar.js";
 import {
+  attachPreviewFloatingPanelDrag,
+  syncPreviewCanvasHostScale,
+} from "./preview-floating-panel.js";
+import {
   getPreviewViewSettings,
   setPreviewViewSettings,
 } from "./preview-view-settings.js";
@@ -1955,7 +1959,8 @@ export function bootstrap(): void {
     canvasWrap.className = "preview-canvas-wrap";
 
     const canvasHost = document.createElement("div");
-    canvasHost.style.cssText = `display:block;position:relative;width:${VIEW_W}px;max-width:100%;height:${VIEW_H}px;margin:0 auto;overflow:hidden;`;
+    canvasHost.className = "preview-canvas-host";
+    canvasHost.style.cssText = `display:block;position:absolute;width:${VIEW_W}px;height:${VIEW_H}px;overflow:hidden;`;
 
     const joystickWrap = document.createElement("div");
     joystickWrap.className = "preview-joystick-wrap";
@@ -1980,11 +1985,7 @@ export function bootstrap(): void {
     toggleRight.textContent = "Session";
     toggleRight.setAttribute("aria-controls", "preview-side-right");
 
-    centerCol.append(
-      canvasWrap,
-      joystickWrap,
-      mobileBackdrop
-    );
+    centerCol.append(canvasWrap, joystickWrap, mobileBackdrop);
 
     const rightCol = document.createElement("div");
     rightCol.className = "preview-game-col preview-game-col--right";
@@ -2085,6 +2086,23 @@ export function bootstrap(): void {
       grassBandTopRatio: theme.grassBandTopRatio,
     });
     handle.app.stage.addChild(skyDecor.container);
+    const syncWorldScale = (): void => {
+      syncPreviewCanvasHostScale({
+        stage: canvasWrap,
+        host: canvasHost,
+        viewWidth: VIEW_W,
+        viewHeight: VIEW_H,
+      });
+    };
+    syncWorldScale();
+    const resizeObserver =
+      typeof ResizeObserver === "undefined"
+        ? null
+        : new ResizeObserver(() => {
+            syncWorldScale();
+          });
+    resizeObserver?.observe(canvasWrap);
+    window.addEventListener("resize", syncWorldScale);
     const motionQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
     const syncSkyMotion = (): void => {
       skyDecor?.setReducedMotion(motionQuery.matches);
@@ -2119,6 +2137,35 @@ export function bootstrap(): void {
     });
 
     joystickHandle = createPreviewDebugJoystick({ parent: joystickWrap });
+    const floatingPanels = [
+      attachPreviewFloatingPanelDrag({
+        element: globalChatRoom.element,
+        getBoundsElement: () => canvasStage,
+        label: "World messages",
+        initialPlacement: { leftPx: 16, topPx: 16 },
+        className: "preview-floating-panel--messages",
+      }),
+      attachPreviewFloatingPanelDrag({
+        element: controlStack,
+        getBoundsElement: () => canvasStage,
+        label: "Human agent interaction",
+        initialPlacement: {
+          leftPx: Math.max(16, window.innerWidth - 376),
+          topPx: 16,
+        },
+        className: "preview-floating-panel--session",
+      }),
+      attachPreviewFloatingPanelDrag({
+        element: debugMount,
+        getBoundsElement: () => canvasStage,
+        label: "Debug",
+        initialPlacement: { leftPx: 16, topPx: 380 },
+        className: "preview-floating-panel--debug",
+      }),
+    ];
+    window.addEventListener("resize", () => {
+      floatingPanels.forEach((panel) => panel.refreshBounds());
+    });
 
     let messagesPanelVisible = true;
     const applyMessagesPanelVisibility = (): void => {
