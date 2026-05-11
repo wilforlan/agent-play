@@ -2,6 +2,8 @@
  * @module @agent-play/play-ui/preview-debug-panel
  * preview debug panel — preview canvas module (Pixi + DOM).
  */
+import type { PreviewViewSettings } from "./preview-view-settings.js";
+
 export type PreviewDebugAgentRow = {
   playerId: string;
   name: string;
@@ -20,10 +22,19 @@ export type PreviewDebugStructureRow = {
   amenities?: readonly string[];
 };
 
+type OccupancyDebugPick = Pick<
+  PreviewViewSettings,
+  "debugOccupancyQuartiles" | "debugOccupancyFreeGrids"
+>;
+
 export function createPreviewDebugPanel(options: {
   getSnapshot: () => {
     agents: readonly PreviewDebugAgentRow[];
     structures: readonly PreviewDebugStructureRow[];
+  };
+  occupancyDebug?: {
+    getSettings: () => OccupancyDebugPick;
+    setSettings: (partial: Partial<OccupancyDebugPick>) => void;
   };
 }): {
   element: HTMLElement;
@@ -43,6 +54,57 @@ export function createPreviewDebugPanel(options: {
   const body = document.createElement("div");
   body.className = "preview-debug-panel__body";
   el.appendChild(body);
+
+  const agentsStructuresEl = document.createElement("div");
+  agentsStructuresEl.className = "preview-debug-panel__agents-structures";
+  body.appendChild(agentsStructuresEl);
+
+  let quartileInput: HTMLInputElement | null = null;
+  let freeGridsInput: HTMLInputElement | null = null;
+
+  if (options.occupancyDebug !== undefined) {
+    const occ = document.createElement("div");
+    occ.className = "preview-debug-panel__occupancy";
+    const oh = document.createElement("h4");
+    oh.textContent = "Spatial zones (lat / long)";
+    occ.appendChild(oh);
+
+    const rowQuart = document.createElement("label");
+    rowQuart.className = "preview-debug-panel__occupancy-row";
+    quartileInput = document.createElement("input");
+    quartileInput.type = "checkbox";
+    quartileInput.addEventListener("change", () => {
+      if (quartileInput !== null) {
+        options.occupancyDebug?.setSettings({
+          debugOccupancyQuartiles: quartileInput.checked,
+        });
+      }
+    });
+    const sq = document.createElement("span");
+    sq.textContent =
+      "Show spatial zones (Q1 agents · Q3 spaces — equal rectangles)";
+    rowQuart.append(quartileInput, sq);
+    occ.appendChild(rowQuart);
+
+    const rowFree = document.createElement("label");
+    rowFree.className = "preview-debug-panel__occupancy-row";
+    freeGridsInput = document.createElement("input");
+    freeGridsInput.type = "checkbox";
+    freeGridsInput.addEventListener("change", () => {
+      if (freeGridsInput !== null) {
+        options.occupancyDebug?.setSettings({
+          debugOccupancyFreeGrids: freeGridsInput.checked,
+        });
+      }
+    });
+    const sf = document.createElement("span");
+    sf.textContent =
+      "Show free grids (green Q1 agents · cyan Q3 space anchors)";
+    rowFree.append(freeGridsInput, sf);
+    occ.appendChild(rowFree);
+
+    body.appendChild(occ);
+  }
 
   const syncCompanionLayout = (): void => {
     const mount = el.parentElement;
@@ -119,7 +181,17 @@ export function createPreviewDebugPanel(options: {
       html += `<li><strong>${esc(s.kind)}</strong> ${esc(s.id)}<br/>(${s.x}, ${s.y})${tool}${pid}${amen}${amens}</li>`;
     }
     html += "</ul>";
-    body.innerHTML = html;
+    agentsStructuresEl.innerHTML = html;
+
+    if (options.occupancyDebug !== undefined) {
+      const os = options.occupancyDebug.getSettings();
+      if (quartileInput !== null) {
+        quartileInput.checked = os.debugOccupancyQuartiles;
+      }
+      if (freeGridsInput !== null) {
+        freeGridsInput.checked = os.debugOccupancyFreeGrids;
+      }
+    }
   };
 
   update();

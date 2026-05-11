@@ -814,6 +814,29 @@ body > .preview-shell {
   font-size: 11px;
   color: #cbd5e1;
 }
+.preview-debug-panel__occupancy {
+  margin-top: 10px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(148, 163, 184, 0.28);
+}
+.preview-debug-panel__occupancy h4 {
+  margin: 0 0 8px 0;
+}
+.preview-debug-panel__occupancy-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 8px 0;
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  font-size: 11px;
+  line-height: 1.35;
+  color: #cbd5e1;
+  cursor: pointer;
+}
+.preview-debug-panel__occupancy-row input {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
 `;
   document.head.append(s);
 }

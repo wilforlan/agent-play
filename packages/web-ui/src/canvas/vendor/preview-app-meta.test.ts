@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import rootPackage from "../../../../../package.json";
+import rootPackage from "../../../package.json";
 import { getPreviewAppMeta } from "./preview-app-meta.js";
 
 describe("getPreviewAppMeta", () => {

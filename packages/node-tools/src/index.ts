@@ -15,6 +15,7 @@ export {
   deriveRootKeyFromSecret,
   derivePasswordFromSecret,
   deriveNodeIdFromPassword,
+  deriveNodeIdFromMaterial,
   validateNodePassword,
   hashNodePassword,
   normalizeNodePassphrase,

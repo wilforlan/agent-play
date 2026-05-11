@@ -46,4 +46,16 @@ describe("setPreviewViewSettings", () => {
     expect(next.stationaryPanels).toBe(true);
     expect(getPreviewViewSettings().stationaryPanels).toBe(true);
   });
+
+  it("defaults occupancy debug overlays off and persists toggles", () => {
+    expect(getDefaultViewSettings().debugOccupancyQuartiles).toBe(false);
+    expect(getDefaultViewSettings().debugOccupancyFreeGrids).toBe(false);
+    const next = setPreviewViewSettings({
+      debugOccupancyQuartiles: true,
+      debugOccupancyFreeGrids: true,
+    });
+    expect(next.debugOccupancyQuartiles).toBe(true);
+    expect(next.debugOccupancyFreeGrids).toBe(true);
+    expect(getPreviewViewSettings().debugOccupancyQuartiles).toBe(true);
+  });
 });

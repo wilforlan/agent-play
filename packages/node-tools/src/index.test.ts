@@ -3,6 +3,7 @@ import {
   createNodeCredentialFromPassw,
   createNodeCredentialFromSecret,
   deriveNodeIdFromPassword,
+  deriveNodeIdFromMaterial,
   derivePasswordFromSecret,
   generateNodePassw,
   hashNodePassword,
@@ -82,16 +83,16 @@ describe("@agent-play/node-tools", () => {
 
   it("deriveNodeIdFromPassword with material matches create-main-node style bootstrap", () => {
     const generatedPassw = generateNodePassw();
-    const hashedPassw = hashNodePassword(generatedPassw);
-    const fromBootstrap = deriveNodeIdFromPassword({
-      password: hashedPassw,
+    const material = nodeCredentialsMaterialFromHumanPassphrase(generatedPassw);
+    const fromMaterial = deriveNodeIdFromMaterial({
+      material,
       rootKey,
     });
-    const fromSdkHelper = deriveNodeIdFromPassword({
-      password: nodeCredentialsMaterialFromHumanPassphrase(generatedPassw),
+    const fromHelper = deriveNodeIdFromPassword({
+      password: generatedPassw,
       rootKey,
     });
-    expect(fromSdkHelper).toBe(fromBootstrap);
+    expect(fromHelper).toBe(fromMaterial);
   });
 
 });

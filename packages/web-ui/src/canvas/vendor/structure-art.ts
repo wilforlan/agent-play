@@ -177,6 +177,12 @@ export function drawSupermarketStructure(
     graph.rect(gx, gtop, gw, gh).stroke({ width: 1, color: colors.trim });
   }
   graph.rect(ox, oy, w, h * 0.72).stroke({ width: 1.5, color: colors.trim });
+  const cartY = oy + h * 0.78;
+  graph
+    .roundRect(ox + w * 0.36, cartY, w * 0.28, h * 0.08, 3)
+    .fill({ color: colors.trim, alpha: 0.9 });
+  graph.circle(ox + w * 0.42, cartY + h * 0.1, w * 0.035).fill({ color: 0x1e293b });
+  graph.circle(ox + w * 0.58, cartY + h * 0.1, w * 0.035).fill({ color: 0x1e293b });
 }
 
 export function drawShopStructure(
@@ -204,6 +210,15 @@ export function drawShopStructure(
     alpha: 0.4,
   });
   graph.rect(ox, oy, w, h * 0.68).stroke({ width: 1.2, color: colors.trim });
+  graph.rect(ox + w * 0.05, oy - h * 0.08, w * 0.9, h * 0.06).fill({
+    color: colors.accent,
+    alpha: 0.85,
+  });
+  graph
+    .moveTo(ox + w * 0.15, oy + h * 0.72)
+    .lineTo(ox + w * 0.35, oy + h * 0.58)
+    .lineTo(ox + w * 0.55, oy + h * 0.72)
+    .stroke({ width: 2, color: colors.trim, alpha: 0.6 });
 }
 
 export function drawCarWashStructure(
@@ -227,4 +242,14 @@ export function drawCarWashStructure(
     color: colors.roof,
   });
   graph.rect(ox, oy, w, h * 0.55).stroke({ width: 1.2, color: colors.trim });
+  graph
+    .arc(ox + w * 0.25, oy + h * 0.35, w * 0.08, Math.PI * 1.1, Math.PI * 1.9, false)
+    .stroke({ width: 2, color: colors.accent, alpha: 0.55 });
+  graph
+    .arc(ox + w * 0.75, oy + h * 0.33, w * 0.07, Math.PI * 1.15, Math.PI * 1.85, false)
+    .stroke({ width: 2, color: colors.accent, alpha: 0.45 });
+  graph.circle(ox + w * 0.5, oy + h * 0.18, w * 0.04).fill({
+    color: colors.accent,
+    alpha: 0.9,
+  });
 }

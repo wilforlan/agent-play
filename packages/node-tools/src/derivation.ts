@@ -63,8 +63,16 @@ export function deriveNodeIdFromPassword(input: {
   password: string;
   rootKey: string;
 }): string {
+  const material = nodeCredentialsMaterialFromHumanPassphrase(input.password);
+  return deriveNodeIdFromMaterial({ material, rootKey: input.rootKey });
+}
+
+export function deriveNodeIdFromMaterial(input: {
+  material: string;
+  rootKey: string;
+}): string {
   const normalizedRootKey = input.rootKey.trim().toLowerCase();
-  const dk = scrypt(utf8.encode(input.password), hashLabel(`agent-play:node-id:v1:${normalizedRootKey}`), {
+  const dk = scrypt(utf8.encode(input.material), hashLabel(`agent-play:node-id:v1:${normalizedRootKey}`), {
     N: NODE_TOOLS_SCRYPT.N,
     r: NODE_TOOLS_SCRYPT.r,
     p: NODE_TOOLS_SCRYPT.p,

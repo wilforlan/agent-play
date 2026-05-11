@@ -12,6 +12,7 @@ import {
 } from "../world-events.js";
 import {
   deriveNodeIdFromPassword,
+  deriveNodeIdFromMaterial,
   nodeCredentialsMaterialFromHumanPassphrase,
 } from "@agent-play/node-tools";
 
@@ -44,10 +45,7 @@ function playWorld(humanPassphrase: string = "k"): RemotePlayWorld {
 
 function expectedNodeAuthHeaders(humanPassphrase: string): Record<string, string> {
   const material = nodeCredentialsMaterialFromHumanPassphrase(humanPassphrase);
-  const nodeId = deriveNodeIdFromPassword({
-    password: material,
-    rootKey: DEFAULT_NODE_ID,
-  });
+  const nodeId = deriveNodeIdFromMaterial({ material, rootKey: DEFAULT_NODE_ID });
   return {
     "x-node-id": nodeId,
     "x-node-passw": material,
@@ -93,7 +91,7 @@ describe("RemotePlayWorld", () => {
     const rootKey = DEFAULT_NODE_ID;
     const humanPassw = "amber angle apple arch atlas aura autumn bamboo beacon birch blossom";
     const material = nodeCredentialsMaterialFromHumanPassphrase(humanPassw);
-    const nodeId = deriveNodeIdFromPassword({ password: material, rootKey });
+    const nodeId = deriveNodeIdFromMaterial({ material, rootKey });
     const credentialsPath = join(dir, "credentials.json");
     writeFileSync(join(dir, ".root"), `${rootKey}\n`, "utf8");
     writeFileSync(
@@ -138,8 +136,8 @@ describe("RemotePlayWorld", () => {
   it("connect validates then uses GET session when mainNodeId is provided", async () => {
     const infoSpy = vi.spyOn(console, "info").mockImplementation(() => {});
     const material = nodeCredentialsMaterialFromHumanPassphrase("key");
-    const derivedNodeId = deriveNodeIdFromPassword({
-      password: material,
+    const derivedNodeId = deriveNodeIdFromMaterial({
+      material,
       rootKey: DEFAULT_NODE_ID,
     });
     const mainParentId = "main-account-node-1";

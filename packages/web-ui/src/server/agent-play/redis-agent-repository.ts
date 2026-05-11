@@ -12,8 +12,9 @@ import Redis from "ioredis";
 import { MAX_AGENTS_PER_ACCOUNT } from "./account-limits.js";
 import {
   deriveNodeIdFromPassword,
+  deriveNodeIdFromMaterial,
   generateNodePassw,
-  hashNodePassword,
+  nodeCredentialsMaterialFromHumanPassphrase,
   normalizeNodePassphrase,
 } from "@agent-play/node-tools";
 import { getPlayerChainGenesisSync } from "./load-player-chain-genesis.js";
@@ -176,8 +177,8 @@ export class RedisAgentRepository implements AgentRepository {
       return { ok: false, reason: "missing passw", nodeKind };
     }
     const derivativeOk =
-      deriveNodeIdFromPassword({
-        password: passw,
+      deriveNodeIdFromMaterial({
+        material: passw,
         rootKey: input.rootKey,
       }) === input.nodeId.trim().toLowerCase();
     if (!derivativeOk) {
@@ -267,8 +268,10 @@ export class RedisAgentRepository implements AgentRepository {
   async createNode(input: CreateNodeRecordInput): Promise<CreateNodeResult> {
     await this.ensureRootNodeExists();
     if (input.kind === "main") {
-      const nodeId = deriveNodeIdFromPassword({
-        password: input.passw,
+      // `passw` is already credential material from callers (CLI/SDK).
+      const passMaterial = input.passw;
+      const nodeId = deriveNodeIdFromMaterial({
+        material: passMaterial,
         rootKey: this.rootKey,
       });
       const authKey = nodeAuthKey(this.hostId, nodeId);
@@ -282,8 +285,8 @@ export class RedisAgentRepository implements AgentRepository {
         kind: "main",
         parentNodeId: this.rootKey,
         createdAt,
-        passw: input.passw,
-        passwHash: input.passw,
+        passw: passMaterial,
+        passwHash: passMaterial,
         agentNodeIds: JSON.stringify([]),
       });
       return { nodeId };
@@ -296,13 +299,10 @@ export class RedisAgentRepository implements AgentRepository {
     let phraseOut: string | undefined;
     if (passMaterial.length === 0) {
       const phrase = generateNodePassw();
-      passMaterial = hashNodePassword(normalizeNodePassphrase(phrase));
+      passMaterial = nodeCredentialsMaterialFromHumanPassphrase(phrase);
       phraseOut = normalizeNodePassphrase(phrase);
     }
-    const nodeId = deriveNodeIdFromPassword({
-      password: passMaterial,
-      rootKey: this.rootKey,
-    });
+    const nodeId = deriveNodeIdFromMaterial({ material: passMaterial, rootKey: this.rootKey });
     const authKey = nodeAuthKey(this.hostId, nodeId);
     const exists = await this.redis.exists(authKey);
     if (exists === 1) {
@@ -337,8 +337,8 @@ export class RedisAgentRepository implements AgentRepository {
       return false;
     }
     return (
-      deriveNodeIdFromPassword({
-        password: passw,
+      deriveNodeIdFromMaterial({
+        material: passw,
         rootKey: this.rootKey,
       }) === nodeId.trim().toLowerCase()
     );
@@ -397,9 +397,11 @@ export class RedisAgentRepository implements AgentRepository {
     if (alreadyAttached) {
       throw new Error("createAgentNode: agent node already attached");
     }
+    // `passw` is already credential material from callers (CLI/SDK).
+    const passMaterial = input.passw;
     if (
-      deriveNodeIdFromPassword({
-        password: input.passw,
+      deriveNodeIdFromMaterial({
+        material: passMaterial,
         rootKey: this.rootKey,
       }) !== input.agentId.trim().toLowerCase()
     ) {
@@ -414,8 +416,8 @@ export class RedisAgentRepository implements AgentRepository {
       nodeId: input.agentId,
       kind: "agent",
       parentNodeId: input.parentNodeId,
-      passw: input.passw,
-      passwHash: input.passw,
+      passw: passMaterial,
+      passwHash: passMaterial,
       createdAt: new Date().toISOString(),
       agentNodeIds: JSON.stringify([]),
     });

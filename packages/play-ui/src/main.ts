@@ -34,12 +34,20 @@ import {
 } from "./agent-chat-panel-position.js";
 import {
   clampWorldPosition,
+  DEFAULT_AGENT_SPAWN_MIN_DISTANCE,
   expandBoundsToMinimumPlayArea,
+  isAgentSpawnOccupancyPointAvailable,
+  isSpaceAnchorOccupancyPointAvailable,
+  listAllowedOccupancyPoints,
+  listOccupancyPointsForSpatialZone,
   mergeSnapshotWithPlayerChainNode,
   MINIMUM_PLAY_WORLD_BOUNDS,
+  occupancyKeyForPosition,
   parsePlayerChainFanoutNotifyFromSsePayload,
   parsePlayerChainNodeRpcBody,
   sortNodeRefsForSerializedFetch,
+  spatialZoneBounds,
+  SPATIAL_ZONE_INDEX_SPACES,
   type AgentPlaySnapshot,
   type WorldBounds,
 } from "@agent-play/sdk/browser";
@@ -119,6 +127,11 @@ import {
   proximityKeyToAction,
   type ProximityActionKind,
 } from "./proximity-interaction.js";
+import {
+  compoundFenceRadiusPx,
+  drawSpaceCompoundFence,
+  layoutCompoundAmenityOffsetsWorld,
+} from "./space-compound-art.js";
 
 type ConsoleWorldApi = {
   occupant: {
@@ -197,11 +210,13 @@ type Structure = {
   y: number;
   kind: string;
   label?: string;
+  name?: string;
   toolName?: string;
   agentId?: string;
   playerId?: string;
   primaryAmenity?: string;
   amenities?: string[];
+  spaceIds?: readonly string[];
 };
 
 type PathStep = {
@@ -407,7 +422,7 @@ type AgentVisual = {
 };
 
 type StructureVisual = {
-  box: Graphics;
+  root: Container;
   caption: Text;
 };
 
@@ -1058,8 +1073,10 @@ function collectStructuresForRender(s: Snapshot): Structure[] {
         x: o.x,
         y: o.y,
         label: o.name,
+        name: o.name,
         primaryAmenity: o.primaryAmenity,
         amenities: o.amenities,
+        spaceIds: o.spaceIds,
       });
     }
   }
@@ -1434,87 +1451,175 @@ function amenityPaletteForStructure(amenity: string): AmenityBuildingPalette {
   };
 }
 
+const SPACE_ANCHOR_MIN_DISTANCE_WORLD = 3.6;
+
+function compoundStructureGroupKey(st: Structure): string {
+  if (st.kind !== "structure") {
+    return st.id;
+  }
+  if (st.spaceIds !== undefined && st.spaceIds.length > 0) {
+    return `compound:${[...st.spaceIds].sort().join("|")}`;
+  }
+  return `compound:solo:${st.id}`;
+}
+
+function makeCaptionText(): Text {
+  return new Text({
+    text: "",
+    style: {
+      fontFamily: "ui-monospace, monospace",
+      fontSize: 11,
+      fontWeight: "600",
+      fill: cssColorToPixi(palette.text),
+      wordWrap: true,
+      wordWrapWidth: 200,
+    },
+  });
+}
+
+function destroyStructureVisual(n: StructureVisual): void {
+  structureLayer.removeChild(n.root);
+  structureLayer.removeChild(n.caption);
+  n.root.destroy({ children: true });
+  n.caption.destroy();
+}
+
 function syncStructureNodes(structs: Structure[]): void {
   const theme = getActiveSceneTheme();
-  const alive = new Set(structs.map((s) => s.id));
+  const alive = new Set<string>();
+  const compoundGroups = new Map<string, Structure[]>();
+  const standalone: Structure[] = [];
+
+  for (const st of structs) {
+    if (st.kind === "structure") {
+      const ck = compoundStructureGroupKey(st);
+      alive.add(ck);
+      const arr = compoundGroups.get(ck) ?? [];
+      arr.push(st);
+      compoundGroups.set(ck, arr);
+    } else {
+      alive.add(st.id);
+      standalone.push(st);
+    }
+  }
+
   for (const id of structureNodes.keys()) {
     if (!alive.has(id)) {
       const n = structureNodes.get(id);
       if (n !== undefined) {
-        structureLayer.removeChild(n.box);
-        structureLayer.removeChild(n.caption);
-        n.box.destroy();
-        n.caption.destroy();
+        destroyStructureVisual(n);
       }
       structureNodes.delete(id);
     }
   }
+
   const box = Math.max(16, Math.min(40, cellScale * 0.85));
-  for (const st of structs) {
-    let n = structureNodes.get(st.id);
+  const buildingBox = box * 1.12;
+
+  for (const [compoundKey, group] of compoundGroups) {
+    let n = structureNodes.get(compoundKey);
     if (n === undefined) {
-      const boxG = new Graphics({ roundPixels: true });
-      const cap = new Text({
-        text: "",
-        style: {
-          fontFamily: "ui-monospace, monospace",
-          fontSize: 11,
-          fontWeight: "600",
-          fill: cssColorToPixi(palette.text),
-          wordWrap: true,
-          wordWrapWidth: 140,
-        },
-      });
-      n = { box: boxG, caption: cap };
-      structureNodes.set(st.id, n);
-      structureLayer.addChild(boxG);
+      const root = new Container();
+      const cap = makeCaptionText();
+      n = { root, caption: cap };
+      structureNodes.set(compoundKey, n);
+      structureLayer.addChild(root);
       structureLayer.addChild(cap);
     }
-    const { x: sx, y: sy } = worldToWorldRootLocal(st.x, st.y);
-    const isMcpStore = st.id.startsWith("mcp:");
-    if (st.kind === "home") {
-      drawHomeStructure(n.box, box, theme.house);
-      n.box.position.set(sx, sy);
-      n.caption.text = (st.label ?? "Home").slice(0, 24);
-      n.caption.position.set(sx - n.caption.width / 2, sy - box * 1.15);
-    } else if (st.kind === "structure") {
+    n.root.removeChildren();
+    const centroidX =
+      group.reduce((sum, st) => sum + st.x, 0) / group.length;
+    const centroidY =
+      group.reduce((sum, st) => sum + st.y, 0) / group.length;
+    const { x: cx, y: cy } = worldToWorldRootLocal(centroidX, centroidY);
+    const radiusPx = compoundFenceRadiusPx({
+      amenityCount: group.length,
+      cellScale,
+    });
+    const fenceG = new Graphics({ roundPixels: true });
+    drawSpaceCompoundFence(fenceG, radiusPx, 0xd97706);
+    fenceG.position.set(cx, cy);
+    n.root.addChild(fenceG);
+
+    const sorted = [...group].sort((a, b) =>
+      (a.primaryAmenity ?? "").localeCompare(b.primaryAmenity ?? "")
+    );
+    const radiusWorld = Math.max(
+      2.6,
+      Math.min(4.8, 2.3 + sorted.length * 0.45)
+    );
+    const offsets = layoutCompoundAmenityOffsetsWorld({
+      count: sorted.length,
+      radiusWorld,
+    });
+
+    for (let i = 0; i < sorted.length; i += 1) {
+      const st = sorted[i];
+      const off = offsets[i];
+      if (st === undefined || off === undefined) {
+        continue;
+      }
+      const wx = centroidX + off.dx;
+      const wy = centroidY + off.dy;
+      const { x: sx, y: sy } = worldToWorldRootLocal(wx, wy);
+      const g = new Graphics({ roundPixels: true });
       const amenity =
         st.primaryAmenity !== undefined && st.primaryAmenity.length > 0
           ? st.primaryAmenity
           : "shop";
       const pal = amenityPaletteForStructure(amenity);
-      const buildingBox = box * 1.12;
       if (amenity === "supermarket") {
-        drawSupermarketStructure(n.box, buildingBox, pal);
+        drawSupermarketStructure(g, buildingBox, pal);
       } else if (amenity === "car_wash") {
-        drawCarWashStructure(n.box, buildingBox, pal);
+        drawCarWashStructure(g, buildingBox, pal);
       } else {
-        drawShopStructure(n.box, buildingBox, pal);
+        drawShopStructure(g, buildingBox, pal);
       }
-      n.box.position.set(sx - buildingBox * 0.42, sy - buildingBox * 0.48);
-      let capText = (st.label ?? "Structure").slice(0, 22);
-      if (
-        st.amenities !== undefined &&
-        st.amenities.length > 1
-      ) {
-        capText = `${capText} (${st.amenities.join(", ")})`.slice(0, 40);
-      }
-      n.caption.text = capText;
-      n.caption.position.set(
-        sx - n.caption.width / 2,
-        sy - buildingBox * 0.92
-      );
+      g.position.set(sx - buildingBox * 0.42, sy - buildingBox * 0.48);
+      n.root.addChild(g);
+    }
+
+    let capText = sorted
+      .map((s) => (s.label ?? s.name ?? s.id).slice(0, 22))
+      .join(" · ");
+    if (capText.length > 100) {
+      capText = `${capText.slice(0, 97)}…`;
+    }
+    n.caption.text = capText;
+    n.caption.position.set(cx - n.caption.width / 2, cy - radiusPx - 18);
+  }
+
+  for (const st of standalone) {
+    let n = structureNodes.get(st.id);
+    if (n === undefined) {
+      const root = new Container();
+      const cap = makeCaptionText();
+      n = { root, caption: cap };
+      structureNodes.set(st.id, n);
+      structureLayer.addChild(root);
+      structureLayer.addChild(cap);
+    }
+    n.root.removeChildren();
+    const boxG = new Graphics({ roundPixels: true });
+    n.root.addChild(boxG);
+    const { x: sx, y: sy } = worldToWorldRootLocal(st.x, st.y);
+    const isMcpStore = st.id.startsWith("mcp:");
+    if (st.kind === "home") {
+      drawHomeStructure(boxG, box, theme.house);
+      boxG.position.set(sx, sy);
+      n.caption.text = (st.label ?? "Home").slice(0, 24);
+      n.caption.position.set(sx - n.caption.width / 2, sy - box * 1.15);
     } else if (isMcpStore) {
       const storePal = mcpStorePalette(palette);
       const storeBox = box * 1.12;
-      drawMcpStore(n.box, storeBox, storePal);
-      n.box.position.set(sx - storeBox * 0.42, sy - storeBox * 0.48);
+      drawMcpStore(boxG, storeBox, storePal);
+      boxG.position.set(sx - storeBox * 0.42, sy - storeBox * 0.48);
       n.caption.text = (st.label ?? "Store").slice(0, 22);
       n.caption.position.set(sx - n.caption.width / 2, sy - storeBox * 0.92);
     } else {
       const stallPal = vendorStallPalette(palette);
-      drawVendorStall(n.box, box, stallPal);
-      n.box.position.set(sx - box * 0.38, sy - box * 0.42);
+      drawVendorStall(boxG, box, stallPal);
+      boxG.position.set(sx - box * 0.38, sy - box * 0.42);
       const capText =
         st.toolName !== undefined && st.toolName.length > 0
           ? st.toolName
@@ -1566,8 +1671,111 @@ function syncAgentNodes(): void {
   }
 }
 
+function occupiedKeysFromLiveSnapshot(): Set<string> {
+  if (snapshot === null) {
+    return new Set();
+  }
+  const keys = new Set<string>();
+  for (const o of snapshot.worldMap.occupants) {
+    keys.add(occupancyKeyForPosition(o.x, o.y));
+  }
+  return keys;
+}
+
+function structureAnchorsFromLiveSnapshot(): Array<{ x: number; y: number }> {
+  if (snapshot === null) {
+    return [];
+  }
+  return snapshot.worldMap.occupants
+    .filter((o): o is SnapshotStructureOccupant => o.kind === "structure")
+    .map((o) => ({ x: o.x, y: o.y }));
+}
+
 function paintGrid(): void {
   gridGraphics.clear();
+  const settings = getPreviewViewSettings();
+  if (!settings.debugOccupancyQuartiles && !settings.debugOccupancyFreeGrids) {
+    return;
+  }
+
+  const strokeZoneRect = (bounds: WorldBounds, stroke: {
+    width: number;
+    color: number;
+    alpha: number;
+  }): void => {
+    const minWx = bounds.minX;
+    const maxWx = bounds.maxX + 1;
+    const minWy = bounds.minY;
+    const maxWy = bounds.maxY + 1;
+    const tl = worldToWorldRootLocal(minWx, maxWy);
+    const w = (maxWx - minWx) * cellScale;
+    const h = (maxWy - minWy) * cellScale;
+    gridGraphics.rect(tl.x, tl.y, w, h).stroke(stroke);
+  };
+
+  if (settings.debugOccupancyQuartiles) {
+    strokeZoneRect(spatialZoneBounds(0), {
+      width: 3,
+      color: 0xf97316,
+      alpha: 0.95,
+    });
+    strokeZoneRect(spatialZoneBounds(1), {
+      width: 2,
+      color: 0x64748b,
+      alpha: 0.35,
+    });
+    strokeZoneRect(spatialZoneBounds(2), {
+      width: 3,
+      color: 0x2563eb,
+      alpha: 0.95,
+    });
+    strokeZoneRect(spatialZoneBounds(3), {
+      width: 2,
+      color: 0x64748b,
+      alpha: 0.35,
+    });
+  }
+
+  if (settings.debugOccupancyFreeGrids) {
+    const occupied = occupiedKeysFromLiveSnapshot();
+    const existingOccupants = [...playerWorldPos.values()].map((pos) => ({
+      x: pos.x,
+      y: pos.y,
+    }));
+    const structureAnchors = structureAnchorsFromLiveSnapshot();
+    const dotR = Math.max(2.5, cellScale * 0.065);
+    for (const p of listAllowedOccupancyPoints()) {
+      if (
+        isAgentSpawnOccupancyPointAvailable({
+          point: p,
+          occupiedKeys: occupied,
+          existingOccupants,
+        })
+      ) {
+        const loc = worldToWorldRootLocal(p.x, p.y);
+        gridGraphics
+          .circle(loc.x, loc.y, dotR)
+          .fill({ color: 0x22c55e, alpha: 0.5 });
+      }
+    }
+    for (const p of listOccupancyPointsForSpatialZone(SPATIAL_ZONE_INDEX_SPACES)) {
+      if (
+        isSpaceAnchorOccupancyPointAvailable({
+          point: p,
+          occupiedKeys: occupied,
+          existingOccupants,
+          structureAnchors,
+          minDistance: DEFAULT_AGENT_SPAWN_MIN_DISTANCE,
+          structureMinDistance: SPACE_ANCHOR_MIN_DISTANCE_WORLD,
+        })
+      ) {
+        const loc = worldToWorldRootLocal(p.x, p.y);
+        gridGraphics
+          .circle(loc.x, loc.y, dotR)
+          .fill({ color: 0x38bdf8, alpha: 0.55 });
+      }
+    }
+  }
 }
 
 function getDebugSnapshot(): {
@@ -1923,6 +2131,17 @@ export function bootstrap(): void {
     debugMountEl = debugMount;
     const debug = createPreviewDebugPanel({
       getSnapshot: getDebugSnapshot,
+      occupancyDebug: {
+        getSettings: () => ({
+          debugOccupancyQuartiles:
+            getPreviewViewSettings().debugOccupancyQuartiles,
+          debugOccupancyFreeGrids:
+            getPreviewViewSettings().debugOccupancyFreeGrids,
+        }),
+        setSettings: (partial) => {
+          setPreviewViewSettings(partial);
+        },
+      },
     });
     debugPanelUpdate = debug.update;
     debugPanelSyncCompanionLayout = debug.syncCompanionLayout;

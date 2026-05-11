@@ -1,138 +1,28 @@
 import type { PreviewSnapshotJson } from "./preview-serialize.js";
 import { agentPlayDebug } from "./agent-play-debug.js";
+import {
+  buildRankedOccupancyPointsForSpatialZone,
+  DEFAULT_AGENT_SPAWN_MIN_DISTANCE,
+  isAgentSpawnOccupancyPointAvailable,
+  isSpaceAnchorOccupancyPointAvailable,
+  listAllowedOccupancyPoints,
+  OCCUPANCY_POINT_MULTIPLIER,
+  occupancyKeyForPosition,
+  SPATIAL_ZONE_INDEX_AGENTS,
+  SPATIAL_ZONE_INDEX_SPACES,
+  type OccupancyGridPoint,
+} from "@agent-play/sdk";
 
-type GridPoint = {
-  x: number;
-  y: number;
-};
+type GridPoint = OccupancyGridPoint;
 
-type OccupancyRegion = {
-  from: GridPoint;
-  to: GridPoint;
-};
+const DEFAULT_MIN_OCCUPANT_DISTANCE = DEFAULT_AGENT_SPAWN_MIN_DISTANCE;
 
-const CONTINUOUS_RENDER_OFFSET = 0.2;
-const OCCUPANCY_POINT_MULTIPLIER = 5;
-const DEFAULT_MIN_OCCUPANT_DISTANCE = 0.9;
+/** Minimum distance between space structure anchors (amenities spaced fairly apart). */
+export const SPACE_STRUCTURE_ANCHOR_MIN_DISTANCE = 3.6;
 
-/** Minimum distance between space structure anchors (stronger than agent spacing). */
-export const SPACE_STRUCTURE_ANCHOR_MIN_DISTANCE = 2.8;
-
-const ALLOWED_OCCUPANCY_REGIONS: readonly OccupancyRegion[] = [
-  { from: { x: 0, y: 1 }, to: { x: 0, y: 2 } },
-  { from: { x: 18, y: -1 }, to: { x: 18, y: 1 } },
-];
-
-const ALLOWED_OCCUPANCY_CELLS: readonly GridPoint[] = ALLOWED_OCCUPANCY_REGIONS.flatMap(
-  (region) => {
-    const minX = Math.min(region.from.x, region.to.x);
-    const maxX = Math.max(region.from.x, region.to.x);
-    const minY = Math.min(region.from.y, region.to.y);
-    const maxY = Math.max(region.from.y, region.to.y);
-    const cells: GridPoint[] = [];
-    for (let x = minX; x <= maxX; x += 1) {
-      for (let y = minY; y <= maxY; y += 1) {
-        cells.push({ x, y });
-      }
-    }
-    return cells;
-  }
-);
-
-const ALLOWED_OCCUPANCY_POINTS: readonly GridPoint[] = ALLOWED_OCCUPANCY_CELLS.flatMap(
-  (cell) => {
-    const points: GridPoint[] = [];
-    for (let dx = 0; dx < OCCUPANCY_POINT_MULTIPLIER; dx += 1) {
-      for (let dy = 0; dy < OCCUPANCY_POINT_MULTIPLIER; dy += 1) {
-        points.push({
-          x:
-            cell.x +
-            CONTINUOUS_RENDER_OFFSET +
-            (dx + 0.5) / OCCUPANCY_POINT_MULTIPLIER,
-          y:
-            cell.y +
-            CONTINUOUS_RENDER_OFFSET +
-            (dy + 0.5) / OCCUPANCY_POINT_MULTIPLIER,
-        });
-      }
-    }
-    return points;
-  }
-);
-
-function quantizePosition(v: number): number {
-  return Math.round(v * OCCUPANCY_POINT_MULTIPLIER) / OCCUPANCY_POINT_MULTIPLIER;
-}
-
-function occupancyKeyForPosition(x: number, y: number): string {
-  return `${quantizePosition(x).toFixed(3)},${quantizePosition(y).toFixed(3)}`;
-}
-
-function toQuartileSizes(total: number): [number, number, number, number] {
-  const base = Math.floor(total / 4);
-  const remainder = total % 4;
-  return [0, 1, 2, 3].map((idx) => base + (idx < remainder ? 1 : 0)) as [
-    number,
-    number,
-    number,
-    number,
-  ];
-}
-
-function buildRankedOccupancyPoints(): GridPoint[] {
-  return [...ALLOWED_OCCUPANCY_POINTS].sort((left, right) => {
-    const leftDistance = Math.hypot(left.x, left.y);
-    const rightDistance = Math.hypot(right.x, right.y);
-    if (leftDistance !== rightDistance) {
-      return leftDistance - rightDistance;
-    }
-    if (left.x !== right.x) {
-      return left.x - right.x;
-    }
-    return left.y - right.y;
-  });
-}
-
-function isGridPointAvailable(input: {
-  point: GridPoint;
-  occupied: ReadonlySet<string>;
-  existingOccupants: ReadonlyArray<{ x: number; y: number }>;
-  minDistance: number;
-  structureAnchors: ReadonlyArray<{ x: number; y: number }>;
-  structureMinDistance: number;
-}): boolean {
-  const key = occupancyKeyForPosition(input.point.x, input.point.y);
-  if (input.occupied.has(key)) {
-    return false;
-  }
-  for (const existing of input.existingOccupants) {
-    const dist = Math.hypot(
-      input.point.x - existing.x,
-      input.point.y - existing.y
-    );
-    if (dist < input.minDistance) {
-      return false;
-    }
-  }
-  for (const anchor of input.structureAnchors) {
-    const dist = Math.hypot(
-      input.point.x - anchor.x,
-      input.point.y - anchor.y
-    );
-    if (dist < input.structureMinDistance) {
-      return false;
-    }
-  }
-  return true;
-}
-
-/**
- * Like {@link computeRandomFreeMapCell} but only searches one quartile (0-based index).
- * Use quartile index 2 for the third quartile (“park pocket”).
- */
-export function computeRandomFreeMapCellInQuartile(
+export function computeRandomFreeMapCellInSpatialZone(
   occupied: ReadonlySet<string>,
-  quartileIndex: number,
+  zoneIndex: number,
   options?: {
     existingOccupants?: ReadonlyArray<{ x: number; y: number }>;
     structureAnchors?: ReadonlyArray<{ x: number; y: number }>;
@@ -150,61 +40,89 @@ export function computeRandomFreeMapCellInQuartile(
     options?.structureMinDistance ?? SPACE_STRUCTURE_ANCHOR_MIN_DISTANCE;
   const existingOccupants = options?.existingOccupants ?? [];
   const structureAnchors = options?.structureAnchors ?? [];
-  agentPlayDebug("grid-allocate", "computeRandomFreeMapCellInQuartile", {
-    quartileIndex,
+  agentPlayDebug("grid-allocate", "computeRandomFreeMapCellInSpatialZone", {
+    zoneIndex,
     occupant: options?.occupantInfo,
     structureAnchorCount: structureAnchors.length,
   });
-  const rankedCandidates = buildRankedOccupancyPoints();
-  const quartileSizes = toQuartileSizes(rankedCandidates.length);
-  let offset = 0;
-  for (let q = 0; q < quartileIndex; q += 1) {
-    offset += quartileSizes[q] ?? 0;
+  const rankedCandidates = buildRankedOccupancyPointsForSpatialZone(zoneIndex);
+  if (zoneIndex === SPATIAL_ZONE_INDEX_AGENTS) {
+    const pick = rankedCandidates.find((candidate) =>
+      isAgentSpawnOccupancyPointAvailable({
+        point: candidate,
+        occupiedKeys: occupied,
+        existingOccupants,
+        minDistance,
+      })
+    );
+    if (pick !== undefined) {
+      return { x: pick.x, y: pick.y };
+    }
+    throw new Error(
+      `computeRandomFreeMapCellInSpatialZone: no free agent cell in zone ${String(
+        zoneIndex
+      )}`
+    );
   }
-  const size = quartileSizes[quartileIndex] ?? 0;
-  const quartileSlice =
-    size > 0 ? rankedCandidates.slice(offset, offset + size) : [];
-  const pick = quartileSlice.find((candidate) =>
-    isGridPointAvailable({
-      point: candidate,
-      occupied,
-      existingOccupants,
-      minDistance,
-      structureAnchors,
-      structureMinDistance,
-    })
-  );
-  if (pick !== undefined) {
-    return { x: pick.x, y: pick.y };
+  if (zoneIndex === SPATIAL_ZONE_INDEX_SPACES) {
+    const pick = rankedCandidates.find((candidate) =>
+      isSpaceAnchorOccupancyPointAvailable({
+        point: candidate,
+        occupiedKeys: occupied,
+        existingOccupants,
+        structureAnchors,
+        minDistance,
+        structureMinDistance,
+      })
+    );
+    if (pick !== undefined) {
+      return { x: pick.x, y: pick.y };
+    }
+    throw new Error(
+      `computeRandomFreeMapCellInSpatialZone: no free space anchor in zone ${String(
+        zoneIndex
+      )}`
+    );
   }
   throw new Error(
-    `computeRandomFreeMapCellInQuartile: no free grid cell in quartile ${String(
-      quartileIndex
-    )}`
+    `computeRandomFreeMapCellInSpatialZone: zone ${String(zoneIndex)} not supported`
   );
 }
 
 /**
- * Prefer third quartile, then fourth, second, first for space-backed structure anchors.
+ * @deprecated Prefer {@link computeRandomFreeMapCellInSpatialZone} with {@link SPATIAL_ZONE_INDEX_AGENTS} or {@link SPATIAL_ZONE_INDEX_SPACES}.
  */
+export function computeRandomFreeMapCellInQuartile(
+  occupied: ReadonlySet<string>,
+  quartileIndex: number,
+  options?: {
+    existingOccupants?: ReadonlyArray<{ x: number; y: number }>;
+    structureAnchors?: ReadonlyArray<{ x: number; y: number }>;
+    minDistance?: number;
+    structureMinDistance?: number;
+    occupantInfo?: {
+      id: string;
+      kind: "agent" | "mcp" | "unknown";
+      name?: string;
+    };
+  }
+): { x: number; y: number } {
+  return computeRandomFreeMapCellInSpatialZone(occupied, quartileIndex, options);
+}
+
 export function computeSpaceStructureAnchor(input: {
   occupied: ReadonlySet<string>;
   existingOccupants: ReadonlyArray<{ x: number; y: number }>;
   structureAnchors: ReadonlyArray<{ x: number; y: number }>;
 }): { x: number; y: number } {
-  const order = [2, 3, 1, 0];
-  let last: Error | null = null;
-  for (const q of order) {
-    try {
-      return computeRandomFreeMapCellInQuartile(input.occupied, q, {
-        existingOccupants: input.existingOccupants,
-        structureAnchors: input.structureAnchors,
-      });
-    } catch (e) {
-      last = e instanceof Error ? e : new Error(String(e));
+  return computeRandomFreeMapCellInSpatialZone(
+    input.occupied,
+    SPATIAL_ZONE_INDEX_SPACES,
+    {
+      existingOccupants: input.existingOccupants,
+      structureAnchors: input.structureAnchors,
     }
-  }
-  throw last ?? new Error("computeSpaceStructureAnchor: no placement");
+  );
 }
 
 export function occupiedKeysFromSnapshot(
@@ -233,93 +151,76 @@ export function computeRandomFreeMapCell(
   void options?.rng;
   const minDistance = options?.minDistance ?? DEFAULT_MIN_OCCUPANT_DISTANCE;
   const existingOccupants = options?.existingOccupants ?? [];
+  const allowedPoints = listAllowedOccupancyPoints();
   agentPlayDebug("grid-allocate", "computeRandomFreeMapCell:candidates", {
     occupant: options?.occupantInfo,
     multiplier: OCCUPANCY_POINT_MULTIPLIER,
     minDistance,
     existingOccupantCount: existingOccupants.length,
-    candidateCount: ALLOWED_OCCUPANCY_POINTS.length,
-    candidates: ALLOWED_OCCUPANCY_POINTS.map((p) => ({
+    candidateCount: allowedPoints.length,
+    candidates: allowedPoints.map((p) => ({
       x: Number(p.x.toFixed(3)),
       y: Number(p.y.toFixed(3)),
       cell: `${Math.floor(p.x)},${Math.floor(p.y)}`,
       key: occupancyKeyForPosition(p.x, p.y),
     })),
   });
-  const isPointAvailable = (point: GridPoint): boolean => {
-    const key = occupancyKeyForPosition(point.x, point.y);
-    if (occupied.has(key)) {
-      return false;
-    }
-    for (const existing of existingOccupants) {
-      const dist = Math.hypot(point.x - existing.x, point.y - existing.y);
-      if (dist < minDistance) {
-        return false;
-      }
-    }
-    return true;
-  };
-  const rankedCandidates = buildRankedOccupancyPoints();
-  const quartileSizes = toQuartileSizes(rankedCandidates.length);
-  let offset = 0;
-  let selectedQuartileIndex = -1;
+  const rankedCandidates =
+    buildRankedOccupancyPointsForSpatialZone(SPATIAL_ZONE_INDEX_AGENTS);
   let selectedIndex = -1;
   let point: GridPoint | undefined;
-  for (let quartileIdx = 0; quartileIdx < quartileSizes.length; quartileIdx += 1) {
-    const size = quartileSizes[quartileIdx];
-    if (size > 0) {
-      const quartile = rankedCandidates.slice(offset, offset + size);
-      const indexInQuartile = quartile.findIndex((candidate) =>
-        isPointAvailable(candidate)
-      );
-      if (indexInQuartile !== -1) {
-        point = quartile[indexInQuartile];
-        selectedQuartileIndex = quartileIdx;
-        selectedIndex = offset + indexInQuartile;
-        break;
-      }
-    }
-    offset += size;
+  const indexFound = rankedCandidates.findIndex((candidate) =>
+    isAgentSpawnOccupancyPointAvailable({
+      point: candidate,
+      occupiedKeys: occupied,
+      existingOccupants,
+      minDistance,
+    })
+  );
+  if (indexFound !== -1) {
+    point = rankedCandidates[indexFound];
+    selectedIndex = indexFound;
   }
   if (point !== undefined) {
     const freeCount = rankedCandidates.reduce(
-      (count, candidate) => (isPointAvailable(candidate) ? count + 1 : count),
+      (count, candidate) =>
+        isAgentSpawnOccupancyPointAvailable({
+          point: candidate,
+          occupiedKeys: occupied,
+          existingOccupants,
+          minDistance,
+        })
+          ? count + 1
+          : count,
       0
     );
-    if (point !== undefined) {
-      agentPlayDebug("grid-allocate", "computeRandomFreeMapCell:selected", {
-        occupant: options?.occupantInfo,
-        occupiedCount: occupied.size,
-        freeCount,
-        selectedIndex,
-        quartileSizes,
-        selectedQuartile: selectedQuartileIndex + 1,
-        selected: {
-          x: Number(point.x.toFixed(3)),
-          y: Number(point.y.toFixed(3)),
-          cell: `${Math.floor(point.x)},${Math.floor(point.y)}`,
-          key: occupancyKeyForPosition(point.x, point.y),
-        },
-        nearestDistance:
-          existingOccupants.length === 0
-            ? null
-            : Number(
-                Math.min(
-                  ...existingOccupants.map((existing) =>
-                    Math.hypot(point.x - existing.x, point.y - existing.y)
-                  )
-                ).toFixed(3)
-              ),
-      });
-      return { x: point.x, y: point.y };
-    }
+    agentPlayDebug("grid-allocate", "computeRandomFreeMapCell:selected", {
+      occupant: options?.occupantInfo,
+      occupiedCount: occupied.size,
+      freeCount,
+      selectedIndex,
+      selected: {
+        x: Number(point.x.toFixed(3)),
+        y: Number(point.y.toFixed(3)),
+        cell: `${Math.floor(point.x)},${Math.floor(point.y)}`,
+        key: occupancyKeyForPosition(point.x, point.y),
+      },
+      nearestDistance:
+        existingOccupants.length === 0
+          ? null
+          : Number(
+              Math.min(
+                ...existingOccupants.map((existing) =>
+                  Math.hypot(point.x - existing.x, point.y - existing.y)
+                )
+              ).toFixed(3)
+            ),
+    });
+    return { x: point.x, y: point.y };
   }
   throw new Error("computeRandomFreeMapCell: no free grid cell");
 }
 
-/**
- * @deprecated Use computeRandomFreeMapCell for sporadic distribution.
- */
 export function computeFreeMapCell(
   occupied: ReadonlySet<string>,
   laneIndex: number

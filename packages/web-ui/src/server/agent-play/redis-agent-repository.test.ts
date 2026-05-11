@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { deriveNodeIdFromPassword } from "@agent-play/node-tools";
+import {
+  deriveNodeIdFromPassword,
+  deriveNodeIdFromMaterial,
+  nodeCredentialsMaterialFromHumanPassphrase,
+} from "@agent-play/node-tools";
 import { RedisAgentRepository } from "./redis-agent-repository.js";
 
 type HashRecord = Record<string, string>;
@@ -70,17 +74,16 @@ describe("RedisAgentRepository", () => {
       rootKey,
     });
 
-    const mainPassw = "amber angle apple arch atlas aura autumn bamboo beacon birch blossom";
+    const mainPassw =
+      "amber angle apple arch atlas aura autumn bamboo beacon birch blossom";
     const createdNode = await repository.createNode({
       kind: "main",
       passw: mainPassw,
     });
 
-    const firstAgentPassw = "orchid pearl river stone wind north south cedar pine fern";
-    const firstAgentId = deriveNodeIdFromPassword({
-      password: firstAgentPassw,
-      rootKey,
-    });
+    const firstAgentPassw =
+      "orchid pearl river stone wind north south cedar pine fern";
+    const firstAgentId = deriveNodeIdFromPassword({ password: firstAgentPassw, rootKey });
     await repository.createAgentNode({
       parentNodeId: createdNode.nodeId,
       agentId: firstAgentId,
@@ -95,5 +98,31 @@ describe("RedisAgentRepository", () => {
         passw: secondAgentPassw,
       })
     ).rejects.toThrow(/already attached/);
+  });
+
+  it("hashes human main passphrase material before deriving and storing main node auth", async () => {
+    const rootKey = "fixture-root";
+    const redis = new FakeRedis();
+    const repository = new RedisAgentRepository({
+      redis: redis as never,
+      hostId: "default",
+      rootKey,
+    });
+
+    const humanPhrase = "amber angle apple arch atlas aura autumn bamboo";
+    const expectedMaterial = nodeCredentialsMaterialFromHumanPassphrase(humanPhrase);
+    const expectedNodeId = deriveNodeIdFromMaterial({
+      material: expectedMaterial,
+      rootKey,
+    });
+
+    const createdNode = await repository.createNode({
+      kind: "main",
+      passw: humanPhrase,
+    });
+    expect(createdNode.nodeId).toBe(expectedNodeId);
+
+    expect(await repository.verifyNodePassw(expectedNodeId, expectedMaterial)).toBe(true);
+    expect(await repository.verifyNodePassw(expectedNodeId, humanPhrase)).toBe(false);
   });
 });

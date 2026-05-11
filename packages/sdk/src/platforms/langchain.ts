@@ -49,6 +49,7 @@ type ZodDef = {
   typeName?: string;
   innerType?: unknown;
   schema?: unknown;
+  type?: string;
 };
 
 function unwrapZodCell(cell: unknown): unknown {
@@ -57,22 +58,36 @@ function unwrapZodCell(cell: unknown): unknown {
     if (current === null || typeof current !== "object") {
       return current;
     }
-    const def = (current as { _def?: ZodDef })._def;
-    if (!def || typeof def.typeName !== "string") {
+    const def =
+      (current as { _def?: ZodDef; def?: ZodDef })._def ??
+      (current as { def?: ZodDef }).def;
+    if (!def) {
       return current;
     }
-    const { typeName } = def;
+    const typeName =
+      typeof def.typeName === "string"
+        ? def.typeName
+        : typeof def.type === "string"
+          ? def.type
+          : undefined;
+    if (typeName === undefined) {
+      return current;
+    }
     if (
       typeName === "ZodOptional" ||
       typeName === "ZodNullable" ||
       typeName === "ZodDefault"
+      ||
+      typeName === "optional" ||
+      typeName === "nullable" ||
+      typeName === "default"
     ) {
       const inner = def.innerType;
       current =
         inner !== null && typeof inner === "object" ? inner : undefined;
       continue;
     }
-    if (typeName === "ZodEffects") {
+    if (typeName === "ZodEffects" || typeName === "effects") {
       current = def.schema;
       continue;
     }
@@ -86,14 +101,21 @@ function fieldTypeFromZodCell(cell: unknown): AssistToolFieldType {
   if (base === null || typeof base !== "object") {
     return "string";
   }
-  const typeName = (base as { _def?: { typeName?: string } })._def?.typeName;
-  if (typeName === "ZodNumber") {
+  const def =
+    (base as { _def?: { typeName?: string; type?: string } })._def ??
+    (base as { def?: { typeName?: string; type?: string } }).def;
+  const typeName = def?.typeName;
+  const fallbackType = def?.type;
+  const ctorName =
+    (base as { constructor?: { name?: string } }).constructor?.name ?? "";
+  const kind = typeName ?? fallbackType ?? ctorName;
+  if (kind === "ZodNumber" || kind === "number") {
     return "number";
   }
-  if (typeName === "ZodBoolean") {
+  if (kind === "ZodBoolean" || kind === "boolean") {
     return "boolean";
   }
-  if (typeName === "ZodString") {
+  if (kind === "ZodString" || kind === "string") {
     return "string";
   }
   return "string";
@@ -109,12 +131,21 @@ function parametersFromSchema(schema: unknown): Record<string, unknown> {
     return {};
   }
   const z = schema as {
-    _def?: { typeName?: string; shape?: () => Record<string, unknown> };
+    _def?: {
+      typeName?: string;
+      shape?: (() => Record<string, unknown>) | Record<string, unknown>;
+    };
   };
-  if (typeof z._def?.shape !== "function") {
+  const shapeRaw = z._def?.shape;
+  const shape =
+    typeof shapeRaw === "function"
+      ? shapeRaw()
+      : shapeRaw !== undefined && typeof shapeRaw === "object"
+        ? (shapeRaw as Record<string, unknown>)
+        : null;
+  if (shape === null) {
     return { _note: "Pass a Zod object schema on each tool for parameter hints in the watch UI." };
   }
-  const shape = z._def.shape();
   const out: Record<string, unknown> = {};
   for (const key of Object.keys(shape)) {
     out[key] = {

@@ -995,6 +995,14 @@ export class PlayWorld {
             stored = row;
             playerId = row.agentId;
           }
+
+          console.log("[runtime:addPlayer] verifyNodePassw", {
+            stored,
+            playerId,
+            resolvedMainNodeId,
+            password: input.password,
+          });
+
           const validPassword = await this.repository.verifyNodePassw(
             resolvedMainNodeId,
             input.password

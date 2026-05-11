@@ -23,6 +23,7 @@ import {
 import { randomUUID } from "node:crypto";
 import {
   deriveNodeIdFromPassword,
+  deriveNodeIdFromMaterial,
   loadAgentPlayCredentialsFileFromPathSync,
   loadRootKey,
   nodeCredentialsMaterialFromHumanPassphrase,
@@ -422,8 +423,8 @@ export class RemotePlayWorld {
       this.rootKey = nc.rootKey.trim().toLowerCase();
       const material = nodeCredentialsMaterialFromHumanPassphrase(nc.passw);
       this.password = material;
-      this.derivedNodeId = deriveNodeIdFromPassword({
-        password: material,
+      this.derivedNodeId = deriveNodeIdFromMaterial({
+        material,
         rootKey: this.rootKey,
       });
       return;

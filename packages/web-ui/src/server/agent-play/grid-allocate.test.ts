@@ -1,8 +1,14 @@
 import { describe, expect, it } from "vitest";
 import {
+  listAllowedOccupancyPoints,
+  pointCellInSpatialZone,
+  SPATIAL_ZONE_INDEX_AGENTS,
+  SPATIAL_ZONE_INDEX_SPACES,
+} from "@agent-play/sdk";
+import {
   computeFreeMapCell,
   computeRandomFreeMapCell,
-  computeRandomFreeMapCellInQuartile,
+  computeRandomFreeMapCellInSpatialZone,
   computeSpaceStructureAnchor,
   SPACE_STRUCTURE_ANCHOR_MIN_DISTANCE,
 } from "./grid-allocate.js";
@@ -25,60 +31,27 @@ const addOccupiedCell = (
 };
 
 describe("computeRandomFreeMapCell", () => {
-  it("selects from the first quartile when it has valid candidates", () => {
+  it("selects inside the agent spatial zone (Q1)", () => {
     const first = computeRandomFreeMapCell(new Set(), { rng: () => 0.95 });
-    expect(first.x).toBeGreaterThanOrEqual(0.3);
-    expect(first.x).toBeLessThan(1.3);
-    expect(first.y).toBeGreaterThanOrEqual(1.3);
-    expect(first.y).toBeLessThan(2.3);
+    expect(
+      pointCellInSpatialZone(first.x, first.y, SPATIAL_ZONE_INDEX_AGENTS)
+    ).toBe(true);
   });
 
-  it("falls through to the second quartile when first quartile is full", () => {
+  it("skips occupied keys while staying in the agent zone", () => {
     const occupied = new Set<string>();
-    addOccupiedCell(occupied, { cellX: 0, cellY: 1 });
+    addOccupiedCell(occupied, { cellX: 5, cellY: 5 });
     const next = computeRandomFreeMapCell(occupied, { rng: () => 0.5 });
-    expect(next.x).toBeGreaterThanOrEqual(0.3);
-    expect(next.x).toBeLessThan(1.3);
-    expect(next.y).toBeGreaterThanOrEqual(2.3);
-    expect(next.y).toBeLessThan(3.3);
+    expect(
+      pointCellInSpatialZone(next.x, next.y, SPATIAL_ZONE_INDEX_AGENTS)
+    ).toBe(true);
+    expect(occupied.has(occupancyKey(next.x, next.y))).toBe(false);
   });
 
-  it("falls through to fourth quartile when earlier quartiles are full", () => {
+  it("throws when all agent-zone occupancy points are occupied", () => {
     const occupied = new Set<string>();
-    addOccupiedCell(occupied, { cellX: 0, cellY: 1 });
-    addOccupiedCell(occupied, { cellX: 0, cellY: 2 });
-    addOccupiedCell(occupied, { cellX: 18, cellY: -1 });
-    const next = computeRandomFreeMapCell(occupied, { rng: () => 0.5 });
-    expect(next.x).toBeGreaterThanOrEqual(18.3);
-    expect(next.x).toBeLessThan(19.3);
-    expect(next.y).toBeGreaterThanOrEqual(0.3);
-    expect(next.y).toBeLessThan(1.3);
-  });
-
-  it("respects already occupied cells while staying in allowed regions", () => {
-    const occupied = new Set<string>();
-    addOccupiedCell(occupied, { cellX: 0, cellY: 1 });
-    addOccupiedCell(occupied, { cellX: 0, cellY: 2 });
-    addOccupiedCell(occupied, { cellX: 18, cellY: 0 });
-    addOccupiedCell(occupied, { cellX: 18, cellY: 1 });
-    const next = computeRandomFreeMapCell(occupied, { rng: () => 0.95 });
-    expect(next.x).toBeGreaterThanOrEqual(18.3);
-    expect(next.x).toBeLessThan(19.3);
-    expect(next.y).toBeGreaterThanOrEqual(-0.7);
-    expect(next.y).toBeLessThan(0.3);
-  });
-
-  it("throws when all generated occupancy points are occupied", () => {
-    const occupied = new Set<string>();
-    for (let i = 0; i < 300; i += 1) {
-      let p: { x: number; y: number };
-      try {
-        p = computeRandomFreeMapCell(occupied, { rng: () => 0 });
-      } catch {
-        break;
-      }
-      const key = occupancyKey(p.x, p.y);
-      occupied.add(key);
+    for (const p of listAllowedOccupancyPoints()) {
+      occupied.add(occupancyKey(p.x, p.y));
     }
     expect(() => computeRandomFreeMapCell(occupied)).toThrow(
       "computeRandomFreeMapCell: no free grid cell"
@@ -88,16 +61,30 @@ describe("computeRandomFreeMapCell", () => {
   it("keeps new arrivals away from existing occupants with minDistance", () => {
     const next = computeRandomFreeMapCell(new Set(), {
       rng: () => 0,
-      existingOccupants: [{ x: 0.4, y: 1.4 }],
+      existingOccupants: [{ x: 5.4, y: 5.4 }],
       minDistance: 1.5,
     });
-    const distance = Math.hypot(next.x - 0.4, next.y - 1.4);
+    const distance = Math.hypot(next.x - 5.4, next.y - 5.4);
     expect(distance).toBeGreaterThanOrEqual(1.5);
+    expect(
+      pointCellInSpatialZone(next.x, next.y, SPATIAL_ZONE_INDEX_AGENTS)
+    ).toBe(true);
   });
 });
 
-describe("computeRandomFreeMapCellInQuartile / computeSpaceStructureAnchor", () => {
-  it("computeSpaceStructureAnchor keeps anchors separated across quartile fallbacks", () => {
+describe("computeRandomFreeMapCellInSpatialZone / computeSpaceStructureAnchor", () => {
+  it("places space anchors in the space spatial zone (Q3)", () => {
+    const p = computeSpaceStructureAnchor({
+      occupied: new Set(),
+      existingOccupants: [],
+      structureAnchors: [],
+    });
+    expect(
+      pointCellInSpatialZone(p.x, p.y, SPATIAL_ZONE_INDEX_SPACES)
+    ).toBe(true);
+  });
+
+  it("computeSpaceStructureAnchor keeps anchors separated", () => {
     const first = computeSpaceStructureAnchor({
       occupied: new Set(),
       existingOccupants: [],
@@ -113,21 +100,26 @@ describe("computeRandomFreeMapCellInQuartile / computeSpaceStructureAnchor", () 
     ).toBeGreaterThanOrEqual(SPACE_STRUCTURE_ANCHOR_MIN_DISTANCE - 0.05);
   });
 
-  it("computeSpaceStructureAnchor returns a point in allowed regions", () => {
-    const p = computeSpaceStructureAnchor({
-      occupied: new Set(),
-      existingOccupants: [],
-      structureAnchors: [],
-    });
-    expect(Number.isFinite(p.x)).toBe(true);
-    expect(Number.isFinite(p.y)).toBe(true);
+  it("supports explicit space zone allocation", () => {
+    const p = computeRandomFreeMapCellInSpatialZone(
+      new Set(),
+      SPATIAL_ZONE_INDEX_SPACES,
+      {
+        existingOccupants: [],
+        structureAnchors: [],
+      }
+    );
+    expect(
+      pointCellInSpatialZone(p.x, p.y, SPATIAL_ZONE_INDEX_SPACES)
+    ).toBe(true);
   });
 });
 
 describe("computeFreeMapCell (deprecated)", () => {
-  it("delegates to random allocator and returns a free allowed point", () => {
+  it("delegates to random allocator inside the agent zone", () => {
     const next = computeFreeMapCell(new Set(), 0);
-    expect(next.x).toBeGreaterThanOrEqual(0.2);
-    expect(next.y).toBeGreaterThanOrEqual(-0.8);
+    expect(
+      pointCellInSpatialZone(next.x, next.y, SPATIAL_ZONE_INDEX_AGENTS)
+    ).toBe(true);
   });
 });
