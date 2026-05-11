@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
-  deriveNodeIdFromPassword,
-  validateNodePassword,
+  nodeCredentialFromHumanPhrase,
+  verifyStoredNodeCredential,
 } from "@agent-play/node-tools";
 import type {
   AgentRepository,
@@ -15,6 +15,8 @@ import type {
 } from "./agent-repository.js";
 import { PlayWorld } from "./play-world.js";
 import { TestSessionStore } from "./session-store.test-double.js";
+
+type MainNodeBootstrap = { nodeId: string; passwHash: string };
 
 class TestAgentRepository implements AgentRepository {
   private readonly rootKey: string;
@@ -30,12 +32,14 @@ class TestAgentRepository implements AgentRepository {
   }
 
   async findAccountIdForAgentNode(agentId: string): Promise<string | null> {
-    for (const n of this.nodes.keys()) {
-      const hasAttached = [...this.agents.values()].some(
-        (a) => a.nodeId === n && a.agentId === agentId
-      );
-      if (hasAttached) {
-        return n;
+    for (const node of this.nodes.values()) {
+      if (node.agentNodeIds?.includes(agentId)) {
+        return node.nodeId;
+      }
+    }
+    for (const a of this.agents.values()) {
+      if (a.agentId === agentId) {
+        return a.nodeId;
       }
     }
     return null;
@@ -46,30 +50,39 @@ class TestAgentRepository implements AgentRepository {
   }
 
   async createNode(input: CreateNodeRecordInput): Promise<CreateNodeResult> {
-    const passw =
-      input.kind === "main" ? input.passw : (input.passw ?? "x".repeat(64));
-    const nodeId = deriveNodeIdFromPassword({
-      password: passw,
-      rootKey: this.rootKey,
-    });
-    if (this.nodes.has(nodeId)) {
-      throw new Error("createNode: node already exists");
+    if (input.kind === "main") {
+      if (this.nodes.has(input.nodeId)) {
+        throw new Error("createNode: node already exists");
+      }
+      this.nodes.set(input.nodeId, {
+        nodeId: input.nodeId,
+        kind: "main",
+        parentNodeId: this.rootKey,
+        passwHash: input.passwHash,
+        createdAt: new Date().toISOString(),
+        agentNodeIds: [],
+      });
+      return { nodeId: input.nodeId };
     }
-    this.nodes.set(nodeId, {
-      nodeId,
-      kind: input.kind === "main" ? "main" : "space",
-      ...(input.kind === "space" ? { spaceId: input.spaceId } : {}),
-      parentNodeId: this.rootKey,
-      createdAt: new Date().toISOString(),
-    });
-    return { nodeId };
+    throw new Error("space node creation not used in this test");
   }
 
-  async verifyNodePassw(nodeId: string, passw: string): Promise<boolean> {
-    if (!this.nodes.has(nodeId)) {
+  async verifyNodePasswHash(input: {
+    nodeId: string;
+    passwHash: string;
+  }): Promise<boolean> {
+    const node = this.nodes.get(input.nodeId);
+    if (node === undefined) {
       return false;
     }
-    return validateNodePassword({ nodeId, password: passw, rootKey: this.rootKey });
+    if (node.passwHash !== input.passwHash) {
+      return false;
+    }
+    return verifyStoredNodeCredential({
+      nodeId: input.nodeId,
+      passwHash: input.passwHash,
+      rootKey: this.rootKey,
+    });
   }
 
   async getNode(nodeId: string): Promise<NodeAuthRecord | null> {
@@ -110,6 +123,11 @@ class TestAgentRepository implements AgentRepository {
       createdAt: now,
       updatedAt: now,
     });
+    const parent = this.nodes.get(input.nodeId);
+    if (parent !== undefined) {
+      const next = [...(parent.agentNodeIds ?? []), agentId];
+      this.nodes.set(input.nodeId, { ...parent, agentNodeIds: next });
+    }
     return { agentId };
   }
 
@@ -172,18 +190,38 @@ class TestAgentRepository implements AgentRepository {
   }
 }
 
+async function bootstrapMainNode(
+  repo: TestAgentRepository,
+  options: { phrase: string; rootKey: string }
+): Promise<MainNodeBootstrap> {
+  const credential = nodeCredentialFromHumanPhrase({
+    phrase: options.phrase,
+    rootKey: options.rootKey,
+  });
+  await repo.createNode({
+    kind: "main",
+    nodeId: credential.nodeId,
+    passwHash: credential.passwHash,
+  });
+  return { nodeId: credential.nodeId, passwHash: credential.passwHash };
+}
+
 describe("PlayWorld addPlayer with AgentRepository", () => {
   const TEST_ROOT_KEY = "fixture-root-key";
-  const PASSW = "amber angle apple";
+  const PHRASE_A = "amber angle apple";
+  const PHRASE_B = "orchid pearl river";
 
-  it("requires account password when repository is configured", async () => {
+  it("requires a passwHash when repository is configured", async () => {
     const repo = new TestAgentRepository({ rootKey: TEST_ROOT_KEY });
-    const { nodeId } = await repo.createNode({ kind: "main", passw: PASSW });
+    const main = await bootstrapMainNode(repo, {
+      phrase: PHRASE_A,
+      rootKey: TEST_ROOT_KEY,
+    });
     await repo.createAgent({
-      agentId: "agent-requires-password",
+      agentId: "agent-requires-passwHash",
       name: "r",
       toolNames: ["chat_tool"],
-      nodeId,
+      nodeId: main.nodeId,
     });
     const w = new PlayWorld({
       repository: repo,
@@ -196,20 +234,23 @@ describe("PlayWorld addPlayer with AgentRepository", () => {
         name: "x",
         type: "langchain",
         agent: { type: "langchain", toolNames: ["chat_tool"] },
-        mainNodeId: nodeId,
-        agentId: "any-id",
+        mainNodeId: main.nodeId,
+        agentId: "agent-requires-passwHash",
       })
-    ).rejects.toThrow(/password/);
+    ).rejects.toThrow(/passwHash/);
   });
 
   it("loads a registered agent when agentId belongs to the user", async () => {
     const repo = new TestAgentRepository({ rootKey: TEST_ROOT_KEY });
-    const { nodeId } = await repo.createNode({ kind: "main", passw: PASSW });
+    const main = await bootstrapMainNode(repo, {
+      phrase: PHRASE_A,
+      rootKey: TEST_ROOT_KEY,
+    });
     const { agentId } = await repo.createAgent({
       agentId: "agent-remote-demo",
       name: "remote-demo",
       toolNames: ["chat_tool", "increment"],
-      nodeId,
+      nodeId: main.nodeId,
     });
     const w = new PlayWorld({
       repository: repo,
@@ -221,7 +262,7 @@ describe("PlayWorld addPlayer with AgentRepository", () => {
       name: "remote-demo",
       type: "langchain",
       agent: { type: "langchain", toolNames: ["increment", "chat_tool"] },
-      password: PASSW,
+      passwHash: main.passwHash,
       agentId,
     });
     expect(p.id).toBe(agentId);
@@ -229,12 +270,15 @@ describe("PlayWorld addPlayer with AgentRepository", () => {
 
   it("accepts an existing repository row and session player id matches agentId", async () => {
     const repo = new TestAgentRepository({ rootKey: TEST_ROOT_KEY });
-    const { nodeId } = await repo.createNode({ kind: "main", passw: PASSW });
+    const main = await bootstrapMainNode(repo, {
+      phrase: PHRASE_A,
+      rootKey: TEST_ROOT_KEY,
+    });
     const { agentId } = await repo.createAgent({
       agentId: "agent-fresh",
       name: "fresh",
       toolNames: ["chat_tool"],
-      nodeId,
+      nodeId: main.nodeId,
     });
     const w = new PlayWorld({
       repository: repo,
@@ -246,8 +290,8 @@ describe("PlayWorld addPlayer with AgentRepository", () => {
       name: "fresh",
       type: "langchain",
       agent: { type: "langchain", toolNames: ["chat_tool"] },
-      mainNodeId: nodeId,
-      password: PASSW,
+      mainNodeId: main.nodeId,
+      passwHash: main.passwHash,
       agentId,
     });
     const stored = await repo.getAgent(p.id);
@@ -256,18 +300,21 @@ describe("PlayWorld addPlayer with AgentRepository", () => {
     expect(stored?.toolNames).toEqual(["chat_tool"]);
   });
 
-  it("rejects agentId when password does not match that agent owner", async () => {
+  it("rejects agentId when the supplied passwHash does not belong to mainNodeId", async () => {
     const repo = new TestAgentRepository({ rootKey: TEST_ROOT_KEY });
-    const { nodeId: nodeA } = await repo.createNode({ kind: "main", passw: PASSW });
-    const { nodeId: nodeB } = await repo.createNode({
-      kind: "main",
-      passw: "orchid pearl river",
+    const mainA = await bootstrapMainNode(repo, {
+      phrase: PHRASE_A,
+      rootKey: TEST_ROOT_KEY,
+    });
+    const mainB = await bootstrapMainNode(repo, {
+      phrase: PHRASE_B,
+      rootKey: TEST_ROOT_KEY,
     });
     const { agentId: otherAgent } = await repo.createAgent({
       agentId: "agent-other",
       name: "other",
       toolNames: ["chat_tool"],
-      nodeId: nodeB,
+      nodeId: mainB.nodeId,
     });
 
     const w = new PlayWorld({
@@ -281,8 +328,8 @@ describe("PlayWorld addPlayer with AgentRepository", () => {
         name: "x",
         type: "langchain",
         agent: { type: "langchain", toolNames: ["chat_tool"] },
-        mainNodeId: nodeA,
-        password: PASSW,
+        mainNodeId: mainA.nodeId,
+        passwHash: mainA.passwHash,
         agentId: otherAgent,
       })
     ).rejects.toThrow(/does not belong to mainNodeId/);
@@ -290,12 +337,15 @@ describe("PlayWorld addPlayer with AgentRepository", () => {
 
   it("accepts explicit agentId when it belongs to the user", async () => {
     const repo = new TestAgentRepository({ rootKey: TEST_ROOT_KEY });
-    const { nodeId } = await repo.createNode({ kind: "main", passw: PASSW });
+    const main = await bootstrapMainNode(repo, {
+      phrase: PHRASE_A,
+      rootKey: TEST_ROOT_KEY,
+    });
     const { agentId } = await repo.createAgent({
       agentId: "agent-ok",
       name: "r",
       toolNames: ["chat_tool"],
-      nodeId,
+      nodeId: main.nodeId,
     });
     const w = new PlayWorld({
       repository: repo,
@@ -307,8 +357,8 @@ describe("PlayWorld addPlayer with AgentRepository", () => {
       name: "ok",
       type: "langchain",
       agent: { type: "langchain", toolNames: ["chat_tool"] },
-      mainNodeId: nodeId,
-      password: PASSW,
+      mainNodeId: main.nodeId,
+      passwHash: main.passwHash,
       agentId,
     });
     expect(p.id).toBe(agentId);

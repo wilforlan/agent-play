@@ -128,10 +128,15 @@ export {
 export {
   type AgentPlayAgentNodeEntry,
   type AgentPlayCredentialsFile,
+  type NodeCredentialMaterial,
+  createNodeCredentialMaterial,
   loadAgentPlayCredentialsFileFromPath,
   loadAgentPlayCredentialsFileFromPathSync,
   loadRootKey,
+  nodeCredentialFromHumanPhrase,
+  nodeCredentialFromPasswHash,
   nodeCredentialsMaterialFromHumanPassphrase,
   parseAgentPlayCredentialsJson,
   resolveAgentPlayCredentialsPath,
+  verifyStoredNodeCredential,
 } from "@agent-play/node-tools";

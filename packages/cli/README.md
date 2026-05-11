@@ -2,7 +2,7 @@
 
 Command-line tool for **Agent Play**: create a **main developer node** (platform signup), add **agent nodes**, **validate** those identities against the server, and manage agent registrations. The server must use a **Redis**-backed agent repository (`REDIS_URL` on the server).
 
-Authentication uses `**x-node-id`** and `**x-node-passw**` on every request **except** main-node creation, which sends hashed passphrase material in the JSON body to `**POST /api/nodes**.
+Authentication uses **`x-node-id`** and **`x-node-passw`** (the locally-computed `passwHash`) on every request **except** main-node creation. **`POST /api/nodes`** is unauthenticated and expects a JSON body with **`nodeId`** and **`passwHash`** already derived on the client; the server stores `passwHash` only and never re-hashes anything it receives.
 
 ## Documentation
 
@@ -26,8 +26,8 @@ Root key for derivation: `**--root-file**`, `**AGENT_PLAY_ROOT_FILE_PATH**`, or 
 
 1. **Server:** Redis (`REDIS_URL`) and a deployed web UI/API the CLI can reach (`AGENT_PLAY_SERVER_URL`).
 2. **Local `.root`:** Must match the server genesis root key (see resolution order above).
-3. `**create-main-node`** (`bootstrap-node`): prompts for server URL, generates a passphrase, registers `**POST /api/nodes**`, writes `**~/.agent-play/credentials.json**` with `**serverUrl**`, `**nodeId**`, and the human passphrase.
-4. `**create-agent-node**`: derives an agent node under your main node, `**POST /api/nodes/agent-node**`, appends to `**credentials.json` → `agentNodes**`.
+3. **`create-main-node`** (`bootstrap-node`): prompts for server URL, generates a passphrase and **`passwHash`** locally with `createNodeCredentialMaterial`, registers **`POST /api/nodes`** with `{ kind: "main", nodeId, passwHash }`, and writes **`~/.agent-play/credentials.json`** with **`serverUrl`**, **`nodeId`**, and the human passphrase.
+4. **`create-agent-node`**: derives an agent node locally with `createNodeCredentialMaterial`, calls **`POST /api/nodes/agent-node`** with `{ kind: "agent", parentNodeId, agentNodeId, agentNodePasswHash }`, and appends the result to **`credentials.json → agentNodes`**.
 5. `**inspect-node**`, `**list-agent-nodes**`, `**delete-***`, `**clear-node-credentials**`: inspect or tear down registrations; see `**docs/cli.md**` for the full table.
 
 > **@deprecated** `**POST /api/agents`** does not create agent **node** identity. Use `**POST /api/nodes/agent-node`**, then attach runtime data with `**world.addPlayer**`.

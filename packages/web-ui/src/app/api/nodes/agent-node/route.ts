@@ -14,11 +14,11 @@ export async function POST(req: NextRequest) {
     );
   }
   const nodeId = req.headers.get("x-node-id")?.trim() ?? "";
-  const passw = req.headers.get("x-node-passw") ?? "";
-  if (nodeId.length === 0 || passw.length === 0) {
+  const passwHash = req.headers.get("x-node-passw") ?? "";
+  if (nodeId.length === 0 || passwHash.length === 0) {
     return Response.json({ error: "unauthorized" }, { status: 401 });
   }
-  if (!(await repository.verifyNodePassw(nodeId, passw))) {
+  if (!(await repository.verifyNodePasswHash({ nodeId, passwHash }))) {
     return Response.json({ error: "unauthorized" }, { status: 401 });
   }
   let body: unknown;
@@ -42,7 +42,7 @@ export async function POST(req: NextRequest) {
       repository,
       mainNodeId: nodeId,
       agentNodeId: parsed.agentNodeId,
-      agentNodePassw: parsed.agentNodePassw,
+      agentNodePasswHash: parsed.agentNodePasswHash,
     });
     return Response.json(result);
   } catch (err) {

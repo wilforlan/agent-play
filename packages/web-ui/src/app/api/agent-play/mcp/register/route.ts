@@ -22,11 +22,11 @@ export async function POST(req: NextRequest) {
     return Response.json({ error: "repository not configured" }, { status: 503 });
   }
   const nodeId = req.headers.get("x-node-id")?.trim() ?? "";
-  const passw = req.headers.get("x-node-passw") ?? "";
-  if (nodeId.length === 0 || passw.length === 0) {
+  const passwHash = req.headers.get("x-node-passw") ?? "";
+  if (nodeId.length === 0 || passwHash.length === 0) {
     return Response.json({ error: "unauthorized" }, { status: 401 });
   }
-  if (!(await repo.verifyNodePassw(nodeId, passw))) {
+  if (!(await repo.verifyNodePasswHash({ nodeId, passwHash }))) {
     return Response.json({ error: "unauthorized" }, { status: 401 });
   }
   const body = (await req.json()) as { name?: unknown; url?: unknown };

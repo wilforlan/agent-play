@@ -5,7 +5,7 @@
  *
  * **Commands** (see `--help`): bootstrap node credentials, create main/agent nodes, validate agents,
  * inspect nodes, and utilities that talk to the Agent Play server using **@agent-play/node-tools** for
- * passphrases, **`hashNodePassword`**, and credential files under **`~/.agent-play/`**.
+ * passphrase generation, hashing, and credential files under **`~/.agent-play/`**.
  */
 import { existsSync } from "node:fs";
 import { mkdir, unlink, writeFile } from "node:fs/promises";
@@ -15,12 +15,10 @@ import { createInterface } from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
 import {
   type AgentPlayCredentialsFile,
-  createNodeCredentialFromPassw,
-  deriveNodeIdFromPassword,
-  generateNodePassw,
-  hashNodePassword,
+  createNodeCredentialMaterial,
   loadAgentPlayCredentialsFileFromPath,
   loadRootKey,
+  nodeCredentialsMaterialFromHumanPassphrase,
 } from "@agent-play/node-tools";
 import { cmdInitialize as runInitializeScaffold } from "./initialize.js";
 
@@ -42,7 +40,7 @@ type ValidateAgentNodeOpts =
 function nodeAuthHeaders(cred: AgentPlayCredentialsFile): Record<string, string> {
   return {
     "x-node-id": cred.nodeId,
-    "x-node-passw": hashNodePassword(cred.passw),
+    "x-node-passw": nodeCredentialsMaterialFromHumanPassphrase(cred.passw),
   };
 }
 
@@ -314,13 +312,13 @@ function resolveAgentPlayRootPath(options: BootstrapCliOpts): string {
 
 async function registerNodeOnServer(
   serverUrl: string,
-  passw: string,
-  expectedNodeId: string
+  nodeId: string,
+  passwHash: string
 ): Promise<void> {
   const res = await fetch(`${serverUrl}/api/nodes`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ kind: "main", passw }),
+    body: JSON.stringify({ kind: "main", nodeId, passwHash }),
   });
   const text = await res.text();
   if (res.status === 409) {
@@ -344,10 +342,7 @@ async function registerNodeOnServer(
   if (typeof json.nodeId !== "string") {
     throw new Error("Invalid response from server.");
   }
-  if (json.nodeId !== expectedNodeId) {
-    console.log("json", json);
-    console.log("expectedNodeId", expectedNodeId);
-
+  if (json.nodeId !== nodeId) {
     throw new Error(
       "Server node id does not match local derivation; check root file and server configuration."
     );
@@ -367,23 +362,21 @@ async function cmdBootstrapNode(argv: string[]): Promise<void> {
   const dir = join(homedir(), ".agent-play");
   await mkdir(dir, { recursive: true });
 
-  const generatedPassw = generateNodePassw();
-  const hashedPassw = hashNodePassword(generatedPassw);
-  const credential = createNodeCredentialFromPassw({ passw: hashedPassw, rootKey });
+  const credential = createNodeCredentialMaterial({ rootKey });
 
-  await registerNodeOnServer(serverUrl, hashedPassw, credential.nodeId);
+  await registerNodeOnServer(serverUrl, credential.nodeId, credential.passwHash);
 
   await saveCredentials({
     serverUrl,
     nodeId: credential.nodeId,
-    passw: generatedPassw,
+    passw: credential.phrase,
   });
 
   console.log(
     `genesisNodeId (platform root key from .root; all main nodes derive under this): ${rootKey}`
   );
   console.log(`mainNodeId (your developer node): ${credential.nodeId}`);
-  console.log(`passw: ${generatedPassw}`);
+  console.log(`passw: ${credential.phrase}`);
   console.log("Keep this material safe. Losing it means losing access.");
 }
 
@@ -428,12 +421,7 @@ async function cmdCreateAgentNode(): Promise<void> {
     return;
   }
   const rootKey = loadRootKey(resolveAgentPlayRootPath({}));
-  const agentPassw = generateNodePassw();
-  const hashedAgentPassw = hashNodePassword(agentPassw);
-  const agentNodeId = deriveNodeIdFromPassword({
-    password: hashedAgentPassw,
-    rootKey,
-  });
+  const agentCredential = createNodeCredentialMaterial({ rootKey });
   const res = await fetch(`${cred.serverUrl}/api/nodes/agent-node`, {
     method: "POST",
     headers: {
@@ -443,8 +431,8 @@ async function cmdCreateAgentNode(): Promise<void> {
     body: JSON.stringify({
       kind: "agent",
       parentNodeId: cred.nodeId,
-      agentNodeId,
-      agentNodePassw: hashedAgentPassw,
+      agentNodeId: agentCredential.nodeId,
+      agentNodePasswHash: agentCredential.passwHash,
     }),
   });
   const text = await res.text();
@@ -466,7 +454,7 @@ async function cmdCreateAgentNode(): Promise<void> {
     process.exitCode = 1;
     return;
   }
-  if (json.agentId !== agentNodeId) {
+  if (json.agentId !== agentCredential.nodeId) {
     console.error(
       "Server returned a different agent node id than the locally derived one."
     );
@@ -474,10 +462,10 @@ async function cmdCreateAgentNode(): Promise<void> {
     return;
   }
   const nextAgentNodes: AgentNodeCredential[] = [
-    ...(cred.agentNodes ?? []).filter((n) => n.nodeId !== agentNodeId),
+    ...(cred.agentNodes ?? []).filter((n) => n.nodeId !== agentCredential.nodeId),
     {
-      nodeId: agentNodeId,
-      passw: agentPassw,
+      nodeId: agentCredential.nodeId,
+      passw: agentCredential.phrase,
       createdAt: new Date().toISOString(),
     },
   ];
@@ -487,7 +475,7 @@ async function cmdCreateAgentNode(): Promise<void> {
   });
   printAgentPlayIntegrationGuide();
   console.log(`Created agent node id: ${json.agentId}`);
-  console.log(`Agent node passw: ${agentPassw}`);
+  console.log(`Agent node passw: ${agentCredential.phrase}`);
   console.log(
     `Saved agent node credentials to ${credentialsPath()} (agentNodes).`
   );
@@ -506,14 +494,12 @@ async function ensureMainCredentialsForInitialize(
     return existing;
   }
   const rootKey = loadRootKey(resolveAgentPlayRootPath({}));
-  const generatedPassw = generateNodePassw();
-  const hashedPassw = hashNodePassword(generatedPassw);
-  const credential = createNodeCredentialFromPassw({ passw: hashedPassw, rootKey });
-  await registerNodeOnServer(serverUrl, hashedPassw, credential.nodeId);
+  const credential = createNodeCredentialMaterial({ rootKey });
+  await registerNodeOnServer(serverUrl, credential.nodeId, credential.passwHash);
   const created: AgentPlayCredentialsFile = {
     serverUrl,
     nodeId: credential.nodeId,
-    passw: generatedPassw,
+    passw: credential.phrase,
   };
   await saveCredentials(created);
   return created;
@@ -523,12 +509,7 @@ async function createAgentNodeForInitialize(
   cred: AgentPlayCredentialsFile
 ): Promise<string> {
   const rootKey = loadRootKey(resolveAgentPlayRootPath({}));
-  const agentPassw = generateNodePassw();
-  const hashedAgentPassw = hashNodePassword(agentPassw);
-  const agentNodeId = deriveNodeIdFromPassword({
-    password: hashedAgentPassw,
-    rootKey,
-  });
+  const agentCredential = createNodeCredentialMaterial({ rootKey });
   const res = await fetch(`${cred.serverUrl}/api/nodes/agent-node`, {
     method: "POST",
     headers: {
@@ -538,8 +519,8 @@ async function createAgentNodeForInitialize(
     body: JSON.stringify({
       kind: "agent",
       parentNodeId: cred.nodeId,
-      agentNodeId,
-      agentNodePassw: hashedAgentPassw,
+      agentNodeId: agentCredential.nodeId,
+      agentNodePasswHash: agentCredential.passwHash,
     }),
   });
   const text = await res.text();
@@ -547,14 +528,14 @@ async function createAgentNodeForInitialize(
     throw new Error(`Create failed (${String(res.status)}): ${text}`);
   }
   const json = JSON.parse(text) as { agentId?: unknown };
-  if (typeof json.agentId !== "string" || json.agentId !== agentNodeId) {
+  if (typeof json.agentId !== "string" || json.agentId !== agentCredential.nodeId) {
     throw new Error("Invalid agent creation response.");
   }
   const nextAgentNodes: AgentNodeCredential[] = [
-    ...(cred.agentNodes ?? []).filter((n) => n.nodeId !== agentNodeId),
+    ...(cred.agentNodes ?? []).filter((n) => n.nodeId !== agentCredential.nodeId),
     {
-      nodeId: agentNodeId,
-      passw: agentPassw,
+      nodeId: agentCredential.nodeId,
+      passw: agentCredential.phrase,
       createdAt: new Date().toISOString(),
     },
   ];
@@ -562,7 +543,7 @@ async function createAgentNodeForInitialize(
     ...cred,
     agentNodes: nextAgentNodes,
   });
-  return agentNodeId;
+  return agentCredential.nodeId;
 }
 
 async function cmdInspectNode(): Promise<void> {

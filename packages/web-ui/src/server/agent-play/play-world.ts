@@ -183,7 +183,7 @@ export type P2aEnableFlag = "on" | "off";
 export type AddPlayerInput = PlatformAgentInformation & {
   agent: LangChainAgentRegistration;
   mainNodeId?: string;
-  password?: string;
+  passwHash?: string;
   agentId: string;
   connectionId?: string;
   leaseTtlSeconds?: number;
@@ -963,9 +963,9 @@ export class PlayWorld {
         let playerId = trimmedId;
 
         if (this.repository !== null) {
-          if (input.password === undefined || input.password.length === 0) {
+          if (input.passwHash === undefined || input.passwHash.length === 0) {
             throw new Error(
-              "addPlayer: password is required when repository is configured"
+              "addPlayer: passwHash is required when repository is configured"
             );
           }
           const resolvedMainNodeId =
@@ -996,19 +996,12 @@ export class PlayWorld {
             playerId = row.agentId;
           }
 
-          console.log("[runtime:addPlayer] verifyNodePassw", {
-            stored,
-            playerId,
-            resolvedMainNodeId,
-            password: input.password,
+          const validPasswHash = await this.repository.verifyNodePasswHash({
+            nodeId: resolvedMainNodeId,
+            passwHash: input.passwHash,
           });
-
-          const validPassword = await this.repository.verifyNodePassw(
-            resolvedMainNodeId,
-            input.password
-          );
-          if (!validPassword) {
-            throw new Error("addPlayer: invalid password");
+          if (!validPasswHash) {
+            throw new Error("addPlayer: invalid passwHash");
           }
         } else if (
           base.worldMap.occupants.some(

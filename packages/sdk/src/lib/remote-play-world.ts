@@ -22,11 +22,9 @@ import {
 } from "../world-events.js";
 import { randomUUID } from "node:crypto";
 import {
-  deriveNodeIdFromPassword,
-  deriveNodeIdFromMaterial,
   loadAgentPlayCredentialsFileFromPathSync,
   loadRootKey,
-  nodeCredentialsMaterialFromHumanPassphrase,
+  nodeCredentialFromHumanPhrase,
   resolveAgentPlayCredentialsPath,
 } from "@agent-play/node-tools";
 import {
@@ -61,8 +59,9 @@ const PLAYER_CONNECTION_HEARTBEAT_RETRY_DELAY_MS = 10_000;
 
 /**
  * Root key (from `.root`) plus **human** passphrase as stored in **`~/.agent-play/credentials.json`**
- * after **`agent-play create-main-node`**. Material for node id and wire auth is
- * **`nodeCredentialsMaterialFromHumanPassphrase(passw)`** (SHA-256 hex; same as CLI **`hashNodePassword`**).
+ * after **`agent-play create-main-node`**. The SDK hashes the phrase once locally via
+ * **`nodeCredentialFromHumanPhrase`** and sends the resulting **`passwHash`** as the
+ * `x-node-passw` header and as the `passwHash` field in repository-backed requests.
  */
 export type RemotePlayWorldNodeCredentials = {
   rootKey: string;
@@ -382,8 +381,8 @@ export class RemotePlayWorld {
   private readonly rootKey: string;
   /** Node id derived from hashed passphrase material + root (main or agent node id). */
   private readonly derivedNodeId: string;
-  /** Hex password material (`hashNodePassword` on normalized human phrase); sent as `password` for repository addAgent. */
-  private readonly password: string;
+  /** Hex SHA-256 of the normalized human phrase; sent as `x-node-passw` and as `passwHash`. */
+  private readonly passwHash: string;
   private readonly onSessionEvent:
     | ((event: RemotePlayWorldSessionEvent) => void)
     | undefined;
@@ -421,12 +420,12 @@ export class RemotePlayWorld {
       nc.passw.length > 0
     ) {
       this.rootKey = nc.rootKey.trim().toLowerCase();
-      const material = nodeCredentialsMaterialFromHumanPassphrase(nc.passw);
-      this.password = material;
-      this.derivedNodeId = deriveNodeIdFromMaterial({
-        material,
+      const credential = nodeCredentialFromHumanPhrase({
+        phrase: nc.passw,
         rootKey: this.rootKey,
       });
+      this.passwHash = credential.passwHash;
+      this.derivedNodeId = credential.nodeId;
       return;
     }
 
@@ -476,7 +475,7 @@ export class RemotePlayWorld {
   private authHeaders(): Record<string, string> {
     return {
       "x-node-id": this.derivedNodeId,
-      "x-node-passw": this.password,
+      "x-node-passw": this.passwHash,
     };
   }
 
@@ -832,7 +831,7 @@ export class RemotePlayWorld {
       type: input.type,
       agent: input.agent,
       mainNodeId: input.mainNodeId,
-      password: this.password,
+      passwHash: this.passwHash,
       agentId: input.nodeId,
       connectionId,
       leaseTtlSeconds,

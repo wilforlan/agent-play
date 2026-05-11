@@ -39,11 +39,11 @@ async function verifyMainNodeHeaders(req: NextRequest): Promise<Response | null>
     return Response.json({ error: "repository unavailable" }, { status: 503 });
   }
   const nodeId = req.headers.get("x-node-id")?.trim() ?? "";
-  const passw = req.headers.get("x-node-passw") ?? "";
-  if (nodeId.length === 0 || passw.length === 0) {
+  const passwHash = req.headers.get("x-node-passw") ?? "";
+  if (nodeId.length === 0 || passwHash.length === 0) {
     return Response.json({ error: "missing x-node-id / x-node-passw" }, { status: 401 });
   }
-  if (!(await repository.verifyNodePassw(nodeId, passw))) {
+  if (!(await repository.verifyNodePasswHash({ nodeId, passwHash }))) {
     return Response.json({ error: "unauthorized" }, { status: 401 });
   }
   const row = await repository.getNode(nodeId);
@@ -62,11 +62,11 @@ async function verifySpaceNodeHeaders(
     return Response.json({ error: "repository unavailable" }, { status: 503 });
   }
   const nodeId = req.headers.get("x-node-id")?.trim() ?? "";
-  const passw = req.headers.get("x-node-passw") ?? "";
-  if (nodeId.length === 0 || passw.length === 0) {
+  const passwHash = req.headers.get("x-node-passw") ?? "";
+  if (nodeId.length === 0 || passwHash.length === 0) {
     return Response.json({ error: "missing x-node-id / x-node-passw" }, { status: 401 });
   }
-  if (!(await repository.verifyNodePassw(nodeId, passw))) {
+  if (!(await repository.verifyNodePasswHash({ nodeId, passwHash }))) {
     return Response.json({ error: "unauthorized" }, { status: 401 });
   }
   const row = await repository.getNode(nodeId);
@@ -144,7 +144,8 @@ export async function POST(req: NextRequest) {
         }
         const { nodeId } = await createNodeAccount(repository, {
           kind: "main",
-          passw: p.passw,
+          nodeId: p.nodeId,
+          passwHash: p.passwHash,
         });
         return Response.json({ ok: true, nodeId });
       }

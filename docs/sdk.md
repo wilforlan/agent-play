@@ -6,11 +6,13 @@ The package **`@agent-play/sdk`** exposes **`RemotePlayWorld`** for HTTP access 
 
 ## Node auth contract (current)
 
-- Node identity is root-key derivative based: `nodeId === deriveNodeIdFromPassword({ password, rootKey })`.
-- Runtime verification is hash-based plus derivative check (hash-only storage; no `passwEncrypted` requirement).
-- Validation tooling is root-key explicit and no longer depends on `buffer.txt`.
-- Deprecated: `validateNodeDerivativeFromBufferFile` and `buffer.txt`-required validation paths.
-- Node kind contract is `root -> main -> agent`; root record does not require `passw`.
+- Node identity is root-key derivative based: `nodeId === deriveNodeIdFromMaterial({ material: passwHash, rootKey })`.
+- The human passphrase is hashed **once** on the client (CLI, SDK, or preview browser onboarding) via `nodeCredentialsMaterialFromHumanPassphrase` (or the higher-level `nodeCredentialFromHumanPhrase` / `createNodeCredentialMaterial`). The resulting `passwHash` is what the server stores and what is sent as the `x-node-passw` header.
+- **`POST /api/nodes`** body for main nodes is `{ kind: "main", nodeId, passwHash }`. The server verifies that `nodeId` is derivable from `passwHash` under the current root key and never re-hashes the supplied material.
+- **`POST /api/nodes/agent-node`** body is `{ kind: "agent", parentNodeId, agentNodeId, agentNodePasswHash }`; same verify-don't-rehash rule applies.
+- `RemotePlayWorld.addAgent` posts `passwHash` (not the raw phrase) on the players route body; the server only ever compares hashes.
+- Space nodes are the documented exception: when the client omits `passwHash`, the server generates a phrase, hashes it, stores the hash, and returns the phrase **once** to the caller.
+- Node kind contract is `root -> main -> agent` (with `space` as a parallel kind); root records do not require `passwHash`.
 
 Use the **web-ui** Next.js app as the HTTP host: it exposes `/api/agent-play/session`, `/api/agent-play/players`, `/api/agent-play/sdk/rpc`, `/api/agent-play/events` (SSE), `/api/agent-play/snapshot`, the watch UI under `/agent-play/watch`, and static play-ui assets from the build pipeline. Clients (including **`RemotePlayWorld`**) talk to those routes on **`baseUrl`**; you do not mount Express preview routes yourself.
 

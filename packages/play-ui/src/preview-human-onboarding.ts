@@ -3,10 +3,7 @@
  * preview human onboarding — preview canvas module (Pixi + DOM).
  */
 import { CREATE_HUMAN_NODE_OP } from "@agent-play/intercom";
-import {
-  deriveNodeIdFromPassword,
-  nodeCredentialsMaterialFromHumanPassphrase,
-} from "@agent-play/node-tools/browser";
+import { nodeCredentialFromHumanPhrase } from "@agent-play/node-tools/browser";
 import { generateNodePassphraseWordCount } from "./passphrase-passw.js";
 import { resolveAgentPlayRootKeyForBrowser } from "./preview-agent-play-root-key.js";
 import {
@@ -205,9 +202,8 @@ export async function ensureHumanNodeOnboarding(
           const rootKey = await resolveAgentPlayRootKeyForBrowser({
             apiBase: options.apiBase,
           });
-          const passwMaterial = nodeCredentialsMaterialFromHumanPassphrase(passw);
-          const expectedNodeId = deriveNodeIdFromPassword({
-            password: passwMaterial,
+          const credential = nodeCredentialFromHumanPhrase({
+            phrase: passw,
             rootKey,
           });
           const res = await fetch(
@@ -217,7 +213,11 @@ export async function ensureHumanNodeOnboarding(
               headers: { "content-type": "application/json" },
               body: JSON.stringify({
                 op: CREATE_HUMAN_NODE_OP,
-                payload: { consent: true, passw: passwMaterial },
+                payload: {
+                  consent: true,
+                  nodeId: credential.nodeId,
+                  passwHash: credential.passwHash,
+                },
               }),
             }
           );
@@ -230,7 +230,7 @@ export async function ensureHumanNodeOnboarding(
             throw new Error("invalid createHumanNode response");
           }
           const nodeId = json.nodeId;
-          if (nodeId !== expectedNodeId) {
+          if (nodeId !== credential.nodeId) {
             throw new Error(
               "createHumanNode: server node id does not match local derivation"
             );

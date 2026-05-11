@@ -133,7 +133,7 @@ export type AddAgentInput = PlatformAgentInformation & {
  * tools are indexed for the watch UI).
  *
  * **`agentId`** is required: use an id from **`agent-play create`** when the server uses a repository
- * (with account **`password`** from **`RemotePlayWorld`**), or any stable string for local dev without Redis.
+ * (with account **`passwHash`** from **`RemotePlayWorld`**), or any stable string for local dev without Redis.
  */
 export type AddPlayerInput = PlatformAgentInformation & {
   /** Registration from {@link langchainRegistration}. */

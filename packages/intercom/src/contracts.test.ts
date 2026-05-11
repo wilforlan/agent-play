@@ -119,19 +119,41 @@ describe("intercom contracts", () => {
     expect(p.status).toBe("completed");
   });
 
-  it("parses createHumanNode when consent is true", () => {
+  it("parses createHumanNode when consent is true and nodeId + passwHash are supplied", () => {
     const p = parseCreateHumanNodePayload({
       consent: true,
-      passw: "word ".repeat(10).trim(),
+      nodeId: "node-id-123",
+      passwHash: "0123456789abcdef".repeat(4),
     });
     expect(p.consent).toBe(true);
+    expect(p.nodeId).toBe("node-id-123");
+    expect(p.passwHash).toBe("0123456789abcdef".repeat(4));
   });
 
   it("rejects createHumanNode without consent", () => {
     expect(() =>
       parseCreateHumanNodePayload({
         consent: false,
-        passw: "secret",
+        nodeId: "node-id-123",
+        passwHash: "abcdef",
+      })
+    ).toThrow();
+  });
+
+  it("rejects createHumanNode without passwHash", () => {
+    expect(() =>
+      parseCreateHumanNodePayload({
+        consent: true,
+        nodeId: "node-id-123",
+      })
+    ).toThrow();
+  });
+
+  it("rejects createHumanNode without nodeId", () => {
+    expect(() =>
+      parseCreateHumanNodePayload({
+        consent: true,
+        passwHash: "abcdef",
       })
     ).toThrow();
   });

@@ -84,7 +84,8 @@ const IntercomResponsePayloadSchema = z
 const CreateHumanNodePayloadSchema = z
   .object({
     consent: z.literal(true),
-    passw: NonEmpty,
+    nodeId: NonEmpty,
+    passwHash: NonEmpty,
   })
   .strict();
 

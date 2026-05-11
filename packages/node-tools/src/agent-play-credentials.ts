@@ -11,7 +11,11 @@ export type AgentPlayAgentNodeEntry = {
 
 /**
  * Shape of `~/.agent-play/credentials.json` written by **`agent-play`** (create-main-node, create-agent-node).
- * **`passw`** is the human-readable passphrase; node id derivation uses **`hashNodePassword`** on the normalized phrase (see **`nodeCredentialsMaterialFromHumanPassphrase`**).
+ *
+ * **`passw`** is the **human-readable** passphrase as displayed during creation. The CLI and SDK
+ * never send this value over the wire; they hash it locally with
+ * **`nodeCredentialsMaterialFromHumanPassphrase`** (or, in convenience helpers, via
+ * **`nodeCredentialFromHumanPhrase`**) and forward only the resulting `passwHash` to the server.
  */
 export type AgentPlayCredentialsFile = {
   serverUrl: string;
@@ -53,16 +57,20 @@ export function parseAgentPlayCredentialsJson(
   ) {
     return null;
   }
-  return {
+  const file: AgentPlayCredentialsFile = {
     serverUrl: o.serverUrl.replace(/\/$/, ""),
     nodeId: o.nodeId,
     passw: o.passw,
-    secretFilePath:
-      typeof o.secretFilePath === "string" ? o.secretFilePath : undefined,
-    agentNodes: Array.isArray(o.agentNodes)
-      ? o.agentNodes.filter(isAgentNodeEntry).map((row) => ({ ...row }))
-      : undefined,
   };
+  if (typeof o.secretFilePath === "string") {
+    file.secretFilePath = o.secretFilePath;
+  }
+  if (Array.isArray(o.agentNodes)) {
+    file.agentNodes = o.agentNodes
+      .filter(isAgentNodeEntry)
+      .map((row) => ({ ...row }));
+  }
+  return file;
 }
 
 export function resolveAgentPlayCredentialsPath(): string {

@@ -11,7 +11,6 @@ import {
   SESSION_CONNECTED_EVENT,
 } from "../world-events.js";
 import {
-  deriveNodeIdFromPassword,
   deriveNodeIdFromMaterial,
   nodeCredentialsMaterialFromHumanPassphrase,
 } from "@agent-play/node-tools";
@@ -283,9 +282,10 @@ describe("RemotePlayWorld", () => {
     await world.close();
   });
 
-  it("addAgent posts nodeId as agentId to players route with sid and world password", async () => {
-    const derivedMain = deriveNodeIdFromPassword({
-      password: nodeCredentialsMaterialFromHumanPassphrase("key"),
+  it("addAgent posts nodeId as agentId to players route with sid and passwHash", async () => {
+    const material = nodeCredentialsMaterialFromHumanPassphrase("key");
+    const derivedMain = deriveNodeIdFromMaterial({
+      material,
       rootKey: DEFAULT_NODE_ID,
     });
     const fetchMock = vi.fn(
@@ -309,12 +309,11 @@ describe("RemotePlayWorld", () => {
         }
         if (u.includes("/api/agent-play/players") && init?.method === "POST") {
           const body = JSON.parse(String(init.body)) as {
-            password?: string;
+            passwHash?: string;
             mainNodeId?: string;
             agentId?: string;
           };
-          const material = nodeCredentialsMaterialFromHumanPassphrase("key");
-          expect(body.password).toBe(material);
+          expect(body.passwHash).toBe(material);
           expect(body.mainNodeId).toBe(derivedMain);
           expect(body.agentId).toBe("aid-1");
           return new Response(

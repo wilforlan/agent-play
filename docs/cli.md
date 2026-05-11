@@ -19,7 +19,7 @@ This section describes how to provision **main** and **agent** nodes from the CL
 ### First-time main node (`create-main-node` / `bootstrap-node`)
 
 1. Run **`agent-play create-main-node`** (or **`bootstrap-node`**). The CLI prompts for **server URL** (or uses the default / env).
-2. The CLI generates a **10-word passphrase** (`generateNodePassw`), hashes it for registration, derives your **main node id** under the active root key, and calls **`POST /api/nodes`** with **`{ "kind": "main", "passw": "<hashed material>" }`**. No **`x-node-id` / `x-node-passw`** headers are sent for this call.
+2. The CLI generates a **10-word passphrase** (`createNodeCredentialMaterial`), hashes it locally to `passwHash`, derives your **main node id** under the active root key, and calls **`POST /api/nodes`** with **`{ "kind": "main", "nodeId": "<derived>", "passwHash": "<hashed material>" }`**. The server stores `passwHash` only and never re-hashes the supplied material. No **`x-node-id` / `x-node-passw`** headers are sent for this call.
 3. Credentials are saved to **`~/.agent-play/credentials.json`**: **`serverUrl`**, **`nodeId`** (main), and the **human-readable passphrase** (for you to store safely). Losing the phrase means losing access to that node identity.
 4. The CLI prints the **genesis / root key** string and your **main node id**; the genesis value should match **`.root`** when both sides use the same file.
 
@@ -36,7 +36,7 @@ Node kinds are fixed: **`root` → `main` → `agent`**.
 ### Agent nodes (`create-agent-node` / `create`)
 
 1. Requires a successful **`create-main-node`** so **`credentials.json`** exists.
-2. The CLI generates a new passphrase, derives an **agent node id**, and calls **`POST /api/nodes/agent-node`** with **`kind: "agent"`**, **`parentNodeId`** set to your main node id, **`agentNodeId`**, and **`agentNodePassw`** (hashed material). Requests use **`x-node-id`** / **`x-node-passw`** (see [Auth model](#auth-model)).
+2. The CLI generates a new credential locally with `createNodeCredentialMaterial`, hashes the phrase, derives an **agent node id**, and calls **`POST /api/nodes/agent-node`** with **`kind: "agent"`**, **`parentNodeId`** set to your main node id, **`agentNodeId`**, and **`agentNodePasswHash`** (the locally-hashed material). Requests use **`x-node-id`** / **`x-node-passw`** (see [Auth model](#auth-model)).
 3. Agent entries are merged into **`credentials.json`** under **`agentNodes`** (per-agent **`nodeId`**, **`passw`**, **`createdAt`**).
 
 ### Inspect and lifecycle
@@ -107,10 +107,10 @@ Deprecated for new work: **`buffer.txt`**-only flows and **`validateNodeDerivati
 
 ## Auth model
 
-- **`POST /api/nodes`** (create main node) does **not** require node auth headers.
+- **`POST /api/nodes`** (create main node) does **not** require node auth headers; it expects a JSON body with **`nodeId`** and **`passwHash`** (both computed by the client). The server stores `passwHash` only and verifies that `nodeId` derives from it under the active root key.
 - All other node/agent management requests use:
-  - **`x-node-id`**
-  - **`x-node-passw`** (derived from the saved passphrase as implemented in the CLI; must match stored server material)
+  - **`x-node-id`** (the locally-derived node id)
+  - **`x-node-passw`** (the locally-computed **`passwHash`**, i.e. `nodeCredentialsMaterialFromHumanPassphrase(passw)`; the server compares against the stored hash without re-hashing)
 
 ---
 

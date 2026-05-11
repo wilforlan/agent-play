@@ -1,8 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
-  deriveNodeIdFromPassword,
-  deriveNodeIdFromMaterial,
-  nodeCredentialsMaterialFromHumanPassphrase,
+  createNodeCredentialMaterial,
+  nodeCredentialFromHumanPhrase,
 } from "@agent-play/node-tools";
 import { RedisAgentRepository } from "./redis-agent-repository.js";
 
@@ -18,6 +17,14 @@ class FakeRedis {
 
   async hgetall(key: string): Promise<HashRecord> {
     return { ...(this.hashes.get(key) ?? {}) };
+  }
+
+  async hget(key: string, field: string): Promise<string | null> {
+    const record = this.hashes.get(key);
+    if (record === undefined) {
+      return null;
+    }
+    return record[field] ?? null;
   }
 
   async hset(key: string, field: string | HashRecord, value?: string): Promise<number> {
@@ -39,7 +46,11 @@ class FakeRedis {
     return "OK";
   }
 
-  multi(): { hset: FakeRedis["hset"]; set: FakeRedis["set"]; exec: () => Promise<[]> } {
+  multi(): {
+    hset: FakeRedis["hset"];
+    set: FakeRedis["set"];
+    exec: () => Promise<[]>;
+  } {
     const ops: Array<() => Promise<unknown>> = [];
     return {
       hset: (key: string, field: string | HashRecord, value?: string) => {
@@ -65,8 +76,63 @@ class FakeRedis {
 }
 
 describe("RedisAgentRepository", () => {
-  it("detects existing attachment by existence even when incoming hash differs", async () => {
-    const rootKey = "fixture-root";
+  const rootKey = "fixture-root";
+
+  it("stores the client-supplied passwHash and derives the node id under the current root key", async () => {
+    const redis = new FakeRedis();
+    const repository = new RedisAgentRepository({
+      redis: redis as never,
+      hostId: "default",
+      rootKey,
+    });
+    const credential = nodeCredentialFromHumanPhrase({
+      phrase: "amber angle apple arch atlas aura autumn bamboo",
+      rootKey,
+    });
+
+    const created = await repository.createNode({
+      kind: "main",
+      nodeId: credential.nodeId,
+      passwHash: credential.passwHash,
+    });
+
+    expect(created.nodeId).toBe(credential.nodeId);
+    expect(
+      await repository.verifyNodePasswHash({
+        nodeId: credential.nodeId,
+        passwHash: credential.passwHash,
+      })
+    ).toBe(true);
+    expect(
+      await repository.verifyNodePasswHash({
+        nodeId: credential.nodeId,
+        passwHash: "deadbeef",
+      })
+    ).toBe(false);
+  });
+
+  it("rejects main node creation when nodeId does not derive from passwHash", async () => {
+    const redis = new FakeRedis();
+    const repository = new RedisAgentRepository({
+      redis: redis as never,
+      hostId: "default",
+      rootKey,
+    });
+    const credential = nodeCredentialFromHumanPhrase({
+      phrase: "amber angle apple arch atlas",
+      rootKey,
+    });
+
+    await expect(
+      repository.createNode({
+        kind: "main",
+        nodeId: "tampered-node-id",
+        passwHash: credential.passwHash,
+      })
+    ).rejects.toThrow(/derivative/);
+  });
+
+  it("detects existing attachment when re-registering the same agent node id", async () => {
     const redis = new FakeRedis();
     const repository = new RedisAgentRepository({
       redis: redis as never,
@@ -74,55 +140,75 @@ describe("RedisAgentRepository", () => {
       rootKey,
     });
 
-    const mainPassw =
-      "amber angle apple arch atlas aura autumn bamboo beacon birch blossom";
-    const createdNode = await repository.createNode({
+    const main = nodeCredentialFromHumanPhrase({
+      phrase: "amber angle apple arch atlas aura autumn bamboo beacon birch blossom",
+      rootKey,
+    });
+    await repository.createNode({
       kind: "main",
-      passw: mainPassw,
+      nodeId: main.nodeId,
+      passwHash: main.passwHash,
     });
 
-    const firstAgentPassw =
-      "orchid pearl river stone wind north south cedar pine fern";
-    const firstAgentId = deriveNodeIdFromPassword({ password: firstAgentPassw, rootKey });
+    const firstAgent = createNodeCredentialMaterial({ rootKey });
     await repository.createAgentNode({
-      parentNodeId: createdNode.nodeId,
-      agentId: firstAgentId,
-      passw: firstAgentPassw,
+      parentNodeId: main.nodeId,
+      agentId: firstAgent.nodeId,
+      passwHash: firstAgent.passwHash,
     });
 
-    const secondAgentPassw = "delta gamma alpha beta zeta eta theta iota kappa lambda";
+    const otherAgent = createNodeCredentialMaterial({ rootKey });
     await expect(
       repository.createAgentNode({
-        parentNodeId: createdNode.nodeId,
-        agentId: firstAgentId,
-        passw: secondAgentPassw,
+        parentNodeId: main.nodeId,
+        agentId: firstAgent.nodeId,
+        passwHash: otherAgent.passwHash,
       })
     ).rejects.toThrow(/already attached/);
   });
 
-  it("hashes human main passphrase material before deriving and storing main node auth", async () => {
-    const rootKey = "fixture-root";
+  it("rejects agent node creation when agentId does not derive from passwHash", async () => {
     const redis = new FakeRedis();
     const repository = new RedisAgentRepository({
       redis: redis as never,
       hostId: "default",
       rootKey,
     });
-
-    const humanPhrase = "amber angle apple arch atlas aura autumn bamboo";
-    const expectedMaterial = nodeCredentialsMaterialFromHumanPassphrase(humanPhrase);
-    const expectedNodeId = deriveNodeIdFromMaterial({
-      material: expectedMaterial,
+    const main = nodeCredentialFromHumanPhrase({
+      phrase: "amber angle apple",
       rootKey,
     });
-
-    const createdNode = await repository.createNode({
+    await repository.createNode({
       kind: "main",
-      passw: humanPhrase,
+      nodeId: main.nodeId,
+      passwHash: main.passwHash,
     });
-    expect(createdNode.nodeId).toBe(expectedNodeId);
+    const agent = createNodeCredentialMaterial({ rootKey });
 
-    expect(await repository.verifyNodePassw(expectedNodeId, expectedMaterial)).toBe(true);
-    expect(await repository.verifyNodePassw(expectedNodeId, humanPhrase)).toBe(false);
+    await expect(
+      repository.createAgentNode({
+        parentNodeId: main.nodeId,
+        agentId: "tampered-agent-id",
+        passwHash: agent.passwHash,
+      })
+    ).rejects.toThrow(/derivative/);
+  });
+
+  it("generates and returns a phrase only for space nodes when passwHash is omitted", async () => {
+    const redis = new FakeRedis();
+    const repository = new RedisAgentRepository({
+      redis: redis as never,
+      hostId: "default",
+      rootKey,
+    });
+    const created = await repository.createNode({
+      kind: "space",
+      spaceId: "space-1",
+    });
+    expect(typeof created.phrase).toBe("string");
+    expect((created.phrase ?? "").split(" ").length).toBe(10);
+    const node = await repository.getNode(created.nodeId);
+    expect(node?.kind).toBe("space");
+    expect(node?.spaceId).toBe("space-1");
   });
 });
