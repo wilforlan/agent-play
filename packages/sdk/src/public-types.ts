@@ -122,6 +122,12 @@ export type AddAgentInput = PlatformAgentInformation & {
    * Omitted or **`"off"`** disables realtime voice for this registration.
    */
   enableP2a?: P2aEnableFlag;
+  /**
+   * Per-agent instructions for OpenAI Realtime when **`enableP2a`** is **`"on"`** (e.g. from
+   * **`personality.txt`**). Ignored when **`initAudio`** was given explicit **`openai.instructions`**,
+   * which still wins as a global override.
+   */
+  realtimeInstructions?: string;
 };
 
 /**
@@ -149,6 +155,10 @@ export type AddPlayerInput = PlatformAgentInformation & {
    * Same semantics as {@link AddAgentInput} **`enableP2a`**.
    */
   enableP2a?: P2aEnableFlag;
+  /**
+   * Same semantics as {@link AddAgentInput} **`realtimeInstructions`**.
+   */
+  realtimeInstructions?: string;
 };
 
 /** Zone counter event surfaced on snapshots and signals. */

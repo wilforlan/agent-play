@@ -82,6 +82,35 @@ describe("PlayWorld space placement uses the worldLayout space zone", () => {
     expect(pointCellInZone(structure.x, structure.y, spaceZone)).toBe(true);
   });
 
+  it("keeps every structure position unique after the space zone shrinks", async () => {
+    const store = new TestSessionStore();
+    const w = new PlayWorld({ sessionStore: store });
+    await w.start();
+    const ids = ["s1", "s2", "s3", "s4"];
+    for (const id of ids) {
+      const space = await w.registerSpaceNode({
+        id: `space-${id}`,
+        name: `Space ${id}`,
+        designKey: "supermarket-v1",
+        amenities: ["supermarket"],
+      });
+      await w.registerStructureNode({
+        id,
+        name: id,
+        spaceIds: [space.id],
+      });
+    }
+    await w.updateLayoutBoundsField({ field: "maxX", value: 5 });
+    await w.updateLayoutBoundsField({ field: "maxY", value: 4 });
+    const snap = await w.getSnapshotJson();
+    const structures = snap.worldMap.occupants.filter(
+      (o) => o.kind === "structure"
+    );
+    expect(structures.length).toBe(ids.length);
+    const keys = structures.map((s) => `${String(s.x)},${String(s.y)}`);
+    expect(new Set(keys).size).toBe(keys.length);
+  });
+
   it("re-anchors existing structures after the layout space zone migrates", async () => {
     const store = new TestSessionStore();
     const w = new PlayWorld({ sessionStore: store });

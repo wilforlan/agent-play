@@ -822,14 +822,13 @@ export class RemotePlayWorld {
     let realtimeInstructionsFromInit: string | undefined;
     if (input.enableP2a === "on" && this.audioInitOptions !== null) {
       console.log("resolving realtime instructions for agent", input.name);
-      realtimeInstructionsFromInit = resolveRealtimeInstructions({
+      const resolveOpts = {
         openai: this.audioInitOptions,
         agentName: input.name,
-      });
-      realtimeWebrtcFromInit = await mintOpenAiRealtimeClientSecretForSdk({
-        openai: this.audioInitOptions,
-        agentName: input.name,
-      });
+        perAgentInstructions: input.realtimeInstructions,
+      };
+      realtimeInstructionsFromInit = resolveRealtimeInstructions(resolveOpts);
+      realtimeWebrtcFromInit = await mintOpenAiRealtimeClientSecretForSdk(resolveOpts);
       this.logTransport("addAgent:p2a_enabled", {
         agentName: input.name,
         model: this.audioInitOptions.model,
@@ -964,6 +963,9 @@ export class RemotePlayWorld {
     }
     if (input.mainNodeId !== undefined) {
       payload.mainNodeId = input.mainNodeId;
+    }
+    if (input.realtimeInstructions !== undefined) {
+      payload.realtimeInstructions = input.realtimeInstructions;
     }
     return this.addAgent(payload);
   }

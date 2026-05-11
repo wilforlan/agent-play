@@ -240,6 +240,60 @@ function isStructureOccupant(
   return o.kind === "structure";
 }
 
+function pickStructureAnchorWithProximityTiers(input: {
+  zone: Zone;
+  rankedCandidates: readonly OccupancyGridPoint[];
+  occupied: ReadonlySet<string>;
+  fixedOccupantPositions: ReadonlyArray<{ x: number; y: number }>;
+  structureAnchors: ReadonlyArray<{ x: number; y: number }>;
+}): { x: number; y: number } | null {
+  const {
+    zone,
+    rankedCandidates,
+    occupied,
+    fixedOccupantPositions,
+    structureAnchors,
+  } = input;
+  const existingOccupants = [
+    ...fixedOccupantPositions,
+    ...structureAnchors,
+  ];
+  const strict = rankedCandidates.find((candidate) =>
+    isSpaceAnchorOccupancyPointAvailableInZone({
+      zone,
+      point: candidate,
+      occupiedKeys: occupied,
+      existingOccupants,
+      structureAnchors,
+      minDistance: DEFAULT_MIN_OCCUPANT_DISTANCE,
+      structureMinDistance: SPACE_STRUCTURE_ANCHOR_MIN_DISTANCE,
+    })
+  );
+  if (strict !== undefined) {
+    return { x: strict.x, y: strict.y };
+  }
+  const agentDistanceOnly = rankedCandidates.find((candidate) =>
+    isAgentSpawnOccupancyPointAvailableInZone({
+      zone,
+      point: candidate,
+      occupiedKeys: occupied,
+      existingOccupants,
+      minDistance: DEFAULT_MIN_OCCUPANT_DISTANCE,
+    })
+  );
+  if (agentDistanceOnly !== undefined) {
+    return { x: agentDistanceOnly.x, y: agentDistanceOnly.y };
+  }
+  const anyFreeKey = rankedCandidates.find(
+    (candidate) =>
+      !occupied.has(occupancyKeyForPosition(candidate.x, candidate.y))
+  );
+  if (anyFreeKey !== undefined) {
+    return { x: anyFreeKey.x, y: anyFreeKey.y };
+  }
+  return null;
+}
+
 /**
  * Re-anchors every structure occupant inside the current worldLayout space zone
  * deterministically (sorted by structure id, packed from zone center outward).
@@ -247,6 +301,16 @@ function isStructureOccupant(
  * @remarks Persisted x,y on structure rows is treated as advisory; the canonical
  * position is derived from `snapshot.worldLayout` at read time. Non-structure
  * occupants are treated as fixed obstacles.
+ *
+ * Proximity is resolved in tiers so that no two structures can ever share a
+ * cell, even when the space zone is too small to honour the strict
+ * `structureMinDistance`:
+ *   1. Strict (`structureMinDistance` = 3.6, `minDistance` = 0.9).
+ *   2. Relaxed (drop structure proximity, keep agent `minDistance`).
+ *   3. Permissive (only require a free occupancy key inside the zone).
+ *
+ * Every successful placement is recorded in `occupied` and `structureAnchors`
+ * so subsequent structures never select the same cell.
  */
 export function resolveStructureAnchorsAtRuntime(
   snapshot: PreviewSnapshotJson
@@ -267,7 +331,10 @@ export function resolveStructureAnchorsAtRuntime(
   const fixedOccupants = snapshot.worldMap.occupants.filter(
     (o) => !isStructureOccupant(o)
   );
-  const fixedOccupantPositions = fixedOccupants.map((o) => ({ x: o.x, y: o.y }));
+  const fixedOccupantPositions = fixedOccupants.map((o) => ({
+    x: o.x,
+    y: o.y,
+  }));
   const occupied = new Set(
     fixedOccupants.map((o) => occupancyKeyForPosition(o.x, o.y))
   );
@@ -275,18 +342,29 @@ export function resolveStructureAnchorsAtRuntime(
     .filter(isStructureOccupant)
     .slice()
     .sort((a, b) => a.id.localeCompare(b.id));
+  const rankedCandidates = buildRankedOccupancyPointsForZone(zone);
   const reanchored: PreviewWorldMapStructureOccupantJson[] = [];
   const structureAnchors: Array<{ x: number; y: number }> = [];
   for (const row of structures) {
-    try {
-      const pos = computeRandomFreeMapCellInZone(occupied, zone, "spaceAnchor", {
-        existingOccupants: [...fixedOccupantPositions, ...structureAnchors],
-        structureAnchors,
-      });
+    const pos = pickStructureAnchorWithProximityTiers({
+      zone,
+      rankedCandidates,
+      occupied,
+      fixedOccupantPositions,
+      structureAnchors,
+    });
+    if (pos !== null) {
       reanchored.push({ ...row, x: pos.x, y: pos.y });
       occupied.add(occupancyKeyForPosition(pos.x, pos.y));
       structureAnchors.push({ x: pos.x, y: pos.y });
-    } catch {
+      continue;
+    }
+    const persistedKey = occupancyKeyForPosition(row.x, row.y);
+    if (!occupied.has(persistedKey)) {
+      reanchored.push(row);
+      occupied.add(persistedKey);
+      structureAnchors.push({ x: row.x, y: row.y });
+    } else {
       reanchored.push(row);
     }
   }

@@ -136,9 +136,8 @@ import {
   type ProximityActionKind,
 } from "./proximity-interaction.js";
 import {
-  compoundFenceRadiusPx,
-  drawSpaceCompoundFence,
-  layoutCompoundAmenityOffsetsWorld,
+  countAmenitiesInSpaceCompound,
+  representativePrimaryAmenityForCompound,
 } from "./space-compound-art.js";
 
 type ConsoleWorldLayoutBoundsField = "minX" | "minY" | "maxX" | "maxY";
@@ -1703,61 +1702,29 @@ function syncStructureNodes(structs: Structure[]): void {
     const centroidY =
       group.reduce((sum, st) => sum + st.y, 0) / group.length;
     const { x: cx, y: cy } = worldToWorldRootLocal(centroidX, centroidY);
-    const radiusPx = compoundFenceRadiusPx({
-      amenityCount: group.length,
-      cellScale,
-    });
-    const fenceG = new Graphics({ roundPixels: true });
-    drawSpaceCompoundFence(fenceG, radiusPx, 0xd97706);
-    fenceG.position.set(cx, cy);
-    n.root.addChild(fenceG);
 
     const sorted = [...group].sort((a, b) =>
       (a.primaryAmenity ?? "").localeCompare(b.primaryAmenity ?? "")
     );
-    const radiusWorld = Math.max(
-      2.6,
-      Math.min(4.8, 2.3 + sorted.length * 0.45)
-    );
-    const offsets = layoutCompoundAmenityOffsetsWorld({
-      count: sorted.length,
-      radiusWorld,
-    });
-
-    for (let i = 0; i < sorted.length; i += 1) {
-      const st = sorted[i];
-      const off = offsets[i];
-      if (st === undefined || off === undefined) {
-        continue;
-      }
-      const wx = centroidX + off.dx;
-      const wy = centroidY + off.dy;
-      const { x: sx, y: sy } = worldToWorldRootLocal(wx, wy);
-      const g = new Graphics({ roundPixels: true });
-      const amenity =
-        st.primaryAmenity !== undefined && st.primaryAmenity.length > 0
-          ? st.primaryAmenity
-          : "shop";
-      const pal = amenityPaletteForStructure(amenity);
-      if (amenity === "supermarket") {
-        drawSupermarketStructure(g, buildingBox, pal);
-      } else if (amenity === "car_wash") {
-        drawCarWashStructure(g, buildingBox, pal);
-      } else {
-        drawShopStructure(g, buildingBox, pal);
-      }
-      g.position.set(sx - buildingBox * 0.42, sy - buildingBox * 0.48);
-      n.root.addChild(g);
+    const amenity = representativePrimaryAmenityForCompound(sorted);
+    const pal = amenityPaletteForStructure(amenity);
+    const buildingG = new Graphics({ roundPixels: true });
+    if (amenity === "supermarket") {
+      drawSupermarketStructure(buildingG, buildingBox, pal);
+    } else if (amenity === "car_wash") {
+      drawCarWashStructure(buildingG, buildingBox, pal);
+    } else {
+      drawShopStructure(buildingG, buildingBox, pal);
     }
+    buildingG.position.set(cx - buildingBox * 0.42, cy - buildingBox * 0.48);
+    n.root.addChild(buildingG);
 
-    let capText = sorted
-      .map((s) => (s.label ?? s.name ?? s.id).slice(0, 22))
-      .join(" · ");
-    if (capText.length > 100) {
-      capText = `${capText.slice(0, 97)}…`;
-    }
-    n.caption.text = capText;
-    n.caption.position.set(cx - n.caption.width / 2, cy - radiusPx - 18);
+    const title = (sorted[0]?.label ?? sorted[0]?.name ?? "Space").slice(0, 28);
+    const amenityTotal = countAmenitiesInSpaceCompound(sorted);
+    const amenityLine =
+      amenityTotal === 1 ? "1 amenity" : `${String(amenityTotal)} amenities`;
+    n.caption.text = `${title}\n${amenityLine}`;
+    n.caption.position.set(cx - n.caption.width / 2, cy - buildingBox * 0.92);
   }
 
   for (const st of standalone) {
