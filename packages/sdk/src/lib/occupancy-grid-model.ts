@@ -10,11 +10,12 @@ export const OCCUPANCY_POINT_MULTIPLIER = 5;
 export const CONTINUOUS_RENDER_OFFSET = 0.2;
 export const DEFAULT_AGENT_SPAWN_MIN_DISTANCE = 0.9;
 
-/** Bottom-left zone Q1 — agents (spatial rectangle). */
+/** @deprecated Prefer {@link WorldLayout} zones from snapshot; quartile geometry is legacy. */
 export const SPATIAL_ZONE_INDEX_AGENTS = 0;
-/** Top-left zone Q3 — spaces / amenities (spatial rectangle). */
+/** @deprecated Prefer {@link WorldLayout} zones from snapshot; quartile geometry is legacy. */
 export const SPATIAL_ZONE_INDEX_SPACES = 2;
 
+/** @deprecated Prefer layout zone rects; quartile geometry is legacy. */
 export function spatialZoneBounds(quartileIndex: number): WorldBounds {
   const { minX, maxX, minY, maxY } = MINIMUM_PLAY_WORLD_BOUNDS;
   const spanX = maxX - minX + 1;
@@ -42,6 +43,7 @@ export function spatialZoneBounds(quartileIndex: number): WorldBounds {
   }
 }
 
+/** @deprecated Prefer {@link centerOfZone} with a layout zone. */
 export function spatialZoneCenter(quartileIndex: number): OccupancyGridPoint {
   const b = spatialZoneBounds(quartileIndex);
   return {
@@ -60,12 +62,11 @@ function enumerateIntegerCellsInBounds(bounds: WorldBounds): OccupancyGridPoint[
   return cells;
 }
 
-export function pointCellInSpatialZone(
+export function pointCellInRect(
   wx: number,
   wy: number,
-  zoneIndex: number
+  bounds: WorldBounds
 ): boolean {
-  const bounds = spatialZoneBounds(zoneIndex);
   const cx = Math.floor(wx);
   const cy = Math.floor(wy);
   return (
@@ -76,10 +77,9 @@ export function pointCellInSpatialZone(
   );
 }
 
-export function listOccupancyPointsForSpatialZone(
-  zoneIndex: number
+export function listOccupancyPointsInRect(
+  bounds: WorldBounds
 ): readonly OccupancyGridPoint[] {
-  const bounds = spatialZoneBounds(zoneIndex);
   return enumerateIntegerCellsInBounds(bounds).flatMap((cell) => {
     const points: OccupancyGridPoint[] = [];
     for (let dx = 0; dx < OCCUPANCY_POINT_MULTIPLIER; dx += 1) {
@@ -100,6 +100,41 @@ export function listOccupancyPointsForSpatialZone(
   });
 }
 
+export function buildRankedOccupancyPointsInRect(
+  bounds: WorldBounds
+): OccupancyGridPoint[] {
+  const centerX = (bounds.minX + bounds.maxX + 1) / 2;
+  const centerY = (bounds.minY + bounds.maxY + 1) / 2;
+  return [...listOccupancyPointsInRect(bounds)].sort((left, right) => {
+    const dl = Math.hypot(left.x - centerX, left.y - centerY);
+    const dr = Math.hypot(right.x - centerX, right.y - centerY);
+    if (dl !== dr) {
+      return dl - dr;
+    }
+    if (left.x !== right.x) {
+      return left.x - right.x;
+    }
+    return left.y - right.y;
+  });
+}
+
+/** @deprecated Prefer {@link pointCellInZone} with a layout zone. */
+export function pointCellInSpatialZone(
+  wx: number,
+  wy: number,
+  zoneIndex: number
+): boolean {
+  return pointCellInRect(wx, wy, spatialZoneBounds(zoneIndex));
+}
+
+/** @deprecated Prefer {@link listOccupancyPointsForZone}. */
+export function listOccupancyPointsForSpatialZone(
+  zoneIndex: number
+): readonly OccupancyGridPoint[] {
+  return listOccupancyPointsInRect(spatialZoneBounds(zoneIndex));
+}
+
+/** @deprecated Prefer {@link occupancyPointsGroupedByZones}. */
 export function occupancyPointsGroupedBySpatialZone(): readonly (
   readonly OccupancyGridPoint[]
 )[] {
@@ -111,7 +146,7 @@ export function occupancyPointsGroupedBySpatialZone(): readonly (
   ];
 }
 
-/** Agent spawns: Q1 only. */
+/** @deprecated Prefer points from the agent primary zone in {@link WorldLayout}. */
 export function listAllowedOccupancyPoints(): readonly OccupancyGridPoint[] {
   return listOccupancyPointsForSpatialZone(SPATIAL_ZONE_INDEX_AGENTS);
 }
@@ -124,21 +159,11 @@ export function occupancyKeyForPosition(x: number, y: number): string {
   return `${quantizePosition(x).toFixed(3)},${quantizePosition(y).toFixed(3)}`;
 }
 
+/** @deprecated Prefer {@link buildRankedOccupancyPointsForZone}. */
 export function buildRankedOccupancyPointsForSpatialZone(
   zoneIndex: number
 ): OccupancyGridPoint[] {
-  const center = spatialZoneCenter(zoneIndex);
-  return [...listOccupancyPointsForSpatialZone(zoneIndex)].sort((left, right) => {
-    const dl = Math.hypot(left.x - center.x, left.y - center.y);
-    const dr = Math.hypot(right.x - center.x, right.y - center.y);
-    if (dl !== dr) {
-      return dl - dr;
-    }
-    if (left.x !== right.x) {
-      return left.x - right.x;
-    }
-    return left.y - right.y;
-  });
+  return buildRankedOccupancyPointsInRect(spatialZoneBounds(zoneIndex));
 }
 
 /** Back-compat: agent-zone ranking only. */
@@ -166,7 +191,8 @@ export function boundingWorldRectForOccupancyPoints(
   return { minX, maxX, minY, maxY };
 }
 
-export function isAgentSpawnOccupancyPointAvailable(input: {
+export function isAgentSpawnOccupancyPointAvailableInRect(input: {
+  rect: WorldBounds;
   point: OccupancyGridPoint;
   occupiedKeys: ReadonlySet<string>;
   existingOccupants: ReadonlyArray<{ x: number; y: number }>;
@@ -177,13 +203,7 @@ export function isAgentSpawnOccupancyPointAvailable(input: {
   if (input.occupiedKeys.has(key)) {
     return false;
   }
-  if (
-    !pointCellInSpatialZone(
-      input.point.x,
-      input.point.y,
-      SPATIAL_ZONE_INDEX_AGENTS
-    )
-  ) {
+  if (!pointCellInRect(input.point.x, input.point.y, input.rect)) {
     return false;
   }
   for (const existing of input.existingOccupants) {
@@ -198,7 +218,8 @@ export function isAgentSpawnOccupancyPointAvailable(input: {
   return true;
 }
 
-export function isSpaceAnchorOccupancyPointAvailable(input: {
+export function isSpaceAnchorOccupancyPointAvailableInRect(input: {
+  rect: WorldBounds;
   point: OccupancyGridPoint;
   occupiedKeys: ReadonlySet<string>;
   existingOccupants: ReadonlyArray<{ x: number; y: number }>;
@@ -210,13 +231,7 @@ export function isSpaceAnchorOccupancyPointAvailable(input: {
   if (input.occupiedKeys.has(key)) {
     return false;
   }
-  if (
-    !pointCellInSpatialZone(
-      input.point.x,
-      input.point.y,
-      SPATIAL_ZONE_INDEX_SPACES
-    )
-  ) {
+  if (!pointCellInRect(input.point.x, input.point.y, input.rect)) {
     return false;
   }
   for (const existing of input.existingOccupants) {
@@ -238,5 +253,44 @@ export function isSpaceAnchorOccupancyPointAvailable(input: {
     }
   }
   return true;
+}
+
+export function isAgentSpawnOccupancyPointAvailable(input: {
+  point: OccupancyGridPoint;
+  occupiedKeys: ReadonlySet<string>;
+  existingOccupants: ReadonlyArray<{ x: number; y: number }>;
+  minDistance?: number;
+}): boolean {
+  const base = {
+    rect: spatialZoneBounds(SPATIAL_ZONE_INDEX_AGENTS),
+    point: input.point,
+    occupiedKeys: input.occupiedKeys,
+    existingOccupants: input.existingOccupants,
+  };
+  return input.minDistance === undefined
+    ? isAgentSpawnOccupancyPointAvailableInRect(base)
+    : isAgentSpawnOccupancyPointAvailableInRect({
+        ...base,
+        minDistance: input.minDistance,
+      });
+}
+
+export function isSpaceAnchorOccupancyPointAvailable(input: {
+  point: OccupancyGridPoint;
+  occupiedKeys: ReadonlySet<string>;
+  existingOccupants: ReadonlyArray<{ x: number; y: number }>;
+  structureAnchors: ReadonlyArray<{ x: number; y: number }>;
+  minDistance: number;
+  structureMinDistance: number;
+}): boolean {
+  return isSpaceAnchorOccupancyPointAvailableInRect({
+    rect: spatialZoneBounds(SPATIAL_ZONE_INDEX_SPACES),
+    point: input.point,
+    occupiedKeys: input.occupiedKeys,
+    existingOccupants: input.existingOccupants,
+    structureAnchors: input.structureAnchors,
+    minDistance: input.minDistance,
+    structureMinDistance: input.structureMinDistance,
+  });
 }
 

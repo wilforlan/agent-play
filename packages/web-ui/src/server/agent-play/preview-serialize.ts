@@ -2,6 +2,12 @@ import type { Journey, WorldJourneyUpdate } from "./@types/world.js";
 import type { WorldInteractionRole } from "./play-transport.js";
 import type { SpaceAmenityKind } from "./space-amenity.js";
 import { buildWorldMapFromOccupants as computeWorldMapBounds } from "./world-map.js";
+import {
+  MINIMUM_PLAY_WORLD_BOUNDS,
+  STREET_NAME_POOL,
+  createVerticalStripSeedLayout,
+  type WorldLayout,
+} from "@agent-play/sdk";
 
 export type { SpaceAmenityKind } from "./space-amenity.js";
 
@@ -117,6 +123,27 @@ export type PreviewWorldMapJson = {
   occupants: PreviewWorldMapOccupantJson[];
 };
 
+export type WorldLayoutZoneJson = {
+  id: string;
+  streetId: string;
+  streetLabel: string;
+  rect: { minX: number; minY: number; maxX: number; maxY: number };
+  primaryGroup: "agent" | "space" | "mcp";
+  allowedGroups: readonly ("agent" | "space" | "mcp")[];
+};
+
+export type WorldLayoutStreetJson = {
+  id: string;
+  label: string;
+};
+
+export type WorldLayoutJson = {
+  rev: number;
+  bounds: { minX: number; minY: number; maxX: number; maxY: number };
+  zones: WorldLayoutZoneJson[];
+  streets: WorldLayoutStreetJson[];
+};
+
 export type PreviewMcpRegistrationJson = {
   id: string;
   name: string;
@@ -127,16 +154,56 @@ export type PreviewSnapshotJson = {
   sid: string;
   mainNodeId?: string;
   worldMap: PreviewWorldMapJson;
+  worldLayout: WorldLayoutJson;
   spaces?: SpaceCatalogEntryJson[];
   mcpServers?: PreviewMcpRegistrationJson[];
 };
 
+let defaultWorldLayoutJsonCache: WorldLayoutJson | null = null;
+
+export function getDefaultPreviewWorldLayoutJson(): WorldLayoutJson {
+  if (defaultWorldLayoutJsonCache === null) {
+    const s0 = STREET_NAME_POOL[0];
+    const s1 = STREET_NAME_POOL[1];
+    const s2 = STREET_NAME_POOL[2];
+    if (s0 === undefined || s1 === undefined || s2 === undefined) {
+      throw new Error("getDefaultPreviewWorldLayoutJson: STREET_NAME_POOL too small");
+    }
+    defaultWorldLayoutJsonCache = buildSnapshotWorldLayout(
+      createVerticalStripSeedLayout({
+        bounds: MINIMUM_PLAY_WORLD_BOUNDS,
+        streets: [s0, s1, s2],
+      })
+    );
+  }
+  return defaultWorldLayoutJsonCache;
+}
+
+export function buildSnapshotWorldLayout(layout: WorldLayout): WorldLayoutJson {
+  return {
+    rev: layout.rev,
+    bounds: { ...layout.bounds },
+    zones: layout.zones.map((z) => ({
+      id: z.id,
+      streetId: z.streetId,
+      streetLabel: z.streetLabel,
+      rect: { ...z.rect },
+      primaryGroup: z.primaryGroup,
+      allowedGroups: [...z.allowedGroups],
+    })),
+    streets: layout.streets.map((s) => ({ id: s.id, label: s.label })),
+  };
+}
+
 export function normalizePreviewSnapshot(
-  snapshot: PreviewSnapshotJson
+  snapshot: PreviewSnapshotJson | Omit<PreviewSnapshotJson, "worldLayout"> & {
+    worldLayout?: WorldLayoutJson;
+  }
 ): PreviewSnapshotJson {
   return {
     ...snapshot,
     spaces: snapshot.spaces ?? [],
+    worldLayout: snapshot.worldLayout ?? getDefaultPreviewWorldLayoutJson(),
   };
 }
 

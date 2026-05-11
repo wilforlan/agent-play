@@ -7,15 +7,20 @@ import {
   type PreviewWorldMapOccupantJson,
   type PreviewWorldMapStructureOccupantJson,
   type SpaceCatalogEntryJson,
+  type WorldLayoutJson,
 } from "./preview-serialize.js";
 
-export function emptySnapshot(mainNodeId: string): PreviewSnapshotJson {
-  return {
+export function emptySnapshot(
+  mainNodeId: string,
+  worldLayout?: WorldLayoutJson
+): PreviewSnapshotJson {
+  return normalizePreviewSnapshot({
     sid: mainNodeId,
     mainNodeId,
     worldMap: buildSnapshotWorldMap([]),
     spaces: [],
-  };
+    ...(worldLayout !== undefined ? { worldLayout } : {}),
+  });
 }
 
 export function ensureWorldSnapshot(

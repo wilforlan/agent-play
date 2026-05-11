@@ -22,6 +22,14 @@ export type PreviewDebugStructureRow = {
   amenities?: readonly string[];
 };
 
+export type PreviewDebugZoneRow = {
+  id: string;
+  streetId: string;
+  streetLabel: string;
+  primaryGroup: "agent" | "space" | "mcp";
+  occupantCount: number;
+};
+
 type OccupancyDebugPick = Pick<
   PreviewViewSettings,
   "debugOccupancyQuartiles" | "debugOccupancyFreeGrids"
@@ -31,6 +39,7 @@ export function createPreviewDebugPanel(options: {
   getSnapshot: () => {
     agents: readonly PreviewDebugAgentRow[];
     structures: readonly PreviewDebugStructureRow[];
+    zones?: readonly PreviewDebugZoneRow[];
   };
   occupancyDebug?: {
     getSettings: () => OccupancyDebugPick;
@@ -66,7 +75,7 @@ export function createPreviewDebugPanel(options: {
     const occ = document.createElement("div");
     occ.className = "preview-debug-panel__occupancy";
     const oh = document.createElement("h4");
-    oh.textContent = "Spatial zones (lat / long)";
+    oh.textContent = "Zones (street-named)";
     occ.appendChild(oh);
 
     const rowQuart = document.createElement("label");
@@ -82,7 +91,7 @@ export function createPreviewDebugPanel(options: {
     });
     const sq = document.createElement("span");
     sq.textContent =
-      "Show spatial zones (Q1 agents · Q3 spaces — equal rectangles)";
+      "Show world layout zones (agent strip · space strip · MCP strip)";
     rowQuart.append(quartileInput, sq);
     occ.appendChild(rowQuart);
 
@@ -99,7 +108,7 @@ export function createPreviewDebugPanel(options: {
     });
     const sf = document.createElement("span");
     sf.textContent =
-      "Show free grids (green Q1 agents · cyan Q3 space anchors)";
+      "Show free grids (green agent zone · cyan space zone)";
     rowFree.append(freeGridsInput, sf);
     occ.appendChild(rowFree);
 
@@ -148,7 +157,7 @@ export function createPreviewDebugPanel(options: {
   });
 
   const update = (): void => {
-    const { agents, structures } = options.getSnapshot();
+    const { agents, structures, zones } = options.getSnapshot();
     const esc = (s: string): string =>
       s
         .replace(/&/g, "&amp;")
@@ -156,7 +165,15 @@ export function createPreviewDebugPanel(options: {
         .replace(/>/g, "&gt;")
         .replace(/"/g, "&quot;");
 
-    let html = "<h4>Agents</h4><ul>";
+    let html = "";
+    if (zones !== undefined && zones.length > 0) {
+      html += '<h4>Streets</h4><ul class="preview-debug-panel__streets">';
+      for (const z of zones) {
+        html += `<li><strong>${esc(z.streetLabel)}</strong> <code>${esc(z.primaryGroup)}</code><br/>occupants: ${String(z.occupantCount)}</li>`;
+      }
+      html += "</ul>";
+    }
+    html += "<h4>Agents</h4><ul>";
     for (const a of agents) {
       html += `<li><strong>${esc(a.name)}</strong> <code>${esc(a.playerId)}</code><br/>world (${a.worldX.toFixed(2)}, ${a.worldY.toFixed(2)})</li>`;
     }

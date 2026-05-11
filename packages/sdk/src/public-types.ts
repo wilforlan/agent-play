@@ -341,6 +341,23 @@ export type AgentPlayWorldMap = {
   )[];
 };
 
+/** Wire shape for seeded world zones (matches server snapshot `worldLayout`). */
+export type AgentPlayWorldLayoutZone = {
+  id: string;
+  streetId: string;
+  streetLabel: string;
+  rect: AgentPlayWorldMapBounds;
+  primaryGroup: "agent" | "space" | "mcp";
+  allowedGroups: readonly ("agent" | "space" | "mcp")[];
+};
+
+export type AgentPlayWorldLayout = {
+  rev: number;
+  bounds: AgentPlayWorldMapBounds;
+  zones: AgentPlayWorldLayoutZone[];
+  streets: readonly { id: string; label: string }[];
+};
+
 /**
  * Session snapshot from {@link RemotePlayWorld.getWorldSnapshot}.
  * Agents and MCP servers appear only under **`worldMap.occupants`** (no separate `players` list).
@@ -348,6 +365,7 @@ export type AgentPlayWorldMap = {
 export type AgentPlaySnapshot = {
   sid: string;
   worldMap: AgentPlayWorldMap;
+  worldLayout?: AgentPlayWorldLayout;
   spaces?: AgentPlaySpaceCatalogEntry[];
   mcpServers?: Array<{ id: string; name: string; url?: string }>;
 };

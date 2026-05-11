@@ -1,13 +1,18 @@
 import type { PreviewSnapshotJson } from "./preview-serialize.js";
 import { agentPlayDebug } from "./agent-play-debug.js";
+import type { OccupantGroup, WorldLayout, Zone } from "@agent-play/sdk";
 import {
   buildRankedOccupancyPointsForSpatialZone,
+  buildRankedOccupancyPointsForZone,
   DEFAULT_AGENT_SPAWN_MIN_DISTANCE,
   isAgentSpawnOccupancyPointAvailable,
+  isAgentSpawnOccupancyPointAvailableInZone,
   isSpaceAnchorOccupancyPointAvailable,
-  listAllowedOccupancyPoints,
+  isSpaceAnchorOccupancyPointAvailableInZone,
+  listOccupancyPointsForZone,
   OCCUPANCY_POINT_MULTIPLIER,
   occupancyKeyForPosition,
+  pickZoneForGroup,
   SPATIAL_ZONE_INDEX_AGENTS,
   SPATIAL_ZONE_INDEX_SPACES,
   type OccupancyGridPoint,
@@ -17,12 +22,21 @@ type GridPoint = OccupancyGridPoint;
 
 const DEFAULT_MIN_OCCUPANT_DISTANCE = DEFAULT_AGENT_SPAWN_MIN_DISTANCE;
 
-/** Minimum distance between space structure anchors (amenities spaced fairly apart). */
 export const SPACE_STRUCTURE_ANCHOR_MIN_DISTANCE = 3.6;
 
-export function computeRandomFreeMapCellInSpatialZone(
+function occupantGroupForSpawn(
+  kind: "agent" | "mcp" | "unknown" | undefined
+): OccupantGroup {
+  if (kind === "mcp") {
+    return "mcp";
+  }
+  return "agent";
+}
+
+export function computeRandomFreeMapCellInZone(
   occupied: ReadonlySet<string>,
-  zoneIndex: number,
+  zone: Zone,
+  purpose: "agentSpawn" | "spaceAnchor",
   options?: {
     existingOccupants?: ReadonlyArray<{ x: number; y: number }>;
     structureAnchors?: ReadonlyArray<{ x: number; y: number }>;
@@ -40,11 +54,90 @@ export function computeRandomFreeMapCellInSpatialZone(
     options?.structureMinDistance ?? SPACE_STRUCTURE_ANCHOR_MIN_DISTANCE;
   const existingOccupants = options?.existingOccupants ?? [];
   const structureAnchors = options?.structureAnchors ?? [];
+  agentPlayDebug("grid-allocate", "computeRandomFreeMapCellInZone", {
+    zoneId: zone.id,
+    purpose,
+    occupant: options?.occupantInfo,
+    structureAnchorCount: structureAnchors.length,
+  });
+  const rankedCandidates = buildRankedOccupancyPointsForZone(zone);
+  if (purpose === "agentSpawn") {
+    const pick = rankedCandidates.find((candidate) =>
+      isAgentSpawnOccupancyPointAvailableInZone({
+        zone,
+        point: candidate,
+        occupiedKeys: occupied,
+        existingOccupants,
+        minDistance,
+      })
+    );
+    if (pick !== undefined) {
+      return { x: pick.x, y: pick.y };
+    }
+    throw new Error(
+      `computeRandomFreeMapCellInZone: no free agent cell in zone ${zone.id}`
+    );
+  }
+  const pick = rankedCandidates.find((candidate) =>
+    isSpaceAnchorOccupancyPointAvailableInZone({
+      zone,
+      point: candidate,
+      occupiedKeys: occupied,
+      existingOccupants,
+      structureAnchors,
+      minDistance,
+      structureMinDistance,
+    })
+  );
+  if (pick !== undefined) {
+    return { x: pick.x, y: pick.y };
+  }
+  throw new Error(
+    `computeRandomFreeMapCellInZone: no free space anchor in zone ${zone.id}`
+  );
+}
+
+export function computeRandomFreeMapCellInSpatialZone(
+  occupied: ReadonlySet<string>,
+  zoneIndex: number,
+  options?: {
+    existingOccupants?: ReadonlyArray<{ x: number; y: number }>;
+    structureAnchors?: ReadonlyArray<{ x: number; y: number }>;
+    minDistance?: number;
+    structureMinDistance?: number;
+    occupantInfo?: {
+      id: string;
+      kind: "agent" | "mcp" | "unknown";
+      name?: string;
+    };
+    worldLayout?: WorldLayout;
+  }
+): { x: number; y: number } {
+  const minDistance = options?.minDistance ?? DEFAULT_MIN_OCCUPANT_DISTANCE;
+  const structureMinDistance =
+    options?.structureMinDistance ?? SPACE_STRUCTURE_ANCHOR_MIN_DISTANCE;
+  const existingOccupants = options?.existingOccupants ?? [];
+  const structureAnchors = options?.structureAnchors ?? [];
   agentPlayDebug("grid-allocate", "computeRandomFreeMapCellInSpatialZone", {
     zoneIndex,
     occupant: options?.occupantInfo,
     structureAnchorCount: structureAnchors.length,
+    usesWorldLayout: options?.worldLayout !== undefined,
   });
+  if (options?.worldLayout !== undefined) {
+    const layout = options.worldLayout;
+    if (zoneIndex === SPATIAL_ZONE_INDEX_AGENTS) {
+      const zone = pickZoneForGroup(layout, "agent");
+      return computeRandomFreeMapCellInZone(occupied, zone, "agentSpawn", options);
+    }
+    if (zoneIndex === SPATIAL_ZONE_INDEX_SPACES) {
+      const zone = pickZoneForGroup(layout, "space");
+      return computeRandomFreeMapCellInZone(occupied, zone, "spaceAnchor", options);
+    }
+    throw new Error(
+      `computeRandomFreeMapCellInSpatialZone: zone ${String(zoneIndex)} not supported with worldLayout`
+    );
+  }
   const rankedCandidates = buildRankedOccupancyPointsForSpatialZone(zoneIndex);
   if (zoneIndex === SPATIAL_ZONE_INDEX_AGENTS) {
     const pick = rankedCandidates.find((candidate) =>
@@ -89,13 +182,11 @@ export function computeRandomFreeMapCellInSpatialZone(
   );
 }
 
-/**
- * @deprecated Prefer {@link computeRandomFreeMapCellInSpatialZone} with {@link SPATIAL_ZONE_INDEX_AGENTS} or {@link SPATIAL_ZONE_INDEX_SPACES}.
- */
 export function computeRandomFreeMapCellInQuartile(
   occupied: ReadonlySet<string>,
   quartileIndex: number,
-  options?: {
+  options: {
+    worldLayout: WorldLayout;
     existingOccupants?: ReadonlyArray<{ x: number; y: number }>;
     structureAnchors?: ReadonlyArray<{ x: number; y: number }>;
     minDistance?: number;
@@ -107,13 +198,16 @@ export function computeRandomFreeMapCellInQuartile(
     };
   }
 ): { x: number; y: number } {
-  return computeRandomFreeMapCellInSpatialZone(occupied, quartileIndex, options);
+  void quartileIndex;
+  const zone = pickZoneForGroup(options.worldLayout, "agent");
+  return computeRandomFreeMapCellInZone(occupied, zone, "agentSpawn", options);
 }
 
 export function computeSpaceStructureAnchor(input: {
   occupied: ReadonlySet<string>;
   existingOccupants: ReadonlyArray<{ x: number; y: number }>;
   structureAnchors: ReadonlyArray<{ x: number; y: number }>;
+  worldLayout: WorldLayout;
 }): { x: number; y: number } {
   return computeRandomFreeMapCellInSpatialZone(
     input.occupied,
@@ -121,6 +215,7 @@ export function computeSpaceStructureAnchor(input: {
     {
       existingOccupants: input.existingOccupants,
       structureAnchors: input.structureAnchors,
+      worldLayout: input.worldLayout,
     }
   );
 }
@@ -146,14 +241,21 @@ export function computeRandomFreeMapCell(
       kind: "agent" | "mcp" | "unknown";
       name?: string;
     };
+    worldLayout: WorldLayout;
   }
 ): { x: number; y: number } {
   void options?.rng;
-  const minDistance = options?.minDistance ?? DEFAULT_MIN_OCCUPANT_DISTANCE;
-  const existingOccupants = options?.existingOccupants ?? [];
-  const allowedPoints = listAllowedOccupancyPoints();
+  if (options?.worldLayout === undefined) {
+    throw new Error("computeRandomFreeMapCell: worldLayout is required");
+  }
+  const minDistance = options.minDistance ?? DEFAULT_MIN_OCCUPANT_DISTANCE;
+  const existingOccupants = options.existingOccupants ?? [];
+  const layout = options.worldLayout;
+  const group = occupantGroupForSpawn(options.occupantInfo?.kind);
+  const zone = pickZoneForGroup(layout, group);
+  const allowedPoints = listOccupancyPointsForZone(zone);
   agentPlayDebug("grid-allocate", "computeRandomFreeMapCell:candidates", {
-    occupant: options?.occupantInfo,
+    occupant: options.occupantInfo,
     multiplier: OCCUPANCY_POINT_MULTIPLIER,
     minDistance,
     existingOccupantCount: existingOccupants.length,
@@ -165,12 +267,12 @@ export function computeRandomFreeMapCell(
       key: occupancyKeyForPosition(p.x, p.y),
     })),
   });
-  const rankedCandidates =
-    buildRankedOccupancyPointsForSpatialZone(SPATIAL_ZONE_INDEX_AGENTS);
+  const rankedCandidates = buildRankedOccupancyPointsForZone(zone);
   let selectedIndex = -1;
   let point: GridPoint | undefined;
   const indexFound = rankedCandidates.findIndex((candidate) =>
-    isAgentSpawnOccupancyPointAvailable({
+    isAgentSpawnOccupancyPointAvailableInZone({
+      zone,
       point: candidate,
       occupiedKeys: occupied,
       existingOccupants,
@@ -184,7 +286,8 @@ export function computeRandomFreeMapCell(
   if (point !== undefined) {
     const freeCount = rankedCandidates.reduce(
       (count, candidate) =>
-        isAgentSpawnOccupancyPointAvailable({
+        isAgentSpawnOccupancyPointAvailableInZone({
+          zone,
           point: candidate,
           occupiedKeys: occupied,
           existingOccupants,
@@ -195,7 +298,7 @@ export function computeRandomFreeMapCell(
       0
     );
     agentPlayDebug("grid-allocate", "computeRandomFreeMapCell:selected", {
-      occupant: options?.occupantInfo,
+      occupant: options.occupantInfo,
       occupiedCount: occupied.size,
       freeCount,
       selectedIndex,
@@ -223,8 +326,9 @@ export function computeRandomFreeMapCell(
 
 export function computeFreeMapCell(
   occupied: ReadonlySet<string>,
-  laneIndex: number
+  laneIndex: number,
+  worldLayout: WorldLayout
 ): { x: number; y: number } {
   void laneIndex;
-  return computeRandomFreeMapCell(occupied);
+  return computeRandomFreeMapCell(occupied, { worldLayout });
 }

@@ -1,59 +1,80 @@
 import { describe, expect, it } from "vitest";
 import { MINIMUM_PLAY_WORLD_BOUNDS } from "./world-bounds.js";
 import {
+  buildRankedOccupancyPointsForZone,
+  centerOfZone,
+  createVerticalStripSeedLayout,
+  isAgentSpawnOccupancyPointAvailableInZone,
+  isSpaceAnchorOccupancyPointAvailableInZone,
+  listOccupancyPointsForZone,
+  pickZoneForGroup,
+  pointCellInZone,
+} from "./world-layout-model.js";
+import { STREET_NAME_POOL } from "./world-streets-pool.js";
+import {
   buildRankedOccupancyPoints,
   buildRankedOccupancyPointsForSpatialZone,
   isAgentSpawnOccupancyPointAvailable,
+  isAgentSpawnOccupancyPointAvailableInRect,
   isSpaceAnchorOccupancyPointAvailable,
-  listAllowedOccupancyPoints,
-  listOccupancyPointsForSpatialZone,
+  isSpaceAnchorOccupancyPointAvailableInRect,
   occupancyKeyForPosition,
-  occupancyPointsGroupedBySpatialZone,
   pointCellInSpatialZone,
   spatialZoneBounds,
-  spatialZoneCenter,
   SPATIAL_ZONE_INDEX_AGENTS,
   SPATIAL_ZONE_INDEX_SPACES,
 } from "./occupancy-grid-model.js";
 
-describe("occupancy-grid-model (spatial zones)", () => {
-  it("partitions the minimum play rect into four equal cell rectangles", () => {
+const threeSeedStreets = (): [
+  (typeof STREET_NAME_POOL)[number],
+  (typeof STREET_NAME_POOL)[number],
+  (typeof STREET_NAME_POOL)[number],
+] => {
+  const a = STREET_NAME_POOL[0];
+  const b = STREET_NAME_POOL[1];
+  const c = STREET_NAME_POOL[2];
+  if (a === undefined || b === undefined || c === undefined) {
+    throw new Error("STREET_NAME_POOL must have at least three entries");
+  }
+  return [a, b, c];
+};
+
+const layoutFixture = () =>
+  createVerticalStripSeedLayout({
+    bounds: MINIMUM_PLAY_WORLD_BOUNDS,
+    streets: threeSeedStreets(),
+  });
+
+describe("occupancy-grid-model (rect and legacy quartiles)", () => {
+  it("still exposes quartile bounds for deprecated callers", () => {
     const z0 = spatialZoneBounds(0);
     const z1 = spatialZoneBounds(1);
-    const z2 = spatialZoneBounds(2);
-    const z3 = spatialZoneBounds(3);
     expect(z0.maxX + 1).toBe(z1.minX);
-    expect(z0.maxY + 1).toBe(z2.minY);
-    expect(z1.maxY + 1).toBe(z3.minY);
-    const cellCount = (b: {
-      minX: number;
-      maxX: number;
-      minY: number;
-      maxY: number;
-    }) => (b.maxX - b.minX + 1) * (b.maxY - b.minY + 1);
-    const n = cellCount(z0);
-    expect(cellCount(z1)).toBe(n);
-    expect(cellCount(z2)).toBe(n);
-    expect(cellCount(z3)).toBe(n);
-    expect(n).toBe(100);
+    expect(z0.maxY + 1).toBe(spatialZoneBounds(2).minY);
   });
 
-  it("lists agent-zone occupancy points with stable count", () => {
-    const pts = listAllowedOccupancyPoints();
-    expect(pts.length).toBe(100 * 25);
+  it("lists occupancy points for a layout zone with stable count", () => {
+    const layout = layoutFixture();
+    const agent = pickZoneForGroup(layout, "agent");
+    const pts = listOccupancyPointsForZone(agent);
+    expect(pts.length).toBe(7 * 20 * 25);
   });
 
-  it("groups four spatial zones that partition all discrete points", () => {
-    const groups = occupancyPointsGroupedBySpatialZone();
-    expect(groups.length).toBe(4);
-    const sum = groups.reduce((acc, g) => acc + g.length, 0);
+  it("aggregates three strip zones to full minimum play discrete coverage", () => {
+    const layout = layoutFixture();
+    const sum = layout.zones.reduce(
+      (acc, z) => acc + listOccupancyPointsForZone(z).length,
+      0
+    );
     expect(sum).toBe(400 * 25);
   });
 
-  it("ranks agent-zone points by distance from zone center", () => {
-    const ranked = buildRankedOccupancyPoints();
-    const center = spatialZoneCenter(SPATIAL_ZONE_INDEX_AGENTS);
-    expect(ranked.length).toBe(2500);
+  it("ranks agent layout points by distance from zone center", () => {
+    const layout = layoutFixture();
+    const agent = pickZoneForGroup(layout, "agent");
+    const ranked = buildRankedOccupancyPointsForZone(agent);
+    const center = centerOfZone(agent);
+    expect(ranked.length).toBe(7 * 20 * 25);
     for (let i = 1; i < ranked.length; i += 1) {
       const prev = ranked[i - 1];
       const cur = ranked[i];
@@ -66,20 +87,110 @@ describe("occupancy-grid-model (spatial zones)", () => {
     }
   });
 
-  it("ranks space-zone points from its own center", () => {
-    const ranked = buildRankedOccupancyPointsForSpatialZone(
-      SPATIAL_ZONE_INDEX_SPACES
-    );
-    const center = spatialZoneCenter(SPATIAL_ZONE_INDEX_SPACES);
-    expect(ranked.length).toBe(2500);
+  it("ranks space layout zone points from its own center", () => {
+    const layout = layoutFixture();
+    const space = pickZoneForGroup(layout, "space");
+    const ranked = buildRankedOccupancyPointsForZone(space);
+    const c = centerOfZone(space);
+    expect(ranked.length).toBe(7 * 20 * 25);
     const first = ranked[0];
     if (first === undefined) throw new Error("expected point");
-    expect(Math.hypot(first.x - center.x, first.y - center.y)).toBeLessThanOrEqual(
-      0.55
-    );
+    expect(Math.hypot(first.x - c.x, first.y - c.y)).toBeLessThanOrEqual(0.55);
   });
 
-  it("restricts agent spawn availability to the agent spatial zone", () => {
+  it("restricts agent spawn availability to the agent layout zone", () => {
+    const layout = layoutFixture();
+    const agent = pickZoneForGroup(layout, "agent");
+    const space = pickZoneForGroup(layout, "space");
+    const a = buildRankedOccupancyPointsForZone(agent)[0];
+    const s = buildRankedOccupancyPointsForZone(space)[0];
+    if (a === undefined || s === undefined) throw new Error("points");
+    expect(
+      isAgentSpawnOccupancyPointAvailableInZone({
+        zone: agent,
+        point: a,
+        occupiedKeys: new Set(),
+        existingOccupants: [],
+      })
+    ).toBe(true);
+    expect(
+      isAgentSpawnOccupancyPointAvailableInZone({
+        zone: agent,
+        point: s,
+        occupiedKeys: new Set(),
+        existingOccupants: [],
+      })
+    ).toBe(false);
+    expect(
+      isAgentSpawnOccupancyPointAvailableInRect({
+        rect: agent.rect,
+        point: a,
+        occupiedKeys: new Set(),
+        existingOccupants: [],
+      })
+    ).toBe(true);
+  });
+
+  it("detects occupied keys for agents in rect API", () => {
+    const layout = layoutFixture();
+    const agent = pickZoneForGroup(layout, "agent");
+    const ranked = buildRankedOccupancyPointsForZone(agent);
+    const p = ranked[0];
+    if (p === undefined) throw new Error("expected point");
+    const key = occupancyKeyForPosition(p.x, p.y);
+    expect(
+      isAgentSpawnOccupancyPointAvailableInRect({
+        rect: agent.rect,
+        point: p,
+        occupiedKeys: new Set([key]),
+        existingOccupants: [],
+      })
+    ).toBe(false);
+  });
+
+  it("validates space anchors only inside the space layout zone", () => {
+    const layout = layoutFixture();
+    const space = pickZoneForGroup(layout, "space");
+    const agent = pickZoneForGroup(layout, "agent");
+    const p = buildRankedOccupancyPointsForZone(space)[0];
+    const q = buildRankedOccupancyPointsForZone(agent)[0];
+    if (p === undefined || q === undefined) throw new Error("points");
+    expect(
+      isSpaceAnchorOccupancyPointAvailableInZone({
+        zone: space,
+        point: p,
+        occupiedKeys: new Set(),
+        existingOccupants: [],
+        structureAnchors: [],
+        minDistance: 0.9,
+        structureMinDistance: 3.5,
+      })
+    ).toBe(true);
+    expect(
+      isSpaceAnchorOccupancyPointAvailableInZone({
+        zone: space,
+        point: q,
+        occupiedKeys: new Set(),
+        existingOccupants: [],
+        structureAnchors: [],
+        minDistance: 0.9,
+        structureMinDistance: 3.5,
+      })
+    ).toBe(false);
+    expect(
+      isSpaceAnchorOccupancyPointAvailableInRect({
+        rect: space.rect,
+        point: p,
+        occupiedKeys: new Set(),
+        existingOccupants: [],
+        structureAnchors: [],
+        minDistance: 0.9,
+        structureMinDistance: 3.5,
+      })
+    ).toBe(true);
+  });
+
+  it("legacy agent spawn predicate still uses quartile zero", () => {
     const agents = buildRankedOccupancyPointsForSpatialZone(
       SPATIAL_ZONE_INDEX_AGENTS
     );
@@ -105,21 +216,7 @@ describe("occupancy-grid-model (spatial zones)", () => {
     ).toBe(false);
   });
 
-  it("detects occupied keys for agents", () => {
-    const ranked = buildRankedOccupancyPoints();
-    const p = ranked[0];
-    if (p === undefined) throw new Error("expected point");
-    const key = occupancyKeyForPosition(p.x, p.y);
-    expect(
-      isAgentSpawnOccupancyPointAvailable({
-        point: p,
-        occupiedKeys: new Set([key]),
-        existingOccupants: [],
-      })
-    ).toBe(false);
-  });
-
-  it("validates space anchors only inside the space zone", () => {
+  it("legacy space anchor predicate still uses quartile two", () => {
     const ranked = buildRankedOccupancyPointsForSpatialZone(
       SPATIAL_ZONE_INDEX_SPACES
     );
@@ -148,7 +245,7 @@ describe("occupancy-grid-model (spatial zones)", () => {
     ).toBe(false);
   });
 
-  it("classifies world coordinates into zones via floor cell", () => {
+  it("classifies world coordinates into legacy quartiles via floor cell", () => {
     expect(pointCellInSpatialZone(4.5, 4.5, SPATIAL_ZONE_INDEX_AGENTS)).toBe(true);
     expect(pointCellInSpatialZone(12.5, 4.5, SPATIAL_ZONE_INDEX_AGENTS)).toBe(
       false
@@ -156,12 +253,19 @@ describe("occupancy-grid-model (spatial zones)", () => {
     expect(pointCellInSpatialZone(4.5, 14.5, SPATIAL_ZONE_INDEX_SPACES)).toBe(true);
   });
 
-  it("zone 0 point bounding stays within minimum play rect", () => {
-    const pts = listOccupancyPointsForSpatialZone(0);
-    const center = spatialZoneCenter(0);
-    expect(center.x).toBeGreaterThanOrEqual(MINIMUM_PLAY_WORLD_BOUNDS.minX);
-    expect(center.y).toBeGreaterThanOrEqual(MINIMUM_PLAY_WORLD_BOUNDS.minY);
+  it("layout agent zone center stays within minimum play rect", () => {
+    const layout = layoutFixture();
+    const agent = pickZoneForGroup(layout, "agent");
+    const pts = listOccupancyPointsForZone(agent);
+    const c = centerOfZone(agent);
+    expect(c.x).toBeGreaterThanOrEqual(MINIMUM_PLAY_WORLD_BOUNDS.minX);
+    expect(c.y).toBeGreaterThanOrEqual(MINIMUM_PLAY_WORLD_BOUNDS.minY);
     expect(pts.length).toBeGreaterThan(0);
+    expect(pointCellInZone(c.x, c.y, agent)).toBe(true);
+  });
+
+  it("back-compat ranked agent points still length two thousand five hundred", () => {
+    const ranked = buildRankedOccupancyPoints();
+    expect(ranked.length).toBe(2500);
   });
 });
-

@@ -1,4 +1,7 @@
-import { type PreviewSnapshotJson } from "./preview-serialize.js";
+import {
+  normalizePreviewSnapshot,
+  type PreviewSnapshotJson,
+} from "./preview-serialize.js";
 import type { SessionStore } from "./session-store.js";
 import { emptySnapshot } from "./world-snapshot-helpers.js";
 
@@ -9,7 +12,7 @@ export async function readResolvedSnapshot(options: {
   const { store } = options;
   const cached = await store.getSnapshotJson();
   if (cached !== null) {
-    return cached;
+    return normalizePreviewSnapshot(cached);
   }
   return emptySnapshot(store.playerChainGenesis);
 }

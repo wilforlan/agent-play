@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildSnapshotWorldMap } from "../preview-serialize.js";
+import { buildSnapshotWorldMap, getDefaultPreviewWorldLayoutJson } from "../preview-serialize.js";
 import {
   PLAYER_CHAIN_HEADER_STABLE_KEY,
   buildLeafEntriesFromSnapshot,
@@ -16,6 +16,8 @@ import {
 } from "./index.js";
 
 const GEN = "test-player-chain-genesis";
+
+const WL = getDefaultPreviewWorldLayoutJson();
 
 describe("player-chain index", () => {
   it("stableStringify sorts object keys", () => {
@@ -68,6 +70,7 @@ describe("player-chain index", () => {
     const snap = {
       sid: "s-space",
       worldMap: buildSnapshotWorldMap([]),
+      worldLayout: WL,
       spaces: [
         {
           id: "b-space",
@@ -116,6 +119,7 @@ describe("player-chain index", () => {
       {
         sid,
         worldMap: buildSnapshotWorldMap([occA, occB]),
+        worldLayout: WL,
       },
       GEN
     );
@@ -123,6 +127,7 @@ describe("player-chain index", () => {
       {
         sid,
         worldMap: buildSnapshotWorldMap([occB, occA]),
+        worldLayout: WL,
       },
       GEN
     );
@@ -133,6 +138,7 @@ describe("player-chain index", () => {
     const snap = {
       sid: "s",
       worldMap: buildSnapshotWorldMap([]),
+      worldLayout: WL,
     };
     const a = buildPlayerChainFromSnapshot(snap, "genesis-a");
     const b = buildPlayerChainFromSnapshot(snap, "genesis-b");
@@ -144,6 +150,7 @@ describe("player-chain index", () => {
     const prev = {
       sid,
       worldMap: buildSnapshotWorldMap([]),
+      worldLayout: WL,
     };
     const occ = {
       kind: "agent" as const,
@@ -155,6 +162,7 @@ describe("player-chain index", () => {
     const next = {
       sid,
       worldMap: buildSnapshotWorldMap([occ]),
+      worldLayout: WL,
     };
     const diff = diffPlayerChainLeaves(prev, next, GEN);
     expect(diff.removedKeys).toEqual([]);
@@ -178,10 +186,12 @@ describe("player-chain index", () => {
     const prev = {
       sid: "s1",
       worldMap: buildSnapshotWorldMap([occ]),
+      worldLayout: WL,
     };
     const next = {
       sid: "s2",
       worldMap: buildSnapshotWorldMap([occ]),
+      worldLayout: WL,
     };
     const diff = diffPlayerChainLeaves(prev, next, GEN);
     const keys = diff.updates.map((u) => u.stableKey).sort();
@@ -206,10 +216,12 @@ describe("player-chain index", () => {
     const prev = {
       sid: "s",
       worldMap: buildSnapshotWorldMap([occA, occB]),
+      worldLayout: WL,
     };
     const next = {
       sid: "s",
       worldMap: buildSnapshotWorldMap([occB]),
+      worldLayout: WL,
     };
     const n = buildPlayerChainFanoutNotify({
       prev,

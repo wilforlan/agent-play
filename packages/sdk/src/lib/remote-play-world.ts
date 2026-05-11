@@ -2,6 +2,7 @@ import {
   type AddAgentInput,
   type AddPlayerInput,
   type AgentPlaySnapshot,
+  type AgentPlayWorldLayout,
   type P2aEnableFlag,
   type RealtimeWebrtcClientSecret,
   type AgentPlayWorldMap,
@@ -186,6 +187,17 @@ function parseAgentPlaySnapshot(snapshot: unknown): AgentPlaySnapshot {
   }
   const worldMap = parseWorldMap(snapshot.worldMap);
   const out: AgentPlaySnapshot = { sid: snapshot.sid, worldMap };
+  if ("worldLayout" in snapshot && isRecord(snapshot.worldLayout)) {
+    const wl = snapshot.worldLayout;
+    if (
+      typeof wl.rev === "number" &&
+      isRecord(wl.bounds) &&
+      Array.isArray(wl.zones) &&
+      Array.isArray(wl.streets)
+    ) {
+      out.worldLayout = wl as AgentPlayWorldLayout;
+    }
+  }
   if ("mcpServers" in snapshot && Array.isArray(snapshot.mcpServers)) {
     const servers: NonNullable<AgentPlaySnapshot["mcpServers"]> = [];
     for (const m of snapshot.mcpServers) {

@@ -2,6 +2,7 @@ import type { AgentRepository } from "@/server/agent-play/agent-repository";
 import { agentPlayVerbose } from "@/server/agent-play/agent-play-debug";
 import { createRedisAgentRepository } from "@/server/agent-play/redis-agent-repository";
 import { RedisSessionStore } from "@/server/agent-play/redis-session-store";
+import { createWorldLayoutRepository } from "@/server/agent-play/world-layout-repository";
 import type { SessionStore } from "@/server/agent-play/session-store";
 import { loadSessionStore } from "@/server/agent-play/session-store-loader";
 import { attachSessionStoreEventHooks } from "@/server/agent-play/session-store-hooks";
@@ -69,6 +70,10 @@ export async function getPlayWorld(): Promise<PlayWorld> {
       });
       const repository = buildRepository(redis, hostId);
       repositoryInstance = repository;
+      const worldLayoutRepository = createWorldLayoutRepository({
+        redis,
+        hostId,
+      });
       const store = loadSessionStore({
         redis,
         hostId,
@@ -79,6 +84,7 @@ export async function getPlayWorld(): Promise<PlayWorld> {
         previewBaseUrl,
         repository,
         sessionStore: store,
+        worldLayoutRepository,
       });
       await w.start();
       agentPlayVerbose("get-world", "PlayWorld.start finished", {

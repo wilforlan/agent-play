@@ -1,4 +1,4 @@
-export type { AgentPlaySnapshot } from "./public-types.js";
+export type { AgentPlaySnapshot, AgentPlayWorldLayout } from "./public-types.js";
 export type { WorldBounds } from "./lib/world-bounds.js";
 export {
   clampWorldPosition,
@@ -16,16 +16,48 @@ export {
   spatialZoneBounds,
   spatialZoneCenter,
   pointCellInSpatialZone,
+  pointCellInRect,
+  listOccupancyPointsInRect,
   listOccupancyPointsForSpatialZone,
   listAllowedOccupancyPoints,
   occupancyPointsGroupedBySpatialZone,
   occupancyKeyForPosition,
+  buildRankedOccupancyPointsInRect,
   buildRankedOccupancyPointsForSpatialZone,
   buildRankedOccupancyPoints,
   boundingWorldRectForOccupancyPoints,
+  isAgentSpawnOccupancyPointAvailableInRect,
+  isSpaceAnchorOccupancyPointAvailableInRect,
   isAgentSpawnOccupancyPointAvailable,
   isSpaceAnchorOccupancyPointAvailable,
 } from "./lib/occupancy-grid-model.js";
+export {
+  STREET_NAME_POOL,
+  type StreetPoolEntry,
+  getStreetPoolEntryById,
+} from "./lib/world-streets-pool.js";
+export {
+  type OccupantGroup,
+  type Street,
+  type Zone,
+  type WorldLayout,
+  streetFromPoolEntry,
+  zonesForGroup,
+  primaryZoneForGroup,
+  enumerateIntegerCellsInRect,
+  cellsForZone,
+  centerOfZone,
+  pointCellInZone,
+  listOccupancyPointsForZone,
+  buildRankedOccupancyPointsForZone,
+  occupancyPointsGroupedByZones,
+  nextStreetFromPool,
+  pickZoneForGroup,
+  availableCellsForZone,
+  isAgentSpawnOccupancyPointAvailableInZone,
+  isSpaceAnchorOccupancyPointAvailableInZone,
+  createVerticalStripSeedLayout,
+} from "./lib/world-layout-model.js";
 export {
   mergeSnapshotWithPlayerChainNode,
   parsePlayerChainFanoutNotify,

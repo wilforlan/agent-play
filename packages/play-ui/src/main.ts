@@ -34,22 +34,25 @@ import {
 } from "./agent-chat-panel-position.js";
 import {
   clampWorldPosition,
+  createVerticalStripSeedLayout,
   DEFAULT_AGENT_SPAWN_MIN_DISTANCE,
   expandBoundsToMinimumPlayArea,
-  isAgentSpawnOccupancyPointAvailable,
-  isSpaceAnchorOccupancyPointAvailable,
-  listAllowedOccupancyPoints,
-  listOccupancyPointsForSpatialZone,
+  isAgentSpawnOccupancyPointAvailableInZone,
+  isSpaceAnchorOccupancyPointAvailableInZone,
+  listOccupancyPointsForZone,
   mergeSnapshotWithPlayerChainNode,
   MINIMUM_PLAY_WORLD_BOUNDS,
   occupancyKeyForPosition,
   parsePlayerChainFanoutNotifyFromSsePayload,
   parsePlayerChainNodeRpcBody,
+  pickZoneForGroup,
+  pointCellInZone,
   sortNodeRefsForSerializedFetch,
-  spatialZoneBounds,
-  SPATIAL_ZONE_INDEX_SPACES,
+  STREET_NAME_POOL,
   type AgentPlaySnapshot,
+  type OccupantGroup,
   type WorldBounds,
+  type WorldLayout,
 } from "@agent-play/sdk/browser";
 import {
   appendChatLogLine,
@@ -310,6 +313,22 @@ type SnapshotStructureOccupant = {
   amenities?: string[];
 };
 
+type SnapshotWorldLayoutZone = {
+  id: string;
+  streetId: string;
+  streetLabel: string;
+  rect: WorldBounds;
+  primaryGroup: OccupantGroup;
+  allowedGroups: readonly OccupantGroup[];
+};
+
+type SnapshotWorldLayout = {
+  rev: number;
+  bounds: WorldBounds;
+  zones: readonly SnapshotWorldLayoutZone[];
+  streets: readonly { id: string; label: string }[];
+};
+
 type WorldMapJson = {
   bounds: { minX: number; minY: number; maxX: number; maxY: number };
   occupants: (
@@ -328,6 +347,7 @@ type SnapshotMcpRegistration = {
 type Snapshot = {
   sid: string;
   worldMap: WorldMapJson;
+  worldLayout?: SnapshotWorldLayout;
   mcpServers?: SnapshotMcpRegistration[];
 };
 
@@ -578,6 +598,52 @@ const movingByPlayer = new Map<string, boolean>();
 
 /** Latest RPC snapshot; drives rendering and chat. */
 let snapshot: Snapshot | null = null;
+
+function wireLayoutToRuntime(layout: SnapshotWorldLayout): WorldLayout {
+  return {
+    rev: layout.rev,
+    bounds: { ...layout.bounds },
+    zones: layout.zones.map((z) => ({
+      ...z,
+      rect: { ...z.rect },
+      allowedGroups: [...z.allowedGroups],
+    })),
+    streets: layout.streets.map((s) => ({ ...s })),
+  };
+}
+
+function resolveWorldLayout(): WorldLayout {
+  if (
+    snapshot?.worldLayout !== undefined &&
+    snapshot.worldLayout.zones.length > 0
+  ) {
+    return wireLayoutToRuntime(snapshot.worldLayout);
+  }
+  const s0 = STREET_NAME_POOL[0];
+  const s1 = STREET_NAME_POOL[1];
+  const s2 = STREET_NAME_POOL[2];
+  if (s0 === undefined || s1 === undefined || s2 === undefined) {
+    throw new Error("resolveWorldLayout: invalid street pool");
+  }
+  return createVerticalStripSeedLayout({
+    bounds: MINIMUM_PLAY_WORLD_BOUNDS,
+    streets: [s0, s1, s2],
+  });
+}
+
+function zoneDebugStroke(primary: OccupantGroup): {
+  width: number;
+  color: number;
+  alpha: number;
+} {
+  if (primary === "agent") {
+    return { width: 3, color: 0xf97316, alpha: 0.95 };
+  }
+  if (primary === "space") {
+    return { width: 3, color: 0x2563eb, alpha: 0.95 };
+  }
+  return { width: 3, color: 0xa855f7, alpha: 0.95 };
+}
 
 /**
  * @returns `__human__` id when snapshot exists (viewer-controlled pawn), else `null`.
@@ -1716,29 +1782,16 @@ function paintGrid(): void {
   };
 
   if (settings.debugOccupancyQuartiles) {
-    strokeZoneRect(spatialZoneBounds(0), {
-      width: 3,
-      color: 0xf97316,
-      alpha: 0.95,
-    });
-    strokeZoneRect(spatialZoneBounds(1), {
-      width: 2,
-      color: 0x64748b,
-      alpha: 0.35,
-    });
-    strokeZoneRect(spatialZoneBounds(2), {
-      width: 3,
-      color: 0x2563eb,
-      alpha: 0.95,
-    });
-    strokeZoneRect(spatialZoneBounds(3), {
-      width: 2,
-      color: 0x64748b,
-      alpha: 0.35,
-    });
+    const layout = resolveWorldLayout();
+    for (const zone of layout.zones) {
+      strokeZoneRect(zone.rect, zoneDebugStroke(zone.primaryGroup));
+    }
   }
 
   if (settings.debugOccupancyFreeGrids) {
+    const layout = resolveWorldLayout();
+    const agentZone = pickZoneForGroup(layout, "agent");
+    const spaceZone = pickZoneForGroup(layout, "space");
     const occupied = occupiedKeysFromLiveSnapshot();
     const existingOccupants = [...playerWorldPos.values()].map((pos) => ({
       x: pos.x,
@@ -1746,9 +1799,10 @@ function paintGrid(): void {
     }));
     const structureAnchors = structureAnchorsFromLiveSnapshot();
     const dotR = Math.max(2.5, cellScale * 0.065);
-    for (const p of listAllowedOccupancyPoints()) {
+    for (const p of listOccupancyPointsForZone(agentZone)) {
       if (
-        isAgentSpawnOccupancyPointAvailable({
+        isAgentSpawnOccupancyPointAvailableInZone({
+          zone: agentZone,
           point: p,
           occupiedKeys: occupied,
           existingOccupants,
@@ -1760,9 +1814,10 @@ function paintGrid(): void {
           .fill({ color: 0x22c55e, alpha: 0.5 });
       }
     }
-    for (const p of listOccupancyPointsForSpatialZone(SPATIAL_ZONE_INDEX_SPACES)) {
+    for (const p of listOccupancyPointsForZone(spaceZone)) {
       if (
-        isSpaceAnchorOccupancyPointAvailable({
+        isSpaceAnchorOccupancyPointAvailableInZone({
+          zone: spaceZone,
           point: p,
           occupiedKeys: occupied,
           existingOccupants,
@@ -1797,9 +1852,16 @@ function getDebugSnapshot(): {
     primaryAmenity?: string;
     amenities?: readonly string[];
   }[];
+  zones: readonly {
+    id: string;
+    streetId: string;
+    streetLabel: string;
+    primaryGroup: OccupantGroup;
+    occupantCount: number;
+  }[];
 } {
   if (snapshot === null) {
-    return { agents: [], structures: [] };
+    return { agents: [], structures: [], zones: [] };
   }
   const agents = listAgentRows(snapshot).map((p) => {
     const pos = playerWorldPos.get(p.agentId);
@@ -1829,7 +1891,30 @@ function getDebugSnapshot(): {
     primaryAmenity: s.primaryAmenity,
     amenities: s.amenities,
   }));
-  return { agents, structures };
+  const layout = resolveWorldLayout();
+  const allOccupantPositions: { x: number; y: number }[] = snapshot.worldMap.occupants.map((o) => ({
+    x: o.x,
+    y: o.y,
+  }));
+  if (humanPos !== undefined) {
+    allOccupantPositions.push({ x: humanPos.x, y: humanPos.y });
+  }
+  const zones = layout.zones.map((z) => {
+    let occupantCount = 0;
+    for (const p of allOccupantPositions) {
+      if (pointCellInZone(p.x, p.y, z)) {
+        occupantCount += 1;
+      }
+    }
+    return {
+      id: z.id,
+      streetId: z.streetId,
+      streetLabel: z.streetLabel,
+      primaryGroup: z.primaryGroup,
+      occupantCount,
+    };
+  });
+  return { agents, structures, zones };
 }
 
 function applyChatVisibility(): void {

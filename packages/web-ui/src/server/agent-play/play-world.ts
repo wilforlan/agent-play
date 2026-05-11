@@ -48,6 +48,7 @@ import type {
 import {
   serializeWorldJourneyUpdate,
   buildSnapshotWorldMap,
+  buildSnapshotWorldLayout,
   normalizePreviewSnapshot,
   type PreviewWorldMapAgentOccupantJson,
   type PreviewWorldMapMcpOccupantJson,
@@ -58,7 +59,7 @@ import {
 } from "./preview-serialize.js";
 import type { RedisFanoutItem } from "./world-redis-sync.js";
 import { runStoredWorldMutation } from "./world-mutation-pipeline.js";
-import { clampWorldPosition, type WorldBounds } from "@agent-play/sdk";
+import { clampWorldPosition, type WorldBounds, type WorldLayout } from "@agent-play/sdk";
 import type { StoredAgentRecord } from "./agent-repository.js";
 import {
   computeRandomFreeMapCell,
@@ -77,6 +78,11 @@ import {
   upsertSpaceCatalogEntry,
   upsertStructureOccupant,
 } from "./world-snapshot-helpers.js";
+import {
+  bootstrapWorldLayoutIfNeeded,
+  createDefaultSeededPlayLayout,
+} from "./world-layout-bootstrap.js";
+import type { WorldLayoutRepository } from "./world-layout-repository.js";
 
 function clampPathToBounds(
   path: PositionedStep[],
@@ -235,6 +241,7 @@ export type PlayWorldOptions = {
   debug?: boolean;
   repository?: AgentRepository;
   sessionStore: SessionStore;
+  worldLayoutRepository?: WorldLayoutRepository;
 };
 
 export const HUMAN_VIEWER_PLAYER_ID = "__human__";
@@ -409,6 +416,7 @@ export class PlayWorld {
   private readonly repository: AgentRepository | null;
   private readonly sessionStore: SessionStore;
   private readonly locationsByPlayerId = new Map<string, WorldPlayerLocation>();
+  private layout: WorldLayout | null = null;
   private mainNodeId: string | null = null;
   private presenceSweepTimer: ReturnType<typeof setInterval> | null = null;
 
@@ -426,6 +434,16 @@ export class PlayWorld {
     const sid = await this.sessionStore.loadOrCreateSessionId();
     this.mainNodeId = this.sessionStore.playerChainGenesis;
     agentPlayDebug("play-world", "start", { sessionId: sid });
+    if (this.layout === null) {
+      if (this.options.worldLayoutRepository !== undefined) {
+        this.layout = await bootstrapWorldLayoutIfNeeded({
+          repo: this.options.worldLayoutRepository,
+        });
+      } else {
+        this.layout = createDefaultSeededPlayLayout();
+      }
+    }
+    const layoutWire = buildSnapshotWorldLayout(this.layout);
     if (this.options.playApiBase !== undefined) {
       this.httpTransport = new HttpPlayTransport({
         baseUrl: this.options.playApiBase,
@@ -433,9 +451,18 @@ export class PlayWorld {
       });
     }
     const existingSnapshot = await this.sessionStore.getSnapshotJson();
+    const genesis = this.sessionStore.playerChainGenesis;
     if (existingSnapshot === null) {
-      const initialSnapshot = emptySnapshot(this.sessionStore.playerChainGenesis);
+      const initialSnapshot = emptySnapshot(genesis, layoutWire);
       await this.sessionStore.persistSnapshot(initialSnapshot);
+    } else {
+      const legacy = existingSnapshot as { worldLayout?: unknown };
+      if (legacy.worldLayout === undefined) {
+        await this.sessionStore.persistSnapshot({
+          ...normalizePreviewSnapshot(existingSnapshot),
+          worldLayout: layoutWire,
+        });
+      }
     }
     if (this.presenceSweepTimer === null) {
       this.presenceSweepTimer = setInterval(() => {
@@ -443,6 +470,13 @@ export class PlayWorld {
       }, PRESENCE_SWEEP_INTERVAL_MS);
       this.presenceSweepTimer.unref?.();
     }
+  }
+
+  getWorldLayout(): WorldLayout {
+    if (this.layout === null) {
+      throw new Error("PlayWorld.getWorldLayout: layout not initialized");
+    }
+    return this.layout;
   }
 
   async isSessionSid(sid: string): Promise<boolean> {
@@ -488,7 +522,10 @@ export class PlayWorld {
         sessionId: this.sessionStore.getSessionId(),
       });
     }
-    const snap = emptySnapshot(this.sessionStore.playerChainGenesis);
+    const snap = emptySnapshot(
+      this.sessionStore.playerChainGenesis,
+      buildSnapshotWorldLayout(this.getWorldLayout())
+    );
     const { rev, merkleRootHex, merkleLeafCount } =
       await this.sessionStore.persistSnapshotReturningRev(snap);
     const playerChainNotify = buildPlayerChainFanoutNotify({
@@ -531,6 +568,12 @@ export class PlayWorld {
     const mainNodeId = this.mainNodeId ?? this.sessionStore.playerChainGenesis;
     const raw = await this.sessionStore.getSnapshotJson();
     if (raw === null) {
+      if (this.layout !== null) {
+        return emptySnapshot(
+          mainNodeId,
+          buildSnapshotWorldLayout(this.layout)
+        );
+      }
       return emptySnapshot(mainNodeId);
     }
     return normalizePreviewSnapshot(raw);
@@ -1052,6 +1095,7 @@ export class PlayWorld {
             kind: "agent",
             name: summaryName,
           },
+          worldLayout: this.getWorldLayout(),
         });
 
         const assistList =
@@ -1338,6 +1382,7 @@ export class PlayWorld {
       occupied,
       existingOccupants,
       structureAnchors,
+      worldLayout: this.getWorldLayout(),
     });
     const structure = await this.registerStructureNode({
       id: `st-${spaceId}`,
@@ -1846,6 +1891,7 @@ export class PlayWorld {
             kind: "mcp",
             name: options.name,
           },
+          worldLayout: this.getWorldLayout(),
         });
         const mcpOcc = {
           kind: "mcp" as const,
