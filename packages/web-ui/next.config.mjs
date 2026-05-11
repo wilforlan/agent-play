@@ -40,6 +40,10 @@ const nextConfig = {
         source: "/agent-play/bootstrap",
         destination: "/api/agent-play/bootstrap",
       },
+      {
+        source: "/agent-play/world-layout/bounds",
+        destination: "/api/agent-play/world-layout/bounds",
+      },
     ];
   },
 };

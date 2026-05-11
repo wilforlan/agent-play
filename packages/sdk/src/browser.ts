@@ -57,6 +57,9 @@ export {
   isAgentSpawnOccupancyPointAvailableInZone,
   isSpaceAnchorOccupancyPointAvailableInZone,
   createVerticalStripSeedLayout,
+  migrateWorldLayoutBounds,
+  applyBoundsFieldUpdateToLayout,
+  type WorldLayoutBoundsField,
 } from "./lib/world-layout-model.js";
 export {
   mergeSnapshotWithPlayerChainNode,

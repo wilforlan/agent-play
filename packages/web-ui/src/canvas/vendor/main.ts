@@ -85,6 +85,10 @@ import {
   shouldClearPrimaryWaypointsWhileJoystickIdle,
 } from "./preview-debug-joystick.js";
 import { createPreviewDebugPanel } from "./preview-debug-panel.js";
+import {
+  mountStreetSignPosts,
+  type StreetSignZone,
+} from "./world-street-signs.js";
 import { createPixiPreview, type PixiPreviewHandle } from "./pixi-multiverse.js";
 import {
   attachMobileSidePanelControls,
@@ -137,6 +141,29 @@ import {
   layoutCompoundAmenityOffsetsWorld,
 } from "./space-compound-art.js";
 
+type ConsoleWorldLayoutBoundsField = "minX" | "minY" | "maxX" | "maxY";
+
+type ConsoleWorldLayoutBoundsSnapshot = {
+  minX: number;
+  minY: number;
+  maxX: number;
+  maxY: number;
+};
+
+type ConsoleWorldLayoutZoneSnapshot = {
+  id: string;
+  streetId: string;
+  streetLabel: string;
+  primaryGroup: OccupantGroup;
+  rect: ConsoleWorldLayoutBoundsSnapshot;
+};
+
+type ConsoleWorldLayoutSnapshot = {
+  rev: number;
+  bounds: ConsoleWorldLayoutBoundsSnapshot;
+  zones: readonly ConsoleWorldLayoutZoneSnapshot[];
+};
+
 type ConsoleWorldApi = {
   occupant: {
     move: (next: [number, number]) => { x: number; y: number } | null;
@@ -158,6 +185,16 @@ type ConsoleWorldApi = {
     minY: number;
     maxX: number;
     maxY: number;
+  };
+  layout: {
+    get: () => ConsoleWorldLayoutSnapshot | null;
+    bounds: {
+      get: () => ConsoleWorldLayoutBoundsSnapshot | null;
+      set: (
+        field: ConsoleWorldLayoutBoundsField,
+        value: number
+      ) => Promise<ConsoleWorldLayoutSnapshot>;
+    };
   };
 };
 
@@ -703,6 +740,54 @@ function moveOccupantFromConsole(
   return { id, x: clamped.x, y: clamped.y };
 }
 
+function snapshotConsoleWorldLayout(): ConsoleWorldLayoutSnapshot | null {
+  if (snapshot === null) return null;
+  const wl = snapshot.worldLayout;
+  if (wl === undefined) return null;
+  return {
+    rev: wl.rev,
+    bounds: { ...wl.bounds },
+    zones: wl.zones.map((z) => ({
+      id: z.id,
+      streetId: z.streetId,
+      streetLabel: z.streetLabel,
+      primaryGroup: z.primaryGroup as OccupantGroup,
+      rect: { ...z.rect },
+    })),
+  };
+}
+
+async function postLayoutBoundsField(
+  field: ConsoleWorldLayoutBoundsField,
+  value: number
+): Promise<ConsoleWorldLayoutSnapshot> {
+  const sid = getSid();
+  if (sid === null || sid.length === 0) {
+    throw new Error("[agent-play:world] missing sid");
+  }
+  const url = `${API_BASE}/world-layout/bounds?sid=${encodeURIComponent(sid)}`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ field, value }),
+  });
+  const json = (await res.json().catch(() => ({}))) as {
+    worldLayout?: ConsoleWorldLayoutSnapshot;
+    error?: string;
+  };
+  if (!res.ok) {
+    const msg =
+      typeof json.error === "string" && json.error.length > 0
+        ? json.error
+        : `HTTP ${String(res.status)}`;
+    throw new Error(`[agent-play:world] world-layout/bounds: ${msg}`);
+  }
+  if (json.worldLayout === undefined) {
+    throw new Error("[agent-play:world] world-layout/bounds: missing worldLayout");
+  }
+  return json.worldLayout;
+}
+
 function exposeWorldConsoleApi(): void {
   if (!isLocalHostRuntime()) {
     delete globalThis.world;
@@ -739,6 +824,22 @@ function exposeWorldConsoleApi(): void {
       maxX: mapMaxX,
       maxY: mapMaxY,
     }),
+    layout: {
+      get: () => snapshotConsoleWorldLayout(),
+      bounds: {
+        get: () => snapshotConsoleWorldLayout()?.bounds ?? null,
+        set: async (field, value) => {
+          const next = await postLayoutBoundsField(field, value);
+          console.info("[agent-play:world] layout bounds updated", {
+            field,
+            value,
+            rev: next.rev,
+            bounds: next.bounds,
+          });
+          return next;
+        },
+      },
+    },
   };
 }
 
@@ -955,6 +1056,7 @@ const structureLayer = new Container();
 const gridGraphics = new Graphics();
 const agentsLayer = new Container();
 const parkBackdropLayer = new Container();
+const streetSignsLayer = new Container();
 const worldRoot = new Container();
 
 let cameraX = 0;
@@ -1230,6 +1332,7 @@ function ingestSnapshot(snap: Snapshot): void {
   else {
     applyBounds(MINIMUM_PLAY_WORLD_BOUNDS);
   }
+  paintStreetSigns();
   const wbSpawn = getWorldBoundsForClamp();
   const humanSpawn =
     wbSpawn !== null ? defaultHumanSpawnInWorld(wbSpawn) : { x: 0, y: 0 };
@@ -1759,6 +1862,29 @@ function structureAnchorsFromLiveSnapshot(): Array<{ x: number; y: number }> {
     .map((o) => ({ x: o.x, y: o.y }));
 }
 
+function paintStreetSigns(): void {
+  if (snapshot === null) {
+    for (const ch of [...streetSignsLayer.children]) {
+      streetSignsLayer.removeChild(ch);
+      ch.destroy({ children: true });
+    }
+    return;
+  }
+  const layout = resolveWorldLayout();
+  const zones: StreetSignZone[] = layout.zones.map((z) => ({
+    id: z.id,
+    streetLabel: z.streetLabel,
+    rect: { ...z.rect },
+  }));
+  mountStreetSignPosts({
+    layer: streetSignsLayer,
+    palette,
+    worldToLocal: worldToWorldRootLocal,
+    cellScale,
+    zones,
+  });
+}
+
 function paintGrid(): void {
   gridGraphics.clear();
   const settings = getPreviewViewSettings();
@@ -1977,6 +2103,7 @@ function rebuildSceneForTheme(): void {
     appStage.addChildAt(crowdLayerContainer, 0);
   }
   rebuildParkWorldBackdrop();
+  paintStreetSigns();
   skyDecor?.setBounds(VIEW_W, VIEW_H, theme.grassBandTopRatio);
 }
 
@@ -2374,6 +2501,7 @@ export function bootstrap(): void {
     });
 
     worldRoot.addChild(parkBackdropLayer);
+    worldRoot.addChild(streetSignsLayer);
     worldRoot.addChild(gridGraphics);
     worldRoot.addChild(structureLayer);
     worldRoot.addChild(agentsLayer);

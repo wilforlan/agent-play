@@ -2,11 +2,13 @@ import { describe, expect, it } from "vitest";
 import { MINIMUM_PLAY_WORLD_BOUNDS } from "./world-bounds.js";
 import { STREET_NAME_POOL } from "./world-streets-pool.js";
 import {
+  applyBoundsFieldUpdateToLayout,
   availableCellsForZone,
   buildRankedOccupancyPointsForZone,
   cellsForZone,
   centerOfZone,
   createVerticalStripSeedLayout,
+  migrateWorldLayoutBounds,
   nextStreetFromPool,
   pickZoneForGroup,
   pointCellInZone,
@@ -131,5 +133,83 @@ describe("world-layout-model", () => {
     const layout = getMinimumSeedLayout();
     const emptyZones = { ...layout, zones: [] as const };
     expect(() => pickZoneForGroup(emptyZones, "agent")).toThrow();
+  });
+
+  it("migrates bounds preserving each group's street identity", () => {
+    const layout = getMinimumSeedLayout();
+    const agentStreet = pickZoneForGroup(layout, "agent");
+    const spaceStreet = pickZoneForGroup(layout, "space");
+    const mcpStreet = pickZoneForGroup(layout, "mcp");
+    const next = migrateWorldLayoutBounds({
+      layout,
+      bounds: { minX: 0, minY: 0, maxX: 11, maxY: 9 },
+    });
+    expect(next.bounds).toEqual({ minX: 0, minY: 0, maxX: 11, maxY: 9 });
+    expect(next.rev).toBe(layout.rev + 1);
+    expect(pickZoneForGroup(next, "agent").streetId).toBe(agentStreet.streetId);
+    expect(pickZoneForGroup(next, "space").streetId).toBe(spaceStreet.streetId);
+    expect(pickZoneForGroup(next, "mcp").streetId).toBe(mcpStreet.streetId);
+    expect(pickZoneForGroup(next, "agent").rect.maxY).toBe(9);
+    expect(pickZoneForGroup(next, "mcp").rect.maxX).toBe(11);
+  });
+
+  it("partitions migrated zones to exactly cover the new bounds", () => {
+    const layout = getMinimumSeedLayout();
+    const next = migrateWorldLayoutBounds({
+      layout,
+      bounds: { minX: 0, minY: 0, maxX: 14, maxY: 14 },
+    });
+    const seen = new Set<string>();
+    for (const z of next.zones) {
+      for (const c of cellsForZone(z)) {
+        const key = `${String(c.x)},${String(c.y)}`;
+        expect(seen.has(key)).toBe(false);
+        seen.add(key);
+      }
+    }
+    expect(seen.size).toBe(15 * 15);
+  });
+
+  it("rejects migrations that produce a sub-three-wide span", () => {
+    const layout = getMinimumSeedLayout();
+    expect(() =>
+      migrateWorldLayoutBounds({
+        layout,
+        bounds: { minX: 0, minY: 0, maxX: 1, maxY: 9 },
+      })
+    ).toThrow();
+  });
+
+  it("rejects migrations that invert an axis", () => {
+    const layout = getMinimumSeedLayout();
+    expect(() =>
+      migrateWorldLayoutBounds({
+        layout,
+        bounds: { minX: 5, minY: 0, maxX: 3, maxY: 9 },
+      })
+    ).toThrow();
+  });
+
+  it("applies a single bounds field update", () => {
+    const layout = getMinimumSeedLayout();
+    const next = applyBoundsFieldUpdateToLayout({
+      layout,
+      field: "maxY",
+      value: 9,
+    });
+    expect(next.bounds).toEqual({ ...layout.bounds, maxY: 9 });
+    expect(pickZoneForGroup(next, "agent").rect.maxY).toBe(9);
+    expect(pickZoneForGroup(next, "space").rect.maxY).toBe(9);
+  });
+
+  it("rejects non-integer bounds values", () => {
+    const layout = getMinimumSeedLayout();
+    expect(() =>
+      applyBoundsFieldUpdateToLayout({
+        layout,
+        field: "maxX",
+        value: 12.5,
+      })
+    ).toThrow();
   });
 });

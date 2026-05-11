@@ -168,6 +168,94 @@ export function isSpaceAnchorOccupancyPointAvailableInZone(input: {
   });
 }
 
+export type WorldLayoutBoundsField = "minX" | "minY" | "maxX" | "maxY";
+
+function assertIntegerBoundsValue(value: number, field: WorldLayoutBoundsField): void {
+  if (!Number.isFinite(value) || !Number.isInteger(value)) {
+    throw new Error(
+      `world-layout bounds: ${field} must be a finite integer (got ${String(value)})`
+    );
+  }
+}
+
+function assertValidLayoutBounds(bounds: WorldBounds): void {
+  assertIntegerBoundsValue(bounds.minX, "minX");
+  assertIntegerBoundsValue(bounds.minY, "minY");
+  assertIntegerBoundsValue(bounds.maxX, "maxX");
+  assertIntegerBoundsValue(bounds.maxY, "maxY");
+  if (bounds.maxX < bounds.minX) {
+    throw new Error(
+      `world-layout bounds: maxX (${String(bounds.maxX)}) must be >= minX (${String(bounds.minX)})`
+    );
+  }
+  if (bounds.maxY < bounds.minY) {
+    throw new Error(
+      `world-layout bounds: maxY (${String(bounds.maxY)}) must be >= minY (${String(bounds.minY)})`
+    );
+  }
+  const spanX = bounds.maxX - bounds.minX + 1;
+  const spanY = bounds.maxY - bounds.minY + 1;
+  if (spanX < 3) {
+    throw new Error(
+      `world-layout bounds: spanX must be >= 3 to fit three street zones (got ${String(spanX)})`
+    );
+  }
+  if (spanY < 1) {
+    throw new Error(
+      `world-layout bounds: spanY must be >= 1 (got ${String(spanY)})`
+    );
+  }
+}
+
+const PRIMARY_GROUP_ORDER: readonly OccupantGroup[] = ["agent", "space", "mcp"];
+
+function streetsFromLayoutPrimaryGroups(
+  layout: WorldLayout
+): readonly [StreetPoolEntry, StreetPoolEntry, StreetPoolEntry] {
+  const picks = PRIMARY_GROUP_ORDER.map((g) => {
+    const zone = primaryZoneForGroup(layout, g);
+    if (zone === undefined) {
+      throw new Error(
+        `migrateWorldLayoutBounds: missing primary zone for group "${g}"`
+      );
+    }
+    return { id: zone.streetId, label: zone.streetLabel };
+  });
+  const a = picks[0];
+  const s = picks[1];
+  const m = picks[2];
+  if (a === undefined || s === undefined || m === undefined) {
+    throw new Error("migrateWorldLayoutBounds: failed to pick three streets");
+  }
+  return [a, s, m];
+}
+
+export function migrateWorldLayoutBounds(input: {
+  layout: WorldLayout;
+  bounds: WorldBounds;
+}): WorldLayout {
+  assertValidLayoutBounds(input.bounds);
+  const streets = streetsFromLayoutPrimaryGroups(input.layout);
+  const reseeded = createVerticalStripSeedLayout({
+    bounds: input.bounds,
+    streets,
+  });
+  return { ...reseeded, rev: input.layout.rev + 1 };
+}
+
+export function applyBoundsFieldUpdateToLayout(input: {
+  layout: WorldLayout;
+  field: WorldLayoutBoundsField;
+  value: number;
+}): WorldLayout {
+  assertIntegerBoundsValue(input.value, input.field);
+  const nextBounds: WorldBounds = {
+    ...input.layout.bounds,
+    [input.field]: input.value,
+  };
+  return migrateWorldLayoutBounds({ layout: input.layout, bounds: nextBounds });
+}
+
 export function createVerticalStripSeedLayout(input: {
   bounds: WorldBounds;
   streets: readonly [StreetPoolEntry, StreetPoolEntry, StreetPoolEntry];

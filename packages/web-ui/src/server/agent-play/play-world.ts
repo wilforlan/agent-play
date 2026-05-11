@@ -59,12 +59,19 @@ import {
 } from "./preview-serialize.js";
 import type { RedisFanoutItem } from "./world-redis-sync.js";
 import { runStoredWorldMutation } from "./world-mutation-pipeline.js";
-import { clampWorldPosition, type WorldBounds, type WorldLayout } from "@agent-play/sdk";
+import {
+  applyBoundsFieldUpdateToLayout,
+  clampWorldPosition,
+  type WorldBounds,
+  type WorldLayout,
+  type WorldLayoutBoundsField,
+} from "@agent-play/sdk";
 import type { StoredAgentRecord } from "./agent-repository.js";
 import {
   computeRandomFreeMapCell,
   computeSpaceStructureAnchor,
   occupiedKeysFromSnapshot,
+  resolveStructureAnchorsAtRuntime,
 } from "./grid-allocate.js";
 import { buildPlayerChainFanoutNotify } from "./player-chain/index.js";
 import type { SpaceAmenityKind } from "./space-amenity.js";
@@ -328,8 +335,16 @@ export type RegisterSpaceNodeInput = {
 export type RegisterStructureNodeInput = {
   id?: string;
   name: string;
-  x: number;
-  y: number;
+  /**
+   * @deprecated Structure anchors are now derived from the worldLayout space zone.
+   * Any caller-provided value is ignored; structures are auto-placed alongside agents.
+   */
+  x?: number;
+  /**
+   * @deprecated Structure anchors are now derived from the worldLayout space zone.
+   * Any caller-provided value is ignored; structures are auto-placed alongside agents.
+   */
+  y?: number;
   worldId?: string;
   spaceIds: string[];
   /** Defaults true (fixed map anchor for authored spaces). */
@@ -479,6 +494,43 @@ export class PlayWorld {
     return this.layout;
   }
 
+  async updateLayoutBoundsField(input: {
+    field: WorldLayoutBoundsField;
+    value: number;
+  }): Promise<WorldLayout> {
+    const current = this.getWorldLayout();
+    const nextLayout = applyBoundsFieldUpdateToLayout({
+      layout: current,
+      field: input.field,
+      value: input.value,
+    });
+    if (this.options.worldLayoutRepository !== undefined) {
+      await this.options.worldLayoutRepository.saveLayout(nextLayout);
+    }
+    this.layout = nextLayout;
+    const layoutWire = buildSnapshotWorldLayout(nextLayout);
+    await runStoredWorldMutation({
+      store: this.sessionStore,
+      mutate: async (cached) => {
+        const base = ensureWorldSnapshot(
+          cached,
+          this.sessionStore.playerChainGenesis
+        );
+        const next: PreviewSnapshotJson = {
+          ...base,
+          worldLayout: layoutWire,
+        };
+        return { next, fanout: this.metadataFanout() };
+      },
+    });
+    agentPlayDebug("play-world", "updateLayoutBoundsField", {
+      field: input.field,
+      value: input.value,
+      rev: nextLayout.rev,
+    });
+    return nextLayout;
+  }
+
   async isSessionSid(sid: string): Promise<boolean> {
     const trimmed = sid.trim();
     if (trimmed.length === 0) {
@@ -576,7 +628,7 @@ export class PlayWorld {
       }
       return emptySnapshot(mainNodeId);
     }
-    return normalizePreviewSnapshot(raw);
+    return resolveStructureAnchorsAtRuntime(normalizePreviewSnapshot(raw));
   }
 
   /**
@@ -1362,28 +1414,6 @@ export class PlayWorld {
       owner: { displayName: input.ownerDisplayName, nodeId: created.nodeId },
       amenities: [],
     });
-    const baseSnap = await this.getSnapshotJson();
-    if (baseSnap === null) {
-      throw new Error("createSpaceWithNode: snapshot missing");
-    }
-    const normalized = normalizePreviewSnapshot(baseSnap);
-    const occupied = occupiedKeysFromSnapshot(normalized);
-    const structureAnchors = normalized.worldMap.occupants
-      .filter(
-        (o): o is PreviewWorldMapStructureOccupantJson =>
-          o.kind === "structure"
-      )
-      .map((o) => ({ x: o.x, y: o.y }));
-    const existingOccupants = normalized.worldMap.occupants.map((o) => ({
-      x: o.x,
-      y: o.y,
-    }));
-    const pos = computeSpaceStructureAnchor({
-      occupied,
-      existingOccupants,
-      structureAnchors,
-      worldLayout: this.getWorldLayout(),
-    });
     const structure = await this.registerStructureNode({
       id: `st-${spaceId}`,
       name:
@@ -1391,8 +1421,6 @@ export class PlayWorld {
         input.structureName.trim().length > 0
           ? input.structureName.trim()
           : input.name.trim(),
-      x: pos.x,
-      y: pos.y,
       spaceIds: [spaceId],
       stationary: true,
     });
@@ -1734,8 +1762,21 @@ export class PlayWorld {
             `registerStructureNode: world occupant limit reached (${MAX_WORLD_OCCUPANTS})`
           );
         }
-        const bounds = normalized.worldMap.bounds;
-        const rawPos = clampWorldPosition({ x: input.x, y: input.y }, bounds);
+        const structureAnchors = occupantList
+          .filter(
+            (o): o is PreviewWorldMapStructureOccupantJson =>
+              o.kind === "structure" && o.id !== id
+          )
+          .map((o) => ({ x: o.x, y: o.y }));
+        const existingOccupants = occupantList
+          .filter((o) => !(o.kind === "structure" && o.id === id))
+          .map((o) => ({ x: o.x, y: o.y }));
+        const anchor = computeSpaceStructureAnchor({
+          occupied: occupiedKeysFromSnapshot(normalized),
+          existingOccupants,
+          structureAnchors,
+          worldLayout: this.getWorldLayout(),
+        });
         const amenityFields = deriveStructureAmenityFields(
           uniqueSpaceIds,
           catalog
@@ -1745,8 +1786,8 @@ export class PlayWorld {
           kind: "structure",
           id,
           name,
-          x: rawPos.x,
-          y: rawPos.y,
+          x: anchor.x,
+          y: anchor.y,
           worldId,
           spaceIds: uniqueSpaceIds,
           ...(stationary ? { stationary: true } : {}),

@@ -1,4 +1,8 @@
-import type { PreviewSnapshotJson } from "./preview-serialize.js";
+import type {
+  PreviewSnapshotJson,
+  PreviewWorldMapOccupantJson,
+  PreviewWorldMapStructureOccupantJson,
+} from "./preview-serialize.js";
 import { agentPlayDebug } from "./agent-play-debug.js";
 import type { OccupantGroup, WorldLayout, Zone } from "@agent-play/sdk";
 import {
@@ -228,6 +232,74 @@ export function occupiedKeysFromSnapshot(
     s.add(occupancyKeyForPosition(o.x, o.y));
   }
   return s;
+}
+
+function isStructureOccupant(
+  o: PreviewWorldMapOccupantJson
+): o is PreviewWorldMapStructureOccupantJson {
+  return o.kind === "structure";
+}
+
+/**
+ * Re-anchors every structure occupant inside the current worldLayout space zone
+ * deterministically (sorted by structure id, packed from zone center outward).
+ *
+ * @remarks Persisted x,y on structure rows is treated as advisory; the canonical
+ * position is derived from `snapshot.worldLayout` at read time. Non-structure
+ * occupants are treated as fixed obstacles.
+ */
+export function resolveStructureAnchorsAtRuntime(
+  snapshot: PreviewSnapshotJson
+): PreviewSnapshotJson {
+  const layout = snapshot.worldLayout;
+  const spaceZone = layout.zones.find((z) => z.primaryGroup === "space");
+  if (spaceZone === undefined) {
+    return snapshot;
+  }
+  const zone: Zone = {
+    id: spaceZone.id,
+    streetId: spaceZone.streetId,
+    streetLabel: spaceZone.streetLabel,
+    primaryGroup: spaceZone.primaryGroup,
+    allowedGroups: spaceZone.allowedGroups,
+    rect: { ...spaceZone.rect },
+  };
+  const fixedOccupants = snapshot.worldMap.occupants.filter(
+    (o) => !isStructureOccupant(o)
+  );
+  const fixedOccupantPositions = fixedOccupants.map((o) => ({ x: o.x, y: o.y }));
+  const occupied = new Set(
+    fixedOccupants.map((o) => occupancyKeyForPosition(o.x, o.y))
+  );
+  const structures = snapshot.worldMap.occupants
+    .filter(isStructureOccupant)
+    .slice()
+    .sort((a, b) => a.id.localeCompare(b.id));
+  const reanchored: PreviewWorldMapStructureOccupantJson[] = [];
+  const structureAnchors: Array<{ x: number; y: number }> = [];
+  for (const row of structures) {
+    try {
+      const pos = computeRandomFreeMapCellInZone(occupied, zone, "spaceAnchor", {
+        existingOccupants: [...fixedOccupantPositions, ...structureAnchors],
+        structureAnchors,
+      });
+      reanchored.push({ ...row, x: pos.x, y: pos.y });
+      occupied.add(occupancyKeyForPosition(pos.x, pos.y));
+      structureAnchors.push({ x: pos.x, y: pos.y });
+    } catch {
+      reanchored.push(row);
+    }
+  }
+  const byId = new Map(reanchored.map((s) => [s.id, s]));
+  const nextOccupants: PreviewWorldMapOccupantJson[] =
+    snapshot.worldMap.occupants.map((o) => {
+      if (!isStructureOccupant(o)) return o;
+      return byId.get(o.id) ?? o;
+    });
+  return {
+    ...snapshot,
+    worldMap: { ...snapshot.worldMap, occupants: nextOccupants },
+  };
 }
 
 export function computeRandomFreeMapCell(

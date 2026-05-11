@@ -21,8 +21,6 @@ describe("PlayWorld structure to space transitions", () => {
     });
     const structure = await w.registerStructureNode({
       name: "Supermarket",
-      x: 12,
-      y: 20,
       spaceIds: [grocery.id],
     });
 
@@ -71,8 +69,6 @@ describe("PlayWorld structure to space transitions", () => {
     });
     const structure = await w.registerStructureNode({
       name: "Supermarket",
-      x: 5,
-      y: 7,
       spaceIds: [grocery.id, pharmacy.id],
     });
 
