@@ -53,6 +53,7 @@ import { intercomResultRecordFromLangChainInvokeOutput } from "./intercom-langch
 import {
   mintOpenAiRealtimeClientSecretForSdk,
   resolveRealtimeInstructions,
+  type ResolveRealtimeInstructionsOptions,
 } from "./openai-realtime-client-secret.js";
 
 const PLAYER_CONNECTION_HEARTBEAT_MAX_ATTEMPTS = 10;
@@ -820,12 +821,13 @@ export class RemotePlayWorld {
     const leaseTtlSeconds = 45;
     let realtimeWebrtcFromInit: RealtimeWebrtcClientSecret | undefined;
     let realtimeInstructionsFromInit: string | undefined;
+    
     if (input.enableP2a === "on" && this.audioInitOptions !== null) {
       console.log("resolving realtime instructions for agent", input.name);
-      const resolveOpts = {
-        openai: this.audioInitOptions,
+      const resolveOpts: ResolveRealtimeInstructionsOptions = {
+        openai: this.audioInitOptions ?? {},
         agentName: input.name,
-        perAgentInstructions: input.realtimeInstructions,
+        perAgentInstructions: input.realtimeInstructions ?? "",
       };
       realtimeInstructionsFromInit = resolveRealtimeInstructions(resolveOpts);
       realtimeWebrtcFromInit = await mintOpenAiRealtimeClientSecretForSdk(resolveOpts);
