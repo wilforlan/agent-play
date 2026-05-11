@@ -6,6 +6,14 @@ The package `@agent-play/play-ui` is the Vite application under `packages/play-u
 
 Install dependencies once from the repository root with `npm install`. That links workspaces so local development does not require publishing to npm.
 
+For **downstream projects outside this monorepo** (for example `~/Documents/agent-service` consuming `@agent-play/sdk`), use the bundled helper to build the publishable packages and symlink them into the consumer in one step:
+
+```bash
+npm run link:local -- --consumer ~/Documents/agent-service
+```
+
+See [Local linking for downstream projects](development.md#local-linking-for-downstream-projects) for the full workflow, including the `npm run unlink:local` reverse and the `npm install` caveat.
+
 **npm publish order** (each package depends on the previous where applicable):
 
 1. **`@agent-play/node-tools`** — identity and credentials helpers.

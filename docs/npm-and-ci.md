@@ -53,9 +53,54 @@ Implementation: [`scripts/sync-package-versions.mjs`](../scripts/sync-package-ve
 
 ## Publishing (manual)
 
+The preferred entry point is **`npm run publish:packages`** (script: [`scripts/publish-packages.mjs`](../scripts/publish-packages.mjs)). It enforces the dependency-order chain (`node-tools → intercom → sdk → cli → play-ui`), builds each package before publishing, probes the registry to catch already-published versions before the chain starts, and is safe-by-default (refuses a dirty git tree, requires `npm whoami`, prompts for confirmation).
+
+### Typical release flow
+
 1. Bump versions with **`npm run version:packages`** (see above), then commit.
-2. `npm login` to npm.
-3. From the repo root, after `npm install` and builds:
+2. **`npm login`** to npm (or set up an automation token).
+3. Dry-run first to inspect tarballs and confirm the plan:
+
+   ```bash
+   npm run publish:packages:dry
+   ```
+
+4. Real publish:
+
+   ```bash
+   npm run publish:packages
+   ```
+
+### Options
+
+```bash
+# Publish a subset (still in dep order)
+node scripts/publish-packages.mjs --packages sdk,cli
+
+# Pre-release / next-tag publish
+node scripts/publish-packages.mjs --tag next
+
+# 2FA accounts
+node scripts/publish-packages.mjs --otp 123456
+
+# Skip packages already on the registry instead of failing
+node scripts/publish-packages.mjs --skip-existing
+
+# Skip the build step (assumes dist/ is fresh)
+node scripts/publish-packages.mjs --no-build
+
+# Bypass the dirty-tree guard (NOT recommended for real releases)
+node scripts/publish-packages.mjs --allow-dirty
+
+# Non-interactive (CI/local automation)
+node scripts/publish-packages.mjs --yes
+```
+
+Run `node scripts/publish-packages.mjs --help` for the full reference.
+
+### Raw npm equivalents
+
+If you ever need to bypass the script entirely (matches what `.github/workflows/publish-npm.yml` runs in CI):
 
 ```bash
 npm publish -w @agent-play/node-tools --access public
@@ -65,7 +110,7 @@ npm publish -w @agent-play/cli --access public
 npm publish -w @agent-play/play-ui --access public
 ```
 
-`@agent-play/play-ui` runs `prepublishOnly` (tests + `vite build`).
+`@agent-play/play-ui` runs `prepublishOnly` (tests + `vite build`) regardless of which entry point you use.
 
 ## GitHub Actions
 
