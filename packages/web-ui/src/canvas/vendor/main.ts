@@ -89,6 +89,7 @@ import {
 } from "./preview-mobile-side-panels.js";
 import { createPreviewProximityTouchControls } from "./preview-proximity-touch-controls.js";
 import { createPreviewGlobalChatRoom } from "./preview-global-chat-room";
+import { createPreviewSpacesCtaPanel } from "./preview-spaces-cta-panel";
 import { createPreviewRingerEngine } from "./preview-ringer-engine.js";
 import {
   createPreviewBottomBar,
@@ -901,6 +902,7 @@ let refreshPreviewChat: () => void = () => {};
 let agentChatOverlays: ReturnType<typeof createPreviewAgentChatOverlays> | null =
   null;
 let globalChatRoom: ReturnType<typeof createPreviewGlobalChatRoom> | null = null;
+let spacesCtaPanel: ReturnType<typeof createPreviewSpacesCtaPanel> | null = null;
 let activeIntercomAddress: string | null = null;
 const ringerEngine = createPreviewRingerEngine();
 let sessionInteractionPanel:
@@ -2172,6 +2174,7 @@ export function bootstrap(): void {
         return activeIntercomAddress;
       },
     });
+    spacesCtaPanel = createPreviewSpacesCtaPanel();
 
     const centerCol = document.createElement("div");
     centerCol.className = "preview-game-col preview-game-col--center";
@@ -2262,10 +2265,14 @@ export function bootstrap(): void {
     const stationaryOnBoot =
       getPreviewViewSettings().stationaryPanels && wideOnBoot;
     if (stationaryOnBoot) {
-      leftCol.append(globalChatRoom.element);
+      leftCol.append(globalChatRoom.element, spacesCtaPanel.element);
       rightCol.append(controlStack, debugMount);
     } else {
-      leftCol.append(globalChatRoom.element, debugMount);
+      leftCol.append(
+        globalChatRoom.element,
+        spacesCtaPanel.element,
+        debugMount
+      );
       rightCol.append(controlStack);
     }
 
@@ -2499,13 +2506,60 @@ export function bootstrap(): void {
         floatingPanelHandles.debug.refreshBounds();
         floatingPanels.forEach((panel) => panel.refreshBounds());
         debugPanelSyncCompanionLayout?.();
+        refreshSpacesCtaPlacement();
       });
     };
+
+    const refreshSpacesCtaPlacement = (): void => {
+      const room = globalChatRoom;
+      const cta = spacesCtaPanel;
+      if (room === null || cta === null || cta.isDismissed()) return;
+      const boundsHost = previewDockStationaryActive() ? leftCol : canvasStage;
+      const boundsRect = boundsHost.getBoundingClientRect();
+      const anchorRect = room.element.getBoundingClientRect();
+      cta.refresh({
+        anchorRect: {
+          left: anchorRect.left,
+          top: anchorRect.top,
+          width: anchorRect.width,
+          height: anchorRect.height,
+        },
+        boundsRect: {
+          left: boundsRect.left,
+          top: boundsRect.top,
+          width: boundsRect.width,
+          height: boundsRect.height,
+        },
+      });
+    };
+    const scheduleSpacesCtaRefresh = (): void => {
+      requestAnimationFrame(refreshSpacesCtaPlacement);
+    };
+
     applyPreviewPanelLayout();
     wideSidebarMq.addEventListener("change", applyPreviewPanelLayout);
     window.addEventListener("resize", () => {
       floatingPanels.forEach((panel) => panel.refreshBounds());
+      scheduleSpacesCtaRefresh();
     });
+
+    if (globalChatRoom !== null && spacesCtaPanel !== null) {
+      const messagesElement = globalChatRoom.element;
+      if (typeof ResizeObserver !== "undefined") {
+        const resizeObs = new ResizeObserver(() => {
+          scheduleSpacesCtaRefresh();
+        });
+        resizeObs.observe(messagesElement);
+      }
+      const mutationObs = new MutationObserver(() => {
+        scheduleSpacesCtaRefresh();
+      });
+      mutationObs.observe(messagesElement, {
+        attributes: true,
+        attributeFilter: ["style", "class", "hidden"],
+      });
+      scheduleSpacesCtaRefresh();
+    }
 
     let messagesPanelVisible = true;
     const applyMessagesPanelVisibility = (): void => {
@@ -2516,6 +2570,9 @@ export function bootstrap(): void {
       );
       if (globalChatRoom !== null) {
         globalChatRoom.element.hidden = !messagesPanelVisible;
+      }
+      if (spacesCtaPanel !== null && !spacesCtaPanel.isDismissed()) {
+        spacesCtaPanel.element.hidden = !messagesPanelVisible;
       }
       debugMount.classList.toggle(
         "preview-debug-mount--messages-hidden",
