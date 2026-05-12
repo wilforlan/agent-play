@@ -1,0 +1,164 @@
+# =============================================================================
+# Seed amenity content for all spaces
+# =============================================================================
+#
+# This is an AQL migration script that seeds the shop, supermarket and
+# car-wash amenities across every space currently configured in the world:
+#
+#   1. Bravo Towers     — car wash
+#   2. My Plaza         — car wash, shop, supermarket
+#   3. SandMill Circle  — shop, supermarket
+#
+# How to run
+# ----------
+# 1. Open the playground at `/playground` and connect with your main
+#    passphrase. The playground session is reused by the script, so this
+#    file does *not* include a `CONNECT` statement.
+# 2. Replace every <PASSPHRASE> placeholder with the matching space's
+#    passphrase.
+# 3. Paste this entire file into the editor and click Run.
+#
+# The script is safe to re-run for *new* slots — the server auto-assigns
+# free supermarket columns and car-wash slots when omitted. Re-running
+# with the same explicit SLOT/COLUMN values will collide; remove or adjust
+# those rows if you need to top up.
+#
+# Pre-requisites
+# --------------
+# - Each space must already have its amenities attached (you said you do).
+#   If not, run `ADD SPACE AMENITY "shop"` (etc.) for the active space
+#   first.
+# - Every player wallet starts at $70 automatically; nothing to seed there.
+# =============================================================================
+
+# =============================================================================
+# 1. Bravo Towers — car wash (premium lot)
+# =============================================================================
+
+USE SPACE NODE "node:9728e8ed094690727a355be63f711dc3e40df3d068dccb3089bc96b7c338c966"
+  PASSPHRASE "<BRAVO_TOWERS_PASSPHRASE>"
+
+ADD CARWASH CAR SLOT 1 NAME "Phantom Coupe"   MODEL "Rolls XV"    YEAR 2024 PRICE 385000 COLOR "#d4af37"
+ADD CARWASH CAR SLOT 2 NAME "Continental GT"  MODEL "Bentley"     YEAR 2023 PRICE 245000 COLOR "#1a2a4a"
+ADD CARWASH CAR SLOT 3 NAME "S-Class Maybach" MODEL "Mercedes"    YEAR 2024 PRICE 215000 COLOR "#0d0d0d"
+ADD CARWASH CAR SLOT 4 NAME "911 Turbo S"     MODEL "Porsche"     YEAR 2024 PRICE 235000 COLOR "#b80c1c"
+ADD CARWASH CAR SLOT 5 NAME "Aventador"       MODEL "Lamborghini" YEAR 2022 PRICE 498000 COLOR "#f7e600"
+ADD CARWASH CAR SLOT 6 NAME "Ghibli Trofeo"   MODEL "Maserati"    YEAR 2023 PRICE 98000  COLOR "#ecebe9"
+ADD CARWASH CAR SLOT 7 NAME "Range Rover SV"  MODEL "Land Rover"  YEAR 2024 PRICE 215000 COLOR "#224d33"
+ADD CARWASH CAR SLOT 8 NAME "Model S Plaid"   MODEL "Tesla"       YEAR 2024 PRICE 135000 COLOR "#61676c"
+ADD CARWASH CAR SLOT 9 NAME "Cullinan"        MODEL "Rolls-Royce" YEAR 2024 PRICE 450000 COLOR "#1c2540"
+
+# =============================================================================
+# 2. My Plaza — car wash + shop + supermarket (everyday mix)
+# =============================================================================
+
+USE SPACE NODE "node:6ae62056cee16358446278a7f69f3d2d81b18d16a3478fc15f69c75103482e91"
+  PASSPHRASE "<MY_PLAZA_PASSPHRASE>"
+
+# ---- car wash (mid-range, 6 cars; slots 7-9 left open) ----
+
+ADD CARWASH CAR SLOT 1 NAME "Civic Type R" MODEL "Honda"  YEAR 2024 PRICE 48000 COLOR "#f8f9fa"
+ADD CARWASH CAR SLOT 2 NAME "Mustang GT"   MODEL "Ford"   YEAR 2024 PRICE 52000 COLOR "#c91432"
+ADD CARWASH CAR SLOT 3 NAME "Camry XSE"    MODEL "Toyota" YEAR 2024 PRICE 36500 COLOR "#1a1a1a"
+ADD CARWASH CAR SLOT 4 NAME "Wrangler"     MODEL "Jeep"   YEAR 2024 PRICE 42000 COLOR "#5d6b3d"
+ADD CARWASH CAR SLOT 5 NAME "Model 3"      MODEL "Tesla"  YEAR 2024 PRICE 42500 COLOR "#1f3a5f"
+ADD CARWASH CAR SLOT 6 NAME "Outback"      MODEL "Subaru" YEAR 2024 PRICE 34500 COLOR "#4a6041"
+
+# ---- shop (8 items, mixed type) ----
+
+ADD SHOP ITEM TYPE "book"   NAME "The Pragmatic Programmer"
+  DESCRIPTION "20th Anniversary Edition — Hunt & Thomas" PRICE 24.99
+ADD SHOP ITEM TYPE "book"   NAME "Designing Data-Intensive Applications"
+  DESCRIPTION "Reliable, scalable, maintainable systems" PRICE 39.99
+ADD SHOP ITEM TYPE "book"   NAME "Atomic Habits"
+  DESCRIPTION "Tiny changes, remarkable results" PRICE 18.50
+ADD SHOP ITEM TYPE "music"  NAME "Kind of Blue"
+  DESCRIPTION "Miles Davis — modal jazz landmark" PRICE 14.99
+ADD SHOP ITEM TYPE "music"  NAME "Random Access Memories"
+  DESCRIPTION "Daft Punk — disco-funk masterpiece" PRICE 16.99
+ADD SHOP ITEM TYPE "music"  NAME "OK Computer"
+  DESCRIPTION "Radiohead — alt-rock classic" PRICE 15.50
+ADD SHOP ITEM TYPE "coffee" NAME "Ethiopian Yirgacheffe"
+  DESCRIPTION "Bright, floral, citrus notes" PRICE 18.00
+ADD SHOP ITEM TYPE "coffee" NAME "Colombian Supremo"
+  DESCRIPTION "Smooth, balanced, medium roast" PRICE 14.50
+
+# ---- supermarket (full grid: row 1-4, ~4-5 items per row) ----
+
+# Row 1 - Fruits
+ADD SUPERMARKET ITEM ROW 1 NAME "Apple"        DESCRIPTION "Crisp Honeycrisp"     PRICE 1.25 COLUMN 1
+ADD SUPERMARKET ITEM ROW 1 NAME "Banana"       DESCRIPTION "Sweet and ripe"        PRICE 0.65 COLUMN 2
+ADD SUPERMARKET ITEM ROW 1 NAME "Mango"        DESCRIPTION "Tropical and juicy"    PRICE 2.10 COLUMN 3
+ADD SUPERMARKET ITEM ROW 1 NAME "Strawberries" DESCRIPTION "Pint, locally grown"   PRICE 4.50 COLUMN 4
+ADD SUPERMARKET ITEM ROW 1 NAME "Cucumber"     DESCRIPTION "Fresh and cool"        PRICE 1.10 COLUMN 5
+
+# Row 2 - Mens
+ADD SUPERMARKET ITEM ROW 2 NAME "T-Shirt"   DESCRIPTION "Cotton crew neck"     PRICE 18.00 COLUMN 1
+ADD SUPERMARKET ITEM ROW 2 NAME "Jeans"     DESCRIPTION "Slim fit denim"        PRICE 49.99 COLUMN 2
+ADD SUPERMARKET ITEM ROW 2 NAME "Sneakers"  DESCRIPTION "All-day comfort"       PRICE 65.00 COLUMN 3
+ADD SUPERMARKET ITEM ROW 2 NAME "Cap"       DESCRIPTION "Adjustable, navy"      PRICE 14.00 COLUMN 4
+ADD SUPERMARKET ITEM ROW 2 NAME "Watch"     DESCRIPTION "Stainless steel band"  PRICE 89.00 COLUMN 5
+
+# Row 3 - Womens
+ADD SUPERMARKET ITEM ROW 3 NAME "Dress"       DESCRIPTION "Summer linen"        PRICE 58.00 COLUMN 1
+ADD SUPERMARKET ITEM ROW 3 NAME "Handbag"     DESCRIPTION "Tote, vegan leather"  PRICE 72.00 COLUMN 2
+ADD SUPERMARKET ITEM ROW 3 NAME "Heels"       DESCRIPTION "Block heel, beige"    PRICE 64.00 COLUMN 3
+ADD SUPERMARKET ITEM ROW 3 NAME "Scarf"       DESCRIPTION "Silk blend"            PRICE 26.00 COLUMN 4
+ADD SUPERMARKET ITEM ROW 3 NAME "Sunglasses"  DESCRIPTION "UV400 polarized"       PRICE 38.00 COLUMN 5
+
+# Row 4 - Kids
+ADD SUPERMARKET ITEM ROW 4 NAME "Teddy Bear"  DESCRIPTION "Soft plush, 14 inch"  PRICE 22.00 COLUMN 1
+ADD SUPERMARKET ITEM ROW 4 NAME "Crayons"     DESCRIPTION "Pack of 48 colors"     PRICE 7.50  COLUMN 2
+ADD SUPERMARKET ITEM ROW 4 NAME "Lunchbox"    DESCRIPTION "Insulated, dinosaur"   PRICE 18.50 COLUMN 3
+ADD SUPERMARKET ITEM ROW 4 NAME "Sneakers"    DESCRIPTION "Velcro, sizes 10-3"    PRICE 32.00 COLUMN 4
+ADD SUPERMARKET ITEM ROW 4 NAME "Storybook"   DESCRIPTION "Bedtime tales, vol 1"  PRICE 12.99 COLUMN 5
+
+# =============================================================================
+# 3. SandMill Circle — shop + supermarket (artisan / local-feel)
+# =============================================================================
+
+USE SPACE NODE "node:b80024b47a7432614329c520010fc98e541c195fb3601d77253f674d539b1917"
+  PASSPHRASE "<SANDMILL_CIRCLE_PASSPHRASE>"
+
+# ---- shop (6 items, local artisan feel) ----
+
+ADD SHOP ITEM TYPE "book"   NAME "Local Histories"
+  DESCRIPTION "Stories from around SandMill"           PRICE 19.99
+ADD SHOP ITEM TYPE "book"   NAME "The Sand Garden"
+  DESCRIPTION "A novel by E. Marlow"                    PRICE 14.99
+ADD SHOP ITEM TYPE "music"  NAME "Coastal Sessions"
+  DESCRIPTION "Acoustic indie, recorded by the pier"   PRICE 13.50
+ADD SHOP ITEM TYPE "music"  NAME "Folk Roots Vol. 2"
+  DESCRIPTION "Songs of the land — multi-artist"       PRICE 12.99
+ADD SHOP ITEM TYPE "coffee" NAME "Sunrise Blend"
+  DESCRIPTION "Light roast, citrus-forward"             PRICE 16.00
+ADD SHOP ITEM TYPE "coffee" NAME "Mill Dark Roast"
+  DESCRIPTION "Bold, smoky, single-origin"              PRICE 15.50
+
+# ---- supermarket (focus on fresh produce; sparser rows) ----
+
+# Row 1 - Fruits (full)
+ADD SUPERMARKET ITEM ROW 1 NAME "Apple"        DESCRIPTION "Pick of the orchard"   PRICE 1.10 COLUMN 1
+ADD SUPERMARKET ITEM ROW 1 NAME "Banana"       DESCRIPTION "Fair trade"             PRICE 0.55 COLUMN 2
+ADD SUPERMARKET ITEM ROW 1 NAME "Mango"        DESCRIPTION "Alphonso, in season"    PRICE 2.40 COLUMN 3
+ADD SUPERMARKET ITEM ROW 1 NAME "Strawberries" DESCRIPTION "Sunday market pick"     PRICE 4.20 COLUMN 4
+ADD SUPERMARKET ITEM ROW 1 NAME "Cucumber"     DESCRIPTION "Hothouse, English"      PRICE 1.30 COLUMN 5
+
+# Row 2 - Mens (sparse)
+ADD SUPERMARKET ITEM ROW 2 NAME "T-Shirt" DESCRIPTION "Organic cotton tee"   PRICE 22.00 COLUMN 1
+ADD SUPERMARKET ITEM ROW 2 NAME "Cap"     DESCRIPTION "SandMill embroidered" PRICE 16.00 COLUMN 3
+
+# Row 3 - Womens (sparse)
+ADD SUPERMARKET ITEM ROW 3 NAME "Scarf"      DESCRIPTION "Hand-loomed"     PRICE 32.00 COLUMN 2
+ADD SUPERMARKET ITEM ROW 3 NAME "Sunglasses" DESCRIPTION "Tortoise frames" PRICE 42.00 COLUMN 4
+
+# Row 4 - Kids (sparse)
+ADD SUPERMARKET ITEM ROW 4 NAME "Storybook" DESCRIPTION "Tales of the mill" PRICE 13.50 COLUMN 1
+ADD SUPERMARKET ITEM ROW 4 NAME "Crayons"   DESCRIPTION "Beeswax, 24 colors" PRICE 9.00  COLUMN 3
+
+# =============================================================================
+# Done. Verify with:
+#   USE SPACE NODE "node:..." PASSPHRASE "<...>"
+#   INSPECT AMENITY "shop"
+#   SHOW RESPONSE
+# =============================================================================
