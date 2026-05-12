@@ -586,8 +586,72 @@ describe("RemotePlayWorld", () => {
       realtimeInstructions: personality,
     });
     expect(mintBody).not.toBeNull();
-    const session = mintBody?.session as Record<string, unknown> | undefined;
+    const capturedMintBody = mintBody as Record<string, unknown> | null;
+    const session = capturedMintBody?.session as
+      | Record<string, unknown>
+      | undefined;
     expect(session?.instructions).toBe(personality);
+    await world.close();
+  });
+
+  it("addAgent forwards realtimeInstructions to players route even when enableP2a is off and initAudio was not called", async () => {
+    const personality = "You are a witty bookstore concierge.";
+    let mintCalled = false;
+    let receivedBody: { realtimeInstructions?: string; enableP2a?: string } | null = null;
+    const fetchMock = vi.fn(
+      async (url: string | URL, init?: RequestInit) => {
+        const u = String(url);
+        if (u.endsWith("/api/agent-play/session")) {
+          return sessionResponse();
+        }
+        if (u.endsWith("/api/nodes/validate") && init?.method === "POST") {
+          return new Response(JSON.stringify({ ok: true, nodeKind: "agent" }), {
+            status: 200,
+          });
+        }
+        if (
+          u === "https://api.openai.com/v1/realtime/client_secrets" &&
+          init?.method === "POST"
+        ) {
+          mintCalled = true;
+          return notFound();
+        }
+        if (u.includes("/api/agent-play/players") && init?.method === "POST") {
+          receivedBody = JSON.parse(String(init.body)) as {
+            realtimeInstructions?: string;
+            enableP2a?: string;
+          };
+          return new Response(
+            JSON.stringify({
+              playerId: "p-instr-no-p2a",
+              previewUrl: `${BASE_URL}/agent-play/watch`,
+              registeredAgent: sampleRegisteredAgent("aid-i", "Concierge"),
+              enableP2a: "off",
+            }),
+            { status: 200 }
+          );
+        }
+        return notFound();
+      }
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const world = playWorld("key");
+    await world.connect();
+    await world.addAgent({
+      name: "Concierge",
+      type: "langchain",
+      agent: { type: "langchain", toolNames: ["chat_tool"] },
+      nodeId: "aid-i",
+      realtimeInstructions: personality,
+    });
+    expect(mintCalled).toBe(false);
+    expect(receivedBody).not.toBeNull();
+    const body = receivedBody as unknown as {
+      realtimeInstructions?: string;
+      enableP2a?: string;
+    };
+    expect(body.realtimeInstructions).toBe(personality);
+    expect(body.enableP2a).toBeUndefined();
     await world.close();
   });
 

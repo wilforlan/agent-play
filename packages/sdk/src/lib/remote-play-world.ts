@@ -820,16 +820,15 @@ export class RemotePlayWorld {
     const connectionId = randomUUID();
     const leaseTtlSeconds = 45;
     let realtimeWebrtcFromInit: RealtimeWebrtcClientSecret | undefined;
-    let realtimeInstructionsFromInit: string | undefined;
-    
+    let resolvedRealtimeInstructions: string | undefined;
+
     if (input.enableP2a === "on" && this.audioInitOptions !== null) {
-      console.log("resolving realtime instructions for agent", input.name);
       const resolveOpts: ResolveRealtimeInstructionsOptions = {
-        openai: this.audioInitOptions ?? {},
+        openai: this.audioInitOptions,
         agentName: input.name,
         perAgentInstructions: input.realtimeInstructions ?? "",
       };
-      realtimeInstructionsFromInit = resolveRealtimeInstructions(resolveOpts);
+      resolvedRealtimeInstructions = resolveRealtimeInstructions(resolveOpts);
       realtimeWebrtcFromInit = await mintOpenAiRealtimeClientSecretForSdk(resolveOpts);
       this.logTransport("addAgent:p2a_enabled", {
         agentName: input.name,
@@ -837,8 +836,15 @@ export class RemotePlayWorld {
         voice: this.audioInitOptions.voice,
       });
     }
-    console.log("realtimeWebrtcFromInit", realtimeWebrtcFromInit);
-    console.log("realtimeInstructionsFromInit", realtimeInstructionsFromInit);
+
+    const callerRealtimeInstructions =
+      typeof input.realtimeInstructions === "string" &&
+      input.realtimeInstructions.trim().length > 0
+        ? input.realtimeInstructions
+        : undefined;
+    const forwardedRealtimeInstructions =
+      resolvedRealtimeInstructions ?? callerRealtimeInstructions;
+
     const requestPayload = {
       name: input.name,
       type: input.type,
@@ -852,8 +858,8 @@ export class RemotePlayWorld {
       ...(realtimeWebrtcFromInit !== undefined
         ? { realtimeWebrtc: realtimeWebrtcFromInit }
         : {}),
-      ...(realtimeInstructionsFromInit !== undefined
-        ? { realtimeInstructions: realtimeInstructionsFromInit }
+      ...(forwardedRealtimeInstructions !== undefined
+        ? { realtimeInstructions: forwardedRealtimeInstructions }
         : {}),
     };
     this.logTransport("addAgent:request_payload", {
