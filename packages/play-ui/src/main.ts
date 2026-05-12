@@ -145,7 +145,6 @@ import {
 import { createPreviewProximityTouchControls } from "./preview-proximity-touch-controls.js";
 import { createPreviewGlobalChatRoom } from "./preview-global-chat-room";
 import { createPreviewSpacesCtaPanel } from "./preview-spaces-cta-panel";
-import { createPreviewRingerEngine } from "./preview-ringer-engine.js";
 import {
   createPreviewBottomBar,
   ensurePreviewLayoutStyles,
@@ -1636,7 +1635,6 @@ let agentChatOverlays: ReturnType<typeof createPreviewAgentChatOverlays> | null 
 let globalChatRoom: ReturnType<typeof createPreviewGlobalChatRoom> | null = null;
 let spacesCtaPanel: ReturnType<typeof createPreviewSpacesCtaPanel> | null = null;
 let activeIntercomAddress: string | null = null;
-const ringerEngine = createPreviewRingerEngine();
 let sessionInteractionPanel:
   | ReturnType<typeof createPreviewSessionInteractionPanel>
   | null = null;
@@ -1698,39 +1696,6 @@ function resolvePersonalIntercomAddress(): string | null {
     return null;
   }
   return buildIntercomAddress(mainNodeId);
-}
-
-function readIntercomMessageForPlayback(data: {
-  message?: unknown;
-  result?: unknown;
-}): string | null {
-  if (typeof data.message === "string" && data.message.trim().length > 0) {
-    return data.message.trim();
-  }
-  if (typeof data.result !== "object" || data.result === null) {
-    return null;
-  }
-  const result = data.result as Record<string, unknown>;
-  const message = result.message;
-  if (typeof message === "string" && message.trim().length > 0) {
-    return message.trim();
-  }
-  const kind = result.messageKind;
-  if (kind === "media") {
-    const media = result.media;
-    if (
-      typeof media === "object" &&
-      media !== null &&
-      typeof (media as Record<string, unknown>).url === "string"
-    ) {
-      return `Media: ${(media as Record<string, unknown>).url as string}`;
-    }
-    return "Media message received.";
-  }
-  if (kind === "audio") {
-    return "Audio message received.";
-  }
-  return null;
 }
 
 function registeredAgentPartnerForProximityOrNull(
@@ -2246,19 +2211,6 @@ function connectSse(sid: string): void {
         status?: unknown;
         ts?: unknown;
       };
-      if (
-        getPreviewViewSettings().p2aEnabled &&
-        row.status === "completed" &&
-        typeof row.fromPlayerId === "string"
-      ) {
-        const playbackMessage = readIntercomMessageForPlayback(row);
-        if (playbackMessage !== null) {
-          void ringerEngine.playIncomingMessage({
-            targetName: globalSenderName(row.fromPlayerId),
-            message: playbackMessage,
-          });
-        }
-      }
       if (typeof row.intercomAddress === "string" && isValidIntercomAddress(row.intercomAddress)) {
         activeIntercomAddress = row.intercomAddress;
         globalChatRoom?.refreshP2a();
