@@ -6,7 +6,7 @@ import {
   clampYardPosition,
   YARD_BOUNDS,
   buildSpaceYardStage,
-  nextYardInputDirection,
+  nextEnclosedStageInputDirection,
 } from "./space-yard-stage.js";
 
 describe("space-yard-stage: layout helpers", () => {
@@ -103,11 +103,11 @@ describe("space-yard-stage: buildSpaceYardStage", () => {
   });
 });
 
-describe("space-yard-stage: nextYardInputDirection", () => {
+describe("space-yard-stage: nextEnclosedStageInputDirection", () => {
   const arrowsZero = { up: false, down: false, left: false, right: false };
 
   it("returns zero when nothing is pressed", () => {
-    const dir = nextYardInputDirection({
+    const dir = nextEnclosedStageInputDirection({
       joystickEnabled: true,
       joystickVector: { x: 0, y: 0 },
       arrowKeys: arrowsZero,
@@ -118,18 +118,50 @@ describe("space-yard-stage: nextYardInputDirection", () => {
   });
 
   it("prefers the joystick vector when joystick is enabled and deflected past the dead zone", () => {
-    const dir = nextYardInputDirection({
+    const dir = nextEnclosedStageInputDirection({
       joystickEnabled: true,
       joystickVector: { x: 0.6, y: -0.3 },
       arrowKeys: { ...arrowsZero, down: true },
     });
     expect(dir.source).toBe("joystick");
     expect(dir.dx).toBeCloseTo(0.6);
-    expect(dir.dy).toBeCloseTo(-0.3);
   });
 
-  it("ignores the joystick vector when below the dead zone (JOYSTICK_DEFLECT_EPS)", () => {
-    const dir = nextYardInputDirection({
+  it("inverts the joystick y so stick-up moves toward decreasing screen-y (toward the exit door at top)", () => {
+    const stickUp = nextEnclosedStageInputDirection({
+      joystickEnabled: true,
+      joystickVector: { x: 0, y: 0.7 },
+      arrowKeys: arrowsZero,
+    });
+    expect(stickUp.source).toBe("joystick");
+    expect(stickUp.dy).toBeCloseTo(-0.7);
+
+    const stickDown = nextEnclosedStageInputDirection({
+      joystickEnabled: true,
+      joystickVector: { x: 0, y: -0.7 },
+      arrowKeys: arrowsZero,
+    });
+    expect(stickDown.dy).toBeCloseTo(0.7);
+  });
+
+  it("matches the arrow-key y semantics: stick-up and arrow-up both yield negative dy", () => {
+    const stickUp = nextEnclosedStageInputDirection({
+      joystickEnabled: true,
+      joystickVector: { x: 0, y: 0.5 },
+      arrowKeys: arrowsZero,
+    });
+    const arrowUp = nextEnclosedStageInputDirection({
+      joystickEnabled: false,
+      joystickVector: { x: 0, y: 0 },
+      arrowKeys: { ...arrowsZero, up: true },
+    });
+    expect(Math.sign(stickUp.dy)).toBe(Math.sign(arrowUp.dy));
+    expect(stickUp.dy).toBeLessThan(0);
+    expect(arrowUp.dy).toBeLessThan(0);
+  });
+
+  it("ignores the joystick vector when below the dead zone", () => {
+    const dir = nextEnclosedStageInputDirection({
       joystickEnabled: true,
       joystickVector: { x: 0.005, y: -0.001 },
       arrowKeys: { ...arrowsZero, right: true },
@@ -140,7 +172,7 @@ describe("space-yard-stage: nextYardInputDirection", () => {
   });
 
   it("ignores the joystick vector entirely when joystickEnabled is false", () => {
-    const dir = nextYardInputDirection({
+    const dir = nextEnclosedStageInputDirection({
       joystickEnabled: false,
       joystickVector: { x: 1, y: 0 },
       arrowKeys: { ...arrowsZero, left: true },
@@ -151,7 +183,7 @@ describe("space-yard-stage: nextYardInputDirection", () => {
   });
 
   it("normalizes diagonal arrow input to unit length", () => {
-    const dir = nextYardInputDirection({
+    const dir = nextEnclosedStageInputDirection({
       joystickEnabled: false,
       joystickVector: { x: 0, y: 0 },
       arrowKeys: { up: true, right: true, down: false, left: false },

@@ -28,7 +28,7 @@ import {
   yardSpawnPosition,
   YARD_BOUNDS,
   EXIT_DOOR_PROXIMITY_RADIUS_WORLD,
-  nextYardInputDirection,
+  nextEnclosedStageInputDirection,
   type SpaceYardStageHandle,
   type YardPlayerAnim,
 } from "./space-yard-stage.js";
@@ -1042,7 +1042,7 @@ function onDocumentKeyDown(e: KeyboardEvent): void {
     const stage = stageController?.current();
     if (stage !== null && stage !== undefined && stage.id !== "overworld") {
       e.preventDefault();
-      void stageController?.back().catch(() => {});
+      leaveYardStageToPrevious();
     }
     return;
   }
@@ -1142,6 +1142,23 @@ function deriveYardAmenitiesForSpace(spaceId: string): Array<{
 }
 
 let activeYardStage: SpaceYardStageHandle | null = null;
+
+/**
+ * Trigger `stageController.back()` and clear the yard reference once the
+ * transition resolves. Centralised so both the Esc path and the exit-door
+ * proximity path drop `activeYardStage` at the right moment — never during
+ * the inbound transition (which used to break the yard tick).
+ */
+function leaveYardStageToPrevious(): void {
+  const controller = stageController;
+  if (controller === null) return;
+  void controller
+    .back()
+    .then(() => {
+      activeYardStage = null;
+    })
+    .catch(() => {});
+}
 const yardPlayerState: {
   pos: { x: number; y: number };
   facing: "left" | "right";
@@ -1160,7 +1177,7 @@ const YARD_PLAYER_SPEED_CELLS_PER_SEC = 3.2;
 function tickYardPlayer(dtSec: number): void {
   const stage = activeYardStage;
   if (stage === null) return;
-  const direction = nextYardInputDirection({
+  const direction = nextEnclosedStageInputDirection({
     joystickEnabled: getPreviewViewSettings().joystickEnabled,
     joystickVector: getJoystickVector(),
     arrowKeys,
@@ -1196,7 +1213,7 @@ function tickYardPlayer(dtSec: number): void {
   );
   if (distToDoor <= EXIT_DOOR_PROXIMITY_RADIUS_WORLD) {
     yardExitDebounceMs = 400;
-    void stageController?.back().catch(() => {});
+    leaveYardStageToPrevious();
   }
 }
 
@@ -1216,7 +1233,11 @@ async function enterStructureSpaceFromProximity(
     });
     activeYardStage = yard;
     yardPlayerState.pos = yardSpawnPosition();
-    yardPlayerState.facing = "right";
+    const overworldFacing =
+      getHumanPlayerId() !== null
+        ? facingByPlayer.get(getHumanPlayerId() as string) ?? "right"
+        : "right";
+    yardPlayerState.facing = overworldFacing;
     yardPlayerState.walkPhase = 0;
     yardPlayerState.isMoving = false;
     yard.setPlayerYardPosition(yardPlayerState.pos, {
@@ -2259,6 +2280,9 @@ function onTick(dt: number): void {
   const wb = getWorldBoundsForClamp();
   const settings = getPreviewViewSettings();
   const primaryId = getHumanPlayerId();
+  const overworldActive =
+    stageController === null ||
+    stageController.current()?.id === "overworld";
   const joystickActive =
     settings.joystickEnabled && primaryId !== null;
   const jv = joystickActive ? getJoystickVector() : { x: 0, y: 0 };
@@ -2267,6 +2291,7 @@ function onTick(dt: number): void {
     arrowKeys.up || arrowKeys.down || arrowKeys.left || arrowKeys.right;
 
   if (
+    overworldActive &&
     shouldClearPrimaryWaypointsWhileJoystickIdle({
       joystickActive,
       joyVectorLength: joyLen,
@@ -2278,6 +2303,11 @@ function onTick(dt: number): void {
 
   for (const [id, pos] of playerWorldPos) {
     if (id !== HUMAN_VIEWER_PLAYER_ID) continue;
+    if (!overworldActive) {
+      lastTickWorldPos.set(id, { ...pos });
+      movingByPlayer.set(id, false);
+      continue;
+    }
     const prev = { ...pos };
     let next = { ...pos };
     const useJoy =
@@ -2340,8 +2370,6 @@ function onTick(dt: number): void {
   stageController?.update(dt * 1000);
   if (stageController?.current()?.id === "spaceYard") {
     tickYardPlayer(dt);
-  } else if (activeYardStage !== null) {
-    activeYardStage = null;
   }
   updateCameraAndWorldRoot();
 }

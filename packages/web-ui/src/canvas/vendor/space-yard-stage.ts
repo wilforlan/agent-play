@@ -77,53 +77,57 @@ export const clampYardPosition = (pos: {
 /**
  * Dead-zone threshold below which the joystick vector is treated as idle.
  * Mirrors the overworld value in `preview-debug-joystick.ts`. Re-declared
- * here so the yard input helper can stay decoupled from that module.
+ * here so the input helper can stay decoupled from that module.
  *
  * @public
  */
-export const YARD_JOYSTICK_DEFLECT_EPS = 0.02;
+export const ENCLOSED_STAGE_JOYSTICK_DEFLECT_EPS = 0.02;
 
 /**
- * Result of {@link nextYardInputDirection}. The `source` discriminator lets
- * callers decide downstream behaviour (e.g. variable-speed scaling) without
- * re-deriving it from the magnitude.
+ * Result of {@link nextEnclosedStageInputDirection}. The `source`
+ * discriminator lets callers decide downstream behaviour (e.g.
+ * variable-speed scaling) without re-deriving it from the magnitude.
  *
  * @public
  */
-export type YardInputDirection = {
+export type EnclosedStageInputDirection = {
   dx: number;
   dy: number;
   source: "idle" | "joystick" | "arrows";
 };
 
 /**
- * Compute the player's movement direction inside the yard for the current
- * frame.
+ * Compute the player's movement direction for an "enclosed" stage (space
+ * yard or amenity interior) for the current frame.
  *
  * @remarks
- * The joystick is preferred when `joystickEnabled` is `true` and the
- * vector magnitude exceeds {@link YARD_JOYSTICK_DEFLECT_EPS}. In that case
- * the vector is returned verbatim so its magnitude scales speed (matching
- * the overworld). Otherwise the four arrow keys are combined into a unit
- * vector. When neither source is active, `{ dx: 0, dy: 0, source: "idle" }`
- * is returned.
+ * Joystick handling — preferred when `joystickEnabled` is `true` and the
+ * vector magnitude exceeds {@link ENCLOSED_STAGE_JOYSTICK_DEFLECT_EPS}.
+ * The joystick's y-component is **inverted** before being returned so
+ * pushing the stick up moves the avatar toward decreasing screen-y (i.e.
+ * toward the top of the canvas / the exit door). This makes the joystick
+ * agree with the four-direction arrow key path, which already produces a
+ * negative `dy` for "up".
+ *
+ * Falls back to a unit-length arrow-key vector when the joystick is idle
+ * or disabled.
  *
  * Pure and side-effect free — easy to unit-test.
  *
  * @public
  */
-export const nextYardInputDirection = (input: {
+export const nextEnclosedStageInputDirection = (input: {
   joystickEnabled: boolean;
   joystickVector: { x: number; y: number };
   arrowKeys: { up: boolean; down: boolean; left: boolean; right: boolean };
-}): YardInputDirection => {
+}): EnclosedStageInputDirection => {
   const { joystickEnabled, joystickVector, arrowKeys } = input;
   if (joystickEnabled) {
     const joyLen = Math.hypot(joystickVector.x, joystickVector.y);
-    if (joyLen > YARD_JOYSTICK_DEFLECT_EPS) {
+    if (joyLen > ENCLOSED_STAGE_JOYSTICK_DEFLECT_EPS) {
       return {
         dx: joystickVector.x,
-        dy: joystickVector.y,
+        dy: -joystickVector.y,
         source: "joystick",
       };
     }
