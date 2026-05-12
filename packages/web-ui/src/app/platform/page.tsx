@@ -139,6 +139,7 @@ export default function PlatformPage() {
       spaceCatalogId: auth.spaceCatalogId,
       spaceNodeId: auth.nodeId,
       spacePasswordMaterial: auth.passwordMaterial,
+      targetAmenityKind: null,
       targetAgentId: null,
       targetNodeId: null,
       timeoutMs: 8000,

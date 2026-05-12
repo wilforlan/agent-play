@@ -38,6 +38,34 @@ export type ItemTooltipHandle = {
   hide(): void;
   setError(message: string): void;
   setBusy(): void;
+  /**
+   * Place the tooltip near an anchor point given in **viewport
+   * coordinates** (`getBoundingClientRect()` space). The tooltip will
+   * try to render above the anchor, but flips below if it would
+   * overflow the top of the viewport, and clamps horizontally so the
+   * full content is always visible. Safe to call before `show()`.
+   *
+   * @param anchor - the viewport (px) point the tooltip should
+   *   pivot around — typically the screen-space top of the player or
+   *   item sprite.
+   * @param options.gapPx - distance between the anchor and the closest
+   *   tooltip edge. Defaults to `12`.
+   * @param options.marginPx - minimum gap to keep between the tooltip
+   *   and the viewport edge. Defaults to `8`.
+   */
+  position(
+    anchor: { x: number; y: number },
+    options?: { gapPx?: number; marginPx?: number }
+  ): void;
+  /** Whether the tooltip currently has the open modifier applied. */
+  isOpen(): boolean;
+  /**
+   * Whether the tooltip is currently in the in-flight purchase state
+   * (the Buy button is rendered with a spinner). The keyboard cycle
+   * uses this to suppress retries until the network round-trip
+   * finishes.
+   */
+  isBusy(): boolean;
   destroy(): void;
 };
 
@@ -51,8 +79,8 @@ const ensureStyles = (): void => {
   style.id = id;
   style.textContent = `
 .${TOOLTIP_CLASS} {
-  position: absolute;
-  z-index: 40;
+  position: fixed;
+  z-index: 12900;
   min-width: 220px;
   max-width: 280px;
   padding: 12px 14px;
@@ -71,7 +99,10 @@ const ensureStyles = (): void => {
 .${TOOLTIP_CLASS}__desc { color: #475569; margin-bottom: 8px; font-size: 12px; }
 .${TOOLTIP_CLASS}__price { font-family: ui-monospace, Menlo, monospace; margin-bottom: 8px; }
 .${TOOLTIP_CLASS}__buy {
-  display: block;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
   width: 100%;
   padding: 8px 12px;
   border: none;
@@ -81,8 +112,22 @@ const ensureStyles = (): void => {
   font-weight: 700;
   font-size: 13px;
   cursor: pointer;
+  transition: background 120ms ease;
 }
+.${TOOLTIP_CLASS}__buy:hover:not(:disabled) { background: #246b40; }
 .${TOOLTIP_CLASS}__buy:disabled { background: #94a3b8; cursor: not-allowed; }
+.${TOOLTIP_CLASS}__spinner {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border: 2px solid rgba(255,255,255,0.4);
+  border-top-color: #ffffff;
+  border-radius: 50%;
+  animation: preview-item-tooltip-spin 700ms linear infinite;
+}
+@keyframes preview-item-tooltip-spin {
+  to { transform: rotate(360deg); }
+}
 .${TOOLTIP_CLASS}__sold {
   display: block;
   width: 100%;
@@ -118,6 +163,7 @@ export const createItemTooltip = (options: {
 
   let currentBuyHandler: (() => void) | null = null;
   let isBusy = false;
+  let currentModel: ItemTooltipModel | null = null;
 
   const render = (model: ItemTooltipModel): void => {
     root.innerHTML = "";
@@ -165,12 +211,84 @@ export const createItemTooltip = (options: {
       const buy = document.createElement("button");
       buy.className = `${TOOLTIP_CLASS}__buy`;
       buy.type = "button";
-      buy.textContent = `Buy · ${formatUsd(model.priceUsd)}`;
       buy.disabled = isBusy;
+      if (isBusy) {
+        const spinner = document.createElement("span");
+        spinner.className = `${TOOLTIP_CLASS}__spinner`;
+        spinner.setAttribute("aria-hidden", "true");
+        buy.appendChild(spinner);
+        const label = document.createElement("span");
+        label.textContent = "Processing…";
+        buy.appendChild(label);
+      } else {
+        buy.textContent = `Buy · ${formatUsd(model.priceUsd)}`;
+      }
       buy.addEventListener("click", () => {
+        if (buy.disabled) return;
         if (currentBuyHandler !== null) currentBuyHandler();
       });
       root.appendChild(buy);
+    }
+  };
+
+  const placeAround = (
+    anchor: { x: number; y: number },
+    opts: { gapPx?: number; marginPx?: number } = {}
+  ): void => {
+    const gap = opts.gapPx ?? 12;
+    const margin = opts.marginPx ?? 8;
+    const viewportW =
+      typeof window === "undefined" ? 1024 : window.innerWidth;
+    const viewportH =
+      typeof window === "undefined" ? 768 : window.innerHeight;
+    // The tooltip must be measurable, so we briefly make it visible if
+    // it isn't already. We restore the prior state afterwards.
+    const wasOpen = root.classList.contains(`${TOOLTIP_CLASS}--open`);
+    const priorLeft = root.style.left;
+    const priorTop = root.style.top;
+    const priorVisibility = root.style.visibility;
+    if (!wasOpen) {
+      root.style.visibility = "hidden";
+      root.classList.add(`${TOOLTIP_CLASS}--open`);
+    }
+    // Measure with a known anchor at top-left so the rect reflects only
+    // the tooltip's intrinsic size, not previous placement.
+    root.style.left = "0px";
+    root.style.top = "0px";
+    const rect = root.getBoundingClientRect();
+    const tooltipW = rect.width;
+    const tooltipH = rect.height;
+    // Default: place above the anchor, centered horizontally.
+    let left = anchor.x - tooltipW / 2;
+    let top = anchor.y - tooltipH - gap;
+    // Vertical flip when the tooltip would overflow the top of the viewport.
+    if (top < margin) {
+      const below = anchor.y + gap;
+      // Only flip if the below position fits better.
+      if (below + tooltipH <= viewportH - margin || below > top) {
+        top = below;
+      }
+    }
+    // Final vertical clamp (handles edge cases like very tall tooltips
+    // or short viewports).
+    if (top + tooltipH > viewportH - margin) {
+      top = Math.max(margin, viewportH - tooltipH - margin);
+    }
+    if (top < margin) top = margin;
+    // Horizontal clamp.
+    if (left < margin) left = margin;
+    if (left + tooltipW > viewportW - margin) {
+      left = Math.max(margin, viewportW - tooltipW - margin);
+    }
+    root.style.left = `${String(Math.round(left))}px`;
+    root.style.top = `${String(Math.round(top))}px`;
+    if (!wasOpen) {
+      root.classList.remove(`${TOOLTIP_CLASS}--open`);
+      root.style.visibility = priorVisibility;
+      // Restore prior coords too so closing/reopening starts from a
+      // clean slate.
+      root.style.left = priorLeft;
+      root.style.top = priorTop;
     }
   };
 
@@ -179,28 +297,31 @@ export const createItemTooltip = (options: {
     show: ({ model, onBuy }) => {
       isBusy = false;
       currentBuyHandler = onBuy;
+      currentModel = model;
       render(model);
       root.classList.add(`${TOOLTIP_CLASS}--open`);
     },
     hide: () => {
       root.classList.remove(`${TOOLTIP_CLASS}--open`);
       currentBuyHandler = null;
+      currentModel = null;
+      isBusy = false;
     },
     setBusy: () => {
       isBusy = true;
-      const button = root.querySelector<HTMLButtonElement>(
-        `.${TOOLTIP_CLASS}__buy`
-      );
-      if (button !== null) button.disabled = true;
+      if (currentModel !== null) render(currentModel);
     },
     setError: (message: string) => {
-      const existing = root.querySelector(`.${TOOLTIP_CLASS}__error`);
-      if (existing !== null) existing.remove();
+      isBusy = false;
+      if (currentModel !== null) render(currentModel);
       const err = document.createElement("div");
       err.className = `${TOOLTIP_CLASS}__error`;
       err.textContent = message;
       root.appendChild(err);
     },
+    position: (anchor, posOptions) => placeAround(anchor, posOptions ?? {}),
+    isOpen: () => root.classList.contains(`${TOOLTIP_CLASS}--open`),
+    isBusy: () => isBusy,
     destroy: () => {
       if (root.parentElement === options.parent) {
         options.parent.removeChild(root);

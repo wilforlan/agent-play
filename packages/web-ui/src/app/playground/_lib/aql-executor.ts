@@ -360,6 +360,7 @@ async function execStatement(
       context.state.spaceNodeId = nodeId;
       context.state.spacePasswordMaterial = passwordMaterial;
       context.state.spaceCatalogId = catalogId;
+      context.state.targetAmenityKind = null;
       context.state.targetAgentId = null;
       context.state.targetNodeId = null;
       context.vars.set("spaceNode", nodePayload);
@@ -371,6 +372,31 @@ async function execStatement(
       };
       context.outputs.lastResponse = nodePayload;
       context.outputs.lastHeaders = headers;
+      return;
+    }
+    case "UseAmenityStmt": {
+      if (
+        context.state.spaceCatalogId === null ||
+        context.state.spaceNodeId === null ||
+        context.state.spacePasswordMaterial === null
+      ) {
+        throw new Error("AQL_RUNTIME_ERROR: run USE SPACE NODE before USE AMENITY");
+      }
+      const rawKind = String(evalExpr(statement.amenityKind, context.vars))
+        .trim()
+        .toLowerCase();
+      if (
+        rawKind !== "shop" &&
+        rawKind !== "supermarket" &&
+        rawKind !== "car_wash"
+      ) {
+        throw new Error(
+          `AQL_RUNTIME_ERROR: unknown amenity kind '${rawKind}' (expected shop | supermarket | car_wash)`
+        );
+      }
+      context.state.targetAmenityKind = rawKind;
+      context.outputs.lastResponse = { amenityKind: rawKind };
+      context.outputs.lastHeaders = {};
       return;
     }
     case "UseAgentNodeStmt":
@@ -385,6 +411,7 @@ async function execStatement(
       context.state.spaceCatalogId = null;
       context.state.spaceNodeId = null;
       context.state.spacePasswordMaterial = null;
+      context.state.targetAmenityKind = null;
       const nodeId = String(evalExpr(statement.nodeId, context.vars));
       const snapshot = await context.rpc.fetchSnapshot({ sid });
       const { node, agentId } = resolveAgentFromNode(snapshot, nodeId);
@@ -459,6 +486,11 @@ async function execStatement(
         if (kind.length === 0) {
           kind = undefined;
         }
+      } else if (
+        context.state.targetAmenityKind !== null &&
+        context.state.targetAmenityKind.length > 0
+      ) {
+        kind = context.state.targetAmenityKind;
       }
       const startedAt = performance.now();
       const payload: Record<string, unknown> = { spaceId };
@@ -860,6 +892,67 @@ async function execStatement(
       const rawResponse = await context.rpc.sdkRpc({
         sid,
         op,
+        payload,
+        nodeId: spaceNodeId,
+        passwordMaterial: spaceMaterial,
+        extraHeaders: sdkRpcExtraHeaders(context.state),
+      });
+      const { payload: response, headers } = splitHttpMeta(rawResponse);
+      const timingMs = Math.round(performance.now() - startedAt);
+      context.outputs.lastOutput = {
+        response,
+        headers,
+        status: 200,
+        timingMs,
+      };
+      context.outputs.lastResponse = response;
+      context.outputs.lastHeaders = headers;
+      return;
+    }
+    case "RemoveAmenityItemsStmt": {
+      const sid = context.state.sid;
+      if (sid === null) {
+        throw new Error(
+          "AQL_RUNTIME_ERROR: run CONNECT before REMOVE AMENITY ITEMS"
+        );
+      }
+      const spaceId = context.state.spaceCatalogId;
+      const spaceNodeId = context.state.spaceNodeId;
+      const spaceMaterial = context.state.spacePasswordMaterial;
+      if (
+        spaceId === null ||
+        spaceNodeId === null ||
+        spaceMaterial === null ||
+        spaceMaterial.length === 0
+      ) {
+        throw new Error(
+          "AQL_RUNTIME_ERROR: run USE SPACE NODE before REMOVE AMENITY ITEMS"
+        );
+      }
+      const kind = context.state.targetAmenityKind;
+      if (kind === null || kind.length === 0) {
+        throw new Error(
+          "AQL_RUNTIME_ERROR: run USE AMENITY before REMOVE AMENITY ITEMS"
+        );
+      }
+      const payload: Record<string, unknown> = { spaceId, kind };
+      if (statement.all) {
+        payload.all = true;
+      } else {
+        const ids = (statement.itemIds ?? [])
+          .map((expr) => String(evalExpr(expr, context.vars)).trim())
+          .filter((id) => id.length > 0);
+        if (ids.length === 0) {
+          throw new Error(
+            "AQL_RUNTIME_ERROR: REMOVE AMENITY ITEMS requires ALL or at least one id"
+          );
+        }
+        payload.itemIds = ids;
+      }
+      const startedAt = performance.now();
+      const rawResponse = await context.rpc.sdkRpc({
+        sid,
+        op: "removeAmenityItems",
         payload,
         nodeId: spaceNodeId,
         passwordMaterial: spaceMaterial,

@@ -1,0 +1,180 @@
+# =============================================================================
+# Seed amenity content — Bravo Towers, SandMill Circle, My Plaza
+# =============================================================================
+#
+# Space → amenity mapping (this file):
+#
+#   1. Bravo Towers      — car wash only (premium lot, slots 1–9)
+#   2. SandMill Circle   — shop + supermarket (second unique inventory set)
+#   3. My Plaza          — car wash + shop + supermarket (third unique set)
+#
+# How to run
+# ----------
+# 1. Open `/playground` and connect with your main passphrase (no CONNECT here).
+# 2. Replace every <*_PASSPHRASE> with that space’s ten-word passphrase.
+# 3. Paste the file and Run.
+#
+# Re-runs with the same SLOT / COLUMN values collide with existing rows; clear
+# with REMOVE AMENITY ITEMS or adjust slots first if you are topping up.
+#
+# Prerequisites: each space already has the right amenities attached
+# (`ADD SPACE AMENITY "shop"` / `"supermarket"` / `"car_wash"` if needed).
+# =============================================================================
+
+# =============================================================================
+# 1. Bravo Towers — car wash (first lot: premium)
+# =============================================================================
+
+USE SPACE NODE "node:9728e8ed094690727a355be63f711dc3e40df3d068dccb3089bc96b7c338c966"
+  PASSPHRASE "<BRAVO_TOWERS_PASSPHRASE>"
+
+ADD CARWASH CAR SLOT 1 NAME "Phantom Coupe"   MODEL "Rolls XV"    YEAR 2024 PRICE 70.85 COLOR "#d4af37"
+ADD CARWASH CAR SLOT 2 NAME "Continental GT"  MODEL "Bentley"     YEAR 2023 PRICE 24.50 COLOR "#1a2a4a"
+ADD CARWASH CAR SLOT 3 NAME "S-Class Maybach" MODEL "Mercedes"    YEAR 2024 PRICE 90.15 COLOR "#0d0d0d"
+ADD CARWASH CAR SLOT 4 NAME "911 Turbo S"     MODEL "Porsche"     YEAR 2024 PRICE 89.00 COLOR "#b80c1c"
+ADD CARWASH CAR SLOT 5 NAME "Aventador"       MODEL "Lamborghini" YEAR 2022 PRICE 49.00 COLOR "#f7e600"
+ADD CARWASH CAR SLOT 6 NAME "Ghibli Trofeo"   MODEL "Maserati"    YEAR 2023 PRICE 98.00 COLOR "#ecebe9"
+ADD CARWASH CAR SLOT 7 NAME "Range Rover SV"  MODEL "Land Rover"  YEAR 2024 PRICE 95.00 COLOR "#224d33"
+ADD CARWASH CAR SLOT 8 NAME "Model S Plaid"   MODEL "Tesla"       YEAR 2024 PRICE 35.00 COLOR "#61676c"
+ADD CARWASH CAR SLOT 9 NAME "Cullinan"        MODEL "Rolls-Royce" YEAR 2024 PRICE 45.00 COLOR "#1c2540"
+
+# =============================================================================
+# 2. SandMill Circle — shop + supermarket (second lot: no overlap with My Plaza
+#    seed in seed-amenities.aql or with section 3 below)
+# =============================================================================
+
+USE SPACE NODE "node:b80024b47a7432614329c520010fc98e541c195fb3601d77253f674d539b1917"
+  PASSPHRASE "<SANDMILL_CIRCLE_PASSPHRASE>"
+
+# ---- shop (10 items) ----
+
+ADD SHOP ITEM TYPE "book"   NAME "Sapiens"
+  DESCRIPTION "A Brief History of Humankind — Yuval Noah Harari" PRICE 22.00
+ADD SHOP ITEM TYPE "book"   NAME "The Midnight Library"
+  DESCRIPTION "Matt Haig — every life you never lived" PRICE 17.50
+ADD SHOP ITEM TYPE "book"   NAME "Project Hail Mary"
+  DESCRIPTION "Andy Weir — last hope, lone astronaut" PRICE 19.99
+ADD SHOP ITEM TYPE "book"   NAME "Thinking, Fast and Slow"
+  DESCRIPTION "Daniel Kahneman — two systems of thought" PRICE 23.50
+ADD SHOP ITEM TYPE "music"  NAME "Abbey Road"
+  DESCRIPTION "The Beatles — remastered LP" PRICE 21.99
+ADD SHOP ITEM TYPE "music"  NAME "Rumours"
+  DESCRIPTION "Fleetwood Mac — 1977 classic" PRICE 18.99
+ADD SHOP ITEM TYPE "music"  NAME "Hounds of Love"
+  DESCRIPTION "Kate Bush — art-pop landmark" PRICE 17.49
+ADD SHOP ITEM TYPE "coffee" NAME "Kenya AA"
+  DESCRIPTION "Bright, blackcurrant, citrus acidity" PRICE 19.50
+ADD SHOP ITEM TYPE "coffee" NAME "Sumatra Mandheling"
+  DESCRIPTION "Earthy, low acid, full body" PRICE 17.00
+ADD SHOP ITEM TYPE "coffee" NAME "House Espresso"
+  DESCRIPTION "Chocolate, hazelnut, balanced crema" PRICE 13.99
+
+# ---- supermarket (full 4×5 grid) ----
+
+# Row 1 — Fruits
+ADD SUPERMARKET ITEM ROW 1 NAME "Blueberries"   DESCRIPTION "Wild, pint container"          PRICE 5.25 COLUMN 1
+ADD SUPERMARKET ITEM ROW 1 NAME "Pineapple"     DESCRIPTION "Golden sweet, whole"           PRICE 4.99 COLUMN 2
+ADD SUPERMARKET ITEM ROW 1 NAME "Kiwi"          DESCRIPTION "Tart and green, pack of 4"     PRICE 3.50 COLUMN 3
+ADD SUPERMARKET ITEM ROW 1 NAME "Pomegranate"   DESCRIPTION "Ruby seeds, whole fruit"       PRICE 3.95 COLUMN 4
+ADD SUPERMARKET ITEM ROW 1 NAME "Dragon Fruit"  DESCRIPTION "Pink-fleshed pitaya"           PRICE 6.50 COLUMN 5
+
+# Row 2 — Mens
+ADD SUPERMARKET ITEM ROW 2 NAME "Flannel Shirt"     DESCRIPTION "Plaid, brushed cotton"     PRICE 55.00 COLUMN 1
+ADD SUPERMARKET ITEM ROW 2 NAME "Selvedge Jeans"    DESCRIPTION "Raw denim, slim straight"  PRICE 128.00 COLUMN 2
+ADD SUPERMARKET ITEM ROW 2 NAME "Bomber Jacket"     DESCRIPTION "Olive nylon, ribbed cuff"  PRICE 145.00 COLUMN 3
+ADD SUPERMARKET ITEM ROW 2 NAME "Suede Loafers"     DESCRIPTION "Hand-stitched, walnut"     PRICE 165.00 COLUMN 4
+ADD SUPERMARKET ITEM ROW 2 NAME "Aviator Sunglasses" DESCRIPTION "Polarized, gunmetal frame" PRICE 89.00 COLUMN 5
+
+# Row 3 — Womens
+ADD SUPERMARKET ITEM ROW 3 NAME "Linen Blouse"     DESCRIPTION "Relaxed fit, cream"        PRICE 72.00 COLUMN 1
+ADD SUPERMARKET ITEM ROW 3 NAME "Pleated Skirt"    DESCRIPTION "Midi length, blush"        PRICE 84.00 COLUMN 2
+ADD SUPERMARKET ITEM ROW 3 NAME "Trench Coat"      DESCRIPTION "Belted, camel double-breast" PRICE 215.00 COLUMN 3
+ADD SUPERMARKET ITEM ROW 3 NAME "Gold Hoops"       DESCRIPTION "14k vermeil, medium"       PRICE 58.00 COLUMN 4
+ADD SUPERMARKET ITEM ROW 3 NAME "Crossbody Bag"    DESCRIPTION "Pebbled leather, espresso" PRICE 145.00 COLUMN 5
+
+# Row 4 — Kids
+ADD SUPERMARKET ITEM ROW 4 NAME "Astronaut Pajamas" DESCRIPTION "Glow-in-the-dark, ages 5-7" PRICE 26.00 COLUMN 1
+ADD SUPERMARKET ITEM ROW 4 NAME "Wooden Train Set"  DESCRIPTION "30-piece track with bridge"  PRICE 48.00 COLUMN 2
+ADD SUPERMARKET ITEM ROW 4 NAME "Watercolor Kit"    DESCRIPTION "24 pans + brushes + pad"     PRICE 22.50 COLUMN 3
+ADD SUPERMARKET ITEM ROW 4 NAME "Dinosaur Atlas"    DESCRIPTION "Illustrated hardcover"       PRICE 16.99 COLUMN 4
+ADD SUPERMARKET ITEM ROW 4 NAME "Soccer Ball"       DESCRIPTION "Size 4, panel-stitched"      PRICE 24.00 COLUMN 5
+
+# =============================================================================
+# 3. My Plaza — car wash + shop + supermarket (third lot: distinct from Bravo
+#    and SandMill above)
+# =============================================================================
+
+USE SPACE NODE "node:6ae62056cee16358446278a7f69f3d2d81b18d16a3478fc15f69c75103482e91"
+  PASSPHRASE "<MY_PLAZA_PASSPHRASE>"
+
+# ---- car wash (9 slots: modern premium daily drivers) ----
+
+ADD CARWASH CAR SLOT 1 NAME "M4 Competition" MODEL "BMW"        YEAR 2024 PRICE 65.00 COLOR "#1c3a7b"
+ADD CARWASH CAR SLOT 2 NAME "Q5 Sportback"   MODEL "Audi"       YEAR 2024 PRICE 42.00 COLOR "#c4c4c4"
+ADD CARWASH CAR SLOT 3 NAME "XC60 Recharge"  MODEL "Volvo"      YEAR 2024 PRICE 38.50 COLOR "#2c4d3a"
+ADD CARWASH CAR SLOT 4 NAME "EV6 GT"         MODEL "Kia"        YEAR 2024 PRICE 32.00 COLOR "#e8b13a"
+ADD CARWASH CAR SLOT 5 NAME "Ioniq 5 N"      MODEL "Hyundai"    YEAR 2024 PRICE 30.00 COLOR "#4a6781"
+ADD CARWASH CAR SLOT 6 NAME "CX-90"          MODEL "Mazda"      YEAR 2024 PRICE 34.00 COLOR "#7a1a1a"
+ADD CARWASH CAR SLOT 7 NAME "ID. Buzz"      MODEL "Volkswagen" YEAR 2024 PRICE 36.50 COLOR "#f0a04b"
+ADD CARWASH CAR SLOT 8 NAME "RX 500h"        MODEL "Lexus"      YEAR 2024 PRICE 45.00 COLOR "#3a3a3a"
+ADD CARWASH CAR SLOT 9 NAME "G70"            MODEL "Genesis"    YEAR 2024 PRICE 40.00 COLOR "#f4f0eb"
+
+# ---- shop (10 items; names differ from SandMill section and from legacy seed) ----
+
+ADD SHOP ITEM TYPE "book"   NAME "Clean Architecture"
+  DESCRIPTION "Robert C. Martin — structure for serious software" PRICE 27.99
+ADD SHOP ITEM TYPE "book"   NAME "Deep Work"
+  DESCRIPTION "Cal Newport — focus in a distracted world" PRICE 16.99
+ADD SHOP ITEM TYPE "book"   NAME "The Psychology of Money"
+  DESCRIPTION "Morgan Housel — timeless lessons on wealth" PRICE 15.99
+ADD SHOP ITEM TYPE "book"   NAME "Educated"
+  DESCRIPTION "Tara Westover — a memoir" PRICE 14.50
+ADD SHOP ITEM TYPE "music"  NAME "Back to Black"
+  DESCRIPTION "Amy Winehouse — soul revival" PRICE 16.50
+ADD SHOP ITEM TYPE "music"  NAME "Currents"
+  DESCRIPTION "Tame Impala — psychedelic pop" PRICE 17.25
+ADD SHOP ITEM TYPE "music"  NAME "In Rainbows"
+  DESCRIPTION "Radiohead — pay-what-you-want era" PRICE 18.00
+ADD SHOP ITEM TYPE "coffee" NAME "Guatemala Huehuetenango"
+  DESCRIPTION "Milk chocolate, stone fruit, clean finish" PRICE 18.75
+ADD SHOP ITEM TYPE "coffee" NAME "Rwanda Bourbon"
+  DESCRIPTION "Red berry, black tea, bright acidity" PRICE 19.25
+ADD SHOP ITEM TYPE "coffee" NAME "Decaf Swiss Water"
+  DESCRIPTION "Chemical-free decaf, cocoa and almond" PRICE 15.00
+
+# ---- supermarket (full 4×5 grid; third inventory set) ----
+
+# Row 1 — Fruits
+ADD SUPERMARKET ITEM ROW 1 NAME "Cherries"      DESCRIPTION "Sweet dark, by the pound"     PRICE 6.99 COLUMN 1
+ADD SUPERMARKET ITEM ROW 1 NAME "Grapefruit"    DESCRIPTION "Ruby red, large"              PRICE 1.89 COLUMN 2
+ADD SUPERMARKET ITEM ROW 1 NAME "Pear"          DESCRIPTION "Bartlett, ripe"               PRICE 1.65 COLUMN 3
+ADD SUPERMARKET ITEM ROW 1 NAME "Lychee"        DESCRIPTION "Canned whole, premium"        PRICE 4.25 COLUMN 4
+ADD SUPERMARKET ITEM ROW 1 NAME "Watermelon"    DESCRIPTION "Seedless mini"                PRICE 5.99 COLUMN 5
+
+# Row 2 — Mens
+ADD SUPERMARKET ITEM ROW 2 NAME "Henley Shirt"      DESCRIPTION "Thermal knit, charcoal"   PRICE 34.00 COLUMN 1
+ADD SUPERMARKET ITEM ROW 2 NAME "Cargo Shorts"      DESCRIPTION "Ripstop, olive"          PRICE 44.00 COLUMN 2
+ADD SUPERMARKET ITEM ROW 2 NAME "Trail Runners"     DESCRIPTION "Grippy sole, wide fit"   PRICE 119.00 COLUMN 3
+ADD SUPERMARKET ITEM ROW 2 NAME "Leather Wallet"    DESCRIPTION "RFID blocking, brown"    PRICE 52.00 COLUMN 4
+ADD SUPERMARKET ITEM ROW 2 NAME "Noise-Cancel Buds" DESCRIPTION "In-ear, matte black"     PRICE 149.00 COLUMN 5
+
+# Row 3 — Womens
+ADD SUPERMARKET ITEM ROW 3 NAME "Midi Cardigan"   DESCRIPTION "Ribbed knit, sage"        PRICE 48.00 COLUMN 1
+ADD SUPERMARKET ITEM ROW 3 NAME "Wide-Leg Trousers" DESCRIPTION "High waist, pinstripe"  PRICE 62.00 COLUMN 2
+ADD SUPERMARKET ITEM ROW 3 NAME "Leather Mules"   DESCRIPTION "Block heel, cognac"       PRICE 88.00 COLUMN 3
+ADD SUPERMARKET ITEM ROW 3 NAME "Silk Scrunchie Set" DESCRIPTION "Pack of 3, jewel tones" PRICE 18.00 COLUMN 4
+ADD SUPERMARKET ITEM ROW 3 NAME "Travel Jewelry Case" DESCRIPTION "Velvet lined, compact" PRICE 29.00 COLUMN 5
+
+# Row 4 — Kids
+ADD SUPERMARKET ITEM ROW 4 NAME "Rocket Backpack"   DESCRIPTION "Reflective trim, K-2"   PRICE 36.00 COLUMN 1
+ADD SUPERMARKET ITEM ROW 4 NAME "Magnetic Tiles 60pc" DESCRIPTION "STEM building set"      PRICE 54.00 COLUMN 2
+ADD SUPERMARKET ITEM ROW 4 NAME "Rainbow Umbrella"  DESCRIPTION "Manual open, kid size"  PRICE 16.50 COLUMN 3
+ADD SUPERMARKET ITEM ROW 4 NAME "Sticker Activity Book" DESCRIPTION "500+ reusable stickers" PRICE 9.99 COLUMN 4
+ADD SUPERMARKET ITEM ROW 4 NAME "Youth Hoodie"      DESCRIPTION "Fleece lined, heather"   PRICE 28.00 COLUMN 5
+
+# =============================================================================
+# Verify (after switching space + optional USE AMENITY):
+#   USE AMENITY "shop"
+#   INSPECT AMENITY
+#   SHOW RESPONSE
+# =============================================================================

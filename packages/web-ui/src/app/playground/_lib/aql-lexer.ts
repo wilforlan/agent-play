@@ -4,7 +4,8 @@
  *
  * Hand-written scanner that turns an AQL source string into a stream of
  * {@link AqlToken}s. In 3.1.1 was extended to recognise decimal numbers
- * (e.g. `12.5`, `9.99`) so `PRICE` literals can carry cents.
+ * (e.g. `12.5`, `9.99`) so `PRICE` literals can carry cents. Keywords `ITEMS`
+ * and `ALL` support `REMOVE AMENITY ITEMS`.
  *
  * @see ./aql-parser.ts for the consumer of these tokens.
  */
@@ -53,6 +54,8 @@ const KEYWORDS = new Set([
   "HEADERS",
   "SHOP",
   "ITEM",
+  "ITEMS",
+  "ALL",
   "SUPERMARKET",
   "CARWASH",
   "CAR",

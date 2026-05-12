@@ -16,6 +16,14 @@
  *   the wallet and flips the item to `sale = { status: 'sold', ... }`. Returns
  *   structured `ITEM_ALREADY_SOLD` / `INSUFFICIENT_FUNDS` errors.
  *
+ * **Added in 3.1.2**:
+ * - `inspectAmenity` now also returns `items`. When `kind` is provided
+ *   the response is `{ kind, items: <array>, logs, leases }`; otherwise
+ *   `items` is `{ shopItems, supermarketItems, carWashCars }`.
+ * - `removeAmenityItems` — bulk delete for amenity content. Pass
+ *   `{ spaceId, kind, all: true }` to wipe a kind, or
+ *   `{ spaceId, kind, itemIds: [...] }` to delete a specific subset.
+ *
  * @see ../../../../../sdk/src/lib/space-content-model.ts for the schemas
  *      enforced here.
  * @see ../../../../../play-ui/src/purchase-client.ts for the browser client.
@@ -439,15 +447,36 @@ export async function POST(req: NextRequest) {
           typeof p.kind === "string" && isSpaceAmenityKind(p.kind)
             ? p.kind
             : undefined;
+        const spaceId = p.spaceId.trim();
         const logs = await store.listSpaceAmenityLogs({
-          spaceId: p.spaceId.trim(),
+          spaceId,
           ...(kind !== undefined ? { amenityKind: kind } : {}),
           limit: 200,
         });
-        const leases = (await store.listSpaceLeases(p.spaceId.trim())).filter(
+        const leases = (await store.listSpaceLeases(spaceId)).filter(
           (l) => kind === undefined || l.amenityKind === kind
         );
-        return Response.json({ logs, leases });
+        let items: unknown;
+        if (kind === "shop") {
+          items = await store.listShopItems(spaceId);
+        } else if (kind === "supermarket") {
+          items = await store.listSupermarketItems(spaceId);
+        } else if (kind === "car_wash") {
+          items = await store.listCarWashCars(spaceId);
+        } else {
+          const [shopItems, supermarketItems, carWashCars] = await Promise.all([
+            store.listShopItems(spaceId),
+            store.listSupermarketItems(spaceId),
+            store.listCarWashCars(spaceId),
+          ]);
+          items = { shopItems, supermarketItems, carWashCars };
+        }
+        return Response.json({
+          ...(kind !== undefined ? { kind } : {}),
+          items,
+          logs,
+          leases,
+        });
       }
       case "createAmenityLease": {
         const p = body.payload as {
@@ -738,6 +767,80 @@ export async function POST(req: NextRequest) {
         }
         return Response.json({ ok });
       }
+      case "removeAmenityItems": {
+        const p = body.payload as {
+          spaceId?: unknown;
+          kind?: unknown;
+          all?: unknown;
+          itemIds?: unknown;
+        };
+        if (typeof p.spaceId !== "string") {
+          return Response.json({ error: "invalid payload" }, { status: 400 });
+        }
+        if (typeof p.kind !== "string" || !isSpaceAmenityKind(p.kind)) {
+          return Response.json(
+            { error: "invalid amenity kind" },
+            { status: 400 }
+          );
+        }
+        const gate = await verifySpaceNodeHeaders(req, p.spaceId);
+        if (gate !== null) return gate;
+        const spaceId = p.spaceId.trim();
+        const kind = p.kind;
+        const amenityGate = await assertSpaceHasAmenity(world, spaceId, kind);
+        if (amenityGate !== null) return amenityGate;
+        let ids: string[];
+        if (p.all === true) {
+          if (kind === "shop") {
+            ids = (await store.listShopItems(spaceId)).map((i) => i.id);
+          } else if (kind === "supermarket") {
+            ids = (await store.listSupermarketItems(spaceId)).map((i) => i.id);
+          } else {
+            ids = (await store.listCarWashCars(spaceId)).map((c) => c.id);
+          }
+        } else if (Array.isArray(p.itemIds)) {
+          ids = (p.itemIds as unknown[])
+            .filter((x): x is string => typeof x === "string")
+            .map((x) => x.trim())
+            .filter((x) => x.length > 0);
+          if (ids.length === 0) {
+            return Response.json(
+              { error: "itemIds must be a non-empty array" },
+              { status: 400 }
+            );
+          }
+        } else {
+          return Response.json(
+            { error: "provide all=true or itemIds=[]" },
+            { status: 400 }
+          );
+        }
+        const refKind: "shop" | "supermarket" | "carwash" =
+          kind === "car_wash" ? "carwash" : kind;
+        const removed: string[] = [];
+        for (const id of ids) {
+          let ok = false;
+          if (kind === "shop") {
+            ok = await store.removeShopItem({ spaceId, itemId: id });
+          } else if (kind === "supermarket") {
+            ok = await store.removeSupermarketItem({ spaceId, itemId: id });
+          } else {
+            ok = await store.removeCarWashCar({ spaceId, carId: id });
+          }
+          if (ok) {
+            removed.push(id);
+            await fanoutAmenityContentUpdated({
+              store,
+              world,
+              spaceId,
+              amenityKind: kind,
+              reason: "removed",
+              itemRef: { kind: refKind, id },
+            });
+          }
+        }
+        return Response.json({ removed, requested: ids.length });
+      }
       case "enterSpace": {
         const p = body.payload as {
           playerId?: unknown;
@@ -788,6 +891,42 @@ export async function POST(req: NextRequest) {
         }
         const wallet = await store.getPlayerWallet(p.playerId.trim());
         return Response.json({ wallet });
+      }
+      case "listPurchases": {
+        const p = body.payload as { playerId?: unknown; limit?: unknown };
+        if (typeof p.playerId !== "string" || p.playerId.trim().length === 0) {
+          return Response.json({ error: "invalid payload" }, { status: 400 });
+        }
+        const rawLimit = typeof p.limit === "number" ? p.limit : 100;
+        const limit = Math.min(Math.max(Math.floor(rawLimit), 1), 200);
+        const playerId = p.playerId.trim();
+        const purchases = await store.listPurchases({ playerId, limit });
+        const spaceIds = Array.from(
+          new Set(purchases.map((rec) => rec.spaceId))
+        );
+        const itemsByRef: Record<string, unknown> = {};
+        for (const spaceId of spaceIds) {
+          const [shopItems, supermarketItems, carWashCars] = await Promise.all([
+            store.listShopItems(spaceId),
+            store.listSupermarketItems(spaceId),
+            store.listCarWashCars(spaceId),
+          ]);
+          for (const it of shopItems) {
+            itemsByRef[`shop:${spaceId}:${it.id}`] = it;
+          }
+          for (const it of supermarketItems) {
+            itemsByRef[`supermarket:${spaceId}:${it.id}`] = it;
+          }
+          for (const it of carWashCars) {
+            itemsByRef[`carwash:${spaceId}:${it.id}`] = it;
+          }
+        }
+        const wallet = await store.getPlayerWallet(playerId);
+        return Response.json({
+          wallet,
+          purchases,
+          items: itemsByRef,
+        });
       }
       case "setPlayerWalletBalance": {
         const gate = await verifyMainNodeHeaders(req);

@@ -15,6 +15,10 @@ const state: AqlExecutionState = {
   mainNodeId: "<main-node-id>",
   sid: null, // or existing session id from POST /api/agent-play/session
   nodePasswordMaterial: "<hex from nodeCredentialsMaterialFromHumanPassphrase>",
+  spaceCatalogId: null,
+  spaceNodeId: null,
+  spacePasswordMaterial: null,
+  targetAmenityKind: null,
   targetAgentId: null,
   targetNodeId: null,
   timeoutMs: 8000,
@@ -42,6 +46,10 @@ The playground prepends `LET serverUrl = "..."`; embedders should do the same or
 | `mainNodeId` | Main node id for intercom + inspect |
 | `sid` | Agent Play session id (`?_sid=` on RPC); set by `CONNECT` or externally |
 | `nodePasswordMaterial` | Hex string used as `x-node-passw` for node APIs |
+| `spaceCatalogId` | Catalog space id after `USE SPACE NODE` |
+| `spaceNodeId` | Space node id used for `x-node-id` on space-scoped RPCs |
+| `spacePasswordMaterial` | Hex passphrase material for the space node |
+| `targetAmenityKind` | `"shop"` \| `"supermarket"` \| `"car_wash"` after `USE AMENITY` |
 | `targetAgentId` | Resolved agent player id after `USE AGENT NODE` |
 | `targetNodeId` | Selected agent **node** id |
 | `timeoutMs` | Used where the executor honors timeout |

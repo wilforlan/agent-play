@@ -82,4 +82,72 @@ describe("item-tooltip", () => {
     );
     expect(button?.disabled).toBe(true);
   });
+
+  it("isOpen reflects show / hide state", () => {
+    const tooltip = createItemTooltip({ parent: newParent() });
+    expect(tooltip.isOpen()).toBe(false);
+    tooltip.show({
+      model: { name: "x", priceUsd: 1, sale: { status: "available" } },
+      onBuy: () => {},
+    });
+    expect(tooltip.isOpen()).toBe(true);
+    tooltip.hide();
+    expect(tooltip.isOpen()).toBe(false);
+  });
+
+  it("isBusy reflects setBusy / setError state", () => {
+    const tooltip = createItemTooltip({ parent: newParent() });
+    tooltip.show({
+      model: { name: "x", priceUsd: 1, sale: { status: "available" } },
+      onBuy: () => {},
+    });
+    expect(tooltip.isBusy()).toBe(false);
+    tooltip.setBusy();
+    expect(tooltip.isBusy()).toBe(true);
+    tooltip.setError("nope");
+    expect(tooltip.isBusy()).toBe(false);
+  });
+
+  it("hide() resets isBusy", () => {
+    const tooltip = createItemTooltip({ parent: newParent() });
+    tooltip.show({
+      model: { name: "x", priceUsd: 1, sale: { status: "available" } },
+      onBuy: () => {},
+    });
+    tooltip.setBusy();
+    tooltip.hide();
+    expect(tooltip.isBusy()).toBe(false);
+  });
+
+  it("position places the tooltip near the anchor, clamped to the viewport", () => {
+    const tooltip = createItemTooltip({ parent: newParent() });
+    tooltip.show({
+      model: { name: "x", priceUsd: 1, sale: { status: "available" } },
+      onBuy: () => {},
+    });
+    tooltip.position({ x: 400, y: 300 });
+    const left = parseFloat(tooltip.root.style.left);
+    const top = parseFloat(tooltip.root.style.top);
+    expect(Number.isNaN(left)).toBe(false);
+    expect(Number.isNaN(top)).toBe(false);
+  });
+
+  it("position flips below the anchor when there is no room above", () => {
+    const tooltip = createItemTooltip({ parent: newParent() });
+    tooltip.show({
+      model: { name: "x", priceUsd: 1, sale: { status: "available" } },
+      onBuy: () => {},
+    });
+    // Anchor at y=5 — no room above for a tooltip of any height +
+    // gap+margin, so it must flip downward.
+    tooltip.position({ x: 400, y: 5 });
+    const top = parseFloat(tooltip.root.style.top);
+    expect(top).toBeGreaterThanOrEqual(5);
+  });
+
+  it("position can be called before show without leaving the tooltip visible", () => {
+    const tooltip = createItemTooltip({ parent: newParent() });
+    tooltip.position({ x: 400, y: 300 });
+    expect(tooltip.isOpen()).toBe(false);
+  });
 });

@@ -8,7 +8,7 @@
  * ```text
  * ADD SHOP ITEM TYPE "book" NAME ... DESCRIPTION ... PRICE 12.5
  * ADD SUPERMARKET ITEM ROW 1 NAME ... DESCRIPTION ... PRICE 1.25
- * ADD CARWASH CAR NAME ... MODEL ... YEAR 2024 PRICE 28999 COLOR "#5a87d1"
+ * ADD CARWASH CAR SLOT 3 NAME ... MODEL ... YEAR 2024 PRICE 28999 COLOR "#5a87d1"
  * SET WALLET "<playerId>" BALANCE <usd>
  * ```
  *
@@ -257,6 +257,10 @@ class Parser {
     }
     if (token !== null && token.kind === "keyword" && token.value === "AMENITY") {
       this.advance();
+      if (this.checkKeyword("ITEMS")) {
+        this.advance();
+        return this.parseRemoveAmenityItemsTail();
+      }
       const spaceId = this.parseExpr();
       if (spaceId === null) return null;
       const amenityKind = this.parseExpr();
@@ -266,6 +270,23 @@ class Parser {
     }
     this.error(token, "AQL_PARSE_ERROR", "Expected SPACE or AMENITY after REMOVE");
     return null;
+  }
+
+  private parseRemoveAmenityItemsTail(): AqlStatement | null {
+    if (this.checkKeyword("ALL")) {
+      this.advance();
+      return { kind: "RemoveAmenityItemsStmt", all: true };
+    }
+    const first = this.parseExpr();
+    if (first === null) return null;
+    const itemIds: AqlExpr[] = [first];
+    while (this.checkSymbol(",")) {
+      this.advance();
+      const next = this.parseExpr();
+      if (next === null) return null;
+      itemIds.push(next);
+    }
+    return { kind: "RemoveAmenityItemsStmt", all: false, itemIds };
   }
 
   private parseAdd(): AqlStatement | null {
@@ -401,6 +422,11 @@ class Parser {
       if (!this.matchKeyword("PASSPHRASE")) return null;
       const passphrase = this.parseExpr();
       return passphrase === null ? null : { kind: "UseSpaceNodeStmt", nodeId, passphrase };
+    }
+    if (this.checkKeyword("AMENITY")) {
+      this.advance();
+      const amenityKind = this.parseExpr();
+      return amenityKind === null ? null : { kind: "UseAmenityStmt", amenityKind };
     }
     if (!this.matchKeyword("AGENT")) return null;
     if (!this.matchKeyword("NODE")) return null;

@@ -51,8 +51,20 @@ import {
   type AmenityCarWashStageHandle,
 } from "./amenity-carwash-stage.js";
 import type { AmenityStageBounds } from "./amenity-stage-base.js";
+import { resolveAmenityContent } from "./amenity-content-resolver.js";
+import {
+  resolveNearestAmenityBuyable,
+  type AmenityBuyable,
+} from "./amenity-item-buyable.js";
+import { createItemTooltip, type ItemTooltipHandle } from "./item-tooltip.js";
+import { executePurchase } from "./purchase-client.js";
 import { createWalletHud, type WalletHudHandle } from "./wallet-hud.js";
 import { fetchPlayerWallet } from "./wallet-client.js";
+import {
+  createWalletInventoryPanel,
+  type WalletInventoryPanelHandle,
+} from "./wallet-inventory-panel.js";
+import { fetchPurchases } from "./wallet-purchases-client.js";
 import { deepLogObject, deepLogText, deepLogTree } from "./browser-deep-logs.js";
 import { buildCrowdLayer } from "./crowd-draw.js";
 import { layoutCrowdClusters } from "./crowd-layout.js";
@@ -419,11 +431,21 @@ type SnapshotMcpRegistration = {
   url?: string;
 };
 
+type SnapshotSpaceCatalogEntry = {
+  id: string;
+  amenityContent?: {
+    shopItems?: ReadonlyArray<unknown>;
+    supermarketItems?: ReadonlyArray<unknown>;
+    carWashCars?: ReadonlyArray<unknown>;
+  };
+};
+
 type Snapshot = {
   sid: string;
   worldMap: WorldMapJson;
   worldLayout?: SnapshotWorldLayout;
   mcpServers?: SnapshotMcpRegistration[];
+  spaces?: SnapshotSpaceCatalogEntry[];
 };
 
 function mapOccupantLastUpdate(
@@ -1058,11 +1080,21 @@ function onDocumentKeyDown(e: KeyboardEvent): void {
   }
   if (inField || e.repeat) return;
   if (e.key === "Escape") {
+    if (walletInventoryPanel !== null && walletInventoryPanel.isOpen()) {
+      e.preventDefault();
+      walletInventoryPanel.close();
+      return;
+    }
     const stage = stageController?.current();
     if (stage !== null && stage !== undefined && stage.id !== "overworld") {
       e.preventDefault();
       leaveCurrentEnclosedStageToPrevious();
     }
+    return;
+  }
+  if (e.key.toLowerCase() === "w") {
+    e.preventDefault();
+    openWalletInventoryPanel();
     return;
   }
   if (
@@ -1073,6 +1105,15 @@ function onDocumentKeyDown(e: KeyboardEvent): void {
     e.preventDefault();
     void enterAmenityFromYardPad(lastYardAmenityPadTarget);
     return;
+  }
+  if (e.key.toLowerCase() === "p" && activeAmenityStage !== null) {
+    const stage = activeAmenityStage;
+    const buyable = stage.nearestBuyable;
+    if (buyable !== null) {
+      e.preventDefault();
+      cycleAmenityItemAction(stage, buyable);
+      return;
+    }
   }
   const partner = registeredAgentPartnerForProximityOrNull(
     lastProximityPartnerId
@@ -1123,25 +1164,69 @@ const agentsLayer = new Container();
 const parkBackdropLayer = new Container();
 const streetSignsLayer = new Container();
 const worldRoot = new Container();
+/**
+ * The DOM element that contains the Pixi canvas. Captured by
+ * `bootstrap()` so that helpers outside the bootstrap closure (e.g.
+ * the amenity tooltip positioner) can convert player coordinates from
+ * canvas-host space into viewport pixels via `getBoundingClientRect()`.
+ */
+let canvasHostRef: HTMLElement | null = null;
 let stageController: StageController | null = null;
 let walletHud: WalletHudHandle | null = null;
+let walletInventoryPanel: WalletInventoryPanelHandle | null = null;
+let walletBalanceCached: number | null = null;
 
 async function refreshWalletHud(): Promise<void> {
   if (walletHud === null) return;
   const sid = getSid();
   const playerId = getHumanPlayerId();
   if (sid === null || playerId === null) {
-    walletHud.setError("wallet unavailable: sign in to play");
+    // No active player yet (snapshot still loading) — show a placeholder
+    // rather than a hard error so the HUD stays visible.
+    walletHud.setLoading();
     return;
   }
-  walletHud.setLoading();
+  if (walletBalanceCached === null) {
+    walletHud.setLoading();
+  }
   try {
     const wallet = await fetchPlayerWallet({ playerId, sid });
+    walletBalanceCached = wallet.balanceUsd;
     walletHud?.setBalance(wallet.balanceUsd);
   } catch (error) {
     const message = error instanceof Error ? error.message : "wallet fetch failed";
     walletHud?.setError(message);
   }
+}
+
+async function refreshWalletInventoryPanel(): Promise<void> {
+  if (walletInventoryPanel === null) return;
+  const sid = getSid();
+  const playerId = getHumanPlayerId();
+  if (sid === null || playerId === null) {
+    walletInventoryPanel.setError("Sign in to view your inventory.");
+    return;
+  }
+  walletInventoryPanel.setLoading();
+  try {
+    const result = await fetchPurchases({ sid, playerId });
+    walletBalanceCached = result.wallet.balanceUsd;
+    walletHud?.setBalance(result.wallet.balanceUsd);
+    walletInventoryPanel.setData({
+      balanceUsd: result.wallet.balanceUsd,
+      purchases: result.purchases,
+      items: result.items,
+    });
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "inventory fetch failed";
+    walletInventoryPanel.setError(message);
+  }
+}
+
+function openWalletInventoryPanel(): void {
+  if (walletInventoryPanel === null) return;
+  walletInventoryPanel.open();
 }
 
 const STRUCTURE_AMENITY_KIND_MAP: Record<string, "shop" | "supermarket" | "car_wash"> = {
@@ -1170,6 +1255,7 @@ function deriveYardAmenitiesForSpace(spaceId: string): Array<{
 }
 
 let activeYardStage: SpaceYardStageHandle | null = null;
+let activeYardSpaceId: string | null = null;
 let lastYardAmenityPadTarget: YardAmenityPadPosition | null = null;
 
 type AmenityKind = "shop" | "supermarket" | "car_wash";
@@ -1188,6 +1274,7 @@ const AMENITY_STAGE_BOUNDS: Record<AmenityKind, AmenityStageBounds> = {
 
 type ActiveAmenityStage = {
   kind: AmenityKind;
+  spaceId: string;
   handle:
     | AmenityShopStageHandle
     | AmenitySupermarketStageHandle
@@ -1198,9 +1285,14 @@ type ActiveAmenityStage = {
   exitDoorAnchor: { x: number; y: number };
   playerLayer: Container;
   heroGraphic: Graphics;
+  offsetX: number;
+  offsetY: number;
+  nearestBuyable: AmenityBuyable | null;
+  tooltipOpenForItemId: string | null;
 };
 
 let activeAmenityStage: ActiveAmenityStage | null = null;
+let amenityItemTooltip: ItemTooltipHandle | null = null;
 
 /**
  * Trigger `stageController.back()` and clear the active enclosed-stage
@@ -1218,8 +1310,10 @@ function leaveCurrentEnclosedStageToPrevious(): void {
     .then(() => {
       if (wasAmenity) {
         activeAmenityStage = null;
+        amenityItemTooltip?.hide();
       } else {
         activeYardStage = null;
+        activeYardSpaceId = null;
       }
     })
     .catch(() => {});
@@ -1338,6 +1432,7 @@ function tickAmenityPlayer(dtSec: number): void {
   }
   amenityPlayerState.isMoving = isMoving;
   renderAmenityPlayer(stage);
+  refreshNearestAmenityBuyable(stage);
 
   if (amenityExitDebounceMs > 0) {
     amenityExitDebounceMs = Math.max(0, amenityExitDebounceMs - dtSec * 1000);
@@ -1390,16 +1485,34 @@ async function enterAmenityFromYardPad(
   const offsetX = (VIEW_W - stageW) / 2;
   const offsetY = AMENITY_HEADER_BAND_PX + (availableHeight - stageH) / 2;
 
+  const resolvedContent =
+    activeYardSpaceId !== null
+      ? resolveAmenityContent({
+          snapshot,
+          spaceId: activeYardSpaceId,
+          kind,
+        })
+      : { shopItems: [], supermarketItems: [], carWashCars: [] };
+
   let handle:
     | AmenityShopStageHandle
     | AmenitySupermarketStageHandle
     | AmenityCarWashStageHandle;
   if (kind === "shop") {
-    handle = buildAmenityShopStage({ cellScale, items: [] });
+    handle = buildAmenityShopStage({
+      cellScale,
+      items: resolvedContent.shopItems,
+    });
   } else if (kind === "supermarket") {
-    handle = buildAmenitySupermarketStage({ cellScale, items: [] });
+    handle = buildAmenitySupermarketStage({
+      cellScale,
+      items: resolvedContent.supermarketItems,
+    });
   } else {
-    handle = buildAmenityCarWashStage({ cellScale, cars: [] });
+    handle = buildAmenityCarWashStage({
+      cellScale,
+      cars: resolvedContent.carWashCars,
+    });
   }
   // The amenity stages return `root` typed as the minimal `StageRoot`
   // contract for testability, but the live object is a Pixi `Container`.
@@ -1444,6 +1557,7 @@ async function enterAmenityFromYardPad(
 
   activeAmenityStage = {
     kind,
+    spaceId: activeYardSpaceId ?? "",
     handle,
     bounds,
     cellScale,
@@ -1451,6 +1565,10 @@ async function enterAmenityFromYardPad(
     exitDoorAnchor: handle.exitDoorAnchor,
     playerLayer,
     heroGraphic,
+    offsetX,
+    offsetY,
+    nearestBuyable: null,
+    tooltipOpenForItemId: null,
   };
   lastYardAmenityPadTarget = null;
   renderAmenityPlayer(activeAmenityStage);
@@ -1479,6 +1597,7 @@ async function enterStructureSpaceFromProximity(
       palette,
     });
     activeYardStage = yard;
+    activeYardSpaceId = target.spaceId;
     yardPlayerState.pos = yardSpawnPosition();
     const overworldFacing =
       getHumanPlayerId() !== null
@@ -1805,6 +1924,199 @@ function ingestSnapshot(snap: Snapshot): void {
     }
   }
   hydrateChatFromSnapshot(snapshot);
+  refreshActiveAmenityFromSnapshot();
+  void refreshWalletHud();
+}
+
+function refreshActiveAmenityFromSnapshot(): void {
+  const stage = activeAmenityStage;
+  if (stage === null || activeYardSpaceId === null) return;
+  const content = resolveAmenityContent({
+    snapshot,
+    spaceId: activeYardSpaceId,
+    kind: stage.kind,
+  });
+  if (stage.kind === "shop") {
+    (stage.handle as AmenityShopStageHandle).refresh(content.shopItems);
+  } else if (stage.kind === "supermarket") {
+    (stage.handle as AmenitySupermarketStageHandle).refresh(
+      content.supermarketItems
+    );
+  } else {
+    (stage.handle as AmenityCarWashStageHandle).refresh(content.carWashCars);
+  }
+  // If the tooltip is open and the underlying item changed (e.g. sold via
+  // fanout), re-render with the latest model.
+  if (stage.tooltipOpenForItemId !== null) {
+    const refreshed = computeNearestAmenityBuyable(stage);
+    if (
+      refreshed !== null &&
+      refreshed.itemRef.id === stage.tooltipOpenForItemId
+    ) {
+      stage.nearestBuyable = refreshed;
+      showAmenityItemTooltip(stage, refreshed);
+    }
+  }
+}
+
+function computeNearestAmenityBuyable(
+  stage: ActiveAmenityStage
+): AmenityBuyable | null {
+  return resolveNearestAmenityBuyable({
+    kind: stage.kind,
+    findShop: () =>
+      stage.kind === "shop"
+        ? (stage.handle as AmenityShopStageHandle).findNearbyItem(
+            amenityPlayerState.pos
+          )
+        : null,
+    findSupermarket: () =>
+      stage.kind === "supermarket"
+        ? (stage.handle as AmenitySupermarketStageHandle).findNearbyItem(
+            amenityPlayerState.pos
+          )
+        : null,
+    findCar: () =>
+      stage.kind === "car_wash"
+        ? (stage.handle as AmenityCarWashStageHandle).findNearbyCar(
+            amenityPlayerState.pos
+          )
+        : null,
+  });
+}
+
+function refreshNearestAmenityBuyable(stage: ActiveAmenityStage): void {
+  const prevId = stage.nearestBuyable?.itemRef.id ?? null;
+  const next = computeNearestAmenityBuyable(stage);
+  stage.nearestBuyable = next;
+  const nextId = next?.itemRef.id ?? null;
+  if (prevId !== nextId) {
+    proximityTouchPadHandle?.refresh();
+  }
+  // If the tooltip was opened for an item we have walked away from, hide it.
+  if (
+    stage.tooltipOpenForItemId !== null &&
+    (next === null || next.itemRef.id !== stage.tooltipOpenForItemId)
+  ) {
+    amenityItemTooltip?.hide();
+    stage.tooltipOpenForItemId = null;
+  }
+}
+
+/**
+ * Single entry point for the `P` key / `P` touch-pad button while
+ * standing next to an amenity item. Implements the three-step cycle:
+ *
+ * 1. tooltip is not showing this item → show it.
+ * 2. tooltip is showing this item, item is available, no purchase
+ *    in flight → execute the purchase (same effect as clicking Buy).
+ * 3. tooltip is showing this item, purchase in flight → no-op.
+ *
+ * A previous purchase failure leaves the tooltip in a not-busy state
+ * with an inline error message, so the next press lands in case 2 and
+ * retries automatically. Sold items only enter case 1; there is no
+ * Buy action for them.
+ *
+ * @remarks **Callers:** {@link onDocumentKeyDown}, the touch-pad
+ *   `onPushToTalk` callback. **Callees:** {@link showAmenityItemTooltip},
+ *   {@link buyAmenityItem}.
+ */
+function cycleAmenityItemAction(
+  stage: ActiveAmenityStage,
+  buyable: AmenityBuyable
+): void {
+  const tooltip = amenityItemTooltip;
+  if (tooltip === null) return;
+  const tooltipShowingThisItem =
+    tooltip.isOpen() && stage.tooltipOpenForItemId === buyable.itemRef.id;
+  if (!tooltipShowingThisItem) {
+    showAmenityItemTooltip(stage, buyable);
+    return;
+  }
+  if (buyable.tooltipModel.sale.status !== "available") return;
+  if (tooltip.isBusy()) return;
+  void buyAmenityItem(stage, buyable);
+}
+
+function showAmenityItemTooltip(
+  stage: ActiveAmenityStage,
+  buyable: AmenityBuyable
+): void {
+  if (amenityItemTooltip === null) return;
+  stage.tooltipOpenForItemId = buyable.itemRef.id;
+  amenityItemTooltip.show({
+    model: buyable.tooltipModel,
+    onBuy: () => {
+      void buyAmenityItem(stage, buyable);
+    },
+  });
+  positionAmenityItemTooltip(stage);
+}
+
+function positionAmenityItemTooltip(stage: ActiveAmenityStage): void {
+  if (amenityItemTooltip === null) return;
+  const host = canvasHostRef;
+  // Player position in canvas-host px (pre-transform / "logical" coords).
+  const localX = stage.offsetX + amenityPlayerState.pos.x * stage.cellScale;
+  const localY = stage.offsetY + amenityPlayerState.pos.y * stage.cellScale;
+  if (host === null) {
+    // Fallback: behave as before. Should not happen at runtime because
+    // canvasHostRef is captured during bootstrap before any amenity
+    // stage can mount.
+    amenityItemTooltip.root.style.left = `${String(Math.round(localX - 140))}px`;
+    amenityItemTooltip.root.style.top = `${String(Math.round(localY - 180))}px`;
+    return;
+  }
+  // Convert canvas-host px → viewport px via the rendered bounding
+  // box. `getBoundingClientRect()` accounts for the CSS `transform`
+  // applied by `syncWorldScale`.
+  const hostRect = host.getBoundingClientRect();
+  const scaleX = hostRect.width / VIEW_W;
+  const scaleY = hostRect.height / VIEW_H;
+  const anchorX = hostRect.left + localX * scaleX;
+  // Anchor slightly above the player's centre so the default "above"
+  // placement clears the sprite.
+  const anchorY = hostRect.top + (localY - 32) * scaleY;
+  amenityItemTooltip.position({ x: anchorX, y: anchorY });
+}
+
+async function buyAmenityItem(
+  stage: ActiveAmenityStage,
+  buyable: AmenityBuyable
+): Promise<void> {
+  const tooltip = amenityItemTooltip;
+  if (tooltip === null) return;
+  const sid = getSid();
+  const playerId = getHumanPlayerId();
+  if (sid === null || playerId === null) {
+    tooltip.setError("sign in to play");
+    return;
+  }
+  tooltip.setBusy();
+  const result = await executePurchase({
+    sid,
+    playerId,
+    spaceId: stage.spaceId,
+    amenityKind: stage.kind,
+    itemRef: buyable.itemRef,
+  });
+  if (result.ok) {
+    walletBalanceCached = result.wallet.balanceUsd;
+    walletHud?.setBalance(result.wallet.balanceUsd);
+    if (walletInventoryPanel !== null && walletInventoryPanel.isOpen()) {
+      void refreshWalletInventoryPanel();
+    }
+    tooltip.hide();
+    stage.tooltipOpenForItemId = null;
+    return;
+  }
+  if (result.error === "INSUFFICIENT_FUNDS") {
+    tooltip.setError("Insufficient funds");
+  } else if (result.error === "ITEM_ALREADY_SOLD") {
+    tooltip.setError("Already sold");
+  } else {
+    tooltip.setError(result.message);
+  }
 }
 
 async function loadSnapshot(sid: string): Promise<void> {
@@ -2728,7 +3040,16 @@ function onFrame(): void {
     lastYardAmenityPadTarget = null;
   }
   if (proximityLegendEl !== null) {
-    if (lastYardAmenityPadTarget !== null) {
+    if (
+      activeAmenityStage !== null &&
+      activeAmenityStage.nearestBuyable !== null
+    ) {
+      const buyable = activeAmenityStage.nearestBuyable;
+      const sold = buyable.tooltipModel.sale.status === "sold";
+      proximityLegendEl.textContent = sold
+        ? `Near ${buyable.tooltipModel.name} (SOLD). P: view`
+        : `Near ${buyable.tooltipModel.name}. P: buy ($${buyable.tooltipModel.priceUsd.toFixed(2)})`;
+    } else if (lastYardAmenityPadTarget !== null) {
       const amenityName =
         AMENITY_DISPLAY_LABEL[lastYardAmenityPadTarget.kind as AmenityKind];
       proximityLegendEl.textContent = `Near ${amenityName}. P: enter ${amenityName.toLowerCase()}`;
@@ -2886,6 +3207,7 @@ export function bootstrap(): void {
     const canvasHost = document.createElement("div");
     canvasHost.className = "preview-canvas-host";
     canvasHost.style.cssText = `display:block;position:absolute;width:${VIEW_W}px;height:${VIEW_H}px;overflow:hidden;`;
+    canvasHostRef = canvasHost;
 
     const joystickWrap = document.createElement("div");
     joystickWrap.className = "preview-joystick-wrap";
@@ -3055,12 +3377,27 @@ export function bootstrap(): void {
     motionQuery.addEventListener("change", syncSkyMotion);
 
     canvasHost.appendChild(agentChatOverlays.root);
-    walletHud = createWalletHud({ parent: canvasHost });
+    // Wallet HUD, inventory panel, and the amenity item tooltip use
+    // `position: fixed` to escape the `centerCol` stacking context (and
+    // the `transform` on `canvasHost` which would otherwise constrain
+    // fixed-position children). Mounting them on `document.body` keeps
+    // their containing block as the viewport, which is what they want.
+    walletHud = createWalletHud({
+      parent: document.body,
+      onClick: () => openWalletInventoryPanel(),
+    });
+    walletInventoryPanel = createWalletInventoryPanel({
+      parent: document.body,
+      onRefresh: () => {
+        void refreshWalletInventoryPanel();
+      },
+    });
     void refreshWalletHud();
     proximityPromptEl = document.createElement("div");
     proximityPromptEl.className = "preview-proximity-prompt";
     proximityPromptEl.textContent = "A: for assist\nC: for chat\nP: push to talk";
     canvasHost.appendChild(proximityPromptEl);
+    amenityItemTooltip = createItemTooltip({ parent: document.body });
 
     proximityTouchPadHandle = createPreviewProximityTouchControls({
       parent: canvasWrap,
@@ -3082,6 +3419,13 @@ export function bootstrap(): void {
         if (target === null) return null;
         return AMENITY_DISPLAY_LABEL[target.kind as AmenityKind];
       },
+      getAmenityItemActionLabel: () => {
+        const stage = activeAmenityStage;
+        if (stage === null) return null;
+        const buyable = stage.nearestBuyable;
+        if (buyable === null) return null;
+        return buyable.tooltipModel.sale.status === "sold" ? "View" : "Buy";
+      },
       onAssist: () => {
         if (
           lastProximityPartnerId === null &&
@@ -3096,11 +3440,22 @@ export function bootstrap(): void {
         triggerProximityAssistOrChat("chat");
       },
       onPushToTalk: () => {
+        if (activeAmenityStage !== null) {
+          const stage = activeAmenityStage;
+          const buyable = stage.nearestBuyable;
+          if (buyable !== null) {
+            cycleAmenityItemAction(stage, buyable);
+            return;
+          }
+        }
         if (lastYardAmenityPadTarget !== null) {
           void enterAmenityFromYardPad(lastYardAmenityPadTarget);
           return;
         }
         void triggerProximityPushToTalk();
+      },
+      onWallet: () => {
+        openWalletInventoryPanel();
       },
     });
 

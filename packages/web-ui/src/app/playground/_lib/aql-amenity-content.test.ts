@@ -15,6 +15,7 @@ const baseState = (): AqlExecutionState => ({
   spaceCatalogId: null,
   spaceNodeId: null,
   spacePasswordMaterial: null,
+  targetAmenityKind: null,
   targetAgentId: null,
   targetNodeId: null,
   timeoutMs: 8000,

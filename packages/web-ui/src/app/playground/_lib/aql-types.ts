@@ -5,7 +5,9 @@
  * Type definitions for AQL: tokens, expressions, statements, diagnostics, and
  * execution outputs. The {@link AqlStatement} union enumerates every AQL
  * command, including the 3.1.1 additions
- * `AddShopItemStmt | AddSupermarketItemStmt | AddCarWashCarStmt | SetWalletStmt`.
+ * `AddShopItemStmt | AddSupermarketItemStmt | AddCarWashCarStmt | SetWalletStmt`,
+ * plus `UseAmenityStmt | RemoveAmenityItemsStmt` for scoped inspection and
+ * bulk content removal.
  *
  * @see ./aql-lexer.ts for token production.
  * @see ./aql-parser.ts for statement recognition.
@@ -77,11 +79,17 @@ export type AqlStatement =
   | { kind: "InspectAgentNodeStmt" }
   | { kind: "UseAgentNodeStmt"; nodeId: AqlExpr }
   | { kind: "UseSpaceNodeStmt"; nodeId: AqlExpr; passphrase: AqlExpr }
+  | { kind: "UseAmenityStmt"; amenityKind: AqlExpr }
   | { kind: "ShiftAgentNodeStmt"; nodeId: AqlExpr }
   | { kind: "InspectAgentStmt" }
   | { kind: "AddSpaceAmenityStmt"; amenityKind: AqlExpr }
   | { kind: "RemoveSpaceAmenityStmt"; spaceId: AqlExpr; amenityKind: AqlExpr }
   | { kind: "RemoveSpaceStmt"; spaceId: AqlExpr }
+  | {
+      kind: "RemoveAmenityItemsStmt";
+      all: boolean;
+      itemIds?: AqlExpr[];
+    }
   | {
       kind: "AddShopItemStmt";
       itemType: AqlExpr;
@@ -146,6 +154,12 @@ export type AqlExecutionState = {
   spaceNodeId: string | null;
   /** Hex passphrase material for the space node (USE SPACE NODE). */
   spacePasswordMaterial: string | null;
+  /**
+   * Active amenity kind selected by `USE AMENITY "<kind>"`. Scopes
+   * subsequent `INSPECT AMENITY` (when no explicit kind is provided) and
+   * is required for `REMOVE AMENITY ITEMS`. Cleared on space/agent switch.
+   */
+  targetAmenityKind: string | null;
   targetAgentId: string | null;
   targetNodeId: string | null;
   timeoutMs: number;

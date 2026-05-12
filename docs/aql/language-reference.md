@@ -2,8 +2,9 @@
 
 The Agent Query Language (AQL) is the in-browser command surface for
 agent-play. This page is the **single canonical reference** for every
-statement the playground supports, including the new amenity-content and
-wallet commands introduced in 3.1.1. It mirrors the implementation in
+statement the playground supports, including the amenity-content and
+wallet commands introduced in 3.1.1 and the scoped amenity commands
+(`USE AMENITY`, `REMOVE AMENITY ITEMS`, extended `INSPECT AMENITY`) in 3.1.2.
 [`packages/web-ui/src/app/playground/_lib`](../../packages/web-ui/src/app/playground/_lib).
 
 > The play canvas (overworld → space yard → amenity stage) is driven by
@@ -93,11 +94,13 @@ catalog.
 ### `USE SPACE NODE`
 
 ```aql
-USE SPACE NODE "space-sandmill-circle"
+USE SPACE NODE "node:…" PASSPHRASE "word1 word2 … word10"
 ```
 
 Activates a space context for `ADD SHOP ITEM`, `ADD SUPERMARKET ITEM`,
-`ADD CARWASH CAR`, lease operations, and amenity content removals.
+`ADD CARWASH CAR`, lease operations, `USE AMENITY`, `REMOVE AMENITY ITEMS`,
+and amenity content removals. **Requires** a ten-word `PASSPHRASE` after the
+node id (see [`aql-parser.ts`](../../packages/web-ui/src/app/playground/_lib/aql-parser.ts)).
 
 ## Inspection
 
@@ -113,11 +116,22 @@ Reads metadata about the main intercom node.
 
 ```aql
 INSPECT SPACE
-INSPECT AMENITY "shop"
+USE AMENITY "shop"
+INSPECT AMENITY
+INSPECT AMENITY "supermarket"
 INSPECT AGENT
 ```
 
-Returns the snapshot block for the active context.
+- `INSPECT SPACE` calls `inspectSpace` and returns `{ catalog, leases, logs }`.
+- `INSPECT AMENITY` calls `inspectAmenity`. With an explicit kind string
+  (`"shop"`, `"supermarket"`, or `"car_wash"`), the response includes
+  `kind`, `items` (array for that kind), `logs`, and `leases`. With **no**
+  kind argument, the executor sends no `kind` filter; the server returns
+  `items` as `{ shopItems, supermarketItems, carWashCars }` plus `logs` and
+  `leases`. If you omit the kind expression but have run `USE AMENITY
+  "<kind>"`, the executor supplies that kind so `INSPECT AMENITY` alone
+  inspects the scoped amenity.
+- `INSPECT AGENT` reads the active agent context.
 
 ### `FETCH OCCUPANTS | METADATA | SNAPSHOT`
 
@@ -179,6 +193,43 @@ Records an amenity lease; see the session-store implementation in
 
 ## Amenity content (new)
 
+### `USE AMENITY`
+
+After `USE SPACE NODE`, selects which amenity kind subsequent commands target
+when the kind would otherwise be ambiguous. Required before
+`REMOVE AMENITY ITEMS`. Cleared when you switch to another space node or to
+an agent node.
+
+```aql
+USE AMENITY "shop"
+USE AMENITY "supermarket"
+USE AMENITY "car_wash"
+```
+
+### `REMOVE AMENITY ITEMS`
+
+Deletes persisted amenity **content** rows (shop items, supermarket items,
+or car-wash cars) for the active space. Does **not** remove the amenity slot
+from the space catalog; for that, use `REMOVE AMENITY "<spaceId>" "<kind>"`
+(space lifecycle section).
+
+```aql
+USE AMENITY "shop"
+REMOVE AMENITY ITEMS ALL
+
+USE AMENITY "supermarket"
+REMOVE AMENITY ITEMS "sm-uuid-1", "sm-uuid-2"
+```
+
+- `ALL` — delete every item of the scoped kind in this space.
+- Comma-separated quoted ids — delete only those rows (must match the
+  current `USE AMENITY` kind).
+
+The RPC is `removeAmenityItems` with `{ spaceId, kind, all: true }` or
+`{ spaceId, kind, itemIds: [...] }`. Each successful removal fans out like
+the single-item `removeShopItem` / `removeSupermarketItem` /
+`removeCarWashCar` operations.
+
 Every amenity content row is created with `sale.status: "available"`.
 Buying an item flips `sale.status` to `"sold"` and records
 `soldToPlayerId` + `soldAt`. Items in the sold state can be removed
@@ -230,8 +281,8 @@ ADD SUPERMARKET ITEM ROW 1 NAME "Apple"
 **Syntax**
 
 ```aql
-ADD CARWASH CAR NAME "Sport Coupe" MODEL "GT 350"
-  YEAR 2024 PRICE 28999 COLOR "#5a87d1" SLOT 3
+ADD CARWASH CAR SLOT 3 NAME "Sport Coupe" MODEL "GT 350"
+  YEAR 2024 PRICE 28999 COLOR "#5a87d1"
 ```
 
 **Fields**
@@ -364,23 +415,22 @@ CALL stockFruit("Banana", 0.75)
 CALL stockFruit("Mango", 2.10)
 ```
 
-### 3. Stock the car-wash lot, then inspect the sold cars
+### 3. Stock the car-wash lot, then inspect inventory
 
 ```aql
-CONNECT "http://localhost:3000"
-USE SPACE NODE "space-sandmill-circle"
+CONNECT SERVER "http://localhost:3000" MAIN_NODE "main-1"
+USE SPACE NODE "node:…" PASSPHRASE "ten word passphrase here …"
 
 ADD SPACE AMENITY "car_wash"
 
-ADD CARWASH CAR NAME "Sport Coupe" MODEL "GT 350"
-  YEAR 2024 PRICE 28999 COLOR "#5a87d1" SLOT 1
+ADD CARWASH CAR SLOT 1 NAME "Sport Coupe" MODEL "GT 350"
+  YEAR 2024 PRICE 28999 COLOR "#5a87d1"
 
-ADD CARWASH CAR NAME "City Hatch" MODEL "Spark"
-  YEAR 2022 PRICE 12500 COLOR "#e44d61" SLOT 5
-
-INSPECT AMENITY "car_wash"
+USE AMENITY "car_wash"
+INSPECT AMENITY
 SHOW RESPONSE
 ```
 
-Sold cars in the response have `sale.status: "sold"` and a
+The `inspectAmenity` response includes `items` (the cars when scoped), plus
+`logs` and `leases`. Sold cars in `items` have `sale.status: "sold"` and a
 `sale.soldToPlayerId`.

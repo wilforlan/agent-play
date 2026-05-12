@@ -31,6 +31,7 @@ export function validateAql(program: AqlProgram): ValidationResult {
   const macros = new Map<string, { paramCount: number; minArgs: number }>();
   let hasAgentTarget = false;
   let hasSpaceUse = false;
+  let hasAmenityScope = false;
 
   const validateExpr = (expr: AqlExpr): void => {
     const varName = exprVarName(expr);
@@ -56,12 +57,27 @@ export function validateAql(program: AqlProgram): ValidationResult {
         validateExpr(stmt.nodeId);
         hasAgentTarget = true;
         hasSpaceUse = false;
+        hasAmenityScope = false;
         return;
       case "UseSpaceNodeStmt":
         validateExpr(stmt.nodeId);
         validateExpr(stmt.passphrase);
         hasSpaceUse = true;
         hasAgentTarget = false;
+        hasAmenityScope = false;
+        return;
+      case "UseAmenityStmt":
+        validateExpr(stmt.amenityKind);
+        if (!hasSpaceUse) {
+          diagnostics.push({
+            code: "AQL_SEMANTIC_ERROR",
+            severity: "error",
+            message: "USE AMENITY requires USE SPACE NODE first",
+            line: 1,
+            column: 1,
+          });
+        }
+        hasAmenityScope = true;
         return;
       case "CreateSpaceStmt":
         validateExpr(stmt.name);
@@ -184,6 +200,39 @@ export function validateAql(program: AqlProgram): ValidationResult {
       case "RemoveSpaceStmt":
         validateExpr(stmt.spaceId);
         return;
+      case "RemoveAmenityItemsStmt": {
+        if (stmt.itemIds !== undefined) {
+          for (const id of stmt.itemIds) validateExpr(id);
+        }
+        if (!hasSpaceUse) {
+          diagnostics.push({
+            code: "AQL_SEMANTIC_ERROR",
+            severity: "error",
+            message: "REMOVE AMENITY ITEMS requires USE SPACE NODE first",
+            line: 1,
+            column: 1,
+          });
+        }
+        if (!hasAmenityScope) {
+          diagnostics.push({
+            code: "AQL_SEMANTIC_ERROR",
+            severity: "error",
+            message: "REMOVE AMENITY ITEMS requires USE AMENITY first",
+            line: 1,
+            column: 1,
+          });
+        }
+        if (!stmt.all && (stmt.itemIds === undefined || stmt.itemIds.length === 0)) {
+          diagnostics.push({
+            code: "AQL_SEMANTIC_ERROR",
+            severity: "error",
+            message: "REMOVE AMENITY ITEMS requires ALL or at least one id",
+            line: 1,
+            column: 1,
+          });
+        }
+        return;
+      }
       case "SendStmt":
         validateExpr(stmt.message);
         if (!hasAgentTarget) {
@@ -246,11 +295,14 @@ export function validateAql(program: AqlProgram): ValidationResult {
         }
         const previousVars = new Set(vars);
         const previousHasSpaceUse = hasSpaceUse;
+        const previousHasAmenityScope = hasAmenityScope;
         vars.clear();
         for (const scoped of scopedVars) vars.add(scoped);
         hasSpaceUse = false;
+        hasAmenityScope = false;
         for (const inner of stmt.body) visitStatement(inner);
         hasSpaceUse = previousHasSpaceUse;
+        hasAmenityScope = previousHasAmenityScope;
         vars.clear();
         for (const v of previousVars) vars.add(v);
         return;

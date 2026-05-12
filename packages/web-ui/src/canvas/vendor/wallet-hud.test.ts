@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createWalletHud } from "./wallet-hud.js";
 
 const newParent = (): HTMLElement => {
@@ -37,5 +37,17 @@ describe("wallet-hud", () => {
     expect(parent.children.length).toBe(1);
     hud.destroy();
     expect(parent.children.length).toBe(0);
+  });
+
+  it("is a button so it is clickable / keyboard-focusable", () => {
+    const hud = createWalletHud({ parent: newParent() });
+    expect(hud.root.tagName).toBe("BUTTON");
+  });
+
+  it("invokes onClick when the HUD is clicked", () => {
+    const onClick = vi.fn();
+    const hud = createWalletHud({ parent: newParent(), onClick });
+    hud.root.click();
+    expect(onClick).toHaveBeenCalledOnce();
   });
 });
