@@ -1,3 +1,15 @@
+/**
+ * @packageDocumentation
+ * @module @agent-play/web-ui/playground/aql-validator
+ *
+ * Required-field, enum, and contextual validation for the AQL AST. In 3.1.1
+ * also checks that the active session has the matching `USE SPACE NODE` for
+ * `ADD SHOP ITEM`, `ADD SUPERMARKET ITEM`, and `ADD CARWASH CAR`, and that
+ * priced amounts (`PRICE`) are positive finite numbers.
+ *
+ * @see ./aql-executor.ts for the dispatch that consumes the validated AST.
+ */
+
 import type {
   AqlDiagnostic,
   AqlExpr,
@@ -120,6 +132,50 @@ export function validateAql(program: AqlProgram): ValidationResult {
             column: 1,
           });
         }
+        return;
+      case "AddShopItemStmt":
+      case "AddSupermarketItemStmt":
+      case "AddCarWashCarStmt": {
+        if (stmt.kind === "AddShopItemStmt") {
+          validateExpr(stmt.itemType);
+          validateExpr(stmt.description);
+        }
+        validateExpr(stmt.name);
+        if (stmt.kind === "AddCarWashCarStmt") {
+          validateExpr(stmt.model);
+          validateExpr(stmt.year);
+          validateExpr(stmt.colorHex);
+          if (stmt.slot !== undefined) validateExpr(stmt.slot);
+        }
+        if (stmt.kind === "AddSupermarketItemStmt") {
+          validateExpr(stmt.row);
+          validateExpr(stmt.description);
+          if (stmt.column !== undefined) validateExpr(stmt.column);
+        }
+        validateExpr(stmt.priceUsd);
+        if (!hasSpaceUse) {
+          const label =
+            stmt.kind === "AddShopItemStmt"
+              ? "ADD SHOP ITEM"
+              : stmt.kind === "AddSupermarketItemStmt"
+                ? "ADD SUPERMARKET ITEM"
+                : "ADD CARWASH CAR";
+          diagnostics.push({
+            code: "AQL_SEMANTIC_ERROR",
+            severity: "error",
+            message: `${label} requires USE SPACE NODE first`,
+            line: 1,
+            column: 1,
+          });
+        }
+        return;
+      }
+      case "SetWalletStmt":
+        validateExpr(stmt.playerId);
+        validateExpr(stmt.balanceUsd);
+        return;
+      case "InspectWalletStmt":
+        validateExpr(stmt.playerId);
         return;
       case "RemoveSpaceAmenityStmt":
         validateExpr(stmt.spaceId);

@@ -136,4 +136,35 @@ describe("createPreviewProximityTouchControls", () => {
     expect(onAssist).not.toHaveBeenCalled();
     expect(onChat).not.toHaveBeenCalled();
   });
+
+  it("relabels A to 'Enter' and enables it when getStructureProximity returns a label", () => {
+    let label: string | null = null;
+    const { root, refresh } = createPreviewProximityTouchControls({
+      parent,
+      getBoundsElement: () => parent,
+      getCanAct: () => false,
+      getStructureProximityLabel: () => label,
+      onAssist,
+      onChat,
+      onPushToTalk,
+    });
+    const assistBtn = root.querySelector(
+      ".preview-proximity-touch-pad__key--assist"
+    ) as HTMLButtonElement;
+    const chatBtn = root.querySelector(
+      ".preview-proximity-touch-pad__key--chat"
+    ) as HTMLButtonElement;
+    const subA = root.querySelector(
+      ".preview-proximity-touch-pad__key--assist .preview-proximity-touch-pad__key-sub"
+    ) as HTMLElement;
+    expect(assistBtn.disabled).toBe(true);
+    expect(subA.textContent).toBe("Assist");
+    label = "SandMill Circle";
+    refresh();
+    expect(assistBtn.disabled).toBe(false);
+    expect(subA.textContent).toBe("Enter");
+    expect(chatBtn.disabled).toBe(true);
+    assistBtn.click();
+    expect(onAssist).toHaveBeenCalledTimes(1);
+  });
 });

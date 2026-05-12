@@ -1,3 +1,14 @@
+/**
+ * @packageDocumentation
+ * @module @agent-play/web-ui/playground/aql-autocomplete
+ *
+ * Keyword and context-aware completions for the AQL editor. In 3.1.1 adds
+ * suggestions for the new content authoring keywords (`ADD SHOP ITEM`,
+ * `ADD SUPERMARKET ITEM`, `ADD CARWASH CAR`) and their field names
+ * (`TYPE`, `NAME`, `DESCRIPTION`, `PRICE`, `ROW`, `MODEL`, `YEAR`, `COLOR`).
+ *
+ * @see ./aql-parser.ts for the grammar these completions guide users toward.
+ */
 export type AqlSuggestion = {
   label: string;
   insertText: string;
@@ -20,6 +31,31 @@ const KEYWORD_SUGGESTIONS: AqlSuggestion[] = [
   { label: "REMOVE SPACE", insertText: "REMOVE SPACE ", kind: "keyword" },
   { label: "REMOVE AMENITY", insertText: "REMOVE AMENITY ", kind: "keyword" },
   { label: "CREATE LEASE AMENITY", insertText: "CREATE LEASE AMENITY ", kind: "keyword" },
+  {
+    label: "ADD SHOP ITEM",
+    insertText: "ADD SHOP ITEM TYPE \"book\" NAME \"\" DESCRIPTION \"\" PRICE ",
+    kind: "keyword",
+  },
+  {
+    label: "ADD SUPERMARKET ITEM",
+    insertText: "ADD SUPERMARKET ITEM ROW 1 NAME \"\" DESCRIPTION \"\" PRICE ",
+    kind: "keyword",
+  },
+  {
+    label: "ADD CARWASH CAR",
+    insertText: "ADD CARWASH CAR SLOT 1 NAME \"\" MODEL \"\" YEAR 2024 PRICE 0 COLOR \"#ff0000\"",
+    kind: "keyword",
+  },
+  {
+    label: "SET WALLET PLAYER",
+    insertText: "SET WALLET PLAYER \"\" BALANCE 70",
+    kind: "keyword",
+  },
+  {
+    label: "INSPECT WALLET",
+    insertText: "INSPECT WALLET ",
+    kind: "keyword",
+  },
   { label: "INSPECT AGENT NODE", insertText: "INSPECT AGENT NODE", kind: "keyword" },
   { label: "INSPECT AGENT", insertText: "INSPECT AGENT", kind: "keyword" },
   { label: "USE AGENT NODE", insertText: "USE AGENT NODE ", kind: "keyword" },

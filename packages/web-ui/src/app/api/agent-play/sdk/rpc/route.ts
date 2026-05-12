@@ -1,4 +1,35 @@
+/**
+ * @packageDocumentation
+ * @module @agent-play/web-ui/api/sdk/rpc/route
+ *
+ * Server entry point for the SDK RPC surface used by the play UI and the
+ * AQL playground. Each operation in {@link RpcRequest.op} maps to one handler
+ * below; all handlers go through {@link ./session-store.ts | the session
+ * store} for persistence and fan out updates via the player chain.
+ *
+ * **Added in 3.1.1**:
+ * - `addShopItem`, `addSupermarketItem`, `addCarWashCar` (+ matching
+ *   `remove*`), insert with `sale.status = 'available'`.
+ * - `enterSpace`, `enterAmenity`: audit-log only; persistence is driven by
+ *   the snapshot.
+ * - `purchase`: `WATCH`/`MULTI`-protected single transaction that decrements
+ *   the wallet and flips the item to `sale = { status: 'sold', ... }`. Returns
+ *   structured `ITEM_ALREADY_SOLD` / `INSUFFICIENT_FUNDS` errors.
+ *
+ * @see ../../../../../sdk/src/lib/space-content-model.ts for the schemas
+ *      enforced here.
+ * @see ../../../../../play-ui/src/purchase-client.ts for the browser client.
+ */
 import { NextRequest } from "next/server";
+import { randomUUID } from "node:crypto";
+import {
+  CarWashCarSchema,
+  ShopItemSchema,
+  SupermarketItemSchema,
+  type CarWashCar,
+  type ShopItem,
+  type SupermarketItem,
+} from "@agent-play/sdk";
 import {
   agentPlayVerbose,
   isAgentPlayVerboseEnabled,
@@ -11,6 +42,11 @@ import { getPlayWorld, getSessionStore } from "@/server/get-world";
 import { validateAgentPlaySession } from "@/server/agent-play/session-validation";
 import { handleIntercomCommand } from "@/server/agent-play/intercom/intercom-router";
 import { handleIntercomResponse } from "@/server/agent-play/intercom/handle-intercom-response";
+import {
+  SPACE_AMENITY_CONTENT_UPDATED_EVENT,
+  WORLD_AGENT_SIGNAL_EVENT,
+  WORLD_FANOUT_PLAYER_ID,
+} from "@/server/agent-play/play-transport";
 import {
   CREATE_HUMAN_NODE_OP,
   INTERCOM_COMMAND_OP,
@@ -51,6 +87,61 @@ async function verifyMainNodeHeaders(req: NextRequest): Promise<Response | null>
     return Response.json({ error: "main node required" }, { status: 403 });
   }
   return null;
+}
+
+async function assertSpaceHasAmenity(
+  world: Awaited<ReturnType<typeof getPlayWorld>>,
+  spaceId: string,
+  amenityKind: "shop" | "supermarket" | "car_wash"
+): Promise<Response | null> {
+  const snap = await world.getSnapshotJson();
+  const entry = snap.spaces?.find((s) => s.id === spaceId);
+  if (entry === undefined) {
+    return Response.json({ error: "unknown space" }, { status: 404 });
+  }
+  if (!entry.amenities.includes(amenityKind)) {
+    return Response.json(
+      { error: "AMENITY_NOT_ON_SPACE" },
+      { status: 400 }
+    );
+  }
+  return null;
+}
+
+async function fanoutAmenityContentUpdated(input: {
+  store: ReturnType<typeof getSessionStore>;
+  world: Awaited<ReturnType<typeof getPlayWorld>>;
+  spaceId: string;
+  amenityKind: "shop" | "supermarket" | "car_wash";
+  reason: "added" | "removed" | "sold";
+  itemRef: { kind: "shop" | "supermarket" | "carwash"; id: string };
+}): Promise<void> {
+  const snap = await input.world.getSnapshotJson();
+  const persistRev = await input.store.persistSnapshotReturningRev(snap);
+  await input.store.publishWorldFanout(
+    persistRev.rev,
+    SPACE_AMENITY_CONTENT_UPDATED_EVENT,
+    {
+      playerId: WORLD_FANOUT_PLAYER_ID,
+      spaceId: input.spaceId,
+      amenityKind: input.amenityKind,
+      reason: input.reason,
+      itemRef: input.itemRef,
+    },
+    {
+      merkleRootHex: persistRev.merkleRootHex,
+      merkleLeafCount: persistRev.merkleLeafCount,
+    }
+  );
+  await input.store.publishWorldFanout(
+    persistRev.rev,
+    WORLD_AGENT_SIGNAL_EVENT,
+    {
+      playerId: WORLD_FANOUT_PLAYER_ID,
+      kind: "metadata",
+      data: { reason: "amenity_content_updated", spaceId: input.spaceId },
+    }
+  );
 }
 
 async function verifySpaceNodeHeaders(
@@ -426,6 +517,372 @@ export async function POST(req: NextRequest) {
           leaseId: p.leaseId.trim(),
         });
         return Response.json({ ok: true });
+      }
+      case "addShopItem": {
+        const p = body.payload as {
+          spaceId?: unknown;
+          type?: unknown;
+          name?: unknown;
+          description?: unknown;
+          priceUsd?: unknown;
+        };
+        if (typeof p.spaceId !== "string") {
+          return Response.json({ error: "invalid payload" }, { status: 400 });
+        }
+        const gate = await verifySpaceNodeHeaders(req, p.spaceId);
+        if (gate !== null) return gate;
+        const spaceId = p.spaceId.trim();
+        const amenityGate = await assertSpaceHasAmenity(world, spaceId, "shop");
+        if (amenityGate !== null) return amenityGate;
+        const item: ShopItem = ShopItemSchema.parse({
+          id: `shop-${randomUUID()}`,
+          spaceId,
+          type: p.type,
+          name: typeof p.name === "string" ? p.name : "",
+          description: typeof p.description === "string" ? p.description : "",
+          priceUsd: p.priceUsd,
+          createdAt: new Date().toISOString(),
+          sale: { status: "available" },
+        });
+        await store.upsertShopItem(item);
+        await fanoutAmenityContentUpdated({
+          store,
+          world,
+          spaceId,
+          amenityKind: "shop",
+          reason: "added",
+          itemRef: { kind: "shop", id: item.id },
+        });
+        return Response.json({ item });
+      }
+      case "addSupermarketItem": {
+        const p = body.payload as {
+          spaceId?: unknown;
+          name?: unknown;
+          description?: unknown;
+          priceUsd?: unknown;
+          row?: unknown;
+          column?: unknown;
+        };
+        if (typeof p.spaceId !== "string") {
+          return Response.json({ error: "invalid payload" }, { status: 400 });
+        }
+        const gate = await verifySpaceNodeHeaders(req, p.spaceId);
+        if (gate !== null) return gate;
+        const spaceId = p.spaceId.trim();
+        const amenityGate = await assertSpaceHasAmenity(
+          world,
+          spaceId,
+          "supermarket"
+        );
+        if (amenityGate !== null) return amenityGate;
+        const rowRaw = Number(p.row);
+        if (!Number.isInteger(rowRaw) || rowRaw < 1 || rowRaw > 4) {
+          return Response.json(
+            { error: "row must be an integer 1..4" },
+            { status: 400 }
+          );
+        }
+        const row = rowRaw as 1 | 2 | 3 | 4;
+        let column: 1 | 2 | 3 | 4 | 5;
+        if (p.column === undefined || p.column === null) {
+          const existing = await store.listSupermarketItems(spaceId);
+          const taken = new Set(
+            existing.filter((i) => i.row === row).map((i) => i.column)
+          );
+          const free = [1, 2, 3, 4, 5].find((c) => !taken.has(c as 1 | 2 | 3 | 4 | 5));
+          if (free === undefined) {
+            return Response.json(
+              { error: "no free column in this row" },
+              { status: 400 }
+            );
+          }
+          column = free as 1 | 2 | 3 | 4 | 5;
+        } else {
+          const c = Number(p.column);
+          if (!Number.isInteger(c) || c < 1 || c > 5) {
+            return Response.json(
+              { error: "column must be an integer 1..5" },
+              { status: 400 }
+            );
+          }
+          column = c as 1 | 2 | 3 | 4 | 5;
+        }
+        const item: SupermarketItem = SupermarketItemSchema.parse({
+          id: `sm-${randomUUID()}`,
+          spaceId,
+          row,
+          column,
+          name: typeof p.name === "string" ? p.name : "",
+          description: typeof p.description === "string" ? p.description : "",
+          priceUsd: p.priceUsd,
+          createdAt: new Date().toISOString(),
+          sale: { status: "available" },
+        });
+        await store.upsertSupermarketItem(item);
+        await fanoutAmenityContentUpdated({
+          store,
+          world,
+          spaceId,
+          amenityKind: "supermarket",
+          reason: "added",
+          itemRef: { kind: "supermarket", id: item.id },
+        });
+        return Response.json({ item });
+      }
+      case "addCarWashCar": {
+        const p = body.payload as {
+          spaceId?: unknown;
+          name?: unknown;
+          model?: unknown;
+          year?: unknown;
+          priceUsd?: unknown;
+          colorHex?: unknown;
+          slot?: unknown;
+        };
+        if (typeof p.spaceId !== "string") {
+          return Response.json({ error: "invalid payload" }, { status: 400 });
+        }
+        const gate = await verifySpaceNodeHeaders(req, p.spaceId);
+        if (gate !== null) return gate;
+        const spaceId = p.spaceId.trim();
+        const amenityGate = await assertSpaceHasAmenity(
+          world,
+          spaceId,
+          "car_wash"
+        );
+        if (amenityGate !== null) return amenityGate;
+        let slot: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9;
+        if (p.slot === undefined || p.slot === null) {
+          const existing = await store.listCarWashCars(spaceId);
+          const taken = new Set(existing.map((c) => c.slot));
+          const free = [1, 2, 3, 4, 5, 6, 7, 8, 9].find(
+            (s) => !taken.has(s as 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9)
+          );
+          if (free === undefined) {
+            return Response.json(
+              { error: "no free slot in this car wash" },
+              { status: 400 }
+            );
+          }
+          slot = free as 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9;
+        } else {
+          const n = Number(p.slot);
+          if (!Number.isInteger(n) || n < 1 || n > 9) {
+            return Response.json(
+              { error: "slot must be an integer 1..9" },
+              { status: 400 }
+            );
+          }
+          slot = n as 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9;
+        }
+        const car: CarWashCar = CarWashCarSchema.parse({
+          id: `car-${randomUUID()}`,
+          spaceId,
+          slot,
+          name: typeof p.name === "string" ? p.name : "",
+          model: typeof p.model === "string" ? p.model : "",
+          year: Number(p.year),
+          priceUsd: p.priceUsd,
+          colorHex: typeof p.colorHex === "string" ? p.colorHex : "",
+          createdAt: new Date().toISOString(),
+          sale: { status: "available" },
+        });
+        await store.upsertCarWashCar(car);
+        await fanoutAmenityContentUpdated({
+          store,
+          world,
+          spaceId,
+          amenityKind: "car_wash",
+          reason: "added",
+          itemRef: { kind: "carwash", id: car.id },
+        });
+        return Response.json({ item: car });
+      }
+      case "removeShopItem":
+      case "removeSupermarketItem":
+      case "removeCarWashCar": {
+        const p = body.payload as { spaceId?: unknown; itemId?: unknown };
+        if (typeof p.spaceId !== "string" || typeof p.itemId !== "string") {
+          return Response.json({ error: "invalid payload" }, { status: 400 });
+        }
+        const gate = await verifySpaceNodeHeaders(req, p.spaceId);
+        if (gate !== null) return gate;
+        const spaceId = p.spaceId.trim();
+        const id = p.itemId.trim();
+        let ok = false;
+        let amenityKind: "shop" | "supermarket" | "car_wash";
+        let refKind: "shop" | "supermarket" | "carwash";
+        if (body.op === "removeShopItem") {
+          ok = await store.removeShopItem({ spaceId, itemId: id });
+          amenityKind = "shop";
+          refKind = "shop";
+        } else if (body.op === "removeSupermarketItem") {
+          ok = await store.removeSupermarketItem({ spaceId, itemId: id });
+          amenityKind = "supermarket";
+          refKind = "supermarket";
+        } else {
+          ok = await store.removeCarWashCar({ spaceId, carId: id });
+          amenityKind = "car_wash";
+          refKind = "carwash";
+        }
+        if (ok) {
+          await fanoutAmenityContentUpdated({
+            store,
+            world,
+            spaceId,
+            amenityKind,
+            reason: "removed",
+            itemRef: { kind: refKind, id },
+          });
+        }
+        return Response.json({ ok });
+      }
+      case "enterSpace": {
+        const p = body.payload as {
+          playerId?: unknown;
+          structureId?: unknown;
+          spaceId?: unknown;
+        };
+        if (typeof p.playerId !== "string" || typeof p.structureId !== "string") {
+          return Response.json({ error: "invalid payload" }, { status: 400 });
+        }
+        const transition = await world.enterStructureSpace({
+          playerId: p.playerId,
+          structureId: p.structureId,
+          ...(typeof p.spaceId === "string" ? { spaceId: p.spaceId } : {}),
+        });
+        return Response.json({ transition });
+      }
+      case "enterAmenity": {
+        const p = body.payload as {
+          playerId?: unknown;
+          spaceId?: unknown;
+          amenityKind?: unknown;
+        };
+        if (
+          typeof p.playerId !== "string" ||
+          typeof p.spaceId !== "string" ||
+          typeof p.amenityKind !== "string"
+        ) {
+          return Response.json({ error: "invalid payload" }, { status: 400 });
+        }
+        if (!isSpaceAmenityKind(p.amenityKind)) {
+          return Response.json({ error: "invalid amenity kind" }, { status: 400 });
+        }
+        await store.appendSpaceAmenityLog({
+          spaceId: p.spaceId,
+          amenityKind: p.amenityKind,
+          entry: {
+            at: new Date().toISOString(),
+            action: "amenity_entered",
+            detail: { playerId: p.playerId },
+          },
+        });
+        return Response.json({ ok: true });
+      }
+      case "getPlayerWallet": {
+        const p = body.payload as { playerId?: unknown };
+        if (typeof p.playerId !== "string" || p.playerId.trim().length === 0) {
+          return Response.json({ error: "invalid payload" }, { status: 400 });
+        }
+        const wallet = await store.getPlayerWallet(p.playerId.trim());
+        return Response.json({ wallet });
+      }
+      case "setPlayerWalletBalance": {
+        const gate = await verifyMainNodeHeaders(req);
+        if (gate !== null) return gate;
+        const p = body.payload as { playerId?: unknown; balanceUsd?: unknown };
+        if (typeof p.playerId !== "string") {
+          return Response.json({ error: "invalid payload" }, { status: 400 });
+        }
+        const balance = Number(p.balanceUsd);
+        if (!Number.isFinite(balance) || balance < 0) {
+          return Response.json(
+            { error: "balanceUsd must be a non-negative number" },
+            { status: 400 }
+          );
+        }
+        const wallet = await store.setPlayerWalletBalance({
+          playerId: p.playerId.trim(),
+          balanceUsd: balance,
+        });
+        return Response.json({ wallet });
+      }
+      case "purchase": {
+        const p = body.payload as {
+          playerId?: unknown;
+          spaceId?: unknown;
+          amenityKind?: unknown;
+          itemRef?: { kind?: unknown; id?: unknown };
+        };
+        if (
+          typeof p.playerId !== "string" ||
+          typeof p.spaceId !== "string" ||
+          typeof p.amenityKind !== "string" ||
+          p.itemRef === undefined ||
+          p.itemRef === null ||
+          typeof p.itemRef.kind !== "string" ||
+          typeof p.itemRef.id !== "string"
+        ) {
+          return Response.json({ error: "invalid payload" }, { status: 400 });
+        }
+        const amenityKind = p.amenityKind;
+        const refKind = p.itemRef.kind;
+        if (
+          amenityKind !== "shop" &&
+          amenityKind !== "supermarket" &&
+          amenityKind !== "car_wash"
+        ) {
+          return Response.json(
+            { error: "invalid amenity kind" },
+            { status: 400 }
+          );
+        }
+        if (
+          refKind !== "shop" &&
+          refKind !== "supermarket" &&
+          refKind !== "carwash"
+        ) {
+          return Response.json({ error: "invalid itemRef.kind" }, { status: 400 });
+        }
+        const result = await store.executePurchase({
+          spaceId: p.spaceId.trim(),
+          amenityKind,
+          itemRef: { kind: refKind, id: p.itemRef.id.trim() },
+          playerId: p.playerId.trim(),
+          now: new Date().toISOString(),
+          recordId: `pur-${randomUUID()}`,
+        });
+        if (!result.ok) {
+          return Response.json({ error: result.error }, { status: 409 });
+        }
+        await store.appendSpaceAmenityLog({
+          spaceId: p.spaceId.trim(),
+          amenityKind,
+          entry: {
+            at: result.record.at,
+            action: "purchase",
+            detail: {
+              playerId: result.record.playerId,
+              itemRef: result.record.itemRef,
+              priceUsd: result.record.priceUsd,
+            },
+          },
+        });
+        await fanoutAmenityContentUpdated({
+          store,
+          world,
+          spaceId: p.spaceId.trim(),
+          amenityKind,
+          reason: "sold",
+          itemRef: result.record.itemRef,
+        });
+        return Response.json({
+          purchase: result.record,
+          wallet: result.wallet,
+          item: result.updatedItem,
+        });
       }
       default:
         return Response.json({ error: "unknown op" }, { status: 400 });

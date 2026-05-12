@@ -1,3 +1,13 @@
+/**
+ * @packageDocumentation
+ * @module @agent-play/web-ui/playground/aql-lexer
+ *
+ * Hand-written scanner that turns an AQL source string into a stream of
+ * {@link AqlToken}s. In 3.1.1 was extended to recognise decimal numbers
+ * (e.g. `12.5`, `9.99`) so `PRICE` literals can carry cents.
+ *
+ * @see ./aql-parser.ts for the consumer of these tokens.
+ */
 import type { AqlToken } from "./aql-types";
 
 const KEYWORDS = new Set([
@@ -41,6 +51,25 @@ const KEYWORDS = new Set([
   "SNAPSHOT",
   "RESPONSE",
   "HEADERS",
+  "SHOP",
+  "ITEM",
+  "SUPERMARKET",
+  "CARWASH",
+  "CAR",
+  "ROW",
+  "COLUMN",
+  "SLOT",
+  "MODEL",
+  "YEAR",
+  "COLOR",
+  "PRICE",
+  "TYPE",
+  "NAME",
+  "WALLET",
+  "BALANCE",
+  "SET",
+  "PLAYER",
+  "OF",
 ]);
 
 export function tokenizeAql(source: string): AqlToken[] {
@@ -120,6 +149,16 @@ export function tokenizeAql(source: string): AqlToken[] {
         value += source[i];
         i += 1;
         column += 1;
+      }
+      if (source[i] === "." && /[0-9]/.test(source[i + 1] ?? "")) {
+        value += ".";
+        i += 1;
+        column += 1;
+        while (i < source.length && /[0-9]/.test(source[i] ?? "")) {
+          value += source[i];
+          i += 1;
+          column += 1;
+        }
       }
       push("number", value, line, startColumn);
       continue;

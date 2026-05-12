@@ -17,6 +17,23 @@
  */
 import { Color, Container, Graphics, Text } from "pixi.js";
 import { nextAvatarMotion } from "./avatar-anim.js";
+import {
+  createStageController,
+  type StageController,
+} from "./stage-controller.js";
+import { createOverworldStage } from "./overworld-stage.js";
+import {
+  buildSpaceYardStage,
+  clampYardPosition,
+  yardSpawnPosition,
+  YARD_BOUNDS,
+  EXIT_DOOR_PROXIMITY_RADIUS_WORLD,
+  nextYardInputDirection,
+  type SpaceYardStageHandle,
+  type YardPlayerAnim,
+} from "./space-yard-stage.js";
+import { createWalletHud, type WalletHudHandle } from "./wallet-hud.js";
+import { fetchPlayerWallet } from "./wallet-client.js";
 import { deepLogObject, deepLogText, deepLogTree } from "./browser-deep-logs.js";
 import { buildCrowdLayer } from "./crowd-draw.js";
 import { layoutCrowdClusters } from "./crowd-layout.js";
@@ -131,9 +148,12 @@ import {
 import type { AvatarFacing } from "./avatar-anim.js";
 import {
   DEFAULT_PROXIMITY_RADIUS,
+  DEFAULT_STRUCTURE_PROXIMITY_RADIUS,
   findNearestProximityPartner,
+  findNearestStructureProximityTarget,
   proximityKeyToAction,
   type ProximityActionKind,
+  type StructureProximityTarget,
 } from "./proximity-interaction.js";
 import {
   countAmenitiesInSpaceCompound,
@@ -621,6 +641,7 @@ const arrowKeys = {
 };
 
 let lastProximityPartnerId: string | null = null;
+let lastStructureProximityTarget: StructureProximityTarget | null = null;
 let proximityPromptEl: HTMLDivElement | null = null;
 let proximityLegendEl: HTMLDivElement | null = null;
 let proximityTouchPadHandle: { refresh: () => void } | null = null;
@@ -1017,10 +1038,27 @@ function onDocumentKeyDown(e: KeyboardEvent): void {
     return;
   }
   if (inField || e.repeat) return;
+  if (e.key === "Escape") {
+    const stage = stageController?.current();
+    if (stage !== null && stage !== undefined && stage.id !== "overworld") {
+      e.preventDefault();
+      void stageController?.back().catch(() => {});
+    }
+    return;
+  }
   const partner = registeredAgentPartnerForProximityOrNull(
     lastProximityPartnerId
   );
-  if (partner === null || partner === HUMAN_VIEWER_PLAYER_ID) return;
+  if (partner === null || partner === HUMAN_VIEWER_PLAYER_ID) {
+    if (
+      e.key.toLowerCase() === "a" &&
+      lastStructureProximityTarget !== null
+    ) {
+      e.preventDefault();
+      void enterStructureSpaceFromProximity(lastStructureProximityTarget);
+    }
+    return;
+  }
   const act = proximityKeyToAction(e.key);
   if (act === null) return;
   e.preventDefault();
@@ -1057,6 +1095,146 @@ const agentsLayer = new Container();
 const parkBackdropLayer = new Container();
 const streetSignsLayer = new Container();
 const worldRoot = new Container();
+let stageController: StageController | null = null;
+let walletHud: WalletHudHandle | null = null;
+
+async function refreshWalletHud(): Promise<void> {
+  if (walletHud === null) return;
+  const sid = getSid();
+  const playerId = getHumanPlayerId();
+  if (sid === null || playerId === null) {
+    walletHud.setError("wallet unavailable: sign in to play");
+    return;
+  }
+  walletHud.setLoading();
+  try {
+    const wallet = await fetchPlayerWallet({ playerId, sid });
+    walletHud?.setBalance(wallet.balanceUsd);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "wallet fetch failed";
+    walletHud?.setError(message);
+  }
+}
+
+const STRUCTURE_AMENITY_KIND_MAP: Record<string, "shop" | "supermarket" | "car_wash"> = {
+  shop: "shop",
+  supermarket: "supermarket",
+  car_wash: "car_wash",
+  carwash: "car_wash",
+};
+
+function deriveYardAmenitiesForSpace(spaceId: string): Array<{
+  kind: "shop" | "supermarket" | "car_wash";
+}> {
+  if (snapshot === null) return [];
+  const structs = collectStructuresForRender(snapshot);
+  const kinds = new Set<"shop" | "supermarket" | "car_wash">();
+  for (const st of structs) {
+    if (st.spaceIds === undefined || !st.spaceIds.includes(spaceId)) continue;
+    const candidates = [st.primaryAmenity, ...(st.amenities ?? [])];
+    for (const raw of candidates) {
+      if (raw === undefined) continue;
+      const mapped = STRUCTURE_AMENITY_KIND_MAP[raw];
+      if (mapped !== undefined) kinds.add(mapped);
+    }
+  }
+  return Array.from(kinds).slice(0, 3).map((kind) => ({ kind }));
+}
+
+let activeYardStage: SpaceYardStageHandle | null = null;
+const yardPlayerState: {
+  pos: { x: number; y: number };
+  facing: "left" | "right";
+  walkPhase: number;
+  isMoving: boolean;
+} = {
+  pos: yardSpawnPosition(),
+  facing: "right",
+  walkPhase: 0,
+  isMoving: false,
+};
+let yardExitDebounceMs = 0;
+
+const YARD_PLAYER_SPEED_CELLS_PER_SEC = 3.2;
+
+function tickYardPlayer(dtSec: number): void {
+  const stage = activeYardStage;
+  if (stage === null) return;
+  const direction = nextYardInputDirection({
+    joystickEnabled: getPreviewViewSettings().joystickEnabled,
+    joystickVector: getJoystickVector(),
+    arrowKeys,
+  });
+  const { dx, dy, source } = direction;
+  const isMoving = source !== "idle";
+  if (isMoving) {
+    const step = YARD_PLAYER_SPEED_CELLS_PER_SEC * dtSec;
+    yardPlayerState.pos.x = yardPlayerState.pos.x + dx * step;
+    yardPlayerState.pos.y = yardPlayerState.pos.y + dy * step;
+    yardPlayerState.pos = clampYardPosition(yardPlayerState.pos);
+    if (dx !== 0) yardPlayerState.facing = dx > 0 ? "right" : "left";
+    yardPlayerState.walkPhase = (yardPlayerState.walkPhase + dtSec * 4) % 1;
+  } else {
+    yardPlayerState.walkPhase = 0;
+  }
+  yardPlayerState.isMoving = isMoving;
+  const anim: YardPlayerAnim = {
+    facing: yardPlayerState.facing,
+    walkPhase: yardPlayerState.walkPhase,
+    isMoving,
+  };
+  stage.setPlayerYardPosition(yardPlayerState.pos, anim);
+
+  if (yardExitDebounceMs > 0) {
+    yardExitDebounceMs = Math.max(0, yardExitDebounceMs - dtSec * 1000);
+    return;
+  }
+  const door = stage.exitDoorAnchor;
+  const distToDoor = Math.hypot(
+    yardPlayerState.pos.x - door.x,
+    yardPlayerState.pos.y - door.y
+  );
+  if (distToDoor <= EXIT_DOOR_PROXIMITY_RADIUS_WORLD) {
+    yardExitDebounceMs = 400;
+    void stageController?.back().catch(() => {});
+  }
+}
+
+async function enterStructureSpaceFromProximity(
+  target: StructureProximityTarget
+): Promise<void> {
+  if (stageController === null) return;
+  const current = stageController.current();
+  if (current !== null && current.id !== "overworld") return;
+  try {
+    const amenities = deriveYardAmenitiesForSpace(target.spaceId);
+    const yard = buildSpaceYardStage({
+      spaceName: target.label ?? target.spaceId,
+      amenities,
+      viewportSize: { width: VIEW_W, height: VIEW_H },
+      palette,
+    });
+    activeYardStage = yard;
+    yardPlayerState.pos = yardSpawnPosition();
+    yardPlayerState.facing = "right";
+    yardPlayerState.walkPhase = 0;
+    yardPlayerState.isMoving = false;
+    yard.setPlayerYardPosition(yardPlayerState.pos, {
+      facing: yardPlayerState.facing,
+      walkPhase: 0,
+      isMoving: false,
+    });
+    yardExitDebounceMs = 250;
+    await stageController.enter(yard);
+    void refreshWalletHud();
+    deepLogText("stage:enter:space", {
+      spaceId: target.spaceId,
+      amenityCount: amenities.length,
+    });
+  } catch (error) {
+    console.warn("[agent-play:world] enter space failed", error);
+  }
+}
 
 let cameraX = 0;
 let cameraY = 0;
@@ -2159,6 +2337,12 @@ function onTick(dt: number): void {
     lastTickWorldPos.set(id, { ...next });
   }
   skyDecor?.tick(dt);
+  stageController?.update(dt * 1000);
+  if (stageController?.current()?.id === "spaceYard") {
+    tickYardPlayer(dt);
+  } else if (activeYardStage !== null) {
+    activeYardStage = null;
+  }
   updateCameraAndWorldRoot();
 }
 
@@ -2171,7 +2355,14 @@ function onFrame(): void {
   syncAgentNodes();
   const aliveIds =
     snapshot === null ? [] : listAgentRows(snapshot).map((p) => p.agentId);
-  agentChatOverlays?.syncAgentIds(aliveIds);
+  const stageId = stageController?.current()?.id ?? "overworld";
+  if (agentChatOverlays !== null && agentChatOverlays.root !== undefined) {
+    agentChatOverlays.root.style.display =
+      stageId === "overworld" ? "" : "none";
+  }
+  if (stageId === "overworld") {
+    agentChatOverlays?.syncAgentIds(aliveIds);
+  }
   const box = Math.max(16, Math.min(40, cellScale * 0.85));
   for (const [id, wpos] of playerWorldPos) {
     const v = agentNodes.get(id);
@@ -2212,7 +2403,10 @@ function onFrame(): void {
   }
   const prevProximityPartnerId = lastProximityPartnerId;
   const primaryPid = getHumanPlayerId();
+  const onOverworld =
+    stageController === null || stageController.current()?.id === "overworld";
   if (
+    onOverworld &&
     primaryPid !== null &&
     (snapshot === null ? 0 : listAgentRows(snapshot).length) >= 1
   ) {
@@ -2232,9 +2426,30 @@ function onFrame(): void {
   ) {
     sessionInteractionPanel?.closeVoiceConnection();
   }
+  const humanWorldPos =
+    primaryPid !== null ? playerWorldPos.get(primaryPid) ?? null : null;
+  if (
+    onOverworld &&
+    lastProximityPartnerId === null &&
+    humanWorldPos !== null &&
+    structs.length > 0
+  ) {
+    lastStructureProximityTarget = findNearestStructureProximityTarget({
+      player: humanWorldPos,
+      structures: structs,
+      radius: DEFAULT_STRUCTURE_PROXIMITY_RADIUS,
+    });
+  } else {
+    lastStructureProximityTarget = null;
+  }
   if (proximityLegendEl !== null) {
     if (lastProximityPartnerId !== null) {
       proximityLegendEl.textContent = `Near ${playerDisplayName(lastProximityPartnerId)}. A: for assist · C: for chat · P: push to talk · Z: for zone · Y: for yield`;
+    } else if (lastStructureProximityTarget !== null) {
+      const spaceName =
+        lastStructureProximityTarget.label ??
+        lastStructureProximityTarget.spaceId;
+      proximityLegendEl.textContent = `Near ${spaceName}. A: enter space`;
     } else {
       proximityLegendEl.textContent =
         "Near another player: A: for assist · C: for chat · P: push to talk · Z: for zone · Y: for yield";
@@ -2245,12 +2460,30 @@ function onFrame(): void {
       const pos = playerWorldPos.get(lastProximityPartnerId);
       if (pos !== undefined) {
         const { cx, cy } = getAgentHeroAnchorScreen(lastProximityPartnerId, pos, box);
+        proximityPromptEl.textContent =
+          "A: for assist\nC: for chat\nP: push to talk";
         proximityPromptEl.style.display = "block";
         proximityPromptEl.style.left = `${cx}px`;
         proximityPromptEl.style.top = `${cy - box * 1.35}px`;
       } else {
         proximityPromptEl.style.display = "none";
       }
+    } else if (lastStructureProximityTarget !== null) {
+      const centroidLocal = worldToWorldRootLocal(
+        lastStructureProximityTarget.centroid.x,
+        lastStructureProximityTarget.centroid.y
+      );
+      const centroidScreen = worldRootLocalToCanvas(
+        centroidLocal.x,
+        centroidLocal.y
+      );
+      const spaceName =
+        lastStructureProximityTarget.label ??
+        lastStructureProximityTarget.spaceId;
+      proximityPromptEl.textContent = `A: enter ${spaceName}`;
+      proximityPromptEl.style.display = "block";
+      proximityPromptEl.style.left = `${centroidScreen.x}px`;
+      proximityPromptEl.style.top = `${centroidScreen.y - box * 1.6}px`;
     } else {
       proximityPromptEl.style.display = "none";
     }
@@ -2498,7 +2731,10 @@ export function bootstrap(): void {
       crowdLayerContainer = buildCrowdLayer(crowdClusters);
       handle.app.stage.addChild(crowdLayerContainer);
     }
-    handle.app.stage.addChild(worldRoot);
+    stageController = createStageController({ parent: handle.app.stage });
+    await stageController.enter(
+      createOverworldStage({ root: worldRoot })
+    );
     skyDecor = createSkyDecorLayer({
       width: VIEW_W,
       height: VIEW_H,
@@ -2530,6 +2766,8 @@ export function bootstrap(): void {
     motionQuery.addEventListener("change", syncSkyMotion);
 
     canvasHost.appendChild(agentChatOverlays.root);
+    walletHud = createWalletHud({ parent: canvasHost });
+    void refreshWalletHud();
     proximityPromptEl = document.createElement("div");
     proximityPromptEl.className = "preview-proximity-prompt";
     proximityPromptEl.textContent = "A: for assist\nC: for chat\nP: push to talk";
@@ -2544,7 +2782,20 @@ export function bootstrap(): void {
         );
         return partner !== null && partner !== HUMAN_VIEWER_PLAYER_ID;
       },
+      getStructureProximityLabel: () => {
+        if (lastProximityPartnerId !== null) return null;
+        const target = lastStructureProximityTarget;
+        if (target === null) return null;
+        return target.label ?? target.spaceId;
+      },
       onAssist: () => {
+        if (
+          lastProximityPartnerId === null &&
+          lastStructureProximityTarget !== null
+        ) {
+          void enterStructureSpaceFromProximity(lastStructureProximityTarget);
+          return;
+        }
         triggerProximityAssistOrChat("assist");
       },
       onChat: () => {

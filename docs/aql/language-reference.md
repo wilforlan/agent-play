@@ -1,35 +1,42 @@
 # AQL language reference
 
-This reference matches the implementation under `packages/web-ui/src/app/playground/_lib/`.
+The Agent Query Language (AQL) is the in-browser command surface for
+agent-play. This page is the **single canonical reference** for every
+statement the playground supports, including the new amenity-content and
+wallet commands introduced in 3.1.1. It mirrors the implementation in
+[`packages/web-ui/src/app/playground/_lib`](../../packages/web-ui/src/app/playground/_lib).
 
-## Lexical rules
+> The play canvas (overworld → space yard → amenity stage) is driven by
+> the [stage controller](../../packages/play-ui/README.md). Exit keys
+> and the exit-door sprite are documented in
+> [Play canvas exits](#play-canvas-exits-non-aql) below.
 
-- **Whitespace** separates tokens; newlines end statements.
-- **Comments**: `#` starts a comment; the rest of the line is ignored.
-- **Keywords**: See lexer `KEYWORDS` in [`aql-lexer.ts`](../../packages/web-ui/src/app/playground/_lib/aql-lexer.ts). Identifiers and keywords are distinct; statements must begin with a keyword token where required.
-- **Strings**: Double-quoted (`"..."`). Escape `\"` and `\\` inside strings.
-- **Numbers**: Parsed as JavaScript numbers (integers and floats).
-- **Variables**: `$` followed by letters, digits, `_`, and **`.`** for dotted paths (e.g. `$agent.metadata.foo`).
-- **Symbols**: `=`, parentheses `(` `)`, commas `,`.
+## Contents
 
-### Case sensitivity
+1. [At a glance](#at-a-glance)
+2. [Connection and session](#connection-and-session)
+3. [Inspection](#inspection)
+4. [Agent + intercom](#agent--intercom)
+5. [Space lifecycle](#space-lifecycle)
+6. [Amenity content (new)](#amenity-content-new)
+7. [Wallet and purchases (new)](#wallet-and-purchases-new)
+8. [World layout (browser console)](#world-layout-browser-console)
+9. [Play canvas exits (non-AQL)](#play-canvas-exits-non-aql)
+10. [Error catalog](#error-catalog)
+11. [End-to-end recipes](#end-to-end-recipes)
 
-Statement keywords are matched as uppercase in the lexer set. For **`WITH`**, the parser also accepts **`header`** / **`timeout`** as identifiers and normalizes them to `HEADER` / `TIMEOUT` so lowercase clauses work.
+## At a glance
 
-## Expressions
-
-| Form | Meaning |
-|------|---------|
-| `"text"` | String literal |
-| `123` | Number literal |
-| `$var` | Variable reference |
-| `$obj.field` | Dotted resolution (each segment drills into objects; missing paths yield **undefined** behavior at runtime if intermediate is not an object) |
-
-There are no arithmetic or boolean operators in expressions.
-
-## Statements (overview)
-
-Statements run **in order**. Some update **execution state** (`CONNECT`, `USE AGENT NODE`, `WITH TIMEOUT`, …); others read/write **variables** or **outputs** (`LET`, `FETCH`, `SHOW`, …).
+- Execution model: each line is a statement; statements run in order via
+  [`executeAqlProgram`](../../packages/web-ui/src/app/playground/_lib/aql-executor.ts).
+- Comments: `#` starts a line comment.
+- Strings: double-quoted; escape `\"` and `\\`.
+- Numbers: integers and decimals (e.g. `12.5`).
+- Variables: `$name` and `$obj.field`.
+- Lexer / parser / validator entry points: see
+  [`aql-lexer.ts`](../../packages/web-ui/src/app/playground/_lib/aql-lexer.ts),
+  [`aql-parser.ts`](../../packages/web-ui/src/app/playground/_lib/aql-parser.ts),
+  [`aql-validator.ts`](../../packages/web-ui/src/app/playground/_lib/aql-validator.ts).
 
 ### `LET`
 
@@ -37,132 +44,343 @@ Statements run **in order**. Some update **execution state** (`CONNECT`, `USE AG
 LET name = expr
 ```
 
-Binds `name` for later `$name` references in the same program (after the `LET`). Validator rejects references to undefined variables.
-
-### `CONNECT SERVER … MAIN_NODE …`
-
-```aql
-CONNECT SERVER expr MAIN_NODE expr
-```
-
-Updates `serverUrl` and `mainNodeId` in execution state. If `sid` is already set, **does not** create a new session; returns a small payload noting `reusedSession: true`. Otherwise calls `ensureSession()` (`POST /api/agent-play/session`) and stores `sid`.
-
-**Note:** Main-node **passphrase material** is **not** set by this statement; the playground **Connect** form derives it and merges it into state before `runAql` runs. For embedders, set `nodePasswordMaterial` on state when calling `runAql` (see [Integration guide](integration.md)).
-
-### `INSPECT MAIN NODE`
-
-Calls `GET /api/nodes` with `x-node-id` / `x-node-passw` from `mainNodeId` and `nodePasswordMaterial`. Sets variable **`mainNode`** to the JSON body; updates last response and headers.
-
-**Requires:** non-empty `mainNodeId`, non-null `nodePasswordMaterial` (set outside AQL in the playground).
-
-### `INSPECT AGENT NODE`
-
-Loads the world snapshot and resolves the agent **currently selected** by `USE AGENT NODE` / `SHIFT AGENT NODE` (`targetNodeId`). Sets variable **`node`** to that agent’s occupant record.
-
-**Requires:** session (`sid`) and prior **`USE AGENT NODE`** (so `targetNodeId` is set).
-
-### `INSPECT AGENT`
-
-Same snapshot resolution as above but sets variable **`agent`** and focuses on the current agent context.
-
-**Requires:** session and **`USE AGENT NODE`**.
-
-### `USE AGENT NODE` / `SHIFT AGENT NODE`
-
-```aql
-USE AGENT NODE expr
-SHIFT AGENT NODE expr
-```
-
-Evaluates `expr` to a **node id string**, fetches the snapshot, resolves the matching agent occupant, and sets:
-
-- `targetNodeId`, `targetAgentId`
-- variable **`agent`** to the resolved node payload
-
-`SHIFT` requires an existing agent context (`USE` must have run first).
-
-### `SEND`
-
-```aql
-SEND expr
-```
-
-Evaluates `expr` to the message / payload string (depending on intercom wiring). **Semantic rule:** `USE AGENT NODE` must appear earlier in the program so the validator sets “has agent target.”
-
-**Requires:** session, `mainNodeId`, `nodePasswordMaterial`, and agent context from `USE` / `SHIFT`.
+Binds a value to `$name` for later statements in the same program.
 
 ### `WITH HEADER` / `WITH TIMEOUT`
 
 ```aql
-WITH HEADER keyExpr = valueExpr
-WITH TIMEOUT msExpr
+WITH HEADER "X-Trace" = "abc"
+WITH TIMEOUT 5000
 ```
 
-`WITH HEADER` merges into per-request headers map. `WITH TIMEOUT` sets milliseconds for subsequent operations that honor timeout (must be a positive number when literal).
+Set per-request headers and operation timeouts.
 
-### `FETCH`
+### `MACRO` / `CALL` / `RETURN`
 
 ```aql
-FETCH OCCUPANTS
-FETCH METADATA
-FETCH SNAPSHOT
+MACRO stockShelf(items) {
+  CALL items
+  RETURN $items
+}
 ```
 
-Fetches via the runtime client using the current `sid`. Populates internal outputs; use `SHOW RESPONSE` to surface.
+Defines reusable statement lists; `CALL name(args)` runs them.
 
-**Requires:** session.
+**Source:**
+[`aql-parser.ts`](../../packages/web-ui/src/app/playground/_lib/aql-parser.ts),
+[`aql-executor.ts`](../../packages/web-ui/src/app/playground/_lib/aql-executor.ts).
 
-### `SHOW`
+## Connection and session
+
+### `CONNECT`
+
+```aql
+CONNECT "http://localhost:3000"
+```
+
+Selects the runtime client. Required for `FETCH`, `SEND`, and every RPC.
+
+### `USE AGENT NODE` / `SHIFT AGENT NODE`
+
+```aql
+USE AGENT NODE "alice"
+SHIFT AGENT NODE
+```
+
+Targets an agent by node id. `SHIFT` rotates to the next agent in the
+catalog.
+
+### `USE SPACE NODE`
+
+```aql
+USE SPACE NODE "space-sandmill-circle"
+```
+
+Activates a space context for `ADD SHOP ITEM`, `ADD SUPERMARKET ITEM`,
+`ADD CARWASH CAR`, lease operations, and amenity content removals.
+
+## Inspection
+
+### `INSPECT MAIN NODE`
+
+```aql
+INSPECT MAIN NODE
+```
+
+Reads metadata about the main intercom node.
+
+### `INSPECT SPACE` / `INSPECT AMENITY` / `INSPECT AGENT`
+
+```aql
+INSPECT SPACE
+INSPECT AMENITY "shop"
+INSPECT AGENT
+```
+
+Returns the snapshot block for the active context.
+
+### `FETCH OCCUPANTS | METADATA | SNAPSHOT`
+
+```aql
+FETCH SNAPSHOT
+SHOW RESPONSE
+```
+
+Pulls a slice of state from the runtime. `INTO name` copies the last
+response into `$name`.
+
+### `SHOW RESPONSE | HEADERS | <var>`
 
 ```aql
 SHOW RESPONSE
 SHOW HEADERS
-SHOW expr
+SHOW $myVar
 ```
 
-- **`SHOW expr`**: Evaluates the expression and assigns the result to the execution output’s **last response** (what the playground displays after a successful run).
-- **`SHOW RESPONSE`** / **`SHOW HEADERS`**: No-op statements in the current executor; they exist so you can end a script without overwriting the last payload. The **last substantive statement** (e.g. `FETCH`, `SEND`, `INSPECT`) still determines `lastResponse` unless you finish with **`SHOW expr`**.
+`SHOW <var>` overrides the last response for display.
 
-### `INTO`
+## Agent + intercom
+
+### `SEND`
 
 ```aql
-INTO name
+SEND "ring the bell"
 ```
 
-Copies the current **last response** into an internal named map under `name`. Useful when chaining operations and capturing an intermediate result (the playground UI still surfaces the final `lastResponse` from [`executeAqlProgram`](../../packages/web-ui/src/app/playground/_lib/aql-executor.ts)).
+Routes a message to the active agent node. **Requires** `USE AGENT NODE`.
 
-### `MACRO` / `CALL`
+## Space lifecycle
+
+### `CREATE SPACE` / `REMOVE SPACE`
 
 ```aql
-MACRO name(param1, param2 = defaultExpr) {
-  statement
-  …
+CREATE SPACE "SandMill Circle"
+REMOVE SPACE "space-sandmill-circle"
+```
+
+### `ADD SPACE AMENITY` / `REMOVE SPACE AMENITY`
+
+```aql
+ADD SPACE AMENITY "shop"
+REMOVE SPACE AMENITY "shop"
+```
+
+Mutates the amenity set on the active space. Both require
+`USE SPACE NODE`.
+
+### `CREATE LEASE`
+
+```aql
+CREATE LEASE "shop"
+```
+
+Records an amenity lease; see the session-store implementation in
+[`session-store.ts`](../../packages/web-ui/src/server/agent-play/session-store.ts).
+
+## Amenity content (new)
+
+Every amenity content row is created with `sale.status: "available"`.
+Buying an item flips `sale.status` to `"sold"` and records
+`soldToPlayerId` + `soldAt`. Items in the sold state can be removed
+only with the `--force` flag (see
+[`removeShopItem`](../../packages/web-ui/src/app/api/agent-play/sdk/rpc/route.ts)).
+
+### `ADD SHOP ITEM`
+
+**Syntax**
+
+```aql
+ADD SHOP ITEM TYPE "book" NAME "Hitchhiker"
+  DESCRIPTION "Don't Panic" PRICE 9.99
+```
+
+**Fields**
+
+- `TYPE` — one of `"book"`, `"music"`, `"coffee"`.
+- `NAME` — display label.
+- `DESCRIPTION` — tooltip body.
+- `PRICE` — USD, decimal accepted.
+
+**Returns** the persisted item (with `sale.status: "available"`).
+
+**Source:**
+[`aql-parser.ts`](../../packages/web-ui/src/app/playground/_lib/aql-parser.ts),
+[`route.ts`](../../packages/web-ui/src/app/api/agent-play/sdk/rpc/route.ts).
+
+### `ADD SUPERMARKET ITEM`
+
+**Syntax**
+
+```aql
+ADD SUPERMARKET ITEM ROW 1 NAME "Apple"
+  DESCRIPTION "fresh and crisp" PRICE 1.25 COLUMN 2
+```
+
+**Fields**
+
+- `ROW` — 1 (Fruits), 2 (Mens), 3 (Womens), 4 (Kids).
+- `COLUMN` — optional, 1..5; the server auto-picks a free slot when
+  omitted.
+- `NAME`, `DESCRIPTION`, `PRICE` — same as above.
+
+**Returns** the persisted item.
+
+### `ADD CARWASH CAR`
+
+**Syntax**
+
+```aql
+ADD CARWASH CAR NAME "Sport Coupe" MODEL "GT 350"
+  YEAR 2024 PRICE 28999 COLOR "#5a87d1" SLOT 3
+```
+
+**Fields**
+
+- `NAME`, `MODEL`, `YEAR`, `PRICE`, `COLOR` (hex `#rrggbb`).
+- `SLOT` — optional, 1..9; auto-assigned when omitted.
+
+**Returns** the persisted car.
+
+### Sold-state semantics
+
+When a purchase succeeds, the server atomically:
+
+1. Sets `sale.status = "sold"`, `sale.soldToPlayerId = playerId`,
+   `sale.soldAt = ISO-timestamp`.
+2. Decrements the player wallet by `priceUsd`.
+3. Appends a purchase audit row.
+4. Fans out the updated snapshot so every connected client repaints the
+   card with a desaturated body and the red `SOLD` banner (see
+   [`sprite-sold-overlay.ts`](../../packages/play-ui/src/sprite-sold-overlay.ts)).
+
+Re-attempting a purchase against the same item returns
+`ITEM_ALREADY_SOLD`.
+
+## Wallet and purchases (new)
+
+Every player starts with a wallet seeded at
+`DEFAULT_PLAYER_WALLET_BALANCE_USD = $70` on **first** read. The seeding
+is lazy and atomic — see
+[`redis-session-store.ts`](../../packages/web-ui/src/server/agent-play/redis-session-store.ts).
+No manual setup is required for a new player to start spending.
+
+### `INSPECT WALLET`
+
+```aql
+INSPECT WALLET OF PLAYER "player-42"
+SHOW RESPONSE
+```
+
+Returns the persisted wallet (or seeds one at $70 on first call).
+
+### `SET WALLET BALANCE`
+
+```aql
+SET WALLET BALANCE OF PLAYER "player-42" 100
+```
+
+Sets the wallet balance directly. Useful for resetting test environments.
+
+### Purchases
+
+Purchases are issued by the play-canvas tooltip (the `Buy` button calls
+the `purchase` RPC). They are not currently authored from AQL —
+authoring purchases through the language reference is not exposed
+because real purchases must originate from a player session, not a
+script. The RPC contract is documented in
+[`route.ts`](../../packages/web-ui/src/app/api/agent-play/sdk/rpc/route.ts).
+
+## World layout (browser console)
+
+`world.layout.bounds.set(field, value)` adjusts world layout bounds at
+runtime. This is a browser console API, not AQL. See
+[`world-layout-model.ts`](../../packages/sdk/src/lib/world-layout-model.ts).
+
+## Play canvas exits (non-AQL)
+
+When the player is inside the **space yard** or any **amenity stage**:
+
+- Press **`Esc`** to leave the current inner stage (amenity → yard,
+  yard → overworld).
+- Walk into the **exit door** sprite anchored at stage-local `(0, 0)`
+  for the same effect. The proximity radius is
+  `EXIT_DOOR_PROXIMITY_RADIUS_WORLD ≈ 1.5` world cells (see
+  [`sprite-exit-door.ts`](../../packages/play-ui/src/sprite-exit-door.ts)).
+- On touch devices, the bottom action bar exposes an `Exit` chip when
+  the door is the active proximity partner.
+
+The keymap is implemented by
+[`stage-input-router.ts`](../../packages/play-ui/src/stage-input-router.ts).
+
+## Error catalog
+
+| Code | Where it surfaces | Remediation |
+|------|------------------|-------------|
+| `AQL_PARSE_ERROR` | Lexer / parser | Fix the offending token; the message points at line/col. |
+| `AQL_SEMANTIC_ERROR` | Validator | Add the missing context (e.g. `USE SPACE NODE`), define the variable, supply the required field. |
+| `AQL_RUNTIME_ERROR` | Executor | Confirm `CONNECT` has been issued and the active context is correct. |
+| `AMENITY_NOT_ON_SPACE` | RPC route | Run `ADD SPACE AMENITY` before adding content of that kind. |
+| `ITEM_ALREADY_SOLD` | `purchase` RPC | The tooltip refreshes to the sold view; no action needed beyond informing the player. |
+| `INSUFFICIENT_FUNDS` | `purchase` RPC | Top up the wallet (`SET WALLET BALANCE`) or pick a cheaper item. |
+
+## End-to-end recipes
+
+### 1. Stock a bookstore and let a player buy a book
+
+```aql
+CONNECT "http://localhost:3000"
+USE SPACE NODE "space-sandmill-circle"
+
+ADD SPACE AMENITY "shop"
+
+ADD SHOP ITEM TYPE "book" NAME "Hitchhiker"
+  DESCRIPTION "Don't Panic" PRICE 12.5
+
+ADD SHOP ITEM TYPE "music" NAME "Symphony No. 9"
+  DESCRIPTION "Beethoven's choral finale" PRICE 9.99
+
+ADD SHOP ITEM TYPE "coffee" NAME "House Blend"
+  DESCRIPTION "Locally roasted, medium body" PRICE 4
+```
+
+Then in the play canvas, walk the human into the shop and press **`P`**
+near the card. The tooltip's `Buy` button calls the `purchase` RPC.
+
+### 2. Stock a supermarket row via a macro
+
+```aql
+CONNECT "http://localhost:3000"
+USE SPACE NODE "space-sandmill-circle"
+
+ADD SPACE AMENITY "supermarket"
+
+MACRO stockFruit(name, price) {
+  ADD SUPERMARKET ITEM ROW 1 NAME $name
+    DESCRIPTION "Fresh produce" PRICE $price
 }
-CALL name(arg1, arg2)
+
+CALL stockFruit("Apple", 1.25)
+CALL stockFruit("Banana", 0.75)
+CALL stockFruit("Mango", 2.10)
 ```
 
-Defines reusable statement lists. Parameters are optional with defaults. Nested macros follow validator scoping rules (macro bodies see parameters plus outer `LET` bindings captured at definition time per implementation).
-
-### `RETURN`
+### 3. Stock the car-wash lot, then inspect the sold cars
 
 ```aql
-RETURN expr
+CONNECT "http://localhost:3000"
+USE SPACE NODE "space-sandmill-circle"
+
+ADD SPACE AMENITY "car_wash"
+
+ADD CARWASH CAR NAME "Sport Coupe" MODEL "GT 350"
+  YEAR 2024 PRICE 28999 COLOR "#5a87d1" SLOT 1
+
+ADD CARWASH CAR NAME "City Hatch" MODEL "Spark"
+  YEAR 2022 PRICE 12500 COLOR "#e44d61" SLOT 5
+
+INSPECT AMENITY "car_wash"
+SHOW RESPONSE
 ```
 
-Returns a value from a macro body (see executor).
-
-## Validation errors (semantic)
-
-| Code | Typical cause |
-|------|----------------|
-| `AQL_SEMANTIC_ERROR` | Undefined variable; `SEND` without `USE AGENT NODE`; duplicate macro; bad macro arity; non-positive `WITH TIMEOUT` literal |
-
-Parse errors use codes such as **`AQL_PARSE_ERROR`** with a message pointing at the offending token.
-
-## Runtime errors
-
-Prefixed with **`AQL_RUNTIME_ERROR:`** — for example missing `CONNECT` before `FETCH`, missing passphrase material for `INSPECT MAIN NODE`, or missing agent context.
-
-## Autocomplete (playground)
-
-The editor suggests keywords and known variables (`LET` bindings and common `$agent.*` / `$node.*` paths). **Tab** accepts the first suggestion (see [Playground](playground.md)).
+Sold cars in the response have `sale.status: "sold"` and a
+`sale.soldToPlayerId`.

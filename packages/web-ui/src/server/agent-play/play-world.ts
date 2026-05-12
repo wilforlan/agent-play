@@ -628,7 +628,50 @@ export class PlayWorld {
       }
       return emptySnapshot(mainNodeId);
     }
-    return resolveStructureAnchorsAtRuntime(normalizePreviewSnapshot(raw));
+    const normalized = resolveStructureAnchorsAtRuntime(
+      normalizePreviewSnapshot(raw)
+    );
+    return await this.hydrateAmenityContent(normalized);
+  }
+
+  /**
+   * Enrich each space catalog entry with its sidecar amenity content (shop
+   * items, supermarket items, car-wash cars) so clients can render the amenity
+   * stages directly from the snapshot.
+   *
+   * @remarks
+   * Only reads sidecars for amenities actually present on the space, so the
+   * Redis round-trips scale with content rather than the total catalog.
+   */
+  private async hydrateAmenityContent(
+    snapshot: PreviewSnapshotJson
+  ): Promise<PreviewSnapshotJson> {
+    const spaces = snapshot.spaces;
+    if (spaces === undefined || spaces.length === 0) {
+      return snapshot;
+    }
+    const next: typeof spaces = [];
+    for (const space of spaces) {
+      const content: NonNullable<typeof space.amenityContent> = {};
+      if (space.amenities.includes("shop")) {
+        const items = await this.sessionStore.listShopItems(space.id);
+        if (items.length > 0) content.shopItems = items;
+      }
+      if (space.amenities.includes("supermarket")) {
+        const items = await this.sessionStore.listSupermarketItems(space.id);
+        if (items.length > 0) content.supermarketItems = items;
+      }
+      if (space.amenities.includes("car_wash")) {
+        const cars = await this.sessionStore.listCarWashCars(space.id);
+        if (cars.length > 0) content.carWashCars = cars;
+      }
+      next.push(
+        Object.keys(content).length > 0
+          ? { ...space, amenityContent: content }
+          : { ...space }
+      );
+    }
+    return { ...snapshot, spaces: next };
   }
 
   /**

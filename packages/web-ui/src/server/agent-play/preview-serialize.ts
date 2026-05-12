@@ -1,3 +1,16 @@
+/**
+ * @packageDocumentation
+ * @module @agent-play/web-ui/server/preview-serialize
+ *
+ * Serialises the in-memory play-world into the JSON snapshot consumed by the
+ * play-ui client. In 3.1.1 extends {@link SpaceCatalogEntryJson} with an
+ * `amenityContent` block carrying shop / supermarket / car-wash items so
+ * sold-state changes fan out without separate fetches. Older snapshots are
+ * normalised by {@link normalizePreviewSnapshot} to maintain compatibility.
+ *
+ * @see ../../../sdk/src/lib/space-content-model.ts for the underlying schemas.
+ */
+
 import type { Journey, WorldJourneyUpdate } from "./@types/world.js";
 import type { WorldInteractionRole } from "./play-transport.js";
 import type { SpaceAmenityKind } from "./space-amenity.js";
@@ -6,6 +19,9 @@ import {
   MINIMUM_PLAY_WORLD_BOUNDS,
   STREET_NAME_POOL,
   createVerticalStripSeedLayout,
+  type CarWashCar,
+  type ShopItem,
+  type SupermarketItem,
   type WorldLayout,
 } from "@agent-play/sdk";
 
@@ -108,6 +124,21 @@ export type SpaceOwnerJson = {
   nodeId?: string;
 };
 
+/**
+ * Per-space amenity content fanned out to clients via the snapshot.
+ *
+ * @remarks
+ * Populated by the server when a space has the matching amenity. Older
+ * snapshots without this field are normalized via {@link normalizePreviewSnapshot}.
+ *
+ * @see ../../../sdk/src/lib/space-content-model.ts for the underlying schemas.
+ */
+export type SpaceAmenityContentJson = {
+  shopItems?: ShopItem[];
+  supermarketItems?: SupermarketItem[];
+  carWashCars?: CarWashCar[];
+};
+
 export type SpaceCatalogEntryJson = {
   id: string;
   name: string;
@@ -116,6 +147,7 @@ export type SpaceCatalogEntryJson = {
   owner: SpaceOwnerJson;
   amenities: SpaceAmenityKind[];
   activityObjectIds?: string[];
+  amenityContent?: SpaceAmenityContentJson;
 };
 
 export type PreviewWorldMapJson = {

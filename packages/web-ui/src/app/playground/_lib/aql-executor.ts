@@ -1,3 +1,16 @@
+/**
+ * @packageDocumentation
+ * @module @agent-play/web-ui/playground/aql-executor
+ *
+ * Executes a validated {@link AqlProgram} by dispatching each statement to
+ * the appropriate RPC route. In 3.1.1 also handles the new content authoring
+ * statements (`ADD SHOP ITEM`, `ADD SUPERMARKET ITEM`, `ADD CARWASH CAR`)
+ * and the optional `SET WALLET` statement.
+ *
+ * @see ../../../api/agent-play/sdk/rpc/route.ts for the server-side handlers.
+ * @see ./aql-runtime-client.ts for the HTTP facade used here.
+ */
+
 import type {
   AqlDiagnostic,
   AqlExecutionOutput,
@@ -791,6 +804,144 @@ async function execStatement(
     }
     case "ReturnStmt": {
       context.outputs.lastResponse = evalExpr(statement.value, context.vars);
+      return;
+    }
+    case "AddShopItemStmt":
+    case "AddSupermarketItemStmt":
+    case "AddCarWashCarStmt": {
+      const sid = context.state.sid;
+      if (sid === null) {
+        throw new Error("AQL_RUNTIME_ERROR: run CONNECT before ADD");
+      }
+      const spaceId = context.state.spaceCatalogId;
+      const spaceNodeId = context.state.spaceNodeId;
+      const spaceMaterial = context.state.spacePasswordMaterial;
+      if (
+        spaceId === null ||
+        spaceNodeId === null ||
+        spaceMaterial === null ||
+        spaceMaterial.length === 0
+      ) {
+        throw new Error(
+          "AQL_RUNTIME_ERROR: run USE SPACE NODE before adding amenity content"
+        );
+      }
+      let op: string;
+      const payload: Record<string, unknown> = { spaceId };
+      if (statement.kind === "AddShopItemStmt") {
+        op = "addShopItem";
+        payload.type = String(evalExpr(statement.itemType, context.vars))
+          .trim()
+          .toLowerCase();
+        payload.name = String(evalExpr(statement.name, context.vars));
+        payload.description = String(evalExpr(statement.description, context.vars));
+        payload.priceUsd = Number(evalExpr(statement.priceUsd, context.vars));
+      } else if (statement.kind === "AddSupermarketItemStmt") {
+        op = "addSupermarketItem";
+        payload.name = String(evalExpr(statement.name, context.vars));
+        payload.description = String(evalExpr(statement.description, context.vars));
+        payload.priceUsd = Number(evalExpr(statement.priceUsd, context.vars));
+        payload.row = Number(evalExpr(statement.row, context.vars));
+        if (statement.column !== undefined) {
+          payload.column = Number(evalExpr(statement.column, context.vars));
+        }
+      } else {
+        op = "addCarWashCar";
+        payload.name = String(evalExpr(statement.name, context.vars));
+        payload.model = String(evalExpr(statement.model, context.vars));
+        payload.year = Number(evalExpr(statement.year, context.vars));
+        payload.priceUsd = Number(evalExpr(statement.priceUsd, context.vars));
+        payload.colorHex = String(evalExpr(statement.colorHex, context.vars));
+        if (statement.slot !== undefined) {
+          payload.slot = Number(evalExpr(statement.slot, context.vars));
+        }
+      }
+      const startedAt = performance.now();
+      const rawResponse = await context.rpc.sdkRpc({
+        sid,
+        op,
+        payload,
+        nodeId: spaceNodeId,
+        passwordMaterial: spaceMaterial,
+        extraHeaders: sdkRpcExtraHeaders(context.state),
+      });
+      const { payload: response, headers } = splitHttpMeta(rawResponse);
+      const timingMs = Math.round(performance.now() - startedAt);
+      context.outputs.lastOutput = {
+        response,
+        headers,
+        status: 200,
+        timingMs,
+      };
+      context.outputs.lastResponse = response;
+      context.outputs.lastHeaders = headers;
+      return;
+    }
+    case "SetWalletStmt": {
+      const sid = context.state.sid;
+      if (sid === null) {
+        throw new Error("AQL_RUNTIME_ERROR: run CONNECT before SET WALLET");
+      }
+      const material = context.state.nodePasswordMaterial;
+      const mainId = context.state.mainNodeId.trim();
+      if (material === null || material.length === 0 || mainId.length === 0) {
+        throw new Error(
+          "AQL_RUNTIME_ERROR: main-node credentials missing; connect with validated passphrase first"
+        );
+      }
+      const playerId = String(evalExpr(statement.playerId, context.vars)).trim();
+      const balanceUsd = Number(evalExpr(statement.balanceUsd, context.vars));
+      if (!Number.isFinite(balanceUsd) || balanceUsd < 0) {
+        throw new Error("AQL_RUNTIME_ERROR: BALANCE must be a non-negative number");
+      }
+      const startedAt = performance.now();
+      const rawResponse = await context.rpc.sdkRpc({
+        sid,
+        op: "setPlayerWalletBalance",
+        payload: { playerId, balanceUsd },
+        nodeId: mainId,
+        passwordMaterial: material,
+        extraHeaders: sdkRpcExtraHeaders(context.state),
+      });
+      const { payload: response, headers } = splitHttpMeta(rawResponse);
+      const timingMs = Math.round(performance.now() - startedAt);
+      context.outputs.lastOutput = {
+        response,
+        headers,
+        status: 200,
+        timingMs,
+      };
+      context.outputs.lastResponse = response;
+      context.outputs.lastHeaders = headers;
+      return;
+    }
+    case "InspectWalletStmt": {
+      const sid = context.state.sid;
+      if (sid === null) {
+        throw new Error("AQL_RUNTIME_ERROR: run CONNECT before INSPECT WALLET");
+      }
+      const playerId = String(evalExpr(statement.playerId, context.vars)).trim();
+      const startedAt = performance.now();
+      // Use a sid-only RPC for wallet read so it works without space-node auth.
+      const rawResponse = await context.rpc.sdkRpc({
+        sid,
+        op: "getPlayerWallet",
+        payload: { playerId },
+        nodeId: "",
+        passwordMaterial: "",
+        extraHeaders: sdkRpcExtraHeaders(context.state),
+      });
+      const { payload: response, headers } = splitHttpMeta(rawResponse);
+      const timingMs = Math.round(performance.now() - startedAt);
+      context.vars.set("wallet", response);
+      context.outputs.lastOutput = {
+        response,
+        headers,
+        status: 200,
+        timingMs,
+      };
+      context.outputs.lastResponse = response;
+      context.outputs.lastHeaders = headers;
       return;
     }
   }

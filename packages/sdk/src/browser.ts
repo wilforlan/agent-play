@@ -62,6 +62,25 @@ export {
   type WorldLayoutBoundsField,
 } from "./lib/world-layout-model.js";
 export {
+  CarWashCarSchema,
+  DEFAULT_PLAYER_WALLET_BALANCE_USD,
+  PlayerWalletSchema,
+  PurchaseRecordSchema,
+  SaleStateSchema,
+  ShopItemSchema,
+  SupermarketItemSchema,
+  createInitialPlayerWallet,
+  desaturateColor,
+  isItemAvailableForPurchase,
+  type CarWashCar,
+  type PlayerWallet,
+  type PurchaseRecord,
+  type SaleState,
+  type ShopItem,
+  type SpaceContentItem,
+  type SupermarketItem,
+} from "./lib/space-content-model.js";
+export {
   mergeSnapshotWithPlayerChainNode,
   parsePlayerChainFanoutNotify,
   parsePlayerChainFanoutNotifyFromSsePayload,

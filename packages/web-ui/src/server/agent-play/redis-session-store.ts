@@ -1,5 +1,38 @@
+/**
+ * @packageDocumentation
+ * @module @agent-play/web-ui/server/redis-session-store
+ *
+ * Production Redis-backed implementation of {@link ./session-store.ts |
+ * `SessionStore`}. All amenity-content writes are stored under
+ * `agent-play:${hostId}:space:${spaceId}:{shop-items|supermarket-items|carwash-cars}`
+ * hashes; wallets and purchase records live under
+ * `agent-play:${hostId}:player:${playerId}:{wallet,purchases}`.
+ *
+ * **Atomicity** — `getPlayerWallet`, `setPlayerWalletBalance`,
+ * `adjustPlayerWalletBalance`, and `purchase` all use `WATCH`/`MULTI` so
+ * concurrent first-reads / purchases cannot race past each other. First-time
+ * wallet reads atomically seed the balance to
+ * {@link @agent-play/sdk!DEFAULT_PLAYER_WALLET_BALANCE_USD | $70}.
+ *
+ * @see ./session-store.test-double.ts for the in-memory mirror used in tests.
+ */
 import { randomUUID } from "node:crypto";
 import type Redis from "ioredis";
+import type {
+  CarWashCar,
+  PlayerWallet,
+  PurchaseRecord,
+  ShopItem,
+  SupermarketItem,
+} from "@agent-play/sdk";
+import {
+  CarWashCarSchema,
+  PlayerWalletSchema,
+  PurchaseRecordSchema,
+  ShopItemSchema,
+  SupermarketItemSchema,
+  createInitialPlayerWallet,
+} from "@agent-play/sdk";
 import { agentPlayVerbose } from "./agent-play-debug.js";
 import type { PreviewSnapshotJson } from "./preview-serialize.js";
 import { getPlayerChainGenesisSync } from "./load-player-chain-genesis.js";
@@ -10,6 +43,7 @@ import {
 } from "./player-chain/index.js";
 import { worldFanoutChannel } from "./redis-world-fanout.js";
 import type {
+  ExecutePurchaseResult,
   PresenceLease,
   PersistSnapshotRev,
   PublishedSessionMetadata,
@@ -19,6 +53,8 @@ import type {
   WorldChatMessage,
   WorldFanoutOptions,
 } from "./session-store.js";
+
+const PURCHASES_MAX = 500;
 
 const EVENT_LOG_MAX = 200;
 const WORLD_CHAT_MAX = 5000;
@@ -62,6 +98,26 @@ function spaceAmenityLogKey(
 
 function spaceLeasesHashKey(hostId: string, spaceId: string): string {
   return `agent-play:${hostId}:space:${spaceId}:leases`;
+}
+
+function spaceShopItemsHashKey(hostId: string, spaceId: string): string {
+  return `agent-play:${hostId}:space:${spaceId}:shop-items`;
+}
+
+function spaceSupermarketItemsHashKey(hostId: string, spaceId: string): string {
+  return `agent-play:${hostId}:space:${spaceId}:supermarket-items`;
+}
+
+function spaceCarWashCarsHashKey(hostId: string, spaceId: string): string {
+  return `agent-play:${hostId}:space:${spaceId}:carwash-cars`;
+}
+
+function playerWalletKey(hostId: string, playerId: string): string {
+  return `agent-play:${hostId}:player:${playerId}:wallet`;
+}
+
+function playerPurchasesKey(hostId: string, playerId: string): string {
+  return `agent-play:${hostId}:player:${playerId}:purchases`;
 }
 
 export type RedisSessionStoreOptions = {
@@ -712,6 +768,340 @@ export class RedisSessionStore implements SessionStore {
     for (const kind of ["supermarket", "shop", "car_wash"] as const) {
       await this.redis.del(spaceAmenityLogKey(this.hostId, spaceId, kind));
     }
+    await this.redis.del(spaceShopItemsHashKey(this.hostId, spaceId));
+    await this.redis.del(spaceSupermarketItemsHashKey(this.hostId, spaceId));
+    await this.redis.del(spaceCarWashCarsHashKey(this.hostId, spaceId));
+  }
+
+  async upsertShopItem(item: ShopItem): Promise<void> {
+    const key = spaceShopItemsHashKey(this.hostId, item.spaceId);
+    await this.redis.hset(key, item.id, JSON.stringify(item));
+  }
+
+  async listShopItems(spaceId: string): Promise<ShopItem[]> {
+    const key = spaceShopItemsHashKey(this.hostId, spaceId);
+    const raw = await this.redis.hgetall(key);
+    const out: ShopItem[] = [];
+    for (const value of Object.values(raw)) {
+      try {
+        out.push(ShopItemSchema.parse(JSON.parse(value)));
+      } catch {
+        continue;
+      }
+    }
+    return out.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  }
+
+  async removeShopItem(input: {
+    spaceId: string;
+    itemId: string;
+  }): Promise<boolean> {
+    const key = spaceShopItemsHashKey(this.hostId, input.spaceId);
+    const removed = await this.redis.hdel(key, input.itemId);
+    return removed === 1;
+  }
+
+  async upsertSupermarketItem(item: SupermarketItem): Promise<void> {
+    const key = spaceSupermarketItemsHashKey(this.hostId, item.spaceId);
+    await this.redis.hset(key, item.id, JSON.stringify(item));
+  }
+
+  async listSupermarketItems(spaceId: string): Promise<SupermarketItem[]> {
+    const key = spaceSupermarketItemsHashKey(this.hostId, spaceId);
+    const raw = await this.redis.hgetall(key);
+    const out: SupermarketItem[] = [];
+    for (const value of Object.values(raw)) {
+      try {
+        out.push(SupermarketItemSchema.parse(JSON.parse(value)));
+      } catch {
+        continue;
+      }
+    }
+    return out.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  }
+
+  async removeSupermarketItem(input: {
+    spaceId: string;
+    itemId: string;
+  }): Promise<boolean> {
+    const key = spaceSupermarketItemsHashKey(this.hostId, input.spaceId);
+    const removed = await this.redis.hdel(key, input.itemId);
+    return removed === 1;
+  }
+
+  async upsertCarWashCar(car: CarWashCar): Promise<void> {
+    const key = spaceCarWashCarsHashKey(this.hostId, car.spaceId);
+    await this.redis.hset(key, car.id, JSON.stringify(car));
+  }
+
+  async listCarWashCars(spaceId: string): Promise<CarWashCar[]> {
+    const key = spaceCarWashCarsHashKey(this.hostId, spaceId);
+    const raw = await this.redis.hgetall(key);
+    const out: CarWashCar[] = [];
+    for (const value of Object.values(raw)) {
+      try {
+        out.push(CarWashCarSchema.parse(JSON.parse(value)));
+      } catch {
+        continue;
+      }
+    }
+    return out.sort((a, b) => a.slot - b.slot);
+  }
+
+  async removeCarWashCar(input: {
+    spaceId: string;
+    carId: string;
+  }): Promise<boolean> {
+    const key = spaceCarWashCarsHashKey(this.hostId, input.spaceId);
+    const removed = await this.redis.hdel(key, input.carId);
+    return removed === 1;
+  }
+
+  /**
+   * Lazy wallet seed on first read.
+   *
+   * @remarks
+   * Uses `WATCH`/`MULTI` so two concurrent first-reads cannot both write a new
+   * wallet; the losing transaction re-reads the freshly written value.
+   */
+  async getPlayerWallet(playerId: string): Promise<PlayerWallet> {
+    const key = playerWalletKey(this.hostId, playerId);
+    const raw = await this.redis.get(key);
+    if (raw !== null && raw.length > 0) {
+      try {
+        return PlayerWalletSchema.parse(JSON.parse(raw));
+      } catch {
+        // fall through to seed below
+      }
+    }
+    const seeded = createInitialPlayerWallet({
+      playerId,
+      now: new Date().toISOString(),
+    });
+    // Atomic seed: WATCH the key, only write if still empty.
+    await this.redis.watch(key);
+    const stillRaw = await this.redis.get(key);
+    if (stillRaw !== null && stillRaw.length > 0) {
+      await this.redis.unwatch();
+      try {
+        return PlayerWalletSchema.parse(JSON.parse(stillRaw));
+      } catch {
+        // best-effort: overwrite malformed value via SET below.
+      }
+    }
+    const multi = this.redis.multi();
+    multi.set(key, JSON.stringify(seeded));
+    const exec = await multi.exec();
+    if (exec === null) {
+      // Lost the race; re-read what the winner wrote.
+      const winnerRaw = await this.redis.get(key);
+      if (winnerRaw !== null && winnerRaw.length > 0) {
+        try {
+          return PlayerWalletSchema.parse(JSON.parse(winnerRaw));
+        } catch {
+          // fall through and return our seed value; the winner wrote $70 too.
+        }
+      }
+    }
+    return seeded;
+  }
+
+  async setPlayerWalletBalance(input: {
+    playerId: string;
+    balanceUsd: number;
+  }): Promise<PlayerWallet> {
+    if (input.balanceUsd < 0 || !Number.isFinite(input.balanceUsd)) {
+      throw new Error(
+        "setPlayerWalletBalance: balanceUsd must be a finite, non-negative number"
+      );
+    }
+    const wallet: PlayerWallet = {
+      playerId: input.playerId,
+      balanceUsd: input.balanceUsd,
+      currency: "USD",
+      updatedAt: new Date().toISOString(),
+    };
+    await this.redis.set(
+      playerWalletKey(this.hostId, input.playerId),
+      JSON.stringify(wallet)
+    );
+    return wallet;
+  }
+
+  /**
+   * Atomic increment/decrement of the wallet balance via WATCH/MULTI.
+   *
+   * @throws when the resulting balance would be negative.
+   */
+  async adjustPlayerWalletBalance(input: {
+    playerId: string;
+    deltaUsd: number;
+  }): Promise<PlayerWallet> {
+    const key = playerWalletKey(this.hostId, input.playerId);
+    const maxAttempts = 5;
+    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+      const current = await this.getPlayerWallet(input.playerId);
+      await this.redis.watch(key);
+      const nextBalance = current.balanceUsd + input.deltaUsd;
+      if (nextBalance < 0 || !Number.isFinite(nextBalance)) {
+        await this.redis.unwatch();
+        throw new Error(
+          `adjustPlayerWalletBalance: insufficient funds for player ${input.playerId}`
+        );
+      }
+      const next: PlayerWallet = {
+        ...current,
+        balanceUsd: nextBalance,
+        updatedAt: new Date().toISOString(),
+      };
+      const multi = this.redis.multi();
+      multi.set(key, JSON.stringify(next));
+      const exec = await multi.exec();
+      if (exec !== null) {
+        return next;
+      }
+    }
+    throw new Error(
+      `adjustPlayerWalletBalance: lost ${String(maxAttempts)} CAS retries for player ${input.playerId}`
+    );
+  }
+
+  async appendPurchaseRecord(record: PurchaseRecord): Promise<void> {
+    const key = playerPurchasesKey(this.hostId, record.playerId);
+    await this.redis.lpush(key, JSON.stringify(record));
+    await this.redis.ltrim(key, 0, PURCHASES_MAX - 1);
+  }
+
+  async listPurchases(input: {
+    playerId: string;
+    limit: number;
+  }): Promise<PurchaseRecord[]> {
+    const key = playerPurchasesKey(this.hostId, input.playerId);
+    const lim = Math.min(Math.max(input.limit, 1), PURCHASES_MAX);
+    const raw = await this.redis.lrange(key, 0, lim - 1);
+    const out: PurchaseRecord[] = [];
+    for (const line of raw) {
+      try {
+        out.push(PurchaseRecordSchema.parse(JSON.parse(line)));
+      } catch {
+        continue;
+      }
+    }
+    return out;
+  }
+
+  /**
+   * Atomic purchase: WATCH the item-bucket hash and the wallet key, re-read
+   * both, and apply the sold flag + balance debit in a single MULTI.
+   *
+   * @remarks
+   * Concurrent buyers both reach the WATCH but only one EXEC succeeds; the
+   * losing call returns `ITEM_ALREADY_SOLD` on retry.
+   */
+  async executePurchase(input: {
+    spaceId: string;
+    amenityKind: "shop" | "supermarket" | "car_wash";
+    itemRef: { kind: "shop" | "supermarket" | "carwash"; id: string };
+    playerId: string;
+    now: string;
+    recordId: string;
+  }): Promise<ExecutePurchaseResult> {
+    const expectedKind: typeof input.itemRef.kind =
+      input.amenityKind === "car_wash" ? "carwash" : input.amenityKind;
+    if (input.itemRef.kind !== expectedKind) {
+      return { ok: false, error: "AMENITY_KIND_MISMATCH" };
+    }
+    const itemKey =
+      input.itemRef.kind === "shop"
+        ? spaceShopItemsHashKey(this.hostId, input.spaceId)
+        : input.itemRef.kind === "supermarket"
+          ? spaceSupermarketItemsHashKey(this.hostId, input.spaceId)
+          : spaceCarWashCarsHashKey(this.hostId, input.spaceId);
+    const walletKey = playerWalletKey(this.hostId, input.playerId);
+    const purchasesKeyName = playerPurchasesKey(this.hostId, input.playerId);
+
+    await this.getPlayerWallet(input.playerId);
+
+    const maxAttempts = 5;
+    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+      await this.redis.watch(itemKey, walletKey);
+      const rawItem = await this.redis.hget(itemKey, input.itemRef.id);
+      if (rawItem === null) {
+        await this.redis.unwatch();
+        return { ok: false, error: "ITEM_NOT_FOUND" };
+      }
+      let item: ShopItem | SupermarketItem | CarWashCar;
+      try {
+        const parsed = JSON.parse(rawItem) as unknown;
+        if (input.itemRef.kind === "shop") {
+          item = ShopItemSchema.parse(parsed);
+        } else if (input.itemRef.kind === "supermarket") {
+          item = SupermarketItemSchema.parse(parsed);
+        } else {
+          item = CarWashCarSchema.parse(parsed);
+        }
+      } catch {
+        await this.redis.unwatch();
+        return { ok: false, error: "ITEM_NOT_FOUND" };
+      }
+      if (item.sale.status !== "available") {
+        await this.redis.unwatch();
+        return { ok: false, error: "ITEM_ALREADY_SOLD" };
+      }
+      const rawWallet = await this.redis.get(walletKey);
+      if (rawWallet === null) {
+        await this.redis.unwatch();
+        return { ok: false, error: "INSUFFICIENT_FUNDS" };
+      }
+      let wallet: PlayerWallet;
+      try {
+        wallet = PlayerWalletSchema.parse(JSON.parse(rawWallet));
+      } catch {
+        await this.redis.unwatch();
+        return { ok: false, error: "INSUFFICIENT_FUNDS" };
+      }
+      if (wallet.balanceUsd < item.priceUsd) {
+        await this.redis.unwatch();
+        return { ok: false, error: "INSUFFICIENT_FUNDS" };
+      }
+      const updatedItem = {
+        ...item,
+        sale: {
+          status: "sold" as const,
+          soldToPlayerId: input.playerId,
+          soldAt: input.now,
+        },
+      };
+      const updatedWallet: PlayerWallet = {
+        ...wallet,
+        balanceUsd: wallet.balanceUsd - item.priceUsd,
+        updatedAt: input.now,
+      };
+      const record: PurchaseRecord = {
+        id: input.recordId,
+        playerId: input.playerId,
+        spaceId: input.spaceId,
+        amenityKind: input.amenityKind,
+        itemRef: input.itemRef,
+        priceUsd: item.priceUsd,
+        at: input.now,
+      };
+      const multi = this.redis.multi();
+      multi.hset(itemKey, input.itemRef.id, JSON.stringify(updatedItem));
+      multi.set(walletKey, JSON.stringify(updatedWallet));
+      multi.lpush(purchasesKeyName, JSON.stringify(record));
+      multi.ltrim(purchasesKeyName, 0, PURCHASES_MAX - 1);
+      const exec = await multi.exec();
+      if (exec !== null) {
+        return {
+          ok: true,
+          record,
+          wallet: updatedWallet,
+          updatedItem,
+        };
+      }
+    }
+    return { ok: false, error: "ITEM_ALREADY_SOLD" };
   }
 
   getHostId(): string {

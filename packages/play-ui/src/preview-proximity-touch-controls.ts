@@ -7,6 +7,13 @@ export type CreatePreviewProximityTouchControlsOptions = {
   parent: HTMLElement;
   getBoundsElement: () => HTMLElement;
   getCanAct: () => boolean;
+  /**
+   * When the human is near a structure / space, this returns the space's
+   * display label (used to relabel the `A` button to "Enter"). Returns
+   * `null` / `undefined` when no structure proximity is active. Optional;
+   * undefined preserves the original agent-only behaviour.
+   */
+  getStructureProximityLabel?: () => string | null | undefined;
   onAssist: () => void;
   onChat: () => void;
   onPushToTalk: () => void;
@@ -74,9 +81,25 @@ export function createPreviewProximityTouchControls(
 
   const applyInteractable = (): void => {
     const can = options.getCanAct();
-    btnAssist.disabled = !can;
-    btnChat.disabled = !can;
-    btnPushToTalk.disabled = !can;
+    const structureLabel = options.getStructureProximityLabel?.() ?? null;
+    const nearStructure =
+      typeof structureLabel === "string" && structureLabel.length > 0;
+    if (nearStructure) {
+      btnAssist.disabled = false;
+      subA.textContent = "Enter";
+      btnAssist.setAttribute(
+        "aria-label",
+        `Enter ${structureLabel ?? "space"}`
+      );
+      btnChat.disabled = true;
+      btnPushToTalk.disabled = true;
+    } else {
+      btnAssist.disabled = !can;
+      subA.textContent = "Assist";
+      btnAssist.removeAttribute("aria-label");
+      btnChat.disabled = !can;
+      btnPushToTalk.disabled = !can;
+    }
   };
 
   const refresh = (): void => {

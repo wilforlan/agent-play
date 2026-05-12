@@ -1,3 +1,20 @@
+/**
+ * @packageDocumentation
+ * @module @agent-play/web-ui/playground/aql-parser
+ *
+ * Recursive-descent parser that turns AQL tokens into an
+ * {@link AqlProgram | AST}. Recognises the 3.1.1 additions:
+ *
+ * ```text
+ * ADD SHOP ITEM TYPE "book" NAME ... DESCRIPTION ... PRICE 12.5
+ * ADD SUPERMARKET ITEM ROW 1 NAME ... DESCRIPTION ... PRICE 1.25
+ * ADD CARWASH CAR NAME ... MODEL ... YEAR 2024 PRICE 28999 COLOR "#5a87d1"
+ * SET WALLET "<playerId>" BALANCE <usd>
+ * ```
+ *
+ * @see ./aql-validator.ts and ./aql-executor.ts for downstream stages.
+ */
+
 import type {
   AqlExpr,
   AqlProgram,
@@ -76,10 +93,25 @@ class Parser {
         return this.parseCall();
       case "RETURN":
         return this.parseReturn();
+      case "SET":
+        return this.parseSet();
       default:
         this.error(token, "AQL_PARSE_ERROR", `Unsupported keyword '${token.value}'`);
         return null;
     }
+  }
+
+  private parseSet(): AqlStatement | null {
+    this.advance();
+    if (!this.matchKeyword("WALLET")) return null;
+    if (!this.matchKeyword("PLAYER")) return null;
+    const playerId = this.parseExpr();
+    if (playerId === null) return null;
+    if (!this.matchKeyword("BALANCE")) return null;
+    const balanceUsd = this.parseExpr();
+    return balanceUsd === null
+      ? null
+      : { kind: "SetWalletStmt", playerId, balanceUsd };
   }
 
   private parseLet(): AqlStatement | null {
@@ -138,7 +170,14 @@ class Parser {
       }
       return { kind: "InspectAgentStmt" };
     }
-    this.error(token, "AQL_PARSE_ERROR", "Expected MAIN, SPACE, AMENITY, or AGENT after INSPECT");
+    if (token.value === "WALLET") {
+      this.advance();
+      const playerId = this.parseExpr();
+      return playerId === null
+        ? null
+        : { kind: "InspectWalletStmt", playerId };
+    }
+    this.error(token, "AQL_PARSE_ERROR", "Expected MAIN, SPACE, AMENITY, AGENT, or WALLET after INSPECT");
     return null;
   }
 
@@ -231,9 +270,125 @@ class Parser {
 
   private parseAdd(): AqlStatement | null {
     this.advance();
-    if (!this.matchKeyword("AMENITY")) return null;
-    const amenityKind = this.parseExpr();
-    return amenityKind === null ? null : { kind: "AddSpaceAmenityStmt", amenityKind };
+    const head = this.peek();
+    if (head === null) {
+      this.error(head, "AQL_PARSE_ERROR", "Expected AMENITY / SHOP / SUPERMARKET / CARWASH after ADD");
+      return null;
+    }
+    if (head.kind === "keyword" && head.value === "AMENITY") {
+      this.advance();
+      const amenityKind = this.parseExpr();
+      return amenityKind === null
+        ? null
+        : { kind: "AddSpaceAmenityStmt", amenityKind };
+    }
+    if (head.kind === "keyword" && head.value === "SHOP") {
+      this.advance();
+      if (!this.matchKeyword("ITEM")) return null;
+      return this.parseShopItemFields();
+    }
+    if (head.kind === "keyword" && head.value === "SUPERMARKET") {
+      this.advance();
+      if (!this.matchKeyword("ITEM")) return null;
+      return this.parseSupermarketItemFields();
+    }
+    if (head.kind === "keyword" && head.value === "CARWASH") {
+      this.advance();
+      if (!this.matchKeyword("CAR")) return null;
+      return this.parseCarWashCarFields();
+    }
+    this.error(
+      head,
+      "AQL_PARSE_ERROR",
+      "Expected AMENITY / SHOP / SUPERMARKET / CARWASH after ADD"
+    );
+    return null;
+  }
+
+  private parseShopItemFields(): AqlStatement | null {
+    if (!this.matchKeyword("TYPE")) return null;
+    const itemType = this.parseExpr();
+    if (itemType === null) return null;
+    if (!this.matchKeyword("NAME")) return null;
+    const name = this.parseExpr();
+    if (name === null) return null;
+    if (!this.matchKeyword("DESCRIPTION")) return null;
+    const description = this.parseExpr();
+    if (description === null) return null;
+    if (!this.matchKeyword("PRICE")) return null;
+    const priceUsd = this.parseExpr();
+    if (priceUsd === null) return null;
+    return {
+      kind: "AddShopItemStmt",
+      itemType,
+      name,
+      description,
+      priceUsd,
+    };
+  }
+
+  private parseSupermarketItemFields(): AqlStatement | null {
+    if (!this.matchKeyword("ROW")) return null;
+    const row = this.parseExpr();
+    if (row === null) return null;
+    if (!this.matchKeyword("NAME")) return null;
+    const name = this.parseExpr();
+    if (name === null) return null;
+    if (!this.matchKeyword("DESCRIPTION")) return null;
+    const description = this.parseExpr();
+    if (description === null) return null;
+    if (!this.matchKeyword("PRICE")) return null;
+    const priceUsd = this.parseExpr();
+    if (priceUsd === null) return null;
+    let column: AqlExpr | undefined;
+    if (this.checkKeyword("COLUMN")) {
+      this.advance();
+      const c = this.parseExpr();
+      if (c === null) return null;
+      column = c;
+    }
+    return {
+      kind: "AddSupermarketItemStmt",
+      row,
+      name,
+      description,
+      priceUsd,
+      ...(column !== undefined ? { column } : {}),
+    };
+  }
+
+  private parseCarWashCarFields(): AqlStatement | null {
+    let slot: AqlExpr | undefined;
+    if (this.checkKeyword("SLOT")) {
+      this.advance();
+      const s = this.parseExpr();
+      if (s === null) return null;
+      slot = s;
+    }
+    if (!this.matchKeyword("NAME")) return null;
+    const name = this.parseExpr();
+    if (name === null) return null;
+    if (!this.matchKeyword("MODEL")) return null;
+    const model = this.parseExpr();
+    if (model === null) return null;
+    if (!this.matchKeyword("YEAR")) return null;
+    const year = this.parseExpr();
+    if (year === null) return null;
+    if (!this.matchKeyword("PRICE")) return null;
+    const priceUsd = this.parseExpr();
+    if (priceUsd === null) return null;
+    if (!this.matchKeyword("COLOR")) return null;
+    const colorHex = this.parseExpr();
+    if (colorHex === null) return null;
+    return {
+      kind: "AddCarWashCarStmt",
+      name,
+      model,
+      year,
+      priceUsd,
+      colorHex,
+      ...(slot !== undefined ? { slot } : {}),
+    };
   }
 
   private parseUse(): AqlStatement | null {

@@ -1,0 +1,41 @@
+// @vitest-environment happy-dom
+import { describe, expect, it } from "vitest";
+import { createWalletHud } from "./wallet-hud.js";
+
+const newParent = (): HTMLElement => {
+  const div = document.createElement("div");
+  document.body.appendChild(div);
+  return div;
+};
+
+describe("wallet-hud", () => {
+  it("renders a placeholder balance on mount", () => {
+    const hud = createWalletHud({ parent: newParent() });
+    expect(hud.root.textContent).toContain("$—");
+  });
+
+  it("setBalance formats USD with two decimals", () => {
+    const hud = createWalletHud({ parent: newParent() });
+    hud.setBalance(70);
+    expect(hud.root.textContent).toContain("$70.00");
+    hud.setBalance(12.345);
+    expect(hud.root.textContent).toContain("$12.35");
+  });
+
+  it("setLoading and setError toggle the modifier classes", () => {
+    const hud = createWalletHud({ parent: newParent() });
+    hud.setLoading();
+    expect(hud.root.className).toContain("--loading");
+    hud.setError("rpc failed");
+    expect(hud.root.className).toContain("--error");
+    expect(hud.root.title).toBe("rpc failed");
+  });
+
+  it("destroy removes the HUD from its parent", () => {
+    const parent = newParent();
+    const hud = createWalletHud({ parent });
+    expect(parent.children.length).toBe(1);
+    hud.destroy();
+    expect(parent.children.length).toBe(0);
+  });
+});

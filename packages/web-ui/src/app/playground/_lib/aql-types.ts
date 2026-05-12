@@ -1,3 +1,18 @@
+/**
+ * @packageDocumentation
+ * @module @agent-play/web-ui/playground/aql-types
+ *
+ * Type definitions for AQL: tokens, expressions, statements, diagnostics, and
+ * execution outputs. The {@link AqlStatement} union enumerates every AQL
+ * command, including the 3.1.1 additions
+ * `AddShopItemStmt | AddSupermarketItemStmt | AddCarWashCarStmt | SetWalletStmt`.
+ *
+ * @see ./aql-lexer.ts for token production.
+ * @see ./aql-parser.ts for statement recognition.
+ * @see ./aql-validator.ts for required-field / enum checks.
+ * @see ./aql-executor.ts for RPC dispatch.
+ */
+
 export type AqlValue = unknown;
 
 export type AqlTokenKind =
@@ -67,6 +82,32 @@ export type AqlStatement =
   | { kind: "AddSpaceAmenityStmt"; amenityKind: AqlExpr }
   | { kind: "RemoveSpaceAmenityStmt"; spaceId: AqlExpr; amenityKind: AqlExpr }
   | { kind: "RemoveSpaceStmt"; spaceId: AqlExpr }
+  | {
+      kind: "AddShopItemStmt";
+      itemType: AqlExpr;
+      name: AqlExpr;
+      description: AqlExpr;
+      priceUsd: AqlExpr;
+    }
+  | {
+      kind: "AddSupermarketItemStmt";
+      row: AqlExpr;
+      name: AqlExpr;
+      description: AqlExpr;
+      priceUsd: AqlExpr;
+      column?: AqlExpr;
+    }
+  | {
+      kind: "AddCarWashCarStmt";
+      slot?: AqlExpr;
+      name: AqlExpr;
+      model: AqlExpr;
+      year: AqlExpr;
+      priceUsd: AqlExpr;
+      colorHex: AqlExpr;
+    }
+  | { kind: "SetWalletStmt"; playerId: AqlExpr; balanceUsd: AqlExpr }
+  | { kind: "InspectWalletStmt"; playerId: AqlExpr }
   | { kind: "SendStmt"; message: AqlExpr }
   | { kind: "WithHeaderStmt"; key: AqlExpr; value: AqlExpr }
   | { kind: "WithTimeoutStmt"; timeoutMs: AqlExpr }

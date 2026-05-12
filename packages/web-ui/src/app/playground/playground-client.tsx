@@ -314,6 +314,19 @@ export default function PlaygroundClient({ defaultServerUrl }: PlaygroundClientP
           />
         </div>
         <div className={styles.headerActions}>
+          <a
+            href="/doc/aql/language-reference"
+            target="_blank"
+            rel="noreferrer"
+            style={{
+              fontSize: 12,
+              color: "var(--ios-blue, #007aff)",
+              textDecoration: "none",
+              padding: "4px 8px",
+            }}
+          >
+            Docs
+          </a>
           <span className={statusClassName}>
             <span className={styles.statusDot} />
             State: {connectionStatus}

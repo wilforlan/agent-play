@@ -1,10 +1,30 @@
+/**
+ * @packageDocumentation
+ * @module @agent-play/web-ui/server/session-store.test-double
+ *
+ * In-memory mirror of {@link ./redis-session-store.ts | the Redis session
+ * store} used in tests. Mirrors every write path including the lazy
+ * wallet-seed semantics and double-purchase rejection so unit tests can run
+ * the full purchase RPC against a deterministic backend.
+ *
+ * @see ./session-store.ts for the interface contract.
+ */
 import { randomUUID } from "node:crypto";
+import type {
+  CarWashCar,
+  PlayerWallet,
+  PurchaseRecord,
+  ShopItem,
+  SupermarketItem,
+} from "@agent-play/sdk";
+import { createInitialPlayerWallet } from "@agent-play/sdk";
 import type { PreviewSnapshotJson } from "./preview-serialize.js";
 import type { SessionEventLogEntry } from "./redis-session-store.js";
 import { getPlayerChainGenesisSync } from "./load-player-chain-genesis.js";
 import { buildPlayerChainFromSnapshot } from "./player-chain/index.js";
 import { dispatchWorldFanoutLocal } from "./world-fanout-subscriber.js";
 import type {
+  ExecutePurchaseResult,
   PresenceLease,
   PersistSnapshotRev,
   PublishedSessionMetadata,
@@ -40,6 +60,14 @@ export class TestSessionStore implements SessionStore {
   >();
   private readonly spaceAmenityLogs = new Map<string, SpaceAmenityLogEntry[]>();
   private readonly spaceLeases = new Map<string, SpaceLeaseRecord[]>();
+  private readonly shopItems = new Map<string, Map<string, ShopItem>>();
+  private readonly supermarketItems = new Map<
+    string,
+    Map<string, SupermarketItem>
+  >();
+  private readonly carWashCars = new Map<string, Map<string, CarWashCar>>();
+  private readonly playerWallets = new Map<string, PlayerWallet>();
+  private readonly playerPurchases = new Map<string, PurchaseRecord[]>();
 
   constructor(options: TestSessionStoreOptions = {}) {
     this.playerChainGenesis =
@@ -393,5 +421,217 @@ export class TestSessionStore implements SessionStore {
         this.spaceAmenityLogs.delete(key);
       }
     }
+    this.shopItems.delete(spaceId);
+    this.supermarketItems.delete(spaceId);
+    this.carWashCars.delete(spaceId);
+  }
+
+  async upsertShopItem(item: ShopItem): Promise<void> {
+    const bucket = this.shopItems.get(item.spaceId) ?? new Map<string, ShopItem>();
+    bucket.set(item.id, { ...item });
+    this.shopItems.set(item.spaceId, bucket);
+  }
+
+  async listShopItems(spaceId: string): Promise<ShopItem[]> {
+    const bucket = this.shopItems.get(spaceId);
+    if (bucket === undefined) return [];
+    return Array.from(bucket.values()).map((i) => ({ ...i }));
+  }
+
+  async removeShopItem(input: {
+    spaceId: string;
+    itemId: string;
+  }): Promise<boolean> {
+    const bucket = this.shopItems.get(input.spaceId);
+    if (bucket === undefined) return false;
+    return bucket.delete(input.itemId);
+  }
+
+  async upsertSupermarketItem(item: SupermarketItem): Promise<void> {
+    const bucket =
+      this.supermarketItems.get(item.spaceId) ??
+      new Map<string, SupermarketItem>();
+    bucket.set(item.id, { ...item });
+    this.supermarketItems.set(item.spaceId, bucket);
+  }
+
+  async listSupermarketItems(spaceId: string): Promise<SupermarketItem[]> {
+    const bucket = this.supermarketItems.get(spaceId);
+    if (bucket === undefined) return [];
+    return Array.from(bucket.values()).map((i) => ({ ...i }));
+  }
+
+  async removeSupermarketItem(input: {
+    spaceId: string;
+    itemId: string;
+  }): Promise<boolean> {
+    const bucket = this.supermarketItems.get(input.spaceId);
+    if (bucket === undefined) return false;
+    return bucket.delete(input.itemId);
+  }
+
+  async upsertCarWashCar(car: CarWashCar): Promise<void> {
+    const bucket =
+      this.carWashCars.get(car.spaceId) ?? new Map<string, CarWashCar>();
+    bucket.set(car.id, { ...car });
+    this.carWashCars.set(car.spaceId, bucket);
+  }
+
+  async listCarWashCars(spaceId: string): Promise<CarWashCar[]> {
+    const bucket = this.carWashCars.get(spaceId);
+    if (bucket === undefined) return [];
+    return Array.from(bucket.values()).map((c) => ({ ...c }));
+  }
+
+  async removeCarWashCar(input: {
+    spaceId: string;
+    carId: string;
+  }): Promise<boolean> {
+    const bucket = this.carWashCars.get(input.spaceId);
+    if (bucket === undefined) return false;
+    return bucket.delete(input.carId);
+  }
+
+  async getPlayerWallet(playerId: string): Promise<PlayerWallet> {
+    const existing = this.playerWallets.get(playerId);
+    if (existing !== undefined) {
+      return { ...existing };
+    }
+    const seeded = createInitialPlayerWallet({
+      playerId,
+      now: new Date().toISOString(),
+    });
+    this.playerWallets.set(playerId, seeded);
+    return { ...seeded };
+  }
+
+  async setPlayerWalletBalance(input: {
+    playerId: string;
+    balanceUsd: number;
+  }): Promise<PlayerWallet> {
+    if (input.balanceUsd < 0 || !Number.isFinite(input.balanceUsd)) {
+      throw new Error(
+        "setPlayerWalletBalance: balanceUsd must be a finite, non-negative number"
+      );
+    }
+    const wallet: PlayerWallet = {
+      playerId: input.playerId,
+      balanceUsd: input.balanceUsd,
+      currency: "USD",
+      updatedAt: new Date().toISOString(),
+    };
+    this.playerWallets.set(input.playerId, wallet);
+    return { ...wallet };
+  }
+
+  async adjustPlayerWalletBalance(input: {
+    playerId: string;
+    deltaUsd: number;
+  }): Promise<PlayerWallet> {
+    const current = await this.getPlayerWallet(input.playerId);
+    const next = current.balanceUsd + input.deltaUsd;
+    if (next < 0 || !Number.isFinite(next)) {
+      throw new Error(
+        `adjustPlayerWalletBalance: insufficient funds for player ${input.playerId}`
+      );
+    }
+    const wallet: PlayerWallet = {
+      ...current,
+      balanceUsd: next,
+      updatedAt: new Date().toISOString(),
+    };
+    this.playerWallets.set(input.playerId, wallet);
+    return { ...wallet };
+  }
+
+  async appendPurchaseRecord(record: PurchaseRecord): Promise<void> {
+    const list = this.playerPurchases.get(record.playerId) ?? [];
+    list.unshift({ ...record });
+    this.playerPurchases.set(record.playerId, list);
+  }
+
+  async listPurchases(input: {
+    playerId: string;
+    limit: number;
+  }): Promise<PurchaseRecord[]> {
+    const list = this.playerPurchases.get(input.playerId) ?? [];
+    const lim = Math.max(1, Math.min(500, Math.floor(input.limit)));
+    return list.slice(0, lim).map((r) => ({ ...r }));
+  }
+
+  async executePurchase(input: {
+    spaceId: string;
+    amenityKind: "shop" | "supermarket" | "car_wash";
+    itemRef: { kind: "shop" | "supermarket" | "carwash"; id: string };
+    playerId: string;
+    now: string;
+    recordId: string;
+  }): Promise<ExecutePurchaseResult> {
+    const expectedKind: typeof input.itemRef.kind =
+      input.amenityKind === "car_wash" ? "carwash" : input.amenityKind;
+    if (input.itemRef.kind !== expectedKind) {
+      return { ok: false, error: "AMENITY_KIND_MISMATCH" };
+    }
+    let bucket:
+      | Map<string, ShopItem>
+      | Map<string, SupermarketItem>
+      | Map<string, CarWashCar>
+      | undefined;
+    if (input.itemRef.kind === "shop") {
+      bucket = this.shopItems.get(input.spaceId);
+    } else if (input.itemRef.kind === "supermarket") {
+      bucket = this.supermarketItems.get(input.spaceId);
+    } else {
+      bucket = this.carWashCars.get(input.spaceId);
+    }
+    const item = bucket?.get(input.itemRef.id);
+    if (item === undefined) {
+      return { ok: false, error: "ITEM_NOT_FOUND" };
+    }
+    if (item.sale.status !== "available") {
+      return { ok: false, error: "ITEM_ALREADY_SOLD" };
+    }
+    const wallet = await this.getPlayerWallet(input.playerId);
+    if (wallet.balanceUsd < item.priceUsd) {
+      return { ok: false, error: "INSUFFICIENT_FUNDS" };
+    }
+    const nextItem = {
+      ...item,
+      sale: {
+        status: "sold" as const,
+        soldToPlayerId: input.playerId,
+        soldAt: input.now,
+      },
+    };
+    if (input.itemRef.kind === "shop") {
+      (bucket as Map<string, ShopItem>).set(item.id, nextItem as ShopItem);
+    } else if (input.itemRef.kind === "supermarket") {
+      (bucket as Map<string, SupermarketItem>).set(
+        item.id,
+        nextItem as SupermarketItem
+      );
+    } else {
+      (bucket as Map<string, CarWashCar>).set(item.id, nextItem as CarWashCar);
+    }
+    const nextWallet = await this.adjustPlayerWalletBalance({
+      playerId: input.playerId,
+      deltaUsd: -item.priceUsd,
+    });
+    const record: PurchaseRecord = {
+      id: input.recordId,
+      playerId: input.playerId,
+      spaceId: input.spaceId,
+      amenityKind: input.amenityKind,
+      itemRef: input.itemRef,
+      priceUsd: item.priceUsd,
+      at: input.now,
+    };
+    await this.appendPurchaseRecord(record);
+    return {
+      ok: true,
+      record,
+      wallet: nextWallet,
+      updatedItem: nextItem,
+    };
   }
 }

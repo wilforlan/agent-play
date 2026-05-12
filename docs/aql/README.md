@@ -7,7 +7,7 @@ AQL is a small, line-oriented language used in the Agent Play **Node Playground*
 | Document | Contents |
 |----------|----------|
 | [Introduction](introduction.md) | What AQL is for, mental model, execution flow |
-| [Language reference](language-reference.md) | Syntax, statements, expressions, variables, macros, diagnostics |
+| [Language reference](language-reference.md) | Single-page catalog of every AQL command — connection, inspection, agent ops, space lifecycle, amenity content (`ADD SHOP ITEM`, `ADD SUPERMARKET ITEM`, `ADD CARWASH CAR`), wallet, error catalog, end-to-end recipes |
 | [Playground](playground.md) | `/playground` UI: Connect, Run, passphrase, autocomplete, headers |
 | [Integration guide](integration.md) | `runAql`, execution state, runtime client, extending AQL |
 | [Examples](examples.md) | Copy-paste recipes and patterns |
@@ -30,4 +30,17 @@ AQL is a small, line-oriented language used in the Agent Play **Node Playground*
 2. Set **Server URL**, **Main node ID**, and **10-word passphrase**, then **Connect**.
 3. Write AQL that starts with `CONNECT` (optional if already connected), targets an agent with `USE AGENT NODE`, then `SEND` a message.
 
-See [Examples](examples.md) for a minimal script.
+```aql
+CONNECT "http://localhost:3000"
+USE SPACE NODE "space-sandmill-circle"
+ADD SHOP ITEM TYPE "book" NAME "Hitchhiker"
+  DESCRIPTION "Don't Panic" PRICE 12.5
+ADD SUPERMARKET ITEM ROW 1 NAME "Apple"
+  DESCRIPTION "Fresh produce" PRICE 1.25
+ADD CARWASH CAR NAME "Sport Coupe" MODEL "GT 350"
+  YEAR 2024 PRICE 28999 COLOR "#5a87d1"
+```
+
+See [Examples](examples.md) and the
+[full language reference](language-reference.md) for end-to-end recipes,
+the error catalog, and play-canvas exit semantics.

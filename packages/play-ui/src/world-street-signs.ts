@@ -16,7 +16,7 @@ const SIGN_PANEL_COLOR = 0x0f172a;
 const LAMP_COLOR = 0xfde68a;
 const LAMP_GLOW_COLOR = 0xfef3c7;
 
-function buildTSignPost(opts: {
+export function buildTSignPost(opts: {
   palette: MultiversePalette;
   cellScale: number;
   label: string;

@@ -44,6 +44,10 @@ const nextConfig = {
         source: "/agent-play/world-layout/bounds",
         destination: "/api/agent-play/world-layout/bounds",
       },
+      {
+        source: "/agent-play/players/:id/wallet",
+        destination: "/api/agent-play/players/:id/wallet",
+      },
     ];
   },
 };

@@ -22,6 +22,7 @@ The repository uses npm workspaces. **`packages/sdk`** is the Node.js package `@
 | [Pending feature backlog](pending-features.md) | Roadmap themes and scope notes |
 | [Overview](overview.md) | How the SDK and UI relate, and why they are separate deployables |
 | [Monorepo](monorepo.md) | Workspaces, build order, root scripts |
+| [Release 3.1.1](releases/agent-play-3.1.1.md) | **World switch, amenity stages, wallet, sold state, AQL extensions** — overworld → space yard → amenity stage controller, bookstore / supermarket / car-wash stages, $70 wallet seed, `ADD SHOP ITEM`/`ADD SUPERMARKET ITEM`/`ADD CARWASH CAR`, `Esc` + exit-door exits |
 | [Release 3.1.0](releases/agent-play-3.1.0.md) | npm intercom package, TypeDoc fixes, Docker/agents, play-ui and SDK highlights since 3.0.x |
 | [AQL](aql/README.md) | **Agent Query Language**: playground scripting, language reference, integration |
 | [SDK](sdk.md) | **`RemotePlayWorld`**, player-chain incremental sync (`getPlayerChainNode`, `subscribeWorldState`, merge helpers), LangChain adapter |
