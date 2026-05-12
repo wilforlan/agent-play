@@ -29,9 +29,28 @@ import {
   YARD_BOUNDS,
   EXIT_DOOR_PROXIMITY_RADIUS_WORLD,
   nextEnclosedStageInputDirection,
+  findNearestYardAmenityPad,
+  YARD_AMENITY_PROXIMITY_RADIUS_WORLD,
   type SpaceYardStageHandle,
   type YardPlayerAnim,
+  type YardAmenityPadPosition,
 } from "./space-yard-stage.js";
+import {
+  buildAmenityShopStage,
+  SHOP_BOUNDS,
+  type AmenityShopStageHandle,
+} from "./amenity-shop-stage.js";
+import {
+  buildAmenitySupermarketStage,
+  SUPERMARKET_BOUNDS,
+  type AmenitySupermarketStageHandle,
+} from "./amenity-supermarket-stage.js";
+import {
+  buildAmenityCarWashStage,
+  CAR_WASH_BOUNDS,
+  type AmenityCarWashStageHandle,
+} from "./amenity-carwash-stage.js";
+import type { AmenityStageBounds } from "./amenity-stage-base.js";
 import { createWalletHud, type WalletHudHandle } from "./wallet-hud.js";
 import { fetchPlayerWallet } from "./wallet-client.js";
 import { deepLogObject, deepLogText, deepLogTree } from "./browser-deep-logs.js";
@@ -1042,8 +1061,17 @@ function onDocumentKeyDown(e: KeyboardEvent): void {
     const stage = stageController?.current();
     if (stage !== null && stage !== undefined && stage.id !== "overworld") {
       e.preventDefault();
-      leaveYardStageToPrevious();
+      leaveCurrentEnclosedStageToPrevious();
     }
+    return;
+  }
+  if (
+    e.key.toLowerCase() === "p" &&
+    lastYardAmenityPadTarget !== null &&
+    stageController?.current()?.id === "spaceYard"
+  ) {
+    e.preventDefault();
+    void enterAmenityFromYardPad(lastYardAmenityPadTarget);
     return;
   }
   const partner = registeredAgentPartnerForProximityOrNull(
@@ -1142,23 +1170,62 @@ function deriveYardAmenitiesForSpace(spaceId: string): Array<{
 }
 
 let activeYardStage: SpaceYardStageHandle | null = null;
+let lastYardAmenityPadTarget: YardAmenityPadPosition | null = null;
+
+type AmenityKind = "shop" | "supermarket" | "car_wash";
+
+const AMENITY_DISPLAY_LABEL: Record<AmenityKind, string> = {
+  shop: "Shop",
+  supermarket: "Supermarket",
+  car_wash: "Car Wash",
+};
+
+const AMENITY_STAGE_BOUNDS: Record<AmenityKind, AmenityStageBounds> = {
+  shop: SHOP_BOUNDS,
+  supermarket: SUPERMARKET_BOUNDS,
+  car_wash: CAR_WASH_BOUNDS,
+};
+
+type ActiveAmenityStage = {
+  kind: AmenityKind;
+  handle:
+    | AmenityShopStageHandle
+    | AmenitySupermarketStageHandle
+    | AmenityCarWashStageHandle;
+  bounds: AmenityStageBounds;
+  cellScale: number;
+  spawn: { x: number; y: number };
+  exitDoorAnchor: { x: number; y: number };
+  playerLayer: Container;
+  heroGraphic: Graphics;
+};
+
+let activeAmenityStage: ActiveAmenityStage | null = null;
 
 /**
- * Trigger `stageController.back()` and clear the yard reference once the
- * transition resolves. Centralised so both the Esc path and the exit-door
- * proximity path drop `activeYardStage` at the right moment — never during
- * the inbound transition (which used to break the yard tick).
+ * Trigger `stageController.back()` and clear the active enclosed-stage
+ * reference once the transition resolves. Centralised so both the Esc path
+ * and the exit-door proximity path drop `activeYardStage` /
+ * `activeAmenityStage` at the right moment — never during the inbound
+ * transition (which used to break the per-stage tick).
  */
-function leaveYardStageToPrevious(): void {
+function leaveCurrentEnclosedStageToPrevious(): void {
   const controller = stageController;
   if (controller === null) return;
+  const wasAmenity = activeAmenityStage !== null;
   void controller
     .back()
     .then(() => {
-      activeYardStage = null;
+      if (wasAmenity) {
+        activeAmenityStage = null;
+      } else {
+        activeYardStage = null;
+      }
     })
     .catch(() => {});
 }
+
+const leaveYardStageToPrevious = leaveCurrentEnclosedStageToPrevious;
 const yardPlayerState: {
   pos: { x: number; y: number };
   facing: "left" | "right";
@@ -1202,6 +1269,12 @@ function tickYardPlayer(dtSec: number): void {
   };
   stage.setPlayerYardPosition(yardPlayerState.pos, anim);
 
+  lastYardAmenityPadTarget = findNearestYardAmenityPad({
+    player: yardPlayerState.pos,
+    pads: stage.amenityPads,
+    radius: YARD_AMENITY_PROXIMITY_RADIUS_WORLD,
+  });
+
   if (yardExitDebounceMs > 0) {
     yardExitDebounceMs = Math.max(0, yardExitDebounceMs - dtSec * 1000);
     return;
@@ -1213,7 +1286,181 @@ function tickYardPlayer(dtSec: number): void {
   );
   if (distToDoor <= EXIT_DOOR_PROXIMITY_RADIUS_WORLD) {
     yardExitDebounceMs = 400;
-    leaveYardStageToPrevious();
+    lastYardAmenityPadTarget = null;
+    leaveCurrentEnclosedStageToPrevious();
+  }
+}
+
+const amenityPlayerState: {
+  pos: { x: number; y: number };
+  facing: "left" | "right";
+  walkPhase: number;
+  isMoving: boolean;
+} = {
+  pos: { x: 0, y: 0 },
+  facing: "right",
+  walkPhase: 0,
+  isMoving: false,
+};
+let amenityExitDebounceMs = 0;
+
+const AMENITY_PLAYER_SPEED_CELLS_PER_SEC = 3.2;
+const AMENITY_HEADER_BAND_PX = 56;
+
+function amenitySpawnInside(bounds: AmenityStageBounds): { x: number; y: number } {
+  // Spawn near the bottom-centre, away from the (0,0) exit door.
+  return {
+    x: (bounds.minX + bounds.maxX) / 2,
+    y: bounds.maxY - 1,
+  };
+}
+
+function tickAmenityPlayer(dtSec: number): void {
+  const stage = activeAmenityStage;
+  if (stage === null) return;
+  const direction = nextEnclosedStageInputDirection({
+    joystickEnabled: getPreviewViewSettings().joystickEnabled,
+    joystickVector: getJoystickVector(),
+    arrowKeys,
+  });
+  const { dx, dy, source } = direction;
+  const isMoving = source !== "idle";
+  if (isMoving) {
+    const step = AMENITY_PLAYER_SPEED_CELLS_PER_SEC * dtSec;
+    amenityPlayerState.pos.x = amenityPlayerState.pos.x + dx * step;
+    amenityPlayerState.pos.y = amenityPlayerState.pos.y + dy * step;
+    amenityPlayerState.pos = stage.handle.clampPosition(amenityPlayerState.pos);
+    if (dx !== 0) amenityPlayerState.facing = dx > 0 ? "right" : "left";
+    amenityPlayerState.walkPhase =
+      (amenityPlayerState.walkPhase + dtSec * 4) % 1;
+  } else {
+    amenityPlayerState.walkPhase = 0;
+  }
+  amenityPlayerState.isMoving = isMoving;
+  renderAmenityPlayer(stage);
+
+  if (amenityExitDebounceMs > 0) {
+    amenityExitDebounceMs = Math.max(0, amenityExitDebounceMs - dtSec * 1000);
+    return;
+  }
+  const door = stage.exitDoorAnchor;
+  const distToDoor = Math.hypot(
+    amenityPlayerState.pos.x - door.x,
+    amenityPlayerState.pos.y - door.y
+  );
+  if (distToDoor <= EXIT_DOOR_PROXIMITY_RADIUS_WORLD) {
+    amenityExitDebounceMs = 400;
+    leaveCurrentEnclosedStageToPrevious();
+  }
+}
+
+function renderAmenityPlayer(stage: ActiveAmenityStage): void {
+  stage.playerLayer.position.set(
+    amenityPlayerState.pos.x * stage.cellScale,
+    amenityPlayerState.pos.y * stage.cellScale
+  );
+  const playerScale = Math.max(0.5, Math.min(1.1, stage.cellScale / 48));
+  drawPlatformHero(stage.heroGraphic, {
+    scale: playerScale,
+    facing: amenityPlayerState.facing,
+    walkPhase: amenityPlayerState.walkPhase,
+    isMoving: amenityPlayerState.isMoving,
+  });
+}
+
+async function enterAmenityFromYardPad(
+  target: YardAmenityPadPosition
+): Promise<void> {
+  if (stageController === null) return;
+  if (activeAmenityStage !== null) return;
+  const current = stageController.current();
+  if (current === null || current.id !== "spaceYard") return;
+
+  const kind = target.kind as AmenityKind;
+  const bounds = AMENITY_STAGE_BOUNDS[kind];
+  const availableHeight = Math.max(0, VIEW_H - AMENITY_HEADER_BAND_PX);
+  const boundsW = Math.max(1, bounds.maxX - bounds.minX);
+  const boundsH = Math.max(1, bounds.maxY - bounds.minY);
+  const cellScale = Math.max(
+    16,
+    Math.min(VIEW_W / boundsW, availableHeight / boundsH)
+  );
+  const stageW = boundsW * cellScale;
+  const stageH = boundsH * cellScale;
+  const offsetX = (VIEW_W - stageW) / 2;
+  const offsetY = AMENITY_HEADER_BAND_PX + (availableHeight - stageH) / 2;
+
+  let handle:
+    | AmenityShopStageHandle
+    | AmenitySupermarketStageHandle
+    | AmenityCarWashStageHandle;
+  if (kind === "shop") {
+    handle = buildAmenityShopStage({ cellScale, items: [] });
+  } else if (kind === "supermarket") {
+    handle = buildAmenitySupermarketStage({ cellScale, items: [] });
+  } else {
+    handle = buildAmenityCarWashStage({ cellScale, cars: [] });
+  }
+  // The amenity stages return `root` typed as the minimal `StageRoot`
+  // contract for testability, but the live object is a Pixi `Container`.
+  const rootContainer = handle.root as unknown as Container;
+  rootContainer.position.set(offsetX, offsetY);
+
+  const header = new Graphics();
+  header
+    .rect(0, 0, VIEW_W, AMENITY_HEADER_BAND_PX)
+    .fill({ color: 0x111827 });
+  header
+    .rect(0, AMENITY_HEADER_BAND_PX - 2, VIEW_W, 2)
+    .fill({ color: 0x374151, alpha: 0.7 });
+  header.position.set(-offsetX, -offsetY);
+  rootContainer.addChild(header);
+
+  const headline = new Text({
+    text: AMENITY_DISPLAY_LABEL[kind],
+    style: {
+      fontFamily: "system-ui, sans-serif",
+      fontSize: 22,
+      fontWeight: "700",
+      fill: 0xffffff,
+      stroke: { color: 0x000000, width: 2, alpha: 0.45 },
+    },
+  });
+  headline.anchor.set(0.5, 0.5);
+  headline.position.set(VIEW_W / 2 - offsetX, AMENITY_HEADER_BAND_PX / 2 - offsetY);
+  rootContainer.addChild(headline);
+
+  const playerLayer = new Container();
+  const heroGraphic = new Graphics();
+  playerLayer.addChild(heroGraphic);
+  rootContainer.addChild(playerLayer);
+
+  const spawn = amenitySpawnInside(bounds);
+  amenityPlayerState.pos = handle.clampPosition({ x: spawn.x, y: spawn.y });
+  amenityPlayerState.facing = yardPlayerState.facing;
+  amenityPlayerState.walkPhase = 0;
+  amenityPlayerState.isMoving = false;
+  amenityExitDebounceMs = 250;
+
+  activeAmenityStage = {
+    kind,
+    handle,
+    bounds,
+    cellScale,
+    spawn,
+    exitDoorAnchor: handle.exitDoorAnchor,
+    playerLayer,
+    heroGraphic,
+  };
+  lastYardAmenityPadTarget = null;
+  renderAmenityPlayer(activeAmenityStage);
+
+  try {
+    await stageController.enter(handle);
+    deepLogText("stage:enter:amenity", { kind });
+  } catch (error) {
+    console.warn("[agent-play:world] enter amenity failed", error);
+    activeAmenityStage = null;
   }
 }
 
@@ -2368,8 +2615,15 @@ function onTick(dt: number): void {
   }
   skyDecor?.tick(dt);
   stageController?.update(dt * 1000);
-  if (stageController?.current()?.id === "spaceYard") {
+  const currentStageId = stageController?.current()?.id;
+  if (currentStageId === "spaceYard") {
     tickYardPlayer(dt);
+  } else if (
+    currentStageId === "amenityShop" ||
+    currentStageId === "amenitySupermarket" ||
+    currentStageId === "amenityCarWash"
+  ) {
+    tickAmenityPlayer(dt);
   }
   updateCameraAndWorldRoot();
 }
@@ -2470,8 +2724,15 @@ function onFrame(): void {
   } else {
     lastStructureProximityTarget = null;
   }
+  if (stageController?.current()?.id !== "spaceYard") {
+    lastYardAmenityPadTarget = null;
+  }
   if (proximityLegendEl !== null) {
-    if (lastProximityPartnerId !== null) {
+    if (lastYardAmenityPadTarget !== null) {
+      const amenityName =
+        AMENITY_DISPLAY_LABEL[lastYardAmenityPadTarget.kind as AmenityKind];
+      proximityLegendEl.textContent = `Near ${amenityName}. P: enter ${amenityName.toLowerCase()}`;
+    } else if (lastProximityPartnerId !== null) {
       proximityLegendEl.textContent = `Near ${playerDisplayName(lastProximityPartnerId)}. A: for assist · C: for chat · P: push to talk · Z: for zone · Y: for yield`;
     } else if (lastStructureProximityTarget !== null) {
       const spaceName =
@@ -2816,6 +3077,11 @@ export function bootstrap(): void {
         if (target === null) return null;
         return target.label ?? target.spaceId;
       },
+      getAmenityProximityLabel: () => {
+        const target = lastYardAmenityPadTarget;
+        if (target === null) return null;
+        return AMENITY_DISPLAY_LABEL[target.kind as AmenityKind];
+      },
       onAssist: () => {
         if (
           lastProximityPartnerId === null &&
@@ -2830,6 +3096,10 @@ export function bootstrap(): void {
         triggerProximityAssistOrChat("chat");
       },
       onPushToTalk: () => {
+        if (lastYardAmenityPadTarget !== null) {
+          void enterAmenityFromYardPad(lastYardAmenityPadTarget);
+          return;
+        }
         void triggerProximityPushToTalk();
       },
     });

@@ -14,6 +14,15 @@ export type CreatePreviewProximityTouchControlsOptions = {
    * undefined preserves the original agent-only behaviour.
    */
   getStructureProximityLabel?: () => string | null | undefined;
+  /**
+   * When the human is inside the space yard and walks up to an amenity pad,
+   * this returns the amenity's display label (used to relabel the `P`
+   * button to "Enter"). Returns `null` / `undefined` when no amenity
+   * proximity is active. Amenity proximity takes precedence over structure
+   * proximity (the two are mutually exclusive in practice because they
+   * happen on different stages, but the precedence is here for safety).
+   */
+  getAmenityProximityLabel?: () => string | null | undefined;
   onAssist: () => void;
   onChat: () => void;
   onPushToTalk: () => void;
@@ -81,10 +90,24 @@ export function createPreviewProximityTouchControls(
 
   const applyInteractable = (): void => {
     const can = options.getCanAct();
+    const amenityLabel = options.getAmenityProximityLabel?.() ?? null;
+    const nearAmenity =
+      typeof amenityLabel === "string" && amenityLabel.length > 0;
     const structureLabel = options.getStructureProximityLabel?.() ?? null;
     const nearStructure =
       typeof structureLabel === "string" && structureLabel.length > 0;
-    if (nearStructure) {
+    if (nearAmenity) {
+      btnAssist.disabled = true;
+      subA.textContent = "Assist";
+      btnAssist.removeAttribute("aria-label");
+      btnChat.disabled = true;
+      btnPushToTalk.disabled = false;
+      subP.textContent = "Enter";
+      btnPushToTalk.setAttribute(
+        "aria-label",
+        `Enter ${amenityLabel ?? "amenity"}`
+      );
+    } else if (nearStructure) {
       btnAssist.disabled = false;
       subA.textContent = "Enter";
       btnAssist.setAttribute(
@@ -93,12 +116,16 @@ export function createPreviewProximityTouchControls(
       );
       btnChat.disabled = true;
       btnPushToTalk.disabled = true;
+      subP.textContent = "Push";
+      btnPushToTalk.removeAttribute("aria-label");
     } else {
       btnAssist.disabled = !can;
       subA.textContent = "Assist";
       btnAssist.removeAttribute("aria-label");
       btnChat.disabled = !can;
       btnPushToTalk.disabled = !can;
+      subP.textContent = "Push";
+      btnPushToTalk.removeAttribute("aria-label");
     }
   };
 

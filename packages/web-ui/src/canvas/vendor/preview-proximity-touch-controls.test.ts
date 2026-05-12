@@ -1,6 +1,9 @@
 // @vitest-environment happy-dom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createPreviewProximityTouchControls } from "./preview-proximity-touch-controls.js";
+import {
+  createPreviewProximityTouchControls,
+  type CreatePreviewProximityTouchControlsOptions,
+} from "./preview-proximity-touch-controls.js";
 
 describe("createPreviewProximityTouchControls", () => {
   let parent: HTMLElement;
@@ -166,5 +169,63 @@ describe("createPreviewProximityTouchControls", () => {
     expect(chatBtn.disabled).toBe(true);
     assistBtn.click();
     expect(onAssist).toHaveBeenCalledTimes(1);
+  });
+
+  it("relabels P to 'Enter <amenity>' and enables P when getAmenityProximityLabel returns a label", () => {
+    let label: string | null = null;
+    const opts: CreatePreviewProximityTouchControlsOptions = {
+      parent,
+      getBoundsElement: () => parent,
+      getCanAct: () => false,
+      getAmenityProximityLabel: () => label,
+      onAssist,
+      onChat,
+      onPushToTalk,
+    };
+    const { root, refresh } = createPreviewProximityTouchControls(opts);
+    const assistBtn = root.querySelector(
+      ".preview-proximity-touch-pad__key--assist"
+    ) as HTMLButtonElement;
+    const chatBtn = root.querySelector(
+      ".preview-proximity-touch-pad__key--chat"
+    ) as HTMLButtonElement;
+    const pttBtn = root.querySelector(
+      ".preview-proximity-touch-pad__key--ptt"
+    ) as HTMLButtonElement;
+    const subP = root.querySelector(
+      ".preview-proximity-touch-pad__key--ptt .preview-proximity-touch-pad__key-sub"
+    ) as HTMLElement;
+    expect(pttBtn.disabled).toBe(true);
+    expect(subP.textContent).toBe("Push");
+    label = "Shop";
+    refresh();
+    expect(pttBtn.disabled).toBe(false);
+    expect(subP.textContent).toBe("Enter");
+    expect(assistBtn.disabled).toBe(true);
+    expect(chatBtn.disabled).toBe(true);
+    pttBtn.click();
+    expect(onPushToTalk).toHaveBeenCalledTimes(1);
+  });
+
+  it("prefers amenity proximity over structure proximity (yard-only state wins)", () => {
+    const opts: CreatePreviewProximityTouchControlsOptions = {
+      parent,
+      getBoundsElement: () => parent,
+      getCanAct: () => false,
+      getStructureProximityLabel: () => "SandMill Circle",
+      getAmenityProximityLabel: () => "Shop",
+      onAssist,
+      onChat,
+      onPushToTalk,
+    };
+    const { root } = createPreviewProximityTouchControls(opts);
+    const assistBtn = root.querySelector(
+      ".preview-proximity-touch-pad__key--assist"
+    ) as HTMLButtonElement;
+    const pttBtn = root.querySelector(
+      ".preview-proximity-touch-pad__key--ptt"
+    ) as HTMLButtonElement;
+    expect(assistBtn.disabled).toBe(true);
+    expect(pttBtn.disabled).toBe(false);
   });
 });

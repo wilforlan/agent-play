@@ -175,6 +175,48 @@ export type YardAmenityPadPosition = {
 const MAX_YARD_AMENITIES = 3;
 
 /**
+ * Proximity radius (yard cells) used to detect when the player is close
+ * enough to an amenity pad to trigger the "enter amenity" prompt.
+ *
+ * @remarks
+ * Pads are roughly 2.4 cells wide × 2.6 cells tall, with their anchor
+ * point on the floor. A radius of `1.8` lets the player walk up onto
+ * the pad and feel the proximity activate from "the front step", without
+ * triggering for adjacent pads that share the back row.
+ *
+ * @public
+ */
+export const YARD_AMENITY_PROXIMITY_RADIUS_WORLD = 1.8;
+
+/**
+ * Return the amenity pad whose centre is closest to the player, or
+ * `null` when none lie within `radius`.
+ *
+ * @remarks
+ * Pure and side-effect free — easy to unit-test. Distance is measured in
+ * yard-local cells (the same coordinate space the player walks in).
+ *
+ * @public
+ */
+export const findNearestYardAmenityPad = (input: {
+  player: { x: number; y: number };
+  pads: ReadonlyArray<YardAmenityPadPosition>;
+  radius: number;
+}): YardAmenityPadPosition | null => {
+  const { player, pads, radius } = input;
+  let best: YardAmenityPadPosition | null = null;
+  let bestDistance = radius;
+  for (const pad of pads) {
+    const distance = Math.hypot(pad.x - player.x, pad.y - player.y);
+    if (distance <= bestDistance) {
+      best = pad;
+      bestDistance = distance;
+    }
+  }
+  return best;
+};
+
+/**
  * Lay out up to three amenity pads across the back of the yard.
  *
  * @example

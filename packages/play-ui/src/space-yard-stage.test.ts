@@ -7,6 +7,8 @@ import {
   YARD_BOUNDS,
   buildSpaceYardStage,
   nextEnclosedStageInputDirection,
+  findNearestYardAmenityPad,
+  YARD_AMENITY_PROXIMITY_RADIUS_WORLD,
 } from "./space-yard-stage.js";
 
 describe("space-yard-stage: layout helpers", () => {
@@ -100,6 +102,61 @@ describe("space-yard-stage: buildSpaceYardStage", () => {
     const reported = stage.playerYardPosition();
     expect(reported.x).toBeLessThanOrEqual(YARD_BOUNDS.maxX);
     expect(reported.y).toBeGreaterThanOrEqual(YARD_BOUNDS.minY);
+  });
+});
+
+describe("space-yard-stage: findNearestYardAmenityPad", () => {
+  const pads = layoutYardAmenityPads([
+    { kind: "shop" },
+    { kind: "supermarket" },
+    { kind: "car_wash" },
+  ]);
+
+  it("returns null when no pads are nearby (player far from all of them)", () => {
+    const target = findNearestYardAmenityPad({
+      player: { x: YARD_BOUNDS.maxX / 2, y: YARD_BOUNDS.maxY - 0.5 },
+      pads,
+      radius: YARD_AMENITY_PROXIMITY_RADIUS_WORLD,
+    });
+    expect(target).toBeNull();
+  });
+
+  it("returns the pad whose centre is within the radius when the player walks up to one", () => {
+    const firstPad = pads[0];
+    expect(firstPad).toBeDefined();
+    const target = findNearestYardAmenityPad({
+      player: { x: (firstPad?.x ?? 0) + 0.2, y: (firstPad?.y ?? 0) + 0.4 },
+      pads,
+      radius: YARD_AMENITY_PROXIMITY_RADIUS_WORLD,
+    });
+    expect(target).not.toBeNull();
+    expect(target?.kind).toBe(firstPad?.kind);
+  });
+
+  it("picks the nearest pad when the player is between two pads", () => {
+    const a = pads[0];
+    const b = pads[1];
+    expect(a).toBeDefined();
+    expect(b).toBeDefined();
+    const between = {
+      x: (a?.x ?? 0) * 0.7 + (b?.x ?? 0) * 0.3,
+      y: (a?.y ?? 0),
+    };
+    const target = findNearestYardAmenityPad({
+      player: between,
+      pads,
+      radius: YARD_AMENITY_PROXIMITY_RADIUS_WORLD,
+    });
+    expect(target?.kind).toBe(a?.kind);
+  });
+
+  it("ignores pads outside the radius even when they are the only ones", () => {
+    const target = findNearestYardAmenityPad({
+      player: { x: -10, y: -10 },
+      pads,
+      radius: 0.5,
+    });
+    expect(target).toBeNull();
   });
 });
 
