@@ -4,7 +4,7 @@ import type {
   ShopItem,
   SupermarketItem,
 } from "@agent-play/sdk";
-import { costForSeconds } from "@agent-play/sdk";
+import { computeTalkAgentPowerUpsEarned, costForSeconds } from "@agent-play/sdk";
 import { TestSessionStore } from "./session-store.test-double.js";
 
 const ISO = "2026-05-12T00:00:00.000Z";
@@ -376,6 +376,49 @@ describe("session-store: talk billing", () => {
         tick.costUsd + costForSeconds(3)
       );
     }
+  });
+
+  it("credits agent power-ups when viewer is billed on tick and stop", async () => {
+    const store = new TestSessionStore();
+    await store.loadOrCreateSessionId();
+    await store.setPlayerWalletBalance({
+      playerId: "viewer-1",
+      balanceUsd: 10,
+    });
+    const start = await store.startTalkSession({
+      viewerNodeId: "viewer-1",
+      agentId: "agent-1",
+      now: "2026-05-12T00:00:00.000Z",
+    });
+    expect(start.ok).toBe(true);
+
+    const tick = await store.tickTalkSession({
+      viewerNodeId: "viewer-1",
+      agentId: "agent-1",
+      now: "2026-05-12T00:00:12.000Z",
+    });
+    expect(tick.ok).toBe(true);
+    const tickPu = computeTalkAgentPowerUpsEarned({
+      billedWholeSeconds: 12,
+      costUsd: tick.ok ? tick.costUsd : 0,
+    });
+
+    const stop = await store.stopTalkSession({
+      viewerNodeId: "viewer-1",
+      agentId: "agent-1",
+      now: "2026-05-12T00:00:15.000Z",
+    });
+    expect(stop.ok).toBe(true);
+    const stopPu = computeTalkAgentPowerUpsEarned({
+      billedWholeSeconds: 3,
+      costUsd: costForSeconds(3),
+    });
+
+    const agentWallet = await store.getOrCreateAgentWalletForTalkRewards(
+      "agent-1"
+    );
+    expect(agentWallet.balanceUsd).toBe(0);
+    expect(agentWallet.powerUps).toBe(tickPu + stopPu);
   });
 
   it("returns INSUFFICIENT_FUNDS when a tick exceeds balance", async () => {

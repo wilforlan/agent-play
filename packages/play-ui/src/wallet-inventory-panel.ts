@@ -17,6 +17,7 @@
 import type { PurchaseRecordDto } from "./wallet-purchases-client.js";
 import { buildPurchaseItemKey } from "./wallet-purchases-client.js";
 import { createWalletDisplayStrip } from "./wallet-display-strip.js";
+import { WALLET_BUNDLE_OFFERS } from "@agent-play/sdk/browser";
 
 /**
  * Minimal shape of an item payload as returned by the `listPurchases`
@@ -74,6 +75,11 @@ export type CreateWalletInventoryPanelOptions = {
    * refresh the data over RPC.
    */
   readonly onRefresh: () => void;
+  /**
+   * When set, shows an "Exchange power-ups" strip to redeem USD balance
+   * bundles (see `./wallet-bundle-client`).
+   */
+  readonly onRedeemBundle?: (bundleId: string) => Promise<void>;
 };
 
 const PANEL_CLASS = "preview-wallet-inventory";
@@ -190,6 +196,59 @@ const ensureStyles = (): void => {
 .${PANEL_CLASS}__chip--car_wash { background: #cbd5f5; color: #1e293b; }
 .${PANEL_CLASS}__chip--shop { background: #fde68a; color: #78350f; }
 .${PANEL_CLASS}__chip--supermarket { background: #bbf7d0; color: #064e3b; }
+.${PANEL_CLASS}__chip--talk_time {
+  background: linear-gradient(135deg, #94a3b8, #e2e8f0 55%, #64748b);
+  color: #0f172a;
+  border: 1px solid rgba(15,23,42,0.2);
+}
+.${PANEL_CLASS}__chip--wallet_bundle {
+  background: linear-gradient(135deg, #34d399, #6ee7b7 50%, #059669);
+  color: #022c22;
+  border: 1px solid rgba(6,78,59,0.35);
+}
+.${PANEL_CLASS}__bundles {
+  margin-bottom: 18px;
+  padding: 14px;
+  border-radius: 12px;
+  background: #ffffff;
+  border: 1px solid rgba(15,23,42,0.08);
+  box-shadow: 0 1px 4px rgba(15,23,42,0.06);
+}
+.${PANEL_CLASS}__bundles-title {
+  margin: 0 0 10px 0;
+  font-size: 13px;
+  font-weight: 800;
+  color: #334155;
+  letter-spacing: 0.3px;
+}
+.${PANEL_CLASS}__bundle-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 0;
+  border-bottom: 1px solid rgba(148,163,184,0.35);
+}
+.${PANEL_CLASS}__bundle-row:last-child { border-bottom: none; padding-bottom: 0; }
+.${PANEL_CLASS}__bundle-label { font-size: 13px; font-weight: 700; color: #1e293b; }
+.${PANEL_CLASS}__bundle-meta { font-size: 12px; color: #64748b; }
+.${PANEL_CLASS}__bundle-btn {
+  border: none;
+  background: #0f766e;
+  color: #ecfdf5;
+  padding: 8px 14px;
+  border-radius: 999px;
+  font-weight: 700;
+  font-size: 12px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.${PANEL_CLASS}__bundle-btn:hover:not(:disabled) { background: #115e59; }
+.${PANEL_CLASS}__bundle-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
 .${PANEL_CLASS}__name { font-weight: 700; font-size: 14px; }
 .${PANEL_CLASS}__sub {
   font-size: 11px;
@@ -284,6 +343,21 @@ const AMENITY_LABEL: Record<PurchaseRecordDto["amenityKind"], string> = {
   shop: "Shop",
   supermarket: "Supermarket",
   car_wash: "Car Wash",
+  talk_time: "Voice",
+  wallet_bundle: "Bundle",
+};
+
+const amenityLabelForDisplay = (kind: string): string => {
+  if (
+    kind === "shop" ||
+    kind === "supermarket" ||
+    kind === "car_wash" ||
+    kind === "talk_time" ||
+    kind === "wallet_bundle"
+  ) {
+    return AMENITY_LABEL[kind];
+  }
+  return "Purchase";
 };
 
 const pickItemFields = (raw: unknown): InventoryItemFields => {
@@ -310,6 +384,25 @@ export const buildPurchaseSubtitle = (input: {
   fields: InventoryItemFields;
 }): string => {
   const at = formatTimestamp(input.record.at);
+  if (input.record.amenityKind === "talk_time") {
+    const detail =
+      typeof input.record.detail === "string" && input.record.detail.length > 0
+        ? input.record.detail
+        : "Realtime voice";
+    return `${detail} · ${at}`;
+  }
+  if (input.record.amenityKind === "wallet_bundle") {
+    const spent = input.record.powerUpsSpent;
+    const puPart =
+      typeof spent === "number" && Number.isFinite(spent)
+        ? `${String(Math.max(0, Math.floor(spent)))} PU exchanged · `
+        : "";
+    const detail =
+      typeof input.record.detail === "string" && input.record.detail.length > 0
+        ? input.record.detail
+        : "Wallet bundle";
+    return `${puPart}${detail} · ${at}`;
+  }
   if (input.record.amenityKind === "car_wash") {
     const model = input.fields.model ?? "";
     const year =
@@ -384,16 +477,58 @@ export const createWalletInventoryPanel = (
   let state: ViewState = { kind: "loading" };
   let isOpen = false;
 
-  const renderList = (
+  const appendBundleExchangeSection = (
+    parent: HTMLElement,
+    powerUps: number
+  ): void => {
+    if (options.onRedeemBundle === undefined) return;
+    const wrap = document.createElement("div");
+    wrap.className = `${PANEL_CLASS}__bundles`;
+    const title = document.createElement("h3");
+    title.className = `${PANEL_CLASS}__bundles-title`;
+    title.textContent = "Exchange power-ups";
+    wrap.appendChild(title);
+    for (const offer of WALLET_BUNDLE_OFFERS) {
+      const row = document.createElement("div");
+      row.className = `${PANEL_CLASS}__bundle-row`;
+      const left = document.createElement("div");
+      const label = document.createElement("div");
+      label.className = `${PANEL_CLASS}__bundle-label`;
+      label.textContent = `+${formatUsd(offer.creditUsd)} balance`;
+      const meta = document.createElement("div");
+      meta.className = `${PANEL_CLASS}__bundle-meta`;
+      meta.textContent = `${String(offer.powerUpsCost)} power-ups`;
+      left.append(label, meta);
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = `${PANEL_CLASS}__bundle-btn`;
+      btn.textContent = "Redeem";
+      btn.disabled = powerUps < offer.powerUpsCost;
+      btn.addEventListener("click", async () => {
+        if (options.onRedeemBundle === undefined) return;
+        btn.disabled = true;
+        try {
+          await options.onRedeemBundle(offer.id);
+        } finally {
+          btn.disabled = false;
+        }
+      });
+      row.append(left, btn);
+      wrap.appendChild(row);
+    }
+    parent.appendChild(wrap);
+  };
+
+  const renderPurchasesList = (
+    parent: HTMLElement,
     purchases: ReadonlyArray<PurchaseRecordDto>,
     items: Readonly<Record<string, unknown>>
   ): void => {
-    body.innerHTML = "";
     if (purchases.length === 0) {
       const empty = document.createElement("div");
       empty.className = `${PANEL_CLASS}__empty`;
       empty.textContent = "You haven't bought anything yet.";
-      body.appendChild(empty);
+      parent.appendChild(empty);
       return;
     }
     const list = document.createElement("div");
@@ -409,7 +544,7 @@ export const createWalletInventoryPanel = (
 
       const chip = document.createElement("div");
       chip.className = `${PANEL_CLASS}__chip ${PANEL_CLASS}__chip--${record.amenityKind}`;
-      chip.textContent = AMENITY_LABEL[record.amenityKind].slice(0, 2);
+      chip.textContent = amenityLabelForDisplay(record.amenityKind).slice(0, 2);
       if (
         record.amenityKind === "car_wash" &&
         typeof fields.colorHex === "string"
@@ -423,7 +558,11 @@ export const createWalletInventoryPanel = (
       const nameEl = document.createElement("div");
       nameEl.className = `${PANEL_CLASS}__name`;
       nameEl.textContent =
-        fields.name ?? AMENITY_LABEL[record.amenityKind] + " item";
+        record.amenityKind === "talk_time"
+          ? "Realtime voice"
+          : record.amenityKind === "wallet_bundle"
+            ? `+${formatUsd(record.priceUsd)} balance`
+            : fields.name ?? amenityLabelForDisplay(record.amenityKind) + " item";
       const subEl = document.createElement("div");
       subEl.className = `${PANEL_CLASS}__sub`;
       subEl.textContent = buildPurchaseSubtitle({ record, fields });
@@ -444,10 +583,15 @@ export const createWalletInventoryPanel = (
         state = { ...state, selectedId: record.id };
         renderCurrent();
       });
-      row.appendChild(openBtn);
+      if (
+        record.amenityKind !== "talk_time" &&
+        record.amenityKind !== "wallet_bundle"
+      ) {
+        row.appendChild(openBtn);
+      }
       list.appendChild(row);
     }
-    body.appendChild(list);
+    parent.appendChild(list);
   };
 
   const renderDetail = (
@@ -473,22 +617,33 @@ export const createWalletInventoryPanel = (
     name.className = `${PANEL_CLASS}__name`;
     name.style.fontSize = "16px";
     name.textContent =
-      fields.name ?? AMENITY_LABEL[record.amenityKind] + " item";
+      record.amenityKind === "talk_time"
+        ? "Realtime voice"
+        : record.amenityKind === "wallet_bundle"
+          ? `+${formatUsd(record.priceUsd)} balance`
+          : fields.name ?? amenityLabelForDisplay(record.amenityKind) + " item";
     headerRow.append(back, name);
     card.appendChild(headerRow);
 
     const hero = document.createElement("div");
     hero.className = `${PANEL_CLASS}__hero`;
     const heroColor =
-      record.amenityKind === "car_wash" && typeof fields.colorHex === "string"
-        ? fields.colorHex
-        : record.amenityKind === "shop"
-          ? "#b45309"
-          : "#0f766e";
+      record.amenityKind === "talk_time"
+        ? "#334155"
+        : record.amenityKind === "wallet_bundle"
+          ? "#047857"
+          : record.amenityKind === "car_wash" && typeof fields.colorHex === "string"
+            ? fields.colorHex
+            : record.amenityKind === "shop"
+              ? "#b45309"
+              : "#0f766e";
     hero.style.background = heroColor;
     hero.textContent =
-      fields.name ??
-      AMENITY_LABEL[record.amenityKind].toUpperCase();
+      record.amenityKind === "talk_time"
+        ? "VOICE"
+        : record.amenityKind === "wallet_bundle"
+          ? "BUNDLE"
+          : fields.name ?? amenityLabelForDisplay(record.amenityKind).toUpperCase();
     card.appendChild(hero);
 
     const meta = document.createElement("div");
@@ -501,14 +656,40 @@ export const createWalletInventoryPanel = (
       v.textContent = value;
       meta.append(k, v);
     };
-    pushMeta("Amenity", AMENITY_LABEL[record.amenityKind]);
+    pushMeta("Amenity", amenityLabelForDisplay(record.amenityKind));
+    if (record.amenityKind === "talk_time") {
+      if (
+        typeof record.detail === "string" &&
+        record.detail.trim().length > 0
+      ) {
+        pushMeta("Detail", record.detail);
+      }
+    }
+    if (record.amenityKind === "wallet_bundle") {
+      if (
+        typeof record.detail === "string" &&
+        record.detail.trim().length > 0
+      ) {
+        pushMeta("Detail", record.detail);
+      }
+      if (
+        typeof record.powerUpsSpent === "number" &&
+        Number.isFinite(record.powerUpsSpent)
+      ) {
+        pushMeta("Power-ups spent", String(Math.max(0, Math.floor(record.powerUpsSpent))));
+      }
+    }
     if (record.amenityKind === "car_wash") {
       if (typeof fields.model === "string") pushMeta("Model", fields.model);
       if (typeof fields.year === "number")
         pushMeta("Year", String(fields.year));
     }
     if (typeof fields.type === "string") pushMeta("Kind", fields.type);
-    pushMeta("Price paid", formatUsd(record.priceUsd));
+    if (record.amenityKind === "wallet_bundle") {
+      pushMeta("Balance credited", formatUsd(record.priceUsd));
+    } else {
+      pushMeta("Price paid", formatUsd(record.priceUsd));
+    }
     pushMeta("Bought", formatTimestamp(record.at));
     pushMeta("Space", record.spaceId);
     if (typeof fields.description === "string" && fields.description.length > 0)
@@ -569,7 +750,9 @@ export const createWalletInventoryPanel = (
       }
       state = { ...data, selectedId: null };
     }
-    renderList(data.purchases, data.items);
+    body.innerHTML = "";
+    appendBundleExchangeSection(body, data.powerUps);
+    renderPurchasesList(body, data.purchases, data.items);
   };
 
   const open = (): void => {

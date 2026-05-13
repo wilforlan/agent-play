@@ -53,6 +53,22 @@ describe("buildPurchaseSubtitle", () => {
     expect(subtitle).toContain("book");
     expect(subtitle).toContain("Bought");
   });
+
+  it("formats wallet bundle rows with PU spent when present", () => {
+    const subtitle = buildPurchaseSubtitle({
+      record: carPurchase({
+        amenityKind: "wallet_bundle",
+        spaceId: "__wallet__",
+        itemRef: { kind: "shop", id: "bundle-10" },
+        priceUsd: 10,
+        powerUpsSpent: 25,
+        detail: "$10 balance",
+      }),
+      fields: {},
+    });
+    expect(subtitle).toContain("25 PU exchanged");
+    expect(subtitle).toContain("$10 balance");
+  });
 });
 
 describe("createWalletInventoryPanel", () => {
@@ -176,6 +192,45 @@ describe("createWalletInventoryPanel", () => {
     panel.open();
     panel.setError("boom");
     expect(parent.textContent).toContain("boom");
+  });
+
+  it("shows the bundle exchange strip when onRedeemBundle is provided", () => {
+    const parent = newParent();
+    const panel = createWalletInventoryPanel({
+      parent,
+      onRefresh: () => {},
+      onRedeemBundle: async () => {},
+    });
+    panel.open();
+    panel.setData({ balanceUsd: 70, powerUps: 500, purchases: [], items: {} });
+    expect(parent.textContent).toContain("Exchange power-ups");
+    expect(parent.textContent).toContain("Redeem");
+  });
+
+  it("renders purchases with an unknown amenity kind without throwing", () => {
+    const parent = newParent();
+    const panel = createWalletInventoryPanel({
+      parent,
+      onRefresh: () => {},
+    });
+    panel.open();
+    const legacy = {
+      id: "legacy-1",
+      playerId: "u",
+      spaceId: "space-A",
+      amenityKind: "legacy_kind",
+      itemRef: { kind: "shop", id: "item-1" },
+      priceUsd: 2.5,
+      at: "2026-02-01T10:00:00.000Z",
+    } as PurchaseRecordDto;
+    panel.setData({
+      balanceUsd: 10,
+      powerUps: 0,
+      purchases: [legacy],
+      items: {},
+    });
+    expect(parent.textContent).toContain("$2.50");
+    expect(parent.textContent).toContain("Pu");
   });
 
   it("renders an empty-state when there are no purchases", () => {

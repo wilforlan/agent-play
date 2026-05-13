@@ -65,6 +65,7 @@ import {
   type WalletInventoryPanelHandle,
 } from "./wallet-inventory-panel.js";
 import { fetchPurchases } from "./wallet-purchases-client.js";
+import { redeemWalletBundle } from "./wallet-bundle-client.js";
 import { deepLogObject, deepLogText, deepLogTree } from "./browser-deep-logs.js";
 import { buildCrowdLayer } from "./crowd-draw.js";
 import { layoutCrowdClusters } from "./crowd-layout.js";
@@ -3227,6 +3228,11 @@ export function bootstrap(): void {
       apiBase: API_BASE,
       getMainNodeId: getMainNodeIdForIntercom,
       getWalletHud: () => walletHud,
+      onServerWalletAppliedToHud: () => {
+        if (walletInventoryPanel !== null && walletInventoryPanel.isOpen()) {
+          void refreshWalletInventoryPanel();
+        }
+      },
       onHumanNodeLifecycle: async (action) => {
         if (action === "replace") {
           clearHumanCredentials();
@@ -3351,6 +3357,15 @@ export function bootstrap(): void {
       parent: document.body,
       onRefresh: () => {
         void refreshWalletInventoryPanel();
+      },
+      onRedeemBundle: async (bundleId) => {
+        const sid = getSid();
+        const playerId = getViewerWalletPlayerId();
+        if (sid === null || playerId === null) {
+          throw new Error("Sign in to redeem bundles.");
+        }
+        await redeemWalletBundle({ sid, playerId, bundleId });
+        await refreshWalletInventoryPanel();
       },
     });
     void refreshWalletHud();

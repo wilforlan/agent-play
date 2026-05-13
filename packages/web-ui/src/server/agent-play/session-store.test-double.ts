@@ -18,8 +18,12 @@ import type {
   SupermarketItem,
 } from "@agent-play/sdk";
 import {
+  PurchaseRecordSchema,
+  computeTalkAgentPowerUpsEarned,
+  createInitialAgentRewardWallet,
   createInitialPlayerWallet,
   costForSeconds,
+  getWalletBundleById,
   TALK_PRICE_PER_SECOND_USD,
 } from "@agent-play/sdk";
 import type { PreviewSnapshotJson } from "./preview-serialize.js";
@@ -519,6 +523,21 @@ export class TestSessionStore implements SessionStore {
     return { ...seeded };
   }
 
+  async getOrCreateAgentWalletForTalkRewards(
+    playerId: string
+  ): Promise<PlayerWallet> {
+    const existing = this.playerWallets.get(playerId);
+    if (existing !== undefined) {
+      return { ...existing };
+    }
+    const seeded = createInitialAgentRewardWallet({
+      playerId,
+      now: new Date().toISOString(),
+    });
+    this.playerWallets.set(playerId, seeded);
+    return { ...seeded };
+  }
+
   async setPlayerWalletBalance(input: {
     playerId: string;
     balanceUsd: number;
@@ -680,6 +699,50 @@ export class TestSessionStore implements SessionStore {
     return { ...next };
   }
 
+  async redeemWalletBundle(input: {
+    playerId: string;
+    bundleId: string;
+    now: string;
+    recordId: string;
+  }): Promise<
+    | { ok: true; wallet: PlayerWallet; record: PurchaseRecord }
+    | { ok: false; error: "INVALID_BUNDLE" | "INSUFFICIENT_POWER_UPS" }
+  > {
+    const bundle = getWalletBundleById(input.bundleId.trim());
+    if (bundle === undefined) {
+      return { ok: false, error: "INVALID_BUNDLE" };
+    }
+    const wallet = await this.getPlayerWallet(input.playerId);
+    const pu = wallet.powerUps ?? 0;
+    if (pu < bundle.powerUpsCost) {
+      return { ok: false, error: "INSUFFICIENT_POWER_UPS" };
+    }
+    const nextBalance = wallet.balanceUsd + bundle.creditUsd;
+    if (!Number.isFinite(nextBalance) || nextBalance < 0) {
+      return { ok: false, error: "INVALID_BUNDLE" };
+    }
+    const updatedWallet: PlayerWallet = {
+      ...wallet,
+      balanceUsd: nextBalance,
+      powerUps: pu - bundle.powerUpsCost,
+      updatedAt: input.now,
+    };
+    this.playerWallets.set(input.playerId, updatedWallet);
+    const record: PurchaseRecord = PurchaseRecordSchema.parse({
+      id: input.recordId,
+      playerId: input.playerId,
+      spaceId: "__wallet__",
+      amenityKind: "wallet_bundle",
+      itemRef: { kind: "shop", id: bundle.id },
+      priceUsd: bundle.creditUsd,
+      at: input.now,
+      detail: `Exchanged ${String(bundle.powerUpsCost)} power-ups for $${String(bundle.creditUsd)} balance`,
+      powerUpsSpent: bundle.powerUpsCost,
+    });
+    await this.appendPurchaseRecord(record);
+    return { ok: true, wallet: updatedWallet, record };
+  }
+
   async startTalkSession(input: {
     viewerNodeId: string;
     agentId: string;
@@ -729,12 +792,16 @@ export class TestSessionStore implements SessionStore {
       }
     | { ok: false; error: "NO_SESSION" | "INSUFFICIENT_FUNDS" }
   > {
+    await this.getOrCreateAgentWalletForTalkRewards(input.agentId);
     const key = this.talkSessionMapKey(input.viewerNodeId, input.agentId);
     const session = this.talkSessions.get(key);
     if (session === undefined) {
       return { ok: false, error: "NO_SESSION" };
     }
     const wallet = await this.getPlayerWallet(input.viewerNodeId);
+    const agentWallet = await this.getOrCreateAgentWalletForTalkRewards(
+      input.agentId
+    );
     const elapsedMs =
       Date.parse(input.now) - Date.parse(session.lastBilledAtIso);
     const billSeconds =
@@ -749,6 +816,15 @@ export class TestSessionStore implements SessionStore {
       balanceUsd: wallet.balanceUsd - costUsd,
       updatedAt: input.now,
     };
+    const agentPuEarned = computeTalkAgentPowerUpsEarned({
+      billedWholeSeconds: billSeconds,
+      costUsd,
+    });
+    const nextAgentWallet: PlayerWallet = {
+      ...agentWallet,
+      powerUps: Math.max(0, (agentWallet.powerUps ?? 0) + agentPuEarned),
+      updatedAt: input.now,
+    };
     const nextSession = {
       ...session,
       lastBilledAtIso: input.now,
@@ -756,7 +832,21 @@ export class TestSessionStore implements SessionStore {
       totalChargedUsd: session.totalChargedUsd + costUsd,
     };
     this.playerWallets.set(input.viewerNodeId, nextWallet);
+    this.playerWallets.set(input.agentId, nextAgentWallet);
     this.talkSessions.set(key, nextSession);
+    if (costUsd > 0) {
+      const record = PurchaseRecordSchema.parse({
+        id: `talk-${randomUUID()}`,
+        playerId: input.viewerNodeId,
+        spaceId: "__talk__",
+        amenityKind: "talk_time",
+        itemRef: { kind: "shop", id: "openai-realtime" },
+        priceUsd: costUsd,
+        at: input.now,
+        detail: `Realtime voice · ${String(billSeconds)}s · agent ${input.agentId}`,
+      });
+      await this.appendPurchaseRecord(record);
+    }
     return {
       ok: true,
       secondsBilledThisTick: billSeconds,
@@ -779,12 +869,16 @@ export class TestSessionStore implements SessionStore {
       }
     | { ok: false; error: "NO_SESSION" }
   > {
+    await this.getOrCreateAgentWalletForTalkRewards(input.agentId);
     const key = this.talkSessionMapKey(input.viewerNodeId, input.agentId);
     const session = this.talkSessions.get(key);
     if (session === undefined) {
       return { ok: false, error: "NO_SESSION" };
     }
     const wallet = await this.getPlayerWallet(input.viewerNodeId);
+    const agentWallet = await this.getOrCreateAgentWalletForTalkRewards(
+      input.agentId
+    );
     const elapsedMs =
       Date.parse(input.now) - Date.parse(session.lastBilledAtIso);
     const billSeconds =
@@ -804,7 +898,30 @@ export class TestSessionStore implements SessionStore {
       balanceUsd: wallet.balanceUsd - finalCostUsd,
       updatedAt: input.now,
     };
+    const agentPuEarned = computeTalkAgentPowerUpsEarned({
+      billedWholeSeconds: billSeconds,
+      costUsd: finalCostUsd,
+    });
+    const nextAgentWallet: PlayerWallet = {
+      ...agentWallet,
+      powerUps: Math.max(0, (agentWallet.powerUps ?? 0) + agentPuEarned),
+      updatedAt: input.now,
+    };
     this.playerWallets.set(input.viewerNodeId, nextWallet);
+    this.playerWallets.set(input.agentId, nextAgentWallet);
+    if (finalCostUsd > 0) {
+      const record = PurchaseRecordSchema.parse({
+        id: `talk-${randomUUID()}`,
+        playerId: input.viewerNodeId,
+        spaceId: "__talk__",
+        amenityKind: "talk_time",
+        itemRef: { kind: "shop", id: "openai-realtime" },
+        priceUsd: finalCostUsd,
+        at: input.now,
+        detail: `Realtime voice · ${String(billSeconds)}s · agent ${input.agentId}`,
+      });
+      await this.appendPurchaseRecord(record);
+    }
     return {
       ok: true,
       totalCostUsd: session.totalChargedUsd + finalCostUsd,

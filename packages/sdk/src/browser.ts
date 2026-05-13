@@ -70,6 +70,7 @@ export {
   ShopItemSchema,
   SupermarketItemSchema,
   createInitialPlayerWallet,
+  createInitialAgentRewardWallet,
   desaturateColor,
   isItemAvailableForPurchase,
   type CarWashCar,
@@ -86,6 +87,18 @@ export {
   TALK_TICK_SECONDS,
   costForSeconds,
 } from "./lib/talk-billing.js";
+export {
+  TALK_AGENT_PU_BILLED_SECONDS_PER_UNIT,
+  TALK_AGENT_PU_MAX_PER_LEG,
+  computeTalkAgentPowerUpsEarned,
+  type ComputeTalkAgentPowerUpsEarnedInput,
+} from "./lib/talk-agent-reward.js";
+export {
+  WALLET_BUNDLE_OFFERS,
+  getWalletBundleById,
+  type WalletBundleId,
+  type WalletBundleOffer,
+} from "./lib/wallet-bundle-catalog.js";
 export {
   mergeSnapshotWithPlayerChainNode,
   parsePlayerChainFanoutNotify,

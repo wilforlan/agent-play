@@ -32,8 +32,11 @@ import {
   ShopItemSchema,
   SupermarketItemSchema,
   TALK_PRICE_PER_SECOND_USD,
+  computeTalkAgentPowerUpsEarned,
+  createInitialAgentRewardWallet,
   createInitialPlayerWallet,
   costForSeconds,
+  getWalletBundleById,
 } from "@agent-play/sdk";
 import { agentPlayVerbose } from "./agent-play-debug.js";
 import type { PreviewSnapshotJson } from "./preview-serialize.js";
@@ -948,6 +951,48 @@ export class RedisSessionStore implements SessionStore {
     return seeded;
   }
 
+  async getOrCreateAgentWalletForTalkRewards(
+    playerId: string
+  ): Promise<PlayerWallet> {
+    const key = playerWalletKey(this.hostId, playerId);
+    const raw = await this.redis.get(key);
+    if (raw !== null && raw.length > 0) {
+      try {
+        return PlayerWalletSchema.parse(JSON.parse(raw));
+      } catch {
+        // fall through to seed
+      }
+    }
+    const seeded = createInitialAgentRewardWallet({
+      playerId,
+      now: new Date().toISOString(),
+    });
+    await this.redis.watch(key);
+    const stillRaw = await this.redis.get(key);
+    if (stillRaw !== null && stillRaw.length > 0) {
+      await this.redis.unwatch();
+      try {
+        return PlayerWalletSchema.parse(JSON.parse(stillRaw));
+      } catch {
+        // best-effort: overwrite malformed value via SET below.
+      }
+    }
+    const multi = this.redis.multi();
+    multi.set(key, JSON.stringify(seeded));
+    const exec = await multi.exec();
+    if (exec === null) {
+      const winnerRaw = await this.redis.get(key);
+      if (winnerRaw !== null && winnerRaw.length > 0) {
+        try {
+          return PlayerWalletSchema.parse(JSON.parse(winnerRaw));
+        } catch {
+          // fall through
+        }
+      }
+    }
+    return seeded;
+  }
+
   async setPlayerWalletBalance(input: {
     playerId: string;
     balanceUsd: number;
@@ -1195,6 +1240,78 @@ export class RedisSessionStore implements SessionStore {
     );
   }
 
+  async redeemWalletBundle(input: {
+    playerId: string;
+    bundleId: string;
+    now: string;
+    recordId: string;
+  }): Promise<
+    | { ok: true; wallet: PlayerWallet; record: PurchaseRecord }
+    | { ok: false; error: "INVALID_BUNDLE" | "INSUFFICIENT_POWER_UPS" }
+  > {
+    const bundle = getWalletBundleById(input.bundleId.trim());
+    if (bundle === undefined) {
+      return { ok: false, error: "INVALID_BUNDLE" };
+    }
+    await this.getPlayerWallet(input.playerId);
+    const walletKey = playerWalletKey(this.hostId, input.playerId);
+    const purchasesKeyName = playerPurchasesKey(this.hostId, input.playerId);
+    const maxAttempts = 5;
+    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+      await this.redis.watch(walletKey);
+      const rawWallet = await this.redis.get(walletKey);
+      if (rawWallet === null || rawWallet.length === 0) {
+        await this.redis.unwatch();
+        return { ok: false, error: "INSUFFICIENT_POWER_UPS" };
+      }
+      let wallet: PlayerWallet;
+      try {
+        wallet = PlayerWalletSchema.parse(JSON.parse(rawWallet));
+      } catch {
+        await this.redis.unwatch();
+        return { ok: false, error: "INSUFFICIENT_POWER_UPS" };
+      }
+      const pu = wallet.powerUps ?? 0;
+      if (pu < bundle.powerUpsCost) {
+        await this.redis.unwatch();
+        return { ok: false, error: "INSUFFICIENT_POWER_UPS" };
+      }
+      const nextBalance = wallet.balanceUsd + bundle.creditUsd;
+      if (!Number.isFinite(nextBalance) || nextBalance < 0) {
+        await this.redis.unwatch();
+        return { ok: false, error: "INVALID_BUNDLE" };
+      }
+      const updatedWallet: PlayerWallet = {
+        ...wallet,
+        balanceUsd: nextBalance,
+        powerUps: pu - bundle.powerUpsCost,
+        updatedAt: input.now,
+      };
+      const record: PurchaseRecord = PurchaseRecordSchema.parse({
+        id: input.recordId,
+        playerId: input.playerId,
+        spaceId: "__wallet__",
+        amenityKind: "wallet_bundle",
+        itemRef: { kind: "shop", id: bundle.id },
+        priceUsd: bundle.creditUsd,
+        at: input.now,
+        detail: `Exchanged ${String(bundle.powerUpsCost)} power-ups for $${String(bundle.creditUsd)} balance`,
+        powerUpsSpent: bundle.powerUpsCost,
+      });
+      const multi = this.redis.multi();
+      multi.set(walletKey, JSON.stringify(updatedWallet));
+      multi.lpush(purchasesKeyName, JSON.stringify(record));
+      multi.ltrim(purchasesKeyName, 0, PURCHASES_MAX - 1);
+      const exec = await multi.exec();
+      if (exec !== null) {
+        return { ok: true, wallet: updatedWallet, record };
+      }
+    }
+    throw new Error(
+      `redeemWalletBundle: lost ${String(maxAttempts)} CAS retries for player ${input.playerId}`
+    );
+  }
+
   async startTalkSession(input: {
     viewerNodeId: string;
     agentId: string;
@@ -1239,6 +1356,26 @@ export class RedisSessionStore implements SessionStore {
     };
   }
 
+  private async appendTalkTimePurchaseRecord(input: {
+    playerId: string;
+    agentId: string;
+    priceUsd: number;
+    billedSeconds: number;
+    at: string;
+  }): Promise<void> {
+    const record: PurchaseRecord = PurchaseRecordSchema.parse({
+      id: `talk-${randomUUID()}`,
+      playerId: input.playerId,
+      spaceId: "__talk__",
+      amenityKind: "talk_time",
+      itemRef: { kind: "shop", id: "openai-realtime" },
+      priceUsd: input.priceUsd,
+      at: input.at,
+      detail: `Realtime voice · ${String(input.billedSeconds)}s · agent ${input.agentId}`,
+    });
+    await this.appendPurchaseRecord(record);
+  }
+
   async tickTalkSession(input: {
     viewerNodeId: string;
     agentId: string;
@@ -1253,15 +1390,17 @@ export class RedisSessionStore implements SessionStore {
       }
     | { ok: false; error: "NO_SESSION" | "INSUFFICIENT_FUNDS" }
   > {
+    await this.getOrCreateAgentWalletForTalkRewards(input.agentId);
     const talkKey = talkSessionKey(
       this.hostId,
       input.viewerNodeId,
       input.agentId
     );
     const walletKey = playerWalletKey(this.hostId, input.viewerNodeId);
+    const agentWalletKey = playerWalletKey(this.hostId, input.agentId);
     const maxAttempts = 5;
     for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
-      await this.redis.watch(talkKey, walletKey);
+      await this.redis.watch(talkKey, walletKey, agentWalletKey);
       const rawTalk = await this.redis.get(talkKey);
       const session =
         rawTalk !== null && rawTalk.length > 0
@@ -1289,6 +1428,23 @@ export class RedisSessionStore implements SessionStore {
         await multiDel.exec();
         return { ok: false, error: "INSUFFICIENT_FUNDS" };
       }
+      const rawAgentWallet = await this.redis.get(agentWalletKey);
+      let agentWallet: PlayerWallet;
+      if (rawAgentWallet === null || rawAgentWallet.length === 0) {
+        agentWallet = createInitialAgentRewardWallet({
+          playerId: input.agentId,
+          now: input.now,
+        });
+      } else {
+        try {
+          agentWallet = PlayerWalletSchema.parse(JSON.parse(rawAgentWallet));
+        } catch {
+          agentWallet = createInitialAgentRewardWallet({
+            playerId: input.agentId,
+            now: input.now,
+          });
+        }
+      }
       const elapsedMs =
         Date.parse(input.now) - Date.parse(session.lastBilledAtIso);
       const billSeconds =
@@ -1305,6 +1461,15 @@ export class RedisSessionStore implements SessionStore {
         balanceUsd: nextBalance,
         updatedAt: input.now,
       };
+      const agentPuEarned = computeTalkAgentPowerUpsEarned({
+        billedWholeSeconds: billSeconds,
+        costUsd,
+      });
+      const nextAgentWallet: PlayerWallet = {
+        ...agentWallet,
+        powerUps: Math.max(0, (agentWallet.powerUps ?? 0) + agentPuEarned),
+        updatedAt: input.now,
+      };
       const nextSession: TalkSessionStored = {
         ...session,
         lastBilledAtIso: input.now,
@@ -1313,9 +1478,19 @@ export class RedisSessionStore implements SessionStore {
       };
       const multi = this.redis.multi();
       multi.set(walletKey, JSON.stringify(nextWallet));
+      multi.set(agentWalletKey, JSON.stringify(nextAgentWallet));
       multi.set(talkKey, JSON.stringify(nextSession));
       const exec = await multi.exec();
       if (exec !== null) {
+        if (costUsd > 0) {
+          await this.appendTalkTimePurchaseRecord({
+            playerId: input.viewerNodeId,
+            agentId: input.agentId,
+            priceUsd: costUsd,
+            billedSeconds: billSeconds,
+            at: input.now,
+          });
+        }
         return {
           ok: true,
           secondsBilledThisTick: billSeconds,
@@ -1343,15 +1518,17 @@ export class RedisSessionStore implements SessionStore {
       }
     | { ok: false; error: "NO_SESSION" }
   > {
+    await this.getOrCreateAgentWalletForTalkRewards(input.agentId);
     const talkKey = talkSessionKey(
       this.hostId,
       input.viewerNodeId,
       input.agentId
     );
     const walletKey = playerWalletKey(this.hostId, input.viewerNodeId);
+    const agentWalletKey = playerWalletKey(this.hostId, input.agentId);
     const maxAttempts = 5;
     for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
-      await this.redis.watch(talkKey, walletKey);
+      await this.redis.watch(talkKey, walletKey, agentWalletKey);
       const rawTalk = await this.redis.get(talkKey);
       const session =
         rawTalk !== null && rawTalk.length > 0
@@ -1387,6 +1564,23 @@ export class RedisSessionStore implements SessionStore {
           wallet: w,
         };
       }
+      const rawAgentWallet = await this.redis.get(agentWalletKey);
+      let agentWallet: PlayerWallet;
+      if (rawAgentWallet === null || rawAgentWallet.length === 0) {
+        agentWallet = createInitialAgentRewardWallet({
+          playerId: input.agentId,
+          now: input.now,
+        });
+      } else {
+        try {
+          agentWallet = PlayerWalletSchema.parse(JSON.parse(rawAgentWallet));
+        } catch {
+          agentWallet = createInitialAgentRewardWallet({
+            playerId: input.agentId,
+            now: input.now,
+          });
+        }
+      }
       const elapsedMs =
         Date.parse(input.now) - Date.parse(session.lastBilledAtIso);
       const billSeconds =
@@ -1407,14 +1601,33 @@ export class RedisSessionStore implements SessionStore {
         balanceUsd: wallet.balanceUsd - finalCostUsd,
         updatedAt: input.now,
       };
+      const agentPuEarned = computeTalkAgentPowerUpsEarned({
+        billedWholeSeconds: billSeconds,
+        costUsd: finalCostUsd,
+      });
+      const nextAgentWallet: PlayerWallet = {
+        ...agentWallet,
+        powerUps: Math.max(0, (agentWallet.powerUps ?? 0) + agentPuEarned),
+        updatedAt: input.now,
+      };
       const totalCostUsd = session.totalChargedUsd + finalCostUsd;
       const secondsBilledTotal =
         session.totalBilledSeconds + billSeconds;
       const multi = this.redis.multi();
       multi.set(walletKey, JSON.stringify(nextWallet));
+      multi.set(agentWalletKey, JSON.stringify(nextAgentWallet));
       multi.del(talkKey);
       const exec = await multi.exec();
       if (exec !== null) {
+        if (finalCostUsd > 0) {
+          await this.appendTalkTimePurchaseRecord({
+            playerId: input.viewerNodeId,
+            agentId: input.agentId,
+            priceUsd: finalCostUsd,
+            billedSeconds: billSeconds,
+            at: input.now,
+          });
+        }
         return {
           ok: true,
           totalCostUsd,

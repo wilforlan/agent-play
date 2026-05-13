@@ -266,6 +266,19 @@ export function createInitialPlayerWallet(input: {
   };
 }
 
+export function createInitialAgentRewardWallet(input: {
+  playerId: string;
+  now: string;
+}): PlayerWallet {
+  return {
+    playerId: input.playerId,
+    balanceUsd: 0,
+    currency: "USD",
+    updatedAt: input.now,
+    powerUps: 0,
+  };
+}
+
 /**
  * Audit record appended each time a player completes a purchase.
  *
@@ -279,13 +292,21 @@ export const PurchaseRecordSchema = z.object({
   id: NonEmpty,
   playerId: NonEmpty,
   spaceId: NonEmpty,
-  amenityKind: z.enum(["shop", "supermarket", "car_wash"]),
+  amenityKind: z.enum([
+    "shop",
+    "supermarket",
+    "car_wash",
+    "talk_time",
+    "wallet_bundle",
+  ]),
   itemRef: z.object({
     kind: z.enum(["shop", "supermarket", "carwash"]),
     id: NonEmpty,
   }),
   priceUsd: PositivePrice,
   at: IsoTimestamp,
+  detail: z.string().optional(),
+  powerUpsSpent: z.number().int().positive().optional(),
 });
 
 /** Runtime type for {@link PurchaseRecordSchema}. @public */

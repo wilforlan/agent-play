@@ -8,6 +8,7 @@ import {
   ShopItemSchema,
   SupermarketItemSchema,
   createInitialPlayerWallet,
+  createInitialAgentRewardWallet,
   desaturateColor,
   isItemAvailableForPurchase,
 } from "./space-content-model.js";
@@ -239,6 +240,15 @@ describe("space-content-model: PlayerWalletSchema + factory", () => {
     });
     expect(() => PlayerWalletSchema.parse(wallet)).not.toThrow();
   });
+
+  it("createInitialAgentRewardWallet seeds zero USD and zero power-ups", () => {
+    const now = "2026-05-12T00:00:00.000Z";
+    const w = createInitialAgentRewardWallet({ playerId: "agent-1", now });
+    expect(w.balanceUsd).toBe(0);
+    expect(w.powerUps).toBe(0);
+    expect(w.playerId).toBe("agent-1");
+    expect(() => PlayerWalletSchema.parse(w)).not.toThrow();
+  });
 });
 
 describe("space-content-model: PurchaseRecordSchema", () => {
@@ -253,6 +263,63 @@ describe("space-content-model: PurchaseRecordSchema", () => {
       at: "2026-05-12T00:00:00.000Z",
     });
     expect(parsed.itemRef.kind).toBe("shop");
+  });
+
+  it("accepts a talk-time billing audit row with optional detail", () => {
+    const parsed = PurchaseRecordSchema.parse({
+      id: "talk-1",
+      playerId: "node-1",
+      spaceId: "__talk__",
+      amenityKind: "talk_time",
+      itemRef: { kind: "shop", id: "openai-realtime" },
+      priceUsd: 0.25,
+      at: "2026-05-12T00:00:00.000Z",
+      detail: "Realtime voice · 10s · agent a1",
+    });
+    expect(parsed.amenityKind).toBe("talk_time");
+    expect(parsed.detail).toBe("Realtime voice · 10s · agent a1");
+  });
+
+  it("accepts legacy purchase records without detail", () => {
+    const parsed = PurchaseRecordSchema.parse({
+      id: "rec-1",
+      playerId: "p1",
+      spaceId: "s1",
+      amenityKind: "shop",
+      itemRef: { kind: "shop", id: "item-1" },
+      priceUsd: 9.99,
+      at: "2026-05-12T00:00:00.000Z",
+    });
+    expect(parsed.detail).toBeUndefined();
+  });
+
+  it("accepts a wallet_bundle record with powerUpsSpent", () => {
+    const parsed = PurchaseRecordSchema.parse({
+      id: "wb-1",
+      playerId: "p1",
+      spaceId: "__wallet__",
+      amenityKind: "wallet_bundle",
+      itemRef: { kind: "shop", id: "bundle-100" },
+      priceUsd: 100,
+      at: "2026-05-12T00:00:00.000Z",
+      detail: "Exchanged 900 power-ups for $100 balance",
+      powerUpsSpent: 900,
+    });
+    expect(parsed.amenityKind).toBe("wallet_bundle");
+    expect(parsed.powerUpsSpent).toBe(900);
+  });
+
+  it("accepts wallet_bundle without optional powerUpsSpent", () => {
+    const parsed = PurchaseRecordSchema.parse({
+      id: "wb-2",
+      playerId: "p1",
+      spaceId: "__wallet__",
+      amenityKind: "wallet_bundle",
+      itemRef: { kind: "shop", id: "bundle-10" },
+      priceUsd: 10,
+      at: "2026-05-12T00:00:00.000Z",
+    });
+    expect(parsed.powerUpsSpent).toBeUndefined();
   });
 
   it("rejects mismatched amenityKind enum", () => {

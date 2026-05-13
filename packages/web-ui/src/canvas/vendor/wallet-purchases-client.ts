@@ -25,13 +25,20 @@ export type PurchaseRecordDto = {
   readonly id: string;
   readonly playerId: string;
   readonly spaceId: string;
-  readonly amenityKind: "shop" | "supermarket" | "car_wash";
+  readonly amenityKind:
+    | "shop"
+    | "supermarket"
+    | "car_wash"
+    | "talk_time"
+    | "wallet_bundle";
   readonly itemRef: {
     readonly kind: "shop" | "supermarket" | "carwash";
     readonly id: string;
   };
   readonly priceUsd: number;
   readonly at: string;
+  readonly detail?: string;
+  readonly powerUpsSpent?: number;
 };
 
 /**

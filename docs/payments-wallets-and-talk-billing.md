@@ -28,18 +28,21 @@ Each wallet is a small JSON document stored per session host and player id. It i
 
 **Lazy seeding:** the first read for a player id seeds a new wallet at the default balance (`DEFAULT_PLAYER_WALLET_BALANCE_USD`, currently **$70**), using `WATCH`/`MULTI` so concurrent first reads do not double-seed.
 
+**Agent talk-reward wallets:** agents that receive PU from voice billing use a **$0 USD / 0 PU** shell created by `getOrCreateAgentWalletForTalkRewards` (see `createInitialAgentRewardWallet` in the SDK) so hosts do not receive the human lazy-seed grant.
+
 **Legacy data:** older Redis payloads without `powerUps` are accepted at parse time; missing values default to **0**.
 
 **Source**
 
-- [`packages/sdk/src/lib/space-content-model.ts`](../packages/sdk/src/lib/space-content-model.ts) — `PlayerWalletSchema`, `createInitialPlayerWallet`.
-- [`packages/web-ui/src/server/agent-play/redis-session-store.ts`](../packages/web-ui/src/server/agent-play/redis-session-store.ts) — `getPlayerWallet`, `setPlayerWalletBalance`, `adjustPlayerWalletBalance`.
+- [`packages/sdk/src/lib/space-content-model.ts`](../packages/sdk/src/lib/space-content-model.ts) — `PlayerWalletSchema`, `createInitialPlayerWallet`, `createInitialAgentRewardWallet`.
+- [`packages/web-ui/src/server/agent-play/redis-session-store.ts`](../packages/web-ui/src/server/agent-play/redis-session-store.ts) — `getPlayerWallet`, `getOrCreateAgentWalletForTalkRewards`, `setPlayerWalletBalance`, `adjustPlayerWalletBalance`.
 - [`packages/web-ui/src/server/agent-play/session-store.ts`](../packages/web-ui/src/server/agent-play/session-store.ts) — `SessionStore` contract.
 
 ## Reading and adjusting the balance
 
 - **Browser GET:** `GET /api/agent-play/players/:id/wallet?sid=…` (rewritten from `/agent-play/players/...` in the play UI) returns the wallet JSON, including `powerUps`.
 - **RPC:** `getPlayerWallet` with `{ playerId }` (requires valid preview `sid`).
+- **RPC:** `redeemWalletBundle` with `{ playerId, bundleId }` — burns `powerUps` per catalog and credits `balanceUsd`; returns `wallet`. HTTP **409** with `INVALID_BUNDLE` or `INSUFFICIENT_POWER_UPS` on failure.
 
 Admin-style overwrites use `setPlayerWalletBalance` on the store; that path **preserves** `powerUps` while replacing `balanceUsd`.
 
@@ -47,6 +50,7 @@ Admin-style overwrites use `setPlayerWalletBalance` on the store; that path **pr
 
 - [`packages/web-ui/src/app/api/agent-play/players/[id]/wallet/route.ts`](../packages/web-ui/src/app/api/agent-play/players/[id]/wallet/route.ts).
 - [`packages/play-ui/src/wallet-client.ts`](../packages/play-ui/src/wallet-client.ts) — `WalletDto`, `fetchPlayerWallet`.
+- [`packages/play-ui/src/wallet-bundle-client.ts`](../packages/play-ui/src/wallet-bundle-client.ts) — `redeemWalletBundle` (vendored copy for the canvas bundle).
 
 ## Payments (amenity purchases)
 
@@ -71,11 +75,13 @@ If two clients race, one `EXEC` wins; the other gets **`ITEM_ALREADY_SOLD`**. If
 
 **Earn rule (purchases only):** on each successful amenity purchase, the wallet gains **`Math.floor(priceUsd) * 3`** power-ups in the **same** atomic transaction as the debit and sold flag. Fractional dollars do not earn a partial block of three (e.g. **$3.50** → floor **3** → **+9** power-ups).
 
-**Talk billing does not** credit power-ups; only the purchase path applies the earn rule.
+**Spend path (wallet bundles):** the inventory panel can redeem fixed **PU → USD balance** offers (`redeemWalletBundle` RPC). Each offer debits `powerUps` and credits `balanceUsd` in one Redis transaction; a **`wallet_bundle`** purchase row is appended for audit (see [Wallet bundle redemption](#wallet-bundle-redemption)).
+
+**Talk billing (host agent):** when the viewer is charged for realtime voice, the **agent’s** wallet gains power-ups via `computeTalkAgentPowerUpsEarned` in the SDK (same tick/stop transaction as the viewer debit). This is separate from the purchase earn rule above.
 
 **Helper:** `addPowerUps({ playerId, amount, now })` on the session store exists for future earn paths; it uses CAS (`WATCH`/`MULTI`) on the wallet key.
 
-**UI:** shared strip in [`packages/play-ui/src/wallet-display-strip.ts`](../packages/play-ui/src/wallet-display-strip.ts), used by the HUD and inventory header.
+**UI:** shared strip in [`packages/play-ui/src/wallet-display-strip.ts`](../packages/play-ui/src/wallet-display-strip.ts), used by the HUD and inventory header. Bundle offers use `WALLET_BUNDLE_OFFERS` from [`@agent-play/sdk/browser`](../packages/sdk/src/browser.ts) in [`packages/play-ui/src/wallet-inventory-panel.ts`](../packages/play-ui/src/wallet-inventory-panel.ts) (vendored under `packages/web-ui/src/canvas/vendor/`).
 
 **Source**
 
@@ -106,13 +112,20 @@ Redis key (conceptually):
 
 `agent-play:{hostId}:talk:{viewerNodeId}:{agentId}`
 
-Stored fields include start time, last billed time, cumulative billed seconds, and cumulative charged USD. **`tickTalkSession`** computes elapsed whole seconds since the last bill (ceiling of elapsed wall time in seconds), applies `costForSeconds`, debits the wallet in a **`WATCH`/`MULTI`** together with the session update, and on **insufficient funds** deletes the session and returns an error so the client can stop voice.
+Stored fields include start time, last billed time, cumulative billed seconds, and cumulative charged USD. `tickTalkSession` / `stopTalkSession` compute elapsed whole seconds since the last bill, apply `costForSeconds`, and under Redis **`WATCH`/`MULTI`** update:
 
-**`stopTalkSession`** applies a final partial period, removes the key, and returns totals.
+- the **talk session** key,
+- the **viewer** wallet (`balanceUsd` debit),
+- the **agent** wallet (`powerUps` credit from `computeTalkAgentPowerUpsEarned` when `costUsd > 0`).
+
+All three keys are watched so the debit, session advance, and host reward succeed or fail together (CAS retries match the existing purchase pattern). Before the transaction, `getOrCreateAgentWalletForTalkRewards` ensures the agent wallet exists with **$0** balance (not the human `$70` lazy seed).
+
+On **insufficient funds** the session is cleared and the RPC returns an error so the client can stop voice. After a successful charge, the viewer’s **`talk_time`** purchase row is appended as today; optional agent-side audit rows are not required for MVP.
 
 **Source**
 
-- [`packages/web-ui/src/server/agent-play/redis-session-store.ts`](../packages/web-ui/src/server/agent-play/redis-session-store.ts) — `startTalkSession`, `tickTalkSession`, `stopTalkSession`.
+- [`packages/sdk/src/lib/talk-agent-reward.ts`](../packages/sdk/src/lib/talk-agent-reward.ts) — `computeTalkAgentPowerUpsEarned` (default policy: **1 PU per 10 billed whole seconds**, capped per leg).
+- [`packages/web-ui/src/server/agent-play/redis-session-store.ts`](../packages/web-ui/src/server/agent-play/redis-session-store.ts) — `startTalkSession`, `tickTalkSession`, `stopTalkSession`, `getOrCreateAgentWalletForTalkRewards`.
 - [`packages/web-ui/src/server/agent-play/session-store.test-double.ts`](../packages/web-ui/src/server/agent-play/session-store.test-double.ts) — in-memory mirror for tests.
 
 ### RPCs (all `sid`-gated)
@@ -129,7 +142,7 @@ Stored fields include start time, last billed time, cumulative billed seconds, a
 
 ### Client behavior
 
-After Realtime connects, the interaction panel starts a billing session and sets an interval of **`TALK_TICK_SECONDS`** to POST `talkSessionTick`. Successful ticks update the wallet HUD balance (and power-up count unchanged from talk). On **`INSUFFICIENT_FUNDS`**, the mic is muted, an error message is shown, and the realtime session is closed. Closing voice or leaving the page runs **`talkSessionStop`**.
+After Realtime connects, the interaction panel starts a billing session and sets an interval of **`TALK_TICK_SECONDS`** to POST `talkSessionTick`. Successful ticks update the wallet HUD balance. The HUD **power-up count** can change after bundle redemption; the **agent** earns PU from billing on the server only (no live agent HUD in the preview unless extended). On **`INSUFFICIENT_FUNDS`**, the mic is muted, an error message is shown, and the realtime session is closed. Closing voice or leaving the page runs **`talkSessionStop`**.
 
 The preview panel imports **`TALK_TICK_SECONDS`** from **`@agent-play/sdk/browser`** so the Webpack game bundle does not pull the Node SDK entry (`node:crypto`).
 
@@ -141,9 +154,31 @@ The preview panel imports **`TALK_TICK_SECONDS`** from **`@agent-play/sdk/browse
 
 If the browser disappears between ticks, at most one tick interval of wall time may go unbilled before the session key is orphaned. Worst-case underbilling is on the order of **one tick × $0.025/s** (currently **10 s** → up to **$0.25**). Tighter ticks reduce that at the cost of more RPCs.
 
+## Wallet bundle redemption
+
+Fixed offers are defined in **`WALLET_BUNDLE_OFFERS`** ([`packages/sdk/src/lib/wallet-bundle-catalog.ts`](../packages/sdk/src/lib/wallet-bundle-catalog.ts)): each row has `id`, `powerUpsCost`, and `creditUsd`.
+
+**RPC:** `redeemWalletBundle` with `{ playerId, bundleId }`.
+
+**Server:** `SessionStore.redeemWalletBundle` validates the bundle id, checks `powerUps`, then in one **`WATCH`/`MULTI`**: debits PU, credits `balanceUsd`, writes the wallet, and **`LPUSH`** a purchase record with:
+
+- `amenityKind: "wallet_bundle"`
+- optional `powerUpsSpent`
+- sentinel `spaceId` **`"__wallet__"`**
+- `itemRef.kind: "shop"`, `itemRef.id` = bundle id
+- `priceUsd` = credited USD
+- `detail` human-readable summary
+
+**UI:** the wallet inventory panel renders an **Exchange power-ups** strip when the host passes `onRedeemBundle` (see [`packages/play-ui/src/main.ts`](../packages/play-ui/src/main.ts)); purchase rows use the `wallet_bundle` chip styling and subtitles from `buildPurchaseSubtitle`.
+
+**Source**
+
+- [`packages/web-ui/src/app/api/agent-play/sdk/rpc/route.ts`](../packages/web-ui/src/app/api/agent-play/sdk/rpc/route.ts) — `redeemWalletBundle`.
+- [`packages/play-ui/src/wallet-bundle-client.ts`](../packages/play-ui/src/wallet-bundle-client.ts), [`packages/play-ui/src/wallet-inventory-panel.ts`](../packages/play-ui/src/wallet-inventory-panel.ts).
+
 ## Inventory and purchase list
 
-`listPurchases` returns `{ wallet, purchases, items }` where `items` is a dictionary keyed by `kind:spaceId:id` for rendering rows without extra fetches.
+`listPurchases` returns `{ wallet, purchases, items }` where `items` is a dictionary keyed by `kind:spaceId:id` for rendering rows without extra fetches. Records may include **`talk_time`**, amenity kinds, and **`wallet_bundle`** redemptions (`__wallet__` space sentinel).
 
 **Source**
 
@@ -151,4 +186,4 @@ If the browser disappears between ticks, at most one tick interval of wall time 
 
 ## Related tests
 
-Behavior is covered in the SDK (`talk-billing`, wallet schema), web-ui session store tests (purchase power-ups, talk start/tick/stop), RPC tests (distinct wallets), and play-ui HUD/inventory tests. Search for `talkSession`, `powerUps`, and `talk billing` under `packages/` when extending the system.
+Behavior is covered in the SDK (`talk-billing`, `talk-agent-reward`, `wallet-bundle-catalog`, wallet schema), web-ui session store tests (purchase power-ups, talk tick/stop with agent PU, `redeemWalletBundle`), RPC tests, and play-ui HUD/inventory tests. Search for `redeemWalletBundle`, `computeTalkAgentPowerUpsEarned`, `WALLET_BUNDLE_OFFERS`, `talkSession`, `powerUps`, and `talk billing` under `packages/` when extending the system.

@@ -723,6 +723,7 @@ export function createPreviewSessionInteractionPanel(options: {
   apiBase: string;
   getMainNodeId: () => string | null;
   getWalletHud?: () => WalletHudHandle | null;
+  onServerWalletAppliedToHud?: () => void;
   onHumanNodeLifecycle?: (action: "replace" | "setup") => void | Promise<void>;
   onClosePanel?: () => void;
 }): {
@@ -1088,6 +1089,7 @@ export function createPreviewSessionInteractionPanel(options: {
         ? Math.max(0, Math.floor(w.powerUps))
         : 0;
     h.setPowerUps(pu);
+    options.onServerWalletAppliedToHud?.();
   };
 
   const muteRealtimeMic = (): void => {

@@ -903,7 +903,7 @@ export async function POST(req: NextRequest) {
         const purchases = await store.listPurchases({ playerId, limit });
         const spaceIds = Array.from(
           new Set(purchases.map((rec) => rec.spaceId))
-        );
+        ).filter((sid) => sid !== "__talk__" && sid !== "__wallet__");
         const itemsByRef: Record<string, unknown> = {};
         for (const spaceId of spaceIds) {
           const [shopItems, supermarketItems, carWashCars] = await Promise.all([
@@ -1021,6 +1021,34 @@ export async function POST(req: NextRequest) {
           purchase: result.record,
           wallet: result.wallet,
           item: result.updatedItem,
+        });
+      }
+      case "redeemWalletBundle": {
+        const p = body.payload as {
+          playerId?: unknown;
+          bundleId?: unknown;
+        };
+        if (
+          typeof p.playerId !== "string" ||
+          p.playerId.trim().length === 0 ||
+          typeof p.bundleId !== "string" ||
+          p.bundleId.trim().length === 0
+        ) {
+          return Response.json({ error: "invalid payload" }, { status: 400 });
+        }
+        const now = new Date().toISOString();
+        const result = await store.redeemWalletBundle({
+          playerId: p.playerId.trim(),
+          bundleId: p.bundleId.trim(),
+          now,
+          recordId: `wb-${randomUUID()}`,
+        });
+        if (!result.ok) {
+          return Response.json({ error: result.error }, { status: 409 });
+        }
+        return Response.json({
+          wallet: result.wallet,
+          purchase: result.record,
         });
       }
       case "talkSessionStart": {

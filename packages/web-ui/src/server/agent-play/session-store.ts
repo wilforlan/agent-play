@@ -183,6 +183,9 @@ export type SessionStore = {
    * wallet for a player. Concurrent first reads are idempotent.
    */
   getPlayerWallet(playerId: string): Promise<PlayerWallet>;
+  getOrCreateAgentWalletForTalkRewards(
+    playerId: string
+  ): Promise<PlayerWallet>;
   setPlayerWalletBalance(input: {
     playerId: string;
     balanceUsd: number;
@@ -223,6 +226,15 @@ export type SessionStore = {
     amount: number;
     now: string;
   }): Promise<PlayerWallet>;
+  redeemWalletBundle(input: {
+    playerId: string;
+    bundleId: string;
+    now: string;
+    recordId: string;
+  }): Promise<
+    | { ok: true; wallet: PlayerWallet; record: PurchaseRecord }
+    | { ok: false; error: "INVALID_BUNDLE" | "INSUFFICIENT_POWER_UPS" }
+  >;
   startTalkSession(input: {
     viewerNodeId: string;
     agentId: string;
