@@ -112,8 +112,33 @@ export const fetchPurchases = async (input: {
   ) {
     throw new Error("[agent-play:purchases] unexpected response shape");
   }
+  const w = json.wallet as {
+    playerId?: unknown;
+    balanceUsd?: unknown;
+    powerUps?: unknown;
+    updatedAt?: unknown;
+  };
+  if (
+    typeof w.playerId !== "string" ||
+    w.playerId.trim().length === 0 ||
+    typeof w.balanceUsd !== "number" ||
+    typeof w.updatedAt !== "string"
+  ) {
+    throw new Error("[agent-play:purchases] unexpected wallet shape");
+  }
+  const powerUps =
+    typeof w.powerUps === "number" && Number.isFinite(w.powerUps)
+      ? Math.max(0, Math.floor(w.powerUps))
+      : 0;
+  const wallet: WalletDto = {
+    playerId: w.playerId,
+    balanceUsd: w.balanceUsd,
+    powerUps,
+    currency: "USD",
+    updatedAt: w.updatedAt,
+  };
   return {
-    wallet: json.wallet as WalletDto,
+    wallet,
     purchases: json.purchases as PurchaseRecordDto[],
     items: json.items as Record<string, unknown>,
   };

@@ -1023,6 +1023,69 @@ export async function POST(req: NextRequest) {
           item: result.updatedItem,
         });
       }
+      case "talkSessionStart": {
+        const p = body.payload as {
+          viewerNodeId?: unknown;
+          agentId?: unknown;
+        };
+        if (
+          typeof p.viewerNodeId !== "string" ||
+          p.viewerNodeId.trim().length === 0 ||
+          typeof p.agentId !== "string" ||
+          p.agentId.trim().length === 0
+        ) {
+          return Response.json({ error: "invalid payload" }, { status: 400 });
+        }
+        const now = new Date().toISOString();
+        const out = await store.startTalkSession({
+          viewerNodeId: p.viewerNodeId.trim(),
+          agentId: p.agentId.trim(),
+          now,
+        });
+        return Response.json(out);
+      }
+      case "talkSessionTick": {
+        const p = body.payload as {
+          viewerNodeId?: unknown;
+          agentId?: unknown;
+        };
+        if (
+          typeof p.viewerNodeId !== "string" ||
+          p.viewerNodeId.trim().length === 0 ||
+          typeof p.agentId !== "string" ||
+          p.agentId.trim().length === 0
+        ) {
+          return Response.json({ error: "invalid payload" }, { status: 400 });
+        }
+        const now = new Date().toISOString();
+        const out = await store.tickTalkSession({
+          viewerNodeId: p.viewerNodeId.trim(),
+          agentId: p.agentId.trim(),
+          now,
+        });
+        return Response.json(out);
+      }
+      case "talkSessionStop": {
+        const p = body.payload as {
+          viewerNodeId?: unknown;
+          agentId?: unknown;
+        };
+        if (
+          typeof p.viewerNodeId !== "string" ||
+          p.viewerNodeId.trim().length === 0 ||
+          typeof p.agentId !== "string" ||
+          p.agentId.trim().length === 0
+        ) {
+          return Response.json({ error: "invalid payload" }, { status: 400 });
+        }
+        const now = new Date().toISOString();
+        const out = await store.stopTalkSession({
+          viewerNodeId: p.viewerNodeId.trim(),
+          agentId: p.agentId.trim(),
+          now,
+        });
+        return Response.json(out);
+      }
       default:
         return Response.json({ error: "unknown op" }, { status: 400 });
     }

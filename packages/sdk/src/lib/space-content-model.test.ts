@@ -220,8 +220,18 @@ describe("space-content-model: PlayerWalletSchema + factory", () => {
     expect(wallet.balanceUsd).toBe(70);
     expect(wallet.currency).toBe("USD");
     expect(wallet.updatedAt).toBe(now);
+    expect(wallet.powerUps).toBe(0);
   });
 
+  it("PlayerWalletSchema defaults powerUps to 0 when omitted (legacy JSON)", () => {
+    const parsed = PlayerWalletSchema.parse({
+      playerId: "p-legacy",
+      balanceUsd: 70,
+      currency: "USD",
+      updatedAt: "2026-05-12T00:00:00.000Z",
+    });
+    expect(parsed.powerUps).toBe(0);
+  });
   it("PlayerWalletSchema validates the factory output", () => {
     const wallet = createInitialPlayerWallet({
       playerId: "p1",

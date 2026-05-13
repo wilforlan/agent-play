@@ -750,6 +750,10 @@ function getHumanPlayerId(): string | null {
   return snapshot === null ? null : HUMAN_VIEWER_PLAYER_ID;
 }
 
+function getViewerWalletPlayerId(): string | null {
+  return getMainNodeIdForIntercom();
+}
+
 function isLocalHostRuntime(): boolean {
   if (typeof window === "undefined") return false;
   const h = window.location.hostname.toLowerCase();
@@ -1178,7 +1182,7 @@ let walletBalanceCached: number | null = null;
 async function refreshWalletHud(): Promise<void> {
   if (walletHud === null) return;
   const sid = getSid();
-  const playerId = getHumanPlayerId();
+  const playerId = getViewerWalletPlayerId();
   if (sid === null || playerId === null) {
     // No active player yet (snapshot still loading) — show a placeholder
     // rather than a hard error so the HUD stays visible.
@@ -1192,6 +1196,7 @@ async function refreshWalletHud(): Promise<void> {
     const wallet = await fetchPlayerWallet({ playerId, sid });
     walletBalanceCached = wallet.balanceUsd;
     walletHud?.setBalance(wallet.balanceUsd);
+    walletHud?.setPowerUps(wallet.powerUps);
   } catch (error) {
     const message = error instanceof Error ? error.message : "wallet fetch failed";
     walletHud?.setError(message);
@@ -1201,7 +1206,7 @@ async function refreshWalletHud(): Promise<void> {
 async function refreshWalletInventoryPanel(): Promise<void> {
   if (walletInventoryPanel === null) return;
   const sid = getSid();
-  const playerId = getHumanPlayerId();
+  const playerId = getViewerWalletPlayerId();
   if (sid === null || playerId === null) {
     walletInventoryPanel.setError("Sign in to view your inventory.");
     return;
@@ -1211,8 +1216,10 @@ async function refreshWalletInventoryPanel(): Promise<void> {
     const result = await fetchPurchases({ sid, playerId });
     walletBalanceCached = result.wallet.balanceUsd;
     walletHud?.setBalance(result.wallet.balanceUsd);
+    walletHud?.setPowerUps(result.wallet.powerUps);
     walletInventoryPanel.setData({
       balanceUsd: result.wallet.balanceUsd,
+      powerUps: result.wallet.powerUps,
       purchases: result.purchases,
       items: result.items,
     });
@@ -2052,7 +2059,7 @@ async function buyAmenityItem(
   const tooltip = amenityItemTooltip;
   if (tooltip === null) return;
   const sid = getSid();
-  const playerId = getHumanPlayerId();
+  const playerId = getViewerWalletPlayerId();
   if (sid === null || playerId === null) {
     tooltip.setError("sign in to play");
     return;
@@ -2068,6 +2075,7 @@ async function buyAmenityItem(
   if (result.ok) {
     walletBalanceCached = result.wallet.balanceUsd;
     walletHud?.setBalance(result.wallet.balanceUsd);
+    walletHud?.setPowerUps(result.wallet.powerUps);
     if (walletInventoryPanel !== null && walletInventoryPanel.isOpen()) {
       void refreshWalletInventoryPanel();
     }
@@ -3218,6 +3226,7 @@ export function bootstrap(): void {
       getSid,
       apiBase: API_BASE,
       getMainNodeId: getMainNodeIdForIntercom,
+      getWalletHud: () => walletHud,
       onHumanNodeLifecycle: async (action) => {
         if (action === "replace") {
           clearHumanCredentials();

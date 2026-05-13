@@ -22,6 +22,7 @@
 export type WalletDto = {
   readonly playerId: string;
   readonly balanceUsd: number;
+  readonly powerUps: number;
   readonly currency: "USD";
   readonly updatedAt: string;
 };
@@ -59,12 +60,32 @@ export const fetchPlayerWallet = async (input: {
   }
   const envelope = body as { wallet?: unknown };
   const wallet = envelope.wallet ?? body;
+  const w = wallet as {
+    balanceUsd?: unknown;
+    powerUps?: unknown;
+    playerId?: unknown;
+    currency?: unknown;
+    updatedAt?: unknown;
+  };
   if (
     typeof wallet !== "object" ||
     wallet === null ||
-    typeof (wallet as { balanceUsd?: unknown }).balanceUsd !== "number"
+    typeof w.balanceUsd !== "number" ||
+    typeof w.playerId !== "string" ||
+    w.playerId.trim().length === 0 ||
+    typeof w.updatedAt !== "string"
   ) {
     throw new Error("[agent-play:wallet] unexpected wallet payload");
   }
-  return wallet as WalletDto;
+  const powerUps =
+    typeof w.powerUps === "number" && Number.isFinite(w.powerUps)
+      ? Math.max(0, Math.floor(w.powerUps))
+      : 0;
+  return {
+    playerId: w.playerId,
+    balanceUsd: w.balanceUsd,
+    powerUps,
+    currency: "USD",
+    updatedAt: w.updatedAt,
+  };
 };

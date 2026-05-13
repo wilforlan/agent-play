@@ -19,8 +19,10 @@ import {
   resolveAssistFieldType,
 } from "./preview-assist-coerce.js";
 import { RealtimeAgent, RealtimeSession } from "@openai/agents/realtime";
+import { TALK_TICK_SECONDS } from "@agent-play/sdk/browser";
 import { reportPresentationEvent } from "./presentation-analytics.js";
 import { getPreviewViewSettings } from "./preview-view-settings.js";
+import type { WalletHudHandle } from "./wallet-hud.js";
 
 const STYLE_ID = "agent-play-preview-session-interaction-styles";
 
@@ -720,6 +722,7 @@ export function createPreviewSessionInteractionPanel(options: {
   getSid: () => string | null;
   apiBase: string;
   getMainNodeId: () => string | null;
+  getWalletHud?: () => WalletHudHandle | null;
   onHumanNodeLifecycle?: (action: "replace" | "setup") => void | Promise<void>;
   onClosePanel?: () => void;
 }): {
@@ -921,6 +924,8 @@ export function createPreviewSessionInteractionPanel(options: {
   let realtimeInputStream: MediaStream | null = null;
   let realtimeAgentId: string | null = null;
   let realtimeState: "idle" | "connecting" | "connected" | "failed" = "idle";
+  let talkBillingIntervalId: number | null = null;
+  let talkBillingAgentId: string | null = null;
   let shouldAutoStartRecording = false;
   let shouldFocusChatInput = false;
   let chatInputEl: HTMLInputElement | null = null;
@@ -1052,7 +1057,156 @@ export function createPreviewSessionInteractionPanel(options: {
     }
   };
 
+  const postSdkJson = async (input: {
+    op: string;
+    payload: Record<string, unknown>;
+  }): Promise<unknown> => {
+    const sid = options.getSid();
+    if (sid === null) {
+      throw new Error("missing sid");
+    }
+    const rpcUrl = `${options.apiBase}/sdk/rpc?sid=${encodeURIComponent(sid)}`;
+    const res = await fetch(rpcUrl, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ op: input.op, payload: input.payload }),
+    });
+    return await res.json().catch(() => ({}));
+  };
+
+  const applyWalletHudFromServerWallet = (wallet: unknown): void => {
+    const h = options.getWalletHud?.() ?? null;
+    if (h === null || typeof wallet !== "object" || wallet === null) {
+      return;
+    }
+    const w = wallet as Record<string, unknown>;
+    if (typeof w.balanceUsd === "number") {
+      h.setBalance(w.balanceUsd);
+    }
+    const pu =
+      typeof w.powerUps === "number" && Number.isFinite(w.powerUps)
+        ? Math.max(0, Math.floor(w.powerUps))
+        : 0;
+    h.setPowerUps(pu);
+  };
+
+  const muteRealtimeMic = (): void => {
+    if (realtimeInputStream === null) {
+      return;
+    }
+    for (const t of realtimeInputStream.getAudioTracks()) {
+      t.enabled = false;
+    }
+  };
+
+  const stopTalkBilling = async (): Promise<void> => {
+    if (talkBillingIntervalId !== null) {
+      clearInterval(talkBillingIntervalId);
+      talkBillingIntervalId = null;
+    }
+    const agentId = talkBillingAgentId;
+    talkBillingAgentId = null;
+    if (agentId === null) {
+      return;
+    }
+    const sid = options.getSid();
+    const viewerNodeId = options.getMainNodeId();
+    if (sid === null || viewerNodeId === null) {
+      return;
+    }
+    try {
+      const raw = await postSdkJson({
+        op: "talkSessionStop",
+        payload: { viewerNodeId, agentId },
+      });
+      const body = raw as { ok?: unknown; wallet?: unknown };
+      if (body.ok === true) {
+        applyWalletHudFromServerWallet(body.wallet);
+      }
+    } catch {
+      // ignore
+    }
+  };
+
+  const runTalkBillingTick = async (): Promise<void> => {
+    const agentId = talkBillingAgentId;
+    const viewerNodeId = options.getMainNodeId();
+    if (agentId === null || viewerNodeId === null) {
+      return;
+    }
+    try {
+      const raw = await postSdkJson({
+        op: "talkSessionTick",
+        payload: { viewerNodeId, agentId },
+      });
+      const json = raw as { ok?: unknown; error?: unknown; wallet?: unknown };
+      if (json.ok === false && json.error === "INSUFFICIENT_FUNDS") {
+        muteRealtimeMic();
+        setInteractionError("Out of funds — top up to keep talking.", {
+          step: "talk_billing:tick",
+          agentId,
+        });
+        closeRealtimeConnection();
+        render();
+        return;
+      }
+      if (json.ok === true) {
+        applyWalletHudFromServerWallet(json.wallet);
+      }
+    } catch {
+      // ignore
+    }
+  };
+
+  const beginTalkBilling = async (agentId: string): Promise<void> => {
+    try {
+      await stopTalkBilling();
+      const sid = options.getSid();
+      const viewerNodeId = options.getMainNodeId();
+      if (sid === null || viewerNodeId === null) {
+        return;
+      }
+      const fetchStart = async (): Promise<{
+        ok?: unknown;
+        error?: unknown;
+        wallet?: unknown;
+      }> => {
+        return (await postSdkJson({
+          op: "talkSessionStart",
+          payload: { viewerNodeId, agentId },
+        })) as { ok?: unknown; error?: unknown; wallet?: unknown };
+      };
+      let started = await fetchStart();
+      if (started.ok === false && started.error === "ALREADY_ACTIVE") {
+        await postSdkJson({
+          op: "talkSessionStop",
+          payload: { viewerNodeId, agentId },
+        });
+        started = await fetchStart();
+      }
+      if (started.ok !== true) {
+        if (started.error === "INSUFFICIENT_FUNDS") {
+          setInteractionError("Out of funds — top up to keep talking.", {
+            step: "talk_billing:start",
+            agentId,
+          });
+          closeRealtimeConnection();
+          render();
+        }
+        return;
+      }
+      applyWalletHudFromServerWallet(started.wallet);
+      talkBillingAgentId = agentId;
+      talkBillingIntervalId = window.setInterval(() => {
+        void runTalkBillingTick();
+      }, TALK_TICK_SECONDS * 1000);
+    } catch {
+      // ignore
+    }
+  };
+
   const closeRealtimeConnection = (): void => {
+    void stopTalkBilling();
     if (realtimeSession !== null) {
       try {
         if (typeof realtimeSession.close === "function") {
@@ -1202,6 +1356,7 @@ export function createPreviewSessionInteractionPanel(options: {
       realtimeAgentId = playWorldAgent.getAgentId();
       realtimeState = "connected";
       reportPresentationEvent("PTTAction");
+      void beginTalkBilling(playWorldAgent.getAgentId());
       return true;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -1238,6 +1393,7 @@ export function createPreviewSessionInteractionPanel(options: {
             realtimeAgentId = playWorldAgent.getAgentId();
             realtimeState = "connected";
             reportPresentationEvent("PTTAction");
+            void beginTalkBilling(playWorldAgent.getAgentId());
             return true;
           }
         } catch {
@@ -2066,6 +2222,12 @@ export function createPreviewSessionInteractionPanel(options: {
     mode = "push_to_talk";
     render();
   });
+
+  const onPageHide = (): void => {
+    closeRealtimeConnection();
+    render();
+  };
+  window.addEventListener("pagehide", onPageHide);
 
   render();
   return {

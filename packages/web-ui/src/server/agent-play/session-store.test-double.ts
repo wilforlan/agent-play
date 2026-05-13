@@ -17,7 +17,11 @@ import type {
   ShopItem,
   SupermarketItem,
 } from "@agent-play/sdk";
-import { createInitialPlayerWallet } from "@agent-play/sdk";
+import {
+  createInitialPlayerWallet,
+  costForSeconds,
+  TALK_PRICE_PER_SECOND_USD,
+} from "@agent-play/sdk";
 import type { PreviewSnapshotJson } from "./preview-serialize.js";
 import type { SessionEventLogEntry } from "./redis-session-store.js";
 import { getPlayerChainGenesisSync } from "./load-player-chain-genesis.js";
@@ -68,6 +72,15 @@ export class TestSessionStore implements SessionStore {
   private readonly carWashCars = new Map<string, Map<string, CarWashCar>>();
   private readonly playerWallets = new Map<string, PlayerWallet>();
   private readonly playerPurchases = new Map<string, PurchaseRecord[]>();
+  private readonly talkSessions = new Map<
+    string,
+    {
+      startedAtIso: string;
+      lastBilledAtIso: string;
+      totalBilledSeconds: number;
+      totalChargedUsd: number;
+    }
+  >();
 
   constructor(options: TestSessionStoreOptions = {}) {
     this.playerChainGenesis =
@@ -109,6 +122,7 @@ export class TestSessionStore implements SessionStore {
     for (const k of Object.keys(this.settings)) {
       delete this.settings[k];
     }
+    this.talkSessions.clear();
   }
 
   async clearWorldSnapshot(): Promise<void> {
@@ -515,9 +529,8 @@ export class TestSessionStore implements SessionStore {
       );
     }
     const wallet: PlayerWallet = {
-      playerId: input.playerId,
+      ...(await this.getPlayerWallet(input.playerId)),
       balanceUsd: input.balanceUsd,
-      currency: "USD",
       updatedAt: new Date().toISOString(),
     };
     this.playerWallets.set(input.playerId, wallet);
@@ -613,10 +626,14 @@ export class TestSessionStore implements SessionStore {
     } else {
       (bucket as Map<string, CarWashCar>).set(item.id, nextItem as CarWashCar);
     }
-    const nextWallet = await this.adjustPlayerWalletBalance({
-      playerId: input.playerId,
-      deltaUsd: -item.priceUsd,
-    });
+    const earnedPowerUps = Math.floor(item.priceUsd) * 3;
+    const nextWallet: PlayerWallet = {
+      ...wallet,
+      balanceUsd: wallet.balanceUsd - item.priceUsd,
+      powerUps: (wallet.powerUps ?? 0) + earnedPowerUps,
+      updatedAt: input.now,
+    };
+    this.playerWallets.set(input.playerId, nextWallet);
     const record: PurchaseRecord = {
       id: input.recordId,
       playerId: input.playerId,
@@ -632,6 +649,167 @@ export class TestSessionStore implements SessionStore {
       record,
       wallet: nextWallet,
       updatedItem: nextItem,
+    };
+  }
+
+  private talkSessionMapKey(viewerNodeId: string, agentId: string): string {
+    return `${viewerNodeId}\u001f${agentId}`;
+  }
+
+  async addPowerUps(input: {
+    playerId: string;
+    amount: number;
+    now: string;
+  }): Promise<PlayerWallet> {
+    if (
+      !Number.isFinite(input.amount) ||
+      !Number.isInteger(input.amount) ||
+      input.amount <= 0
+    ) {
+      throw new Error(
+        "addPowerUps: amount must be a finite positive integer"
+      );
+    }
+    const current = await this.getPlayerWallet(input.playerId);
+    const next: PlayerWallet = {
+      ...current,
+      powerUps: (current.powerUps ?? 0) + input.amount,
+      updatedAt: input.now,
+    };
+    this.playerWallets.set(input.playerId, next);
+    return { ...next };
+  }
+
+  async startTalkSession(input: {
+    viewerNodeId: string;
+    agentId: string;
+    now: string;
+  }): Promise<
+    | {
+        ok: true;
+        startedAt: string;
+        ratePerSecondUsd: number;
+        wallet: PlayerWallet;
+      }
+    | { ok: false; error: "ALREADY_ACTIVE" | "INSUFFICIENT_FUNDS" }
+  > {
+    const key = this.talkSessionMapKey(input.viewerNodeId, input.agentId);
+    if (this.talkSessions.has(key)) {
+      return { ok: false, error: "ALREADY_ACTIVE" };
+    }
+    const wallet = await this.getPlayerWallet(input.viewerNodeId);
+    if (wallet.balanceUsd <= 0) {
+      return { ok: false, error: "INSUFFICIENT_FUNDS" };
+    }
+    this.talkSessions.set(key, {
+      startedAtIso: input.now,
+      lastBilledAtIso: input.now,
+      totalBilledSeconds: 0,
+      totalChargedUsd: 0,
+    });
+    return {
+      ok: true,
+      startedAt: input.now,
+      ratePerSecondUsd: TALK_PRICE_PER_SECOND_USD,
+      wallet: { ...wallet },
+    };
+  }
+
+  async tickTalkSession(input: {
+    viewerNodeId: string;
+    agentId: string;
+    now: string;
+  }): Promise<
+    | {
+        ok: true;
+        secondsBilledThisTick: number;
+        secondsBilledTotal: number;
+        costUsd: number;
+        wallet: PlayerWallet;
+      }
+    | { ok: false; error: "NO_SESSION" | "INSUFFICIENT_FUNDS" }
+  > {
+    const key = this.talkSessionMapKey(input.viewerNodeId, input.agentId);
+    const session = this.talkSessions.get(key);
+    if (session === undefined) {
+      return { ok: false, error: "NO_SESSION" };
+    }
+    const wallet = await this.getPlayerWallet(input.viewerNodeId);
+    const elapsedMs =
+      Date.parse(input.now) - Date.parse(session.lastBilledAtIso);
+    const billSeconds =
+      elapsedMs > 0 ? Math.ceil(elapsedMs / 1000) : 0;
+    const costUsd = costForSeconds(billSeconds);
+    if (costUsd > wallet.balanceUsd) {
+      this.talkSessions.delete(key);
+      return { ok: false, error: "INSUFFICIENT_FUNDS" };
+    }
+    const nextWallet: PlayerWallet = {
+      ...wallet,
+      balanceUsd: wallet.balanceUsd - costUsd,
+      updatedAt: input.now,
+    };
+    const nextSession = {
+      ...session,
+      lastBilledAtIso: input.now,
+      totalBilledSeconds: session.totalBilledSeconds + billSeconds,
+      totalChargedUsd: session.totalChargedUsd + costUsd,
+    };
+    this.playerWallets.set(input.viewerNodeId, nextWallet);
+    this.talkSessions.set(key, nextSession);
+    return {
+      ok: true,
+      secondsBilledThisTick: billSeconds,
+      secondsBilledTotal: nextSession.totalBilledSeconds,
+      costUsd,
+      wallet: { ...nextWallet },
+    };
+  }
+
+  async stopTalkSession(input: {
+    viewerNodeId: string;
+    agentId: string;
+    now: string;
+  }): Promise<
+    | {
+        ok: true;
+        totalCostUsd: number;
+        secondsBilledTotal: number;
+        wallet: PlayerWallet;
+      }
+    | { ok: false; error: "NO_SESSION" }
+  > {
+    const key = this.talkSessionMapKey(input.viewerNodeId, input.agentId);
+    const session = this.talkSessions.get(key);
+    if (session === undefined) {
+      return { ok: false, error: "NO_SESSION" };
+    }
+    const wallet = await this.getPlayerWallet(input.viewerNodeId);
+    const elapsedMs =
+      Date.parse(input.now) - Date.parse(session.lastBilledAtIso);
+    const billSeconds =
+      elapsedMs > 0 ? Math.ceil(elapsedMs / 1000) : 0;
+    const finalCostUsd = costForSeconds(billSeconds);
+    this.talkSessions.delete(key);
+    if (finalCostUsd > wallet.balanceUsd) {
+      return {
+        ok: true,
+        totalCostUsd: session.totalChargedUsd,
+        secondsBilledTotal: session.totalBilledSeconds,
+        wallet: { ...wallet },
+      };
+    }
+    const nextWallet: PlayerWallet = {
+      ...wallet,
+      balanceUsd: wallet.balanceUsd - finalCostUsd,
+      updatedAt: input.now,
+    };
+    this.playerWallets.set(input.viewerNodeId, nextWallet);
+    return {
+      ok: true,
+      totalCostUsd: session.totalChargedUsd + finalCostUsd,
+      secondsBilledTotal: session.totalBilledSeconds + billSeconds,
+      wallet: { ...nextWallet },
     };
   }
 }

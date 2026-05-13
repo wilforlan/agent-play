@@ -232,6 +232,7 @@ export const PlayerWalletSchema = z.object({
   balanceUsd: z.number().finite().nonnegative(),
   currency: z.literal("USD"),
   updatedAt: IsoTimestamp,
+  powerUps: z.number().int().nonnegative().default(0),
 });
 
 /** Runtime type for {@link PlayerWalletSchema}. @public */
@@ -261,6 +262,7 @@ export function createInitialPlayerWallet(input: {
     balanceUsd: DEFAULT_PLAYER_WALLET_BALANCE_USD,
     currency: "USD",
     updatedAt: input.now,
+    powerUps: 0,
   };
 }
 

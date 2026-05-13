@@ -86,6 +86,7 @@ describe("createWalletInventoryPanel", () => {
     panel.open();
     panel.setData({
       balanceUsd: 42,
+      powerUps: 3,
       purchases: [carPurchase()],
       items: {
         "carwash:space-A:car-1": {
@@ -97,6 +98,7 @@ describe("createWalletInventoryPanel", () => {
       },
     });
     expect(parent.textContent).toContain("$42.00");
+    expect(parent.textContent).toContain("3");
     expect(parent.textContent).toContain("GTR");
     expect(parent.textContent).toContain("$100.00");
   });
@@ -110,6 +112,7 @@ describe("createWalletInventoryPanel", () => {
     panel.open();
     panel.setData({
       balanceUsd: 0,
+      powerUps: 0,
       purchases: [carPurchase()],
       items: {
         "carwash:space-A:car-1": {
@@ -139,6 +142,7 @@ describe("createWalletInventoryPanel", () => {
     panel.open();
     panel.setData({
       balanceUsd: 0,
+      powerUps: 0,
       purchases: [carPurchase()],
       items: {},
     });
@@ -181,7 +185,7 @@ describe("createWalletInventoryPanel", () => {
       onRefresh: () => {},
     });
     panel.open();
-    panel.setData({ balanceUsd: 70, purchases: [], items: {} });
+    panel.setData({ balanceUsd: 70, powerUps: 0, purchases: [], items: {} });
     expect(parent.textContent).toContain("haven't bought anything");
   });
 });

@@ -16,6 +16,7 @@
 
 import type { PurchaseRecordDto } from "./wallet-purchases-client.js";
 import { buildPurchaseItemKey } from "./wallet-purchases-client.js";
+import { createWalletDisplayStrip } from "./wallet-display-strip.js";
 
 /**
  * Minimal shape of an item payload as returned by the `listPurchases`
@@ -50,6 +51,7 @@ export type WalletInventoryPanelHandle = {
   /** Replace the panel's data. */
   setData(input: {
     balanceUsd: number;
+    powerUps: number;
     purchases: ReadonlyArray<PurchaseRecordDto>;
     items: Readonly<Record<string, unknown>>;
   }): void;
@@ -349,15 +351,15 @@ export const createWalletInventoryPanel = (
   const headerRight = document.createElement("div");
   headerRight.style.display = "flex";
   headerRight.style.alignItems = "center";
-  const balanceEl = document.createElement("div");
-  balanceEl.className = `${PANEL_CLASS}__balance`;
-  balanceEl.textContent = "$—";
+  const headerStrip = createWalletDisplayStrip();
+  headerStrip.root.style.color = "#fef3c7";
+  headerStrip.root.style.fontSize = "15px";
   const closeBtn = document.createElement("button");
   closeBtn.type = "button";
   closeBtn.className = `${PANEL_CLASS}__close`;
   closeBtn.setAttribute("aria-label", "Close inventory");
   closeBtn.textContent = "✕";
-  headerRight.append(balanceEl, closeBtn);
+  headerRight.append(headerStrip.root, closeBtn);
   header.append(titleEl, headerRight);
   panel.appendChild(header);
 
@@ -372,6 +374,8 @@ export const createWalletInventoryPanel = (
     | { kind: "error"; message: string }
     | {
         kind: "data";
+        balanceUsd: number;
+        powerUps: number;
         purchases: ReadonlyArray<PurchaseRecordDto>;
         items: Readonly<Record<string, unknown>>;
         selectedId: string | null;
@@ -526,6 +530,8 @@ export const createWalletInventoryPanel = (
 
   const renderCurrent = (): void => {
     if (state.kind === "loading") {
+      headerStrip.setBalanceLoading();
+      headerStrip.setPowerUpsLoading();
       body.innerHTML = "";
       const loading = document.createElement("div");
       loading.className = `${PANEL_CLASS}__loading`;
@@ -534,6 +540,8 @@ export const createWalletInventoryPanel = (
       return;
     }
     if (state.kind === "error") {
+      headerStrip.setBalance(Number.NaN);
+      headerStrip.setPowerUps(0);
       body.innerHTML = "";
       const err = document.createElement("div");
       err.className = `${PANEL_CLASS}__error`;
@@ -541,6 +549,8 @@ export const createWalletInventoryPanel = (
       body.appendChild(err);
       return;
     }
+    headerStrip.setBalance(state.balanceUsd);
+    headerStrip.setPowerUps(state.powerUps);
     const data = state;
     if (data.selectedId !== null) {
       const selectedId = data.selectedId;
@@ -591,9 +601,15 @@ export const createWalletInventoryPanel = (
     open,
     close,
     isOpen: () => isOpen,
-    setData: ({ balanceUsd, purchases, items }) => {
-      balanceEl.textContent = formatUsd(balanceUsd);
-      state = { kind: "data", purchases, items, selectedId: null };
+    setData: ({ balanceUsd, powerUps, purchases, items }) => {
+      state = {
+        kind: "data",
+        balanceUsd,
+        powerUps,
+        purchases,
+        items,
+        selectedId: null,
+      };
       if (isOpen) renderCurrent();
     },
     setLoading: () => {

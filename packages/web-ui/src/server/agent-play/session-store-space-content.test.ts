@@ -4,6 +4,7 @@ import type {
   ShopItem,
   SupermarketItem,
 } from "@agent-play/sdk";
+import { costForSeconds } from "@agent-play/sdk";
 import { TestSessionStore } from "./session-store.test-double.js";
 
 const ISO = "2026-05-12T00:00:00.000Z";
@@ -132,6 +133,7 @@ describe("session-store: wallet auto-seed", () => {
     const wallet = await store.getPlayerWallet("p1");
     expect(wallet.balanceUsd).toBe(70);
     expect(wallet.currency).toBe("USD");
+    expect(wallet.powerUps).toBe(0);
   });
 
   it("concurrent first reads still leave balance at exactly 70", async () => {
@@ -154,6 +156,21 @@ describe("session-store: wallet auto-seed", () => {
     await store.setPlayerWalletBalance({ playerId: "p1", balanceUsd: 5 });
     const w = await store.getPlayerWallet("p1");
     expect(w.balanceUsd).toBe(5);
+  });
+
+  it("setPlayerWalletBalance preserves existing power-ups", async () => {
+    const store = new TestSessionStore();
+    await store.loadOrCreateSessionId();
+    await store.getPlayerWallet("p1");
+    await store.addPowerUps({
+      playerId: "p1",
+      amount: 4,
+      now: "2026-05-12T00:00:00.000Z",
+    });
+    await store.setPlayerWalletBalance({ playerId: "p1", balanceUsd: 12 });
+    const w = await store.getPlayerWallet("p1");
+    expect(w.balanceUsd).toBe(12);
+    expect(w.powerUps).toBe(4);
   });
 
   it("adjustPlayerWalletBalance applies positive and negative deltas", async () => {
@@ -227,6 +244,7 @@ describe("session-store: executePurchase", () => {
     });
     if (!result.ok) throw new Error(`expected ok purchase, got ${result.error}`);
     expect(result.wallet.balanceUsd).toBe(50);
+    expect(result.wallet.powerUps).toBe(60);
     const items = await store.listShopItems("space-1");
     expect(items[0]?.sale.status).toBe("sold");
     expect(items[0]?.sale.soldToPlayerId).toBe("p1");
@@ -315,6 +333,73 @@ describe("session-store: executePurchase", () => {
     expect((await store.listCarWashCars("space-1"))[0]?.sale.status).toBe("sold");
     const wallet = await store.getPlayerWallet("p1");
     expect(wallet.balanceUsd).toBe(55);
+    expect(wallet.powerUps).toBe(45);
+  });
+});
+
+describe("session-store: talk billing", () => {
+  it("start tick stop debits wallet by billed seconds", async () => {
+    const store = new TestSessionStore();
+    await store.loadOrCreateSessionId();
+    await store.setPlayerWalletBalance({
+      playerId: "viewer-1",
+      balanceUsd: 10,
+    });
+    const start = await store.startTalkSession({
+      viewerNodeId: "viewer-1",
+      agentId: "agent-1",
+      now: "2026-05-12T00:00:00.000Z",
+    });
+    expect(start.ok).toBe(true);
+
+    const tick = await store.tickTalkSession({
+      viewerNodeId: "viewer-1",
+      agentId: "agent-1",
+      now: "2026-05-12T00:00:12.000Z",
+    });
+    expect(tick.ok).toBe(true);
+    if (tick.ok) {
+      expect(tick.secondsBilledThisTick).toBe(12);
+      expect(tick.costUsd).toBe(costForSeconds(12));
+      expect(tick.secondsBilledTotal).toBe(12);
+    }
+
+    const stop = await store.stopTalkSession({
+      viewerNodeId: "viewer-1",
+      agentId: "agent-1",
+      now: "2026-05-12T00:00:15.000Z",
+    });
+    expect(stop.ok).toBe(true);
+    if (stop.ok && tick.ok) {
+      expect(stop.secondsBilledTotal).toBe(15);
+      expect(stop.totalCostUsd).toBe(
+        tick.costUsd + costForSeconds(3)
+      );
+    }
+  });
+
+  it("returns INSUFFICIENT_FUNDS when a tick exceeds balance", async () => {
+    const store = new TestSessionStore();
+    await store.loadOrCreateSessionId();
+    await store.setPlayerWalletBalance({
+      playerId: "v",
+      balanceUsd: 0.01,
+    });
+    const start = await store.startTalkSession({
+      viewerNodeId: "v",
+      agentId: "a",
+      now: "2026-01-01T00:00:00.000Z",
+    });
+    expect(start.ok).toBe(true);
+    const tick = await store.tickTalkSession({
+      viewerNodeId: "v",
+      agentId: "a",
+      now: "2026-01-01T00:01:00.000Z",
+    });
+    expect(tick.ok).toBe(false);
+    if (!tick.ok) {
+      expect(tick.error).toBe("INSUFFICIENT_FUNDS");
+    }
   });
 });
 

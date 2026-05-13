@@ -11,6 +11,8 @@
  *      the source endpoint.
  */
 
+import { createWalletDisplayStrip } from "./wallet-display-strip.js";
+
 /**
  * Handle returned by {@link createWalletHud}.
  *
@@ -19,6 +21,8 @@
 export type WalletHudHandle = {
   readonly root: HTMLElement;
   setBalance(balanceUsd: number): void;
+  setPowerUps(n: number): void;
+  setPowerUpsLoading(): void;
   setLoading(): void;
   setError(message: string): void;
   destroy(): void;
@@ -125,13 +129,12 @@ export const createWalletHud = (
   root.setAttribute("aria-label", "Open wallet inventory");
   const dot = document.createElement("span");
   dot.className = `${HUD_CLASS}__dot`;
-  const label = document.createElement("span");
-  label.textContent = "$—";
+  const strip = createWalletDisplayStrip();
   const caret = document.createElement("span");
   caret.className = `${HUD_CLASS}__caret`;
   caret.textContent = "▾";
   root.appendChild(dot);
-  root.appendChild(label);
+  root.appendChild(strip.root);
   root.appendChild(caret);
   options.parent.appendChild(root);
   if (typeof options.onClick === "function") {
@@ -146,18 +149,26 @@ export const createWalletHud = (
     setBalance: (balanceUsd: number) => {
       root.classList.remove(`${HUD_CLASS}--loading`);
       root.classList.remove(`${HUD_CLASS}--error`);
-      label.textContent = formatUsd(balanceUsd);
+      strip.setBalance(balanceUsd);
       root.title = `Wallet balance: ${formatUsd(balanceUsd)} — click to view items`;
+    },
+    setPowerUps: (n: number) => {
+      strip.setPowerUps(n);
+    },
+    setPowerUpsLoading: () => {
+      strip.setPowerUpsLoading();
     },
     setLoading: () => {
       root.classList.add(`${HUD_CLASS}--loading`);
       root.classList.remove(`${HUD_CLASS}--error`);
-      label.textContent = "$…";
+      strip.setBalanceLoading();
+      strip.setPowerUpsLoading();
     },
     setError: (message: string) => {
       root.classList.add(`${HUD_CLASS}--error`);
       root.classList.remove(`${HUD_CLASS}--loading`);
-      label.textContent = "$—";
+      strip.setBalance(Number.NaN);
+      strip.setPowerUps(0);
       root.title = message;
     },
     destroy: () => {

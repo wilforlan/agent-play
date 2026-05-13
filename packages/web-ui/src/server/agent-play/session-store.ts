@@ -218,6 +218,51 @@ export type SessionStore = {
     now: string;
     recordId: string;
   }): Promise<ExecutePurchaseResult>;
+  addPowerUps(input: {
+    playerId: string;
+    amount: number;
+    now: string;
+  }): Promise<PlayerWallet>;
+  startTalkSession(input: {
+    viewerNodeId: string;
+    agentId: string;
+    now: string;
+  }): Promise<
+    | {
+        ok: true;
+        startedAt: string;
+        ratePerSecondUsd: number;
+        wallet: PlayerWallet;
+      }
+    | { ok: false; error: "ALREADY_ACTIVE" | "INSUFFICIENT_FUNDS" }
+  >;
+  tickTalkSession(input: {
+    viewerNodeId: string;
+    agentId: string;
+    now: string;
+  }): Promise<
+    | {
+        ok: true;
+        secondsBilledThisTick: number;
+        secondsBilledTotal: number;
+        costUsd: number;
+        wallet: PlayerWallet;
+      }
+    | { ok: false; error: "NO_SESSION" | "INSUFFICIENT_FUNDS" }
+  >;
+  stopTalkSession(input: {
+    viewerNodeId: string;
+    agentId: string;
+    now: string;
+  }): Promise<
+    | {
+        ok: true;
+        totalCostUsd: number;
+        secondsBilledTotal: number;
+        wallet: PlayerWallet;
+      }
+    | { ok: false; error: "NO_SESSION" }
+  >;
 };
 
 /**

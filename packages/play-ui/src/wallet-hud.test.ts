@@ -22,6 +22,21 @@ describe("wallet-hud", () => {
     expect(hud.root.textContent).toContain("$12.35");
   });
 
+  it("setPowerUps renders the diamond count", () => {
+    const hud = createWalletHud({ parent: newParent() });
+    hud.setBalance(10);
+    hud.setPowerUps(7);
+    expect(hud.root.textContent).toContain("$10.00");
+    expect(hud.root.textContent).toContain("7");
+  });
+
+  it("setPowerUpsLoading shows a placeholder count", () => {
+    const hud = createWalletHud({ parent: newParent() });
+    hud.setBalance(10);
+    hud.setPowerUpsLoading();
+    expect(hud.root.textContent).toContain("—");
+  });
+
   it("setLoading and setError toggle the modifier classes", () => {
     const hud = createWalletHud({ parent: newParent() });
     hud.setLoading();

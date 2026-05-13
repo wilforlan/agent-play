@@ -95,18 +95,56 @@ export const executePurchase = async (input: {
     }),
   });
   const json = (await response.json().catch(() => ({}))) as {
-    wallet?: WalletDto;
+    wallet?: unknown;
+    purchase?: { id?: unknown; at?: unknown };
     purchaseId?: string;
     soldAt?: string;
     error?: string;
     message?: string;
   };
   if (response.ok && typeof json.wallet === "object" && json.wallet !== null) {
+    const w = json.wallet as {
+      playerId?: unknown;
+      balanceUsd?: unknown;
+      powerUps?: unknown;
+      updatedAt?: unknown;
+    };
+    if (
+      typeof w.playerId !== "string" ||
+      w.playerId.trim().length === 0 ||
+      typeof w.balanceUsd !== "number" ||
+      typeof w.updatedAt !== "string"
+    ) {
+      return {
+        ok: false,
+        error: "UNKNOWN",
+        message: "unexpected wallet in purchase response",
+      };
+    }
+    const powerUps =
+      typeof w.powerUps === "number" && Number.isFinite(w.powerUps)
+        ? Math.max(0, Math.floor(w.powerUps))
+        : 0;
+    const wallet: WalletDto = {
+      playerId: w.playerId,
+      balanceUsd: w.balanceUsd,
+      powerUps,
+      currency: "USD",
+      updatedAt: w.updatedAt,
+    };
+    const purchaseId =
+      typeof json.purchase?.id === "string"
+        ? json.purchase.id
+        : (json.purchaseId ?? "");
+    const soldAt =
+      typeof json.purchase?.at === "string"
+        ? json.purchase.at
+        : (json.soldAt ?? "");
     return {
       ok: true,
-      wallet: json.wallet,
-      purchaseId: json.purchaseId ?? "",
-      soldAt: json.soldAt ?? "",
+      wallet,
+      purchaseId,
+      soldAt,
     };
   }
   const code = json.error === "ITEM_ALREADY_SOLD" ||

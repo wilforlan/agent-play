@@ -158,6 +158,12 @@ export {
   type SpaceContentItem,
   type SupermarketItem,
 } from "./lib/space-content-model.js";
+export {
+  TALK_PRICE_PER_60S_USD,
+  TALK_PRICE_PER_SECOND_USD,
+  TALK_TICK_SECONDS,
+  costForSeconds,
+} from "./lib/talk-billing.js";
 export { langchainRegistration } from "./platforms/langchain.js";
 export {
   RemotePlayWorld,
