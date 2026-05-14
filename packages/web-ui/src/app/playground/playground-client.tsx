@@ -91,6 +91,7 @@ export default function PlaygroundClient({ defaultServerUrl }: PlaygroundClientP
     targetNodeId: null,
     timeoutMs: 8000,
     headers: {},
+    platformServiceKey: null,
   });
 
   useEffect(() => {
@@ -168,6 +169,7 @@ export default function PlaygroundClient({ defaultServerUrl }: PlaygroundClientP
       targetNodeId: null,
       timeoutMs: 8000,
       headers: {},
+      platformServiceKey: null,
     }));
   };
 
@@ -234,6 +236,7 @@ export default function PlaygroundClient({ defaultServerUrl }: PlaygroundClientP
         targetNodeId: null,
         timeoutMs: 8000,
         headers: {},
+        platformServiceKey: null,
       });
       setResponse({ connected: true, sid: sessionJson.sid, validatedMainNode: trimmedMain });
       setHeaders({});

@@ -79,6 +79,7 @@ export type AqlStatement =
   | { kind: "InspectAgentNodeStmt" }
   | { kind: "UseAgentNodeStmt"; nodeId: AqlExpr }
   | { kind: "UseSpaceNodeStmt"; nodeId: AqlExpr; passphrase: AqlExpr }
+  | { kind: "UsePlatformKeyStmt"; key: AqlExpr }
   | { kind: "UseAmenityStmt"; amenityKind: AqlExpr }
   | { kind: "ShiftAgentNodeStmt"; nodeId: AqlExpr }
   | { kind: "InspectAgentStmt" }
@@ -164,4 +165,5 @@ export type AqlExecutionState = {
   targetNodeId: string | null;
   timeoutMs: number;
   headers: Record<string, string>;
+  platformServiceKey: string | null;
 };

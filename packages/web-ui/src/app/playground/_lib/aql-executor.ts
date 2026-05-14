@@ -85,9 +85,13 @@ function nowRequestId(): string {
 }
 
 function sdkRpcExtraHeaders(state: AqlExecutionState): Record<string, string> {
+  const platformKey = state.platformServiceKey?.trim() ?? "";
   return {
     "Content-Type": "application/json",
     ...state.headers,
+    ...(platformKey.length > 0
+      ? { "x-agent-service-key": platformKey }
+      : {}),
   };
 }
 
@@ -198,6 +202,13 @@ async function execStatement(
       }
       context.state = scopedContext.state;
       context.outputs = scopedContext.outputs;
+      return;
+    }
+    case "UsePlatformKeyStmt": {
+      const raw = String(evalExpr(statement.key, context.vars)).trim();
+      context.state.platformServiceKey = raw.length > 0 ? raw : null;
+      context.outputs.lastResponse = { platformKeyConfigured: raw.length > 0 };
+      context.outputs.lastHeaders = {};
       return;
     }
     case "ConnectStmt": {

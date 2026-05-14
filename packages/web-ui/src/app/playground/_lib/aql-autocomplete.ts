@@ -6,6 +6,8 @@
  * suggestions for the new content authoring keywords (`ADD SHOP ITEM`,
  * `ADD SUPERMARKET ITEM`, `ADD CARWASH CAR`) and their field names
  * (`TYPE`, `NAME`, `DESCRIPTION`, `PRICE`, `ROW`, `MODEL`, `YEAR`, `COLOR`).
+ * Wallet helpers include `SET WALLET PLAYER … BALANCE` and
+ * `SET WALLET BALANCE OF PLAYER …`.
  *
  * @see ./aql-parser.ts for the grammar these completions guide users toward.
  */
@@ -27,6 +29,11 @@ const KEYWORD_SUGGESTIONS: AqlSuggestion[] = [
   { label: "INSPECT AMENITY", insertText: "INSPECT AMENITY ", kind: "keyword" },
   { label: "CREATE SPACE", insertText: "CREATE SPACE ", kind: "keyword" },
   { label: "USE SPACE NODE", insertText: "USE SPACE NODE ", kind: "keyword" },
+  {
+    label: "USE PLATFORM KEY",
+    insertText: "USE PLATFORM KEY \"\"",
+    kind: "keyword",
+  },
   { label: "USE AMENITY", insertText: "USE AMENITY ", kind: "keyword" },
   { label: "ADD AMENITY", insertText: "ADD AMENITY ", kind: "keyword" },
   { label: "REMOVE SPACE", insertText: "REMOVE SPACE ", kind: "keyword" },
@@ -63,8 +70,18 @@ const KEYWORD_SUGGESTIONS: AqlSuggestion[] = [
     kind: "keyword",
   },
   {
+    label: "SET WALLET BALANCE OF PLAYER",
+    insertText: "SET WALLET BALANCE OF PLAYER \"\" 100",
+    kind: "keyword",
+  },
+  {
     label: "INSPECT WALLET",
     insertText: "INSPECT WALLET ",
+    kind: "keyword",
+  },
+  {
+    label: "INSPECT WALLET OF PLAYER",
+    insertText: "INSPECT WALLET OF PLAYER \"\"",
     kind: "keyword",
   },
   { label: "INSPECT AGENT NODE", insertText: "INSPECT AGENT NODE", kind: "keyword" },

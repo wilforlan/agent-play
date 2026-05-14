@@ -66,6 +66,9 @@ export function validateAql(program: AqlProgram): ValidationResult {
         hasAgentTarget = false;
         hasAmenityScope = false;
         return;
+      case "UsePlatformKeyStmt":
+        validateExpr(stmt.key);
+        return;
       case "UseAmenityStmt":
         validateExpr(stmt.amenityKind);
         if (!hasSpaceUse) {

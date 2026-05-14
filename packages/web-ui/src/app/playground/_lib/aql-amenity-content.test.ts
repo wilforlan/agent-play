@@ -19,8 +19,9 @@ const baseState = (): AqlExecutionState => ({
   targetAgentId: null,
   targetNodeId: null,
   timeoutMs: 8000,
-  headers: {},
-});
+    headers: {},
+    platformServiceKey: null,
+  });
 
 const buildRuntimeMock = (): {
   rpc: ReturnType<typeof vi.fn>;
@@ -71,6 +72,17 @@ describe("AQL — ADD SHOP/SUPERMARKET/CARWASH parsing", () => {
   it("parses SET WALLET PLAYER and INSPECT WALLET", () => {
     const source = `SET WALLET PLAYER "p1" BALANCE 50
 INSPECT WALLET "p1"`;
+    const parsed = parseAql(tokenizeAql(source));
+    expect(parsed.diagnostics).toHaveLength(0);
+    expect(parsed.program.statements.map((s) => s.kind)).toEqual([
+      "SetWalletStmt",
+      "InspectWalletStmt",
+    ]);
+  });
+
+  it("parses language-reference wallet syntax (OF PLAYER, BALANCE before id)", () => {
+    const source = `SET WALLET BALANCE OF PLAYER "player-42" 100
+INSPECT WALLET OF PLAYER "player-42"`;
     const parsed = parseAql(tokenizeAql(source));
     expect(parsed.diagnostics).toHaveLength(0);
     expect(parsed.program.statements.map((s) => s.kind)).toEqual([

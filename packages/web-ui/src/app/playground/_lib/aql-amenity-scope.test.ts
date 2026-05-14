@@ -23,6 +23,7 @@ const baseState = (): AqlExecutionState => ({
   targetNodeId: null,
   timeoutMs: 8000,
   headers: {},
+  platformServiceKey: null,
 });
 
 const buildRuntimeMock = (): {

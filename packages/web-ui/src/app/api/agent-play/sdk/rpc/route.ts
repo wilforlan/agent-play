@@ -7,6 +7,11 @@
  * below; all handlers go through {@link ./session-store.ts | the session
  * store} for persistence and fan out updates via the player chain.
  *
+ * When `AGENT_SERVICE_KEY` is set in the environment, privileged operations
+ * (`createSpace`, `addSpaceAmenity`, `addShopItem`, `addSupermarketItem`,
+ * `addCarWashCar`, `setPlayerWalletBalance`) also require the
+ * `x-agent-service-key` request header to match.
+ *
  * **Added in 3.1.1**:
  * - `addShopItem`, `addSupermarketItem`, `addCarWashCar` (+ matching
  *   `remove*`), insert with `sale.status = 'available'`.
@@ -70,6 +75,7 @@ import { createNodeAccount } from "@/server/agent-play/create-node-account";
 import { getRepository } from "@/server/get-world";
 import { publishWorldIntercomEvent } from "@/server/agent-play/intercom/fanout";
 import { isSpaceAmenityKind } from "@/server/agent-play/space-amenity";
+import { verifyAgentServicePlatformKey } from "@/server/agent-play/agent-service-platform-key";
 
 function requireSid(req: NextRequest): string | null {
   const raw = req.nextUrl.searchParams.get("sid");
@@ -351,6 +357,8 @@ export async function POST(req: NextRequest) {
         if (gate !== null) {
           return gate;
         }
+        const platformGate = verifyAgentServicePlatformKey(req);
+        if (platformGate !== null) return platformGate;
         const p = body.payload as {
           name?: unknown;
           designKey?: unknown;
@@ -387,6 +395,8 @@ export async function POST(req: NextRequest) {
         if (gate !== null) {
           return gate;
         }
+        const platformGate = verifyAgentServicePlatformKey(req);
+        if (platformGate !== null) return platformGate;
         if (!isSpaceAmenityKind(p.kind)) {
           return Response.json({ error: "invalid amenity kind" }, { status: 400 });
         }
@@ -560,6 +570,8 @@ export async function POST(req: NextRequest) {
         }
         const gate = await verifySpaceNodeHeaders(req, p.spaceId);
         if (gate !== null) return gate;
+        const platformGate = verifyAgentServicePlatformKey(req);
+        if (platformGate !== null) return platformGate;
         const spaceId = p.spaceId.trim();
         const amenityGate = await assertSpaceHasAmenity(world, spaceId, "shop");
         if (amenityGate !== null) return amenityGate;
@@ -598,6 +610,8 @@ export async function POST(req: NextRequest) {
         }
         const gate = await verifySpaceNodeHeaders(req, p.spaceId);
         if (gate !== null) return gate;
+        const platformGate = verifyAgentServicePlatformKey(req);
+        if (platformGate !== null) return platformGate;
         const spaceId = p.spaceId.trim();
         const amenityGate = await assertSpaceHasAmenity(
           world,
@@ -674,6 +688,8 @@ export async function POST(req: NextRequest) {
         }
         const gate = await verifySpaceNodeHeaders(req, p.spaceId);
         if (gate !== null) return gate;
+        const platformGate = verifyAgentServicePlatformKey(req);
+        if (platformGate !== null) return platformGate;
         const spaceId = p.spaceId.trim();
         const amenityGate = await assertSpaceHasAmenity(
           world,
@@ -931,6 +947,8 @@ export async function POST(req: NextRequest) {
       case "setPlayerWalletBalance": {
         const gate = await verifyMainNodeHeaders(req);
         if (gate !== null) return gate;
+        const platformGate = verifyAgentServicePlatformKey(req);
+        if (platformGate !== null) return platformGate;
         const p = body.payload as { playerId?: unknown; balanceUsd?: unknown };
         if (typeof p.playerId !== "string") {
           return Response.json({ error: "invalid payload" }, { status: 400 });

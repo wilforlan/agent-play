@@ -34,6 +34,8 @@ const KEYWORDS = new Set([
   "HUMAN",
   "PASSPHRASE",
   "USE",
+  "PLATFORM",
+  "KEY",
   "SHIFT",
   "INSPECT",
   "MAIN",

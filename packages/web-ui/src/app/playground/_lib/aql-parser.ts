@@ -9,7 +9,8 @@
  * ADD SHOP ITEM TYPE "book" NAME ... DESCRIPTION ... PRICE 12.5
  * ADD SUPERMARKET ITEM ROW 1 NAME ... DESCRIPTION ... PRICE 1.25
  * ADD CARWASH CAR SLOT 3 NAME ... MODEL ... YEAR 2024 PRICE 28999 COLOR "#5a87d1"
- * SET WALLET "<playerId>" BALANCE <usd>
+ * SET WALLET PLAYER "<playerId>" BALANCE <usd>
+ * SET WALLET BALANCE OF PLAYER "<playerId>" <usd>
  * ```
  *
  * @see ./aql-validator.ts and ./aql-executor.ts for downstream stages.
@@ -104,6 +105,22 @@ class Parser {
   private parseSet(): AqlStatement | null {
     this.advance();
     if (!this.matchKeyword("WALLET")) return null;
+    const head = this.peek();
+    if (
+      head !== null &&
+      head.kind === "keyword" &&
+      head.value === "BALANCE"
+    ) {
+      this.advance();
+      if (!this.matchKeyword("OF")) return null;
+      if (!this.matchKeyword("PLAYER")) return null;
+      const playerId = this.parseExpr();
+      if (playerId === null) return null;
+      const balanceUsd = this.parseExpr();
+      return balanceUsd === null
+        ? null
+        : { kind: "SetWalletStmt", playerId, balanceUsd };
+    }
     if (!this.matchKeyword("PLAYER")) return null;
     const playerId = this.parseExpr();
     if (playerId === null) return null;
@@ -172,6 +189,10 @@ class Parser {
     }
     if (token.value === "WALLET") {
       this.advance();
+      if (this.checkKeyword("OF")) {
+        this.advance();
+        if (!this.matchKeyword("PLAYER")) return null;
+      }
       const playerId = this.parseExpr();
       return playerId === null
         ? null
@@ -414,6 +435,12 @@ class Parser {
 
   private parseUse(): AqlStatement | null {
     this.advance();
+    if (this.checkKeyword("PLATFORM")) {
+      this.advance();
+      if (!this.matchKeyword("KEY")) return null;
+      const key = this.parseExpr();
+      return key === null ? null : { kind: "UsePlatformKeyStmt", key };
+    }
     if (this.checkKeyword("SPACE")) {
       this.advance();
       if (!this.matchKeyword("NODE")) return null;
