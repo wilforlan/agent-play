@@ -32,21 +32,21 @@
 # =============================================================================
 
 # =============================================================================
-# 1. Bravo Towers — car wash (premium lot)
+# 1. Bravo Towers — car wash (premium lot; wash-tier prices, low to flagship)
 # =============================================================================
 
 USE SPACE NODE "node:9728e8ed094690727a355be63f711dc3e40df3d068dccb3089bc96b7c338c966"
   PASSPHRASE "<BRAVO_TOWERS_PASSPHRASE>"
 
-ADD CARWASH CAR SLOT 1 NAME "Phantom Coupe"   MODEL "Rolls XV"    YEAR 2024 PRICE 385000 COLOR "#d4af37"
-ADD CARWASH CAR SLOT 2 NAME "Continental GT"  MODEL "Bentley"     YEAR 2023 PRICE 245000 COLOR "#1a2a4a"
-ADD CARWASH CAR SLOT 3 NAME "S-Class Maybach" MODEL "Mercedes"    YEAR 2024 PRICE 215000 COLOR "#0d0d0d"
-ADD CARWASH CAR SLOT 4 NAME "911 Turbo S"     MODEL "Porsche"     YEAR 2024 PRICE 235000 COLOR "#b80c1c"
-ADD CARWASH CAR SLOT 5 NAME "Aventador"       MODEL "Lamborghini" YEAR 2022 PRICE 498000 COLOR "#f7e600"
-ADD CARWASH CAR SLOT 6 NAME "Ghibli Trofeo"   MODEL "Maserati"    YEAR 2023 PRICE 98000  COLOR "#ecebe9"
-ADD CARWASH CAR SLOT 7 NAME "Range Rover SV"  MODEL "Land Rover"  YEAR 2024 PRICE 215000 COLOR "#224d33"
-ADD CARWASH CAR SLOT 8 NAME "Model S Plaid"   MODEL "Tesla"       YEAR 2024 PRICE 135000 COLOR "#61676c"
-ADD CARWASH CAR SLOT 9 NAME "Cullinan"        MODEL "Rolls-Royce" YEAR 2024 PRICE 450000 COLOR "#1c2540"
+ADD CARWASH CAR SLOT 1 NAME "Phantom Coupe"   MODEL "Rolls XV"    YEAR 2024 PRICE 25.99  COLOR "#d4af37"
+ADD CARWASH CAR SLOT 2 NAME "Continental GT"  MODEL "Bentley"     YEAR 2023 PRICE 35.50  COLOR "#1a2a4a"
+ADD CARWASH CAR SLOT 3 NAME "S-Class Maybach" MODEL "Mercedes"    YEAR 2024 PRICE 44.00  COLOR "#0d0d0d"
+ADD CARWASH CAR SLOT 4 NAME "911 Turbo S"     MODEL "Porsche"     YEAR 2024 PRICE 52.75  COLOR "#b80c1c"
+ADD CARWASH CAR SLOT 5 NAME "Aventador"       MODEL "Lamborghini" YEAR 2022 PRICE 61.25  COLOR "#f7e600"
+ADD CARWASH CAR SLOT 6 NAME "Ghibli Trofeo"   MODEL "Maserati"    YEAR 2023 PRICE 68.00  COLOR "#ecebe9"
+ADD CARWASH CAR SLOT 7 NAME "Range Rover SV"  MODEL "Land Rover"  YEAR 2024 PRICE 76.50  COLOR "#224d33"
+ADD CARWASH CAR SLOT 8 NAME "Model S Plaid"   MODEL "Tesla"       YEAR 2024 PRICE 87.99  COLOR "#61676c"
+ADD CARWASH CAR SLOT 9 NAME "Cullinan"        MODEL "Rolls-Royce" YEAR 2024 PRICE 99.99  COLOR "#1c2540"
 
 # =============================================================================
 # 2. My Plaza — car wash + shop + supermarket (everyday mix)
@@ -64,7 +64,7 @@ ADD CARWASH CAR SLOT 4 NAME "Wrangler"     MODEL "Jeep"   YEAR 2024 PRICE 42000 
 ADD CARWASH CAR SLOT 5 NAME "Model 3"      MODEL "Tesla"  YEAR 2024 PRICE 42500 COLOR "#1f3a5f"
 ADD CARWASH CAR SLOT 6 NAME "Outback"      MODEL "Subaru" YEAR 2024 PRICE 34500 COLOR "#4a6041"
 
-# ---- shop (8 items, mixed type) ----
+# ---- shop (11 items: 6 books, 3 music, 2 coffee) ----
 
 ADD SHOP ITEM TYPE "book"   NAME "The Pragmatic Programmer"
   DESCRIPTION "20th Anniversary Edition — Hunt & Thomas" PRICE 24.99
@@ -72,6 +72,12 @@ ADD SHOP ITEM TYPE "book"   NAME "Designing Data-Intensive Applications"
   DESCRIPTION "Reliable, scalable, maintainable systems" PRICE 39.99
 ADD SHOP ITEM TYPE "book"   NAME "Atomic Habits"
   DESCRIPTION "Tiny changes, remarkable results" PRICE 18.50
+ADD SHOP ITEM TYPE "book"   NAME "Clean Code"
+  DESCRIPTION "Robert C. Martin — craftsmanship and readability" PRICE 32.99
+ADD SHOP ITEM TYPE "book"   NAME "Structure and Interpretation of Computer Programs"
+  DESCRIPTION "Abelson & Sussman — classic CS foundations" PRICE 44.00
+ADD SHOP ITEM TYPE "book"   NAME "Working Effectively with Legacy Code"
+  DESCRIPTION "Michael Feathers — safe refactoring strategies" PRICE 36.50
 ADD SHOP ITEM TYPE "music"  NAME "Kind of Blue"
   DESCRIPTION "Miles Davis — modal jazz landmark" PRICE 14.99
 ADD SHOP ITEM TYPE "music"  NAME "Random Access Memories"
@@ -135,26 +141,35 @@ ADD SHOP ITEM TYPE "coffee" NAME "Sunrise Blend"
 ADD SHOP ITEM TYPE "coffee" NAME "Mill Dark Roast"
   DESCRIPTION "Bold, smoky, single-origin"              PRICE 15.50
 
-# ---- supermarket (focus on fresh produce; sparser rows) ----
+# ---- supermarket (full 4×5 grid; same capacity as My Plaza) ----
 
-# Row 1 - Fruits (full)
-ADD SUPERMARKET ITEM ROW 1 NAME "Apple"        DESCRIPTION "Pick of the orchard"   PRICE 1.10 COLUMN 1
-ADD SUPERMARKET ITEM ROW 1 NAME "Banana"       DESCRIPTION "Fair trade"             PRICE 0.55 COLUMN 2
-ADD SUPERMARKET ITEM ROW 1 NAME "Mango"        DESCRIPTION "Alphonso, in season"    PRICE 2.40 COLUMN 3
-ADD SUPERMARKET ITEM ROW 1 NAME "Strawberries" DESCRIPTION "Sunday market pick"     PRICE 4.20 COLUMN 4
-ADD SUPERMARKET ITEM ROW 1 NAME "Cucumber"     DESCRIPTION "Hothouse, English"      PRICE 1.30 COLUMN 5
+# Row 1 - Fruits
+ADD SUPERMARKET ITEM ROW 1 NAME "Apple"        DESCRIPTION "Pick of the orchard"      PRICE 1.10 COLUMN 1
+ADD SUPERMARKET ITEM ROW 1 NAME "Banana"       DESCRIPTION "Fair trade"                PRICE 0.55 COLUMN 2
+ADD SUPERMARKET ITEM ROW 1 NAME "Mango"        DESCRIPTION "Alphonso, in season"       PRICE 2.40 COLUMN 3
+ADD SUPERMARKET ITEM ROW 1 NAME "Strawberries" DESCRIPTION "Sunday market pick"        PRICE 4.20 COLUMN 4
+ADD SUPERMARKET ITEM ROW 1 NAME "Cucumber"     DESCRIPTION "Hothouse, English"         PRICE 1.30 COLUMN 5
 
-# Row 2 - Mens (sparse)
-ADD SUPERMARKET ITEM ROW 2 NAME "T-Shirt" DESCRIPTION "Organic cotton tee"   PRICE 22.00 COLUMN 1
-ADD SUPERMARKET ITEM ROW 2 NAME "Cap"     DESCRIPTION "SandMill embroidered" PRICE 16.00 COLUMN 3
+# Row 2 - Mens
+ADD SUPERMARKET ITEM ROW 2 NAME "T-Shirt"      DESCRIPTION "Organic cotton tee"        PRICE 22.00 COLUMN 1
+ADD SUPERMARKET ITEM ROW 2 NAME "Work Apron"   DESCRIPTION "Waxed canvas, brass pins"  PRICE 34.00 COLUMN 2
+ADD SUPERMARKET ITEM ROW 2 NAME "Cap"          DESCRIPTION "SandMill embroidered"      PRICE 16.00 COLUMN 3
+ADD SUPERMARKET ITEM ROW 2 NAME "Wool Socks"    DESCRIPTION "Cable knit, natural dye"   PRICE 14.50 COLUMN 4
+ADD SUPERMARKET ITEM ROW 2 NAME "Canvas Belt"   DESCRIPTION "Solid brass buckle"        PRICE 28.00 COLUMN 5
 
-# Row 3 - Womens (sparse)
-ADD SUPERMARKET ITEM ROW 3 NAME "Scarf"      DESCRIPTION "Hand-loomed"     PRICE 32.00 COLUMN 2
-ADD SUPERMARKET ITEM ROW 3 NAME "Sunglasses" DESCRIPTION "Tortoise frames" PRICE 42.00 COLUMN 4
+# Row 3 - Womens
+ADD SUPERMARKET ITEM ROW 3 NAME "Linen Wrap"   DESCRIPTION "Breathable, oat color"     PRICE 48.00 COLUMN 1
+ADD SUPERMARKET ITEM ROW 3 NAME "Scarf"        DESCRIPTION "Hand-loomed"               PRICE 32.00 COLUMN 2
+ADD SUPERMARKET ITEM ROW 3 NAME "Market Tote"  DESCRIPTION "Heavy linen, inner pocket" PRICE 36.00 COLUMN 3
+ADD SUPERMARKET ITEM ROW 3 NAME "Sunglasses"    DESCRIPTION "Tortoise frames"           PRICE 42.00 COLUMN 4
+ADD SUPERMARKET ITEM ROW 3 NAME "Silk Bandana" DESCRIPTION "Wildflower print"          PRICE 19.00 COLUMN 5
 
-# Row 4 - Kids (sparse)
-ADD SUPERMARKET ITEM ROW 4 NAME "Storybook" DESCRIPTION "Tales of the mill" PRICE 13.50 COLUMN 1
-ADD SUPERMARKET ITEM ROW 4 NAME "Crayons"   DESCRIPTION "Beeswax, 24 colors" PRICE 9.00  COLUMN 3
+# Row 4 - Kids
+ADD SUPERMARKET ITEM ROW 4 NAME "Storybook"   DESCRIPTION "Tales of the mill"         PRICE 13.50 COLUMN 1
+ADD SUPERMARKET ITEM ROW 4 NAME "Crayons"     DESCRIPTION "Beeswax, 24 colors"         PRICE 9.00  COLUMN 2
+ADD SUPERMARKET ITEM ROW 4 NAME "Wooden Top"  DESCRIPTION "Turned maple, food-safe"   PRICE 8.50  COLUMN 3
+ADD SUPERMARKET ITEM ROW 4 NAME "Rain Boots"  DESCRIPTION "Matte olive, sizes 7-2"    PRICE 29.00 COLUMN 4
+ADD SUPERMARKET ITEM ROW 4 NAME "Puzzle Box"  DESCRIPTION "Coastal wildlife, 48 pc"    PRICE 11.99 COLUMN 5
 
 # =============================================================================
 # Done. Verify with:
