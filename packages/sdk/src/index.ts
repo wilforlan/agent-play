@@ -76,6 +76,7 @@ export {
   boundsContain,
   expandBoundsToMinimumPlayArea,
   MINIMUM_PLAY_WORLD_BOUNDS,
+  MINIMUM_STREET_LAYOUT_BOUNDS,
   type WorldBounds,
 } from "./lib/world-bounds.js";
 export {

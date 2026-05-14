@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  MINIMUM_PLAY_WORLD_BOUNDS,
+  MINIMUM_STREET_LAYOUT_BOUNDS,
   STREET_NAME_POOL,
   createVerticalStripSeedLayout,
 } from "@agent-play/sdk";
@@ -130,7 +130,7 @@ describe("WorldLayoutRepository", () => {
       throw new Error("pool");
     }
     const layout = createVerticalStripSeedLayout({
-      bounds: MINIMUM_PLAY_WORLD_BOUNDS,
+      bounds: MINIMUM_STREET_LAYOUT_BOUNDS,
       streets: [s0, s1, s2],
     });
     await repo.saveLayout(layout);
@@ -162,7 +162,7 @@ describe("WorldLayoutRepository", () => {
     }
     await repo.saveLayout(
       createVerticalStripSeedLayout({
-        bounds: MINIMUM_PLAY_WORLD_BOUNDS,
+        bounds: MINIMUM_STREET_LAYOUT_BOUNDS,
         streets: [s0, s1, s2],
       })
     );
@@ -185,7 +185,7 @@ describe("WorldLayoutRepository", () => {
     }
     await repo.saveLayout(
       createVerticalStripSeedLayout({
-        bounds: MINIMUM_PLAY_WORLD_BOUNDS,
+        bounds: MINIMUM_STREET_LAYOUT_BOUNDS,
         streets: [s0, s1, s2],
       })
     );
@@ -208,7 +208,7 @@ describe("WorldLayoutRepository", () => {
     }
     await repo.saveLayout(
       createVerticalStripSeedLayout({
-        bounds: MINIMUM_PLAY_WORLD_BOUNDS,
+        bounds: MINIMUM_STREET_LAYOUT_BOUNDS,
         streets: [s0, s1, s2],
       })
     );

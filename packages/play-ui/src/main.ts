@@ -91,6 +91,7 @@ import {
   listOccupancyPointsForZone,
   mergeSnapshotWithPlayerChainNode,
   MINIMUM_PLAY_WORLD_BOUNDS,
+  MINIMUM_STREET_LAYOUT_BOUNDS,
   occupancyKeyForPosition,
   parsePlayerChainFanoutNotifyFromSsePayload,
   parsePlayerChainNodeRpcBody,
@@ -724,7 +725,7 @@ function resolveWorldLayout(): WorldLayout {
     throw new Error("resolveWorldLayout: invalid street pool");
   }
   return createVerticalStripSeedLayout({
-    bounds: MINIMUM_PLAY_WORLD_BOUNDS,
+    bounds: MINIMUM_STREET_LAYOUT_BOUNDS,
     streets: [s0, s1, s2],
   });
 }

@@ -16,7 +16,7 @@ import type { WorldInteractionRole } from "./play-transport.js";
 import type { SpaceAmenityKind } from "./space-amenity.js";
 import { buildWorldMapFromOccupants as computeWorldMapBounds } from "./world-map.js";
 import {
-  MINIMUM_PLAY_WORLD_BOUNDS,
+  MINIMUM_STREET_LAYOUT_BOUNDS,
   STREET_NAME_POOL,
   createVerticalStripSeedLayout,
   type CarWashCar,
@@ -203,7 +203,7 @@ export function getDefaultPreviewWorldLayoutJson(): WorldLayoutJson {
     }
     defaultWorldLayoutJsonCache = buildSnapshotWorldLayout(
       createVerticalStripSeedLayout({
-        bounds: MINIMUM_PLAY_WORLD_BOUNDS,
+        bounds: MINIMUM_STREET_LAYOUT_BOUNDS,
         streets: [s0, s1, s2],
       })
     );

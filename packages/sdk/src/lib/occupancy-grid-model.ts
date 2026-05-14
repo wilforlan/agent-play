@@ -20,12 +20,12 @@ export function spatialZoneBounds(quartileIndex: number): WorldBounds {
   const { minX, maxX, minY, maxY } = MINIMUM_PLAY_WORLD_BOUNDS;
   const spanX = maxX - minX + 1;
   const spanY = maxY - minY + 1;
-  const halfX = spanX / 2;
-  const halfY = spanY / 2;
-  const midLeftMax = minX + halfX - 1;
-  const midRightMin = minX + halfX;
-  const midBottomMax = minY + halfY - 1;
-  const midTopMin = minY + halfY;
+  const leftSpanX = Math.floor(spanX / 2);
+  const leftSpanY = Math.floor(spanY / 2);
+  const midLeftMax = minX + leftSpanX - 1;
+  const midRightMin = minX + leftSpanX;
+  const midBottomMax = minY + leftSpanY - 1;
+  const midTopMin = minY + leftSpanY;
 
   switch (quartileIndex) {
     case 0:

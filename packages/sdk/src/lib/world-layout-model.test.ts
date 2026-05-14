@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { MINIMUM_PLAY_WORLD_BOUNDS } from "./world-bounds.js";
+import { MINIMUM_STREET_LAYOUT_BOUNDS } from "./world-bounds.js";
 import { STREET_NAME_POOL } from "./world-streets-pool.js";
 import {
   applyBoundsFieldUpdateToLayout,
@@ -32,7 +32,7 @@ const threeSeedStreets = (): [
 
 const getMinimumSeedLayout = () =>
   createVerticalStripSeedLayout({
-    bounds: MINIMUM_PLAY_WORLD_BOUNDS,
+    bounds: MINIMUM_STREET_LAYOUT_BOUNDS,
     streets: threeSeedStreets(),
   });
 
@@ -45,7 +45,7 @@ describe("world-layout-model", () => {
     expect(cellsForZone(agent).length).toBe(w * h);
   });
 
-  it("partitions minimum play bounds into vertical strips seven seven six", () => {
+  it("partitions street layout bounds into vertical strips seven seven six", () => {
     const layout = getMinimumSeedLayout();
     const [a, s, m] = layout.zones;
     if (a === undefined || s === undefined || m === undefined) {
@@ -54,8 +54,8 @@ describe("world-layout-model", () => {
     expect(a.rect.maxX - a.rect.minX + 1).toBe(7);
     expect(s.rect.maxX - s.rect.minX + 1).toBe(7);
     expect(m.rect.maxX - m.rect.minX + 1).toBe(6);
-    expect(a.rect.minY).toBe(MINIMUM_PLAY_WORLD_BOUNDS.minY);
-    expect(a.rect.maxY).toBe(MINIMUM_PLAY_WORLD_BOUNDS.maxY);
+    expect(a.rect.minY).toBe(MINIMUM_STREET_LAYOUT_BOUNDS.minY);
+    expect(a.rect.maxY).toBe(MINIMUM_STREET_LAYOUT_BOUNDS.maxY);
     const cellKeys = new Set<string>();
     for (const z of layout.zones) {
       for (const c of cellsForZone(z)) {
@@ -64,7 +64,7 @@ describe("world-layout-model", () => {
         cellKeys.add(k);
       }
     }
-    expect(cellKeys.size).toBe(400);
+    expect(cellKeys.size).toBe(60);
   });
 
   it("ranks occupancy points from zone center outward", () => {
@@ -104,9 +104,9 @@ describe("world-layout-model", () => {
     const layout = getMinimumSeedLayout();
     const agent = pickZoneForGroup(layout, "agent");
     const mcp = pickZoneForGroup(layout, "mcp");
-    expect(pointCellInZone(3.5, 10.5, agent)).toBe(true);
-    expect(pointCellInZone(16.5, 10.5, agent)).toBe(false);
-    expect(pointCellInZone(16.5, 10.5, mcp)).toBe(true);
+    expect(pointCellInZone(3.5, 1.5, agent)).toBe(true);
+    expect(pointCellInZone(10.5, 1.5, agent)).toBe(false);
+    expect(pointCellInZone(16.5, 1.5, mcp)).toBe(true);
   });
 
   it("returns next unused street from the canonical pool", () => {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  MINIMUM_PLAY_WORLD_BOUNDS,
+  MINIMUM_STREET_LAYOUT_BOUNDS,
   STREET_NAME_POOL,
   pickZoneForGroup,
 } from "@agent-play/sdk";
@@ -110,7 +110,7 @@ describe("bootstrapWorldLayoutIfNeeded", () => {
     const first = await bootstrapWorldLayoutIfNeeded({ repo });
     const agent = pickZoneForGroup(first, "agent");
     expect(agent.streetId).toBe(STREET_NAME_POOL[0]?.id);
-    expect(agent.rect.minX).toBe(MINIMUM_PLAY_WORLD_BOUNDS.minX);
+    expect(agent.rect.minX).toBe(MINIMUM_STREET_LAYOUT_BOUNDS.minX);
     expect(agent.rect.maxX - agent.rect.minX + 1).toBe(7);
     const second = await bootstrapWorldLayoutIfNeeded({ repo });
     expect(second.rev).toBe(first.rev);

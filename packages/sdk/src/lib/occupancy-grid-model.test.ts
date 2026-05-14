@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { MINIMUM_PLAY_WORLD_BOUNDS } from "./world-bounds.js";
+import { MINIMUM_STREET_LAYOUT_BOUNDS } from "./world-bounds.js";
 import {
   buildRankedOccupancyPointsForZone,
   centerOfZone,
@@ -41,7 +41,7 @@ const threeSeedStreets = (): [
 
 const layoutFixture = () =>
   createVerticalStripSeedLayout({
-    bounds: MINIMUM_PLAY_WORLD_BOUNDS,
+    bounds: MINIMUM_STREET_LAYOUT_BOUNDS,
     streets: threeSeedStreets(),
   });
 
@@ -57,7 +57,7 @@ describe("occupancy-grid-model (rect and legacy quartiles)", () => {
     const layout = layoutFixture();
     const agent = pickZoneForGroup(layout, "agent");
     const pts = listOccupancyPointsForZone(agent);
-    expect(pts.length).toBe(7 * 20 * 25);
+    expect(pts.length).toBe(7 * 3 * 25);
   });
 
   it("aggregates three strip zones to full minimum play discrete coverage", () => {
@@ -66,7 +66,7 @@ describe("occupancy-grid-model (rect and legacy quartiles)", () => {
       (acc, z) => acc + listOccupancyPointsForZone(z).length,
       0
     );
-    expect(sum).toBe(400 * 25);
+    expect(sum).toBe(60 * 25);
   });
 
   it("ranks agent layout points by distance from zone center", () => {
@@ -74,7 +74,7 @@ describe("occupancy-grid-model (rect and legacy quartiles)", () => {
     const agent = pickZoneForGroup(layout, "agent");
     const ranked = buildRankedOccupancyPointsForZone(agent);
     const center = centerOfZone(agent);
-    expect(ranked.length).toBe(7 * 20 * 25);
+    expect(ranked.length).toBe(7 * 3 * 25);
     for (let i = 1; i < ranked.length; i += 1) {
       const prev = ranked[i - 1];
       const cur = ranked[i];
@@ -92,7 +92,7 @@ describe("occupancy-grid-model (rect and legacy quartiles)", () => {
     const space = pickZoneForGroup(layout, "space");
     const ranked = buildRankedOccupancyPointsForZone(space);
     const c = centerOfZone(space);
-    expect(ranked.length).toBe(7 * 20 * 25);
+    expect(ranked.length).toBe(7 * 3 * 25);
     const first = ranked[0];
     if (first === undefined) throw new Error("expected point");
     expect(Math.hypot(first.x - c.x, first.y - c.y)).toBeLessThanOrEqual(0.55);
@@ -253,13 +253,13 @@ describe("occupancy-grid-model (rect and legacy quartiles)", () => {
     expect(pointCellInSpatialZone(4.5, 14.5, SPATIAL_ZONE_INDEX_SPACES)).toBe(true);
   });
 
-  it("layout agent zone center stays within minimum play rect", () => {
+  it("layout agent zone center stays within street layout rect", () => {
     const layout = layoutFixture();
     const agent = pickZoneForGroup(layout, "agent");
     const pts = listOccupancyPointsForZone(agent);
     const c = centerOfZone(agent);
-    expect(c.x).toBeGreaterThanOrEqual(MINIMUM_PLAY_WORLD_BOUNDS.minX);
-    expect(c.y).toBeGreaterThanOrEqual(MINIMUM_PLAY_WORLD_BOUNDS.minY);
+    expect(c.x).toBeGreaterThanOrEqual(MINIMUM_STREET_LAYOUT_BOUNDS.minX);
+    expect(c.y).toBeGreaterThanOrEqual(MINIMUM_STREET_LAYOUT_BOUNDS.minY);
     expect(pts.length).toBeGreaterThan(0);
     expect(pointCellInZone(c.x, c.y, agent)).toBe(true);
   });

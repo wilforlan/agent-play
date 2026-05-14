@@ -5,6 +5,7 @@ export {
   boundsContain,
   expandBoundsToMinimumPlayArea,
   MINIMUM_PLAY_WORLD_BOUNDS,
+  MINIMUM_STREET_LAYOUT_BOUNDS,
 } from "./lib/world-bounds.js";
 export {
   type OccupancyGridPoint,
