@@ -21,10 +21,13 @@ import {
   nodeCredentialsMaterialFromHumanPassphrase,
 } from "@agent-play/node-tools";
 import { cmdInitialize as runInitializeScaffold } from "./initialize.js";
-
-type BootstrapCliOpts = {
-  rootFilePath?: string;
-};
+import {
+  BOOTSTRAP_ENVIRONMENTS,
+  normalizeAgentPlayServerBaseUrl,
+  parseBootstrapEnvironmentChoice,
+  parseBootstrapNodeArgs,
+  type BootstrapCliOpts,
+} from "./bootstrap-node-args.js";
 
 type AgentRow = { agentId: string; name: string };
 type AgentNodeCredential = {
@@ -77,40 +80,6 @@ async function saveCredentials(c: AgentPlayCredentialsFile): Promise<void> {
   );
 }
 
-const BOOTSTRAP_ENVIRONMENTS = [
-  { id: "local-server", url: "http://127.0.0.1:3000" },
-  { id: "test-server", url: "https://test-agent-play.com" },
-  { id: "main-server", url: "https://agent-play.com" },
-] as const;
-
-function parseBootstrapEnvironmentAnswer(raw: string): string | null {
-  const t = raw.trim().toLowerCase();
-  if (t === "" || t === "1") {
-    return BOOTSTRAP_ENVIRONMENTS[0].url;
-  }
-  if (t === "2") {
-    return BOOTSTRAP_ENVIRONMENTS[1].url;
-  }
-  if (t === "3") {
-    return BOOTSTRAP_ENVIRONMENTS[2].url;
-  }
-  for (const e of BOOTSTRAP_ENVIRONMENTS) {
-    if (t === e.id) {
-      return e.url;
-    }
-  }
-  if (t === "local") {
-    return BOOTSTRAP_ENVIRONMENTS[0].url;
-  }
-  if (t === "test") {
-    return BOOTSTRAP_ENVIRONMENTS[1].url;
-  }
-  if (t === "main") {
-    return BOOTSTRAP_ENVIRONMENTS[2].url;
-  }
-  return null;
-}
-
 async function promptBootstrapEnvironment(
   rl: ReturnType<typeof createInterface>
 ): Promise<string> {
@@ -119,16 +88,26 @@ async function promptBootstrapEnvironment(
     `  1) ${BOOTSTRAP_ENVIRONMENTS[0].id}  → ${BOOTSTRAP_ENVIRONMENTS[0].url}`,
     `  2) ${BOOTSTRAP_ENVIRONMENTS[1].id}   → ${BOOTSTRAP_ENVIRONMENTS[1].url}`,
     `  3) ${BOOTSTRAP_ENVIRONMENTS[2].id}   → ${BOOTSTRAP_ENVIRONMENTS[2].url}`,
-    "Enter 1–3, or local-server / test-server / main-server [1]: ",
+    "  4) custom       → third-party or self-hosted (you enter base URL)",
+    "Enter 1–4, paste an https://… or http://… URL, or a preset id (e.g. local-server) [1]: ",
   ].join("\n");
   for (;;) {
     const answer = await rl.question(lines);
-    const url = parseBootstrapEnvironmentAnswer(answer);
-    if (url !== null) {
-      return url.replace(/\/$/, "");
+    const parsed = parseBootstrapEnvironmentChoice(answer);
+    if (parsed.kind === "preset" || parsed.kind === "url") {
+      return parsed.url.replace(/\/$/, "");
+    }
+    if (parsed.kind === "custom") {
+      const custom = await rl.question("Server base URL (https://… or http://…): ");
+      const normalized = normalizeAgentPlayServerBaseUrl(custom);
+      if (normalized !== null) {
+        return normalized.replace(/\/$/, "");
+      }
+      console.log("Invalid URL. Example: https://agent-play.mycompany.com");
+      continue;
     }
     console.log(
-      "Invalid choice. Enter 1, 2, or 3, or one of: local-server, test-server, main-server."
+      "Invalid choice. Enter 1–4, paste a full http(s) URL, or: local-server, test-server, main-server, custom."
     );
   }
 }
@@ -247,17 +226,6 @@ async function promptInitializeServerType(
   }
 }
 
-function parseBootstrapNodeArgs(argv: string[]): BootstrapCliOpts {
-  const out: BootstrapCliOpts = {};
-  for (let i = 0; i < argv.length; i++) {
-    const a = argv[i];
-    if (a === "--root-file" && typeof argv[i + 1] === "string") {
-      out.rootFilePath = argv[++i];
-    }
-  }
-  return out;
-}
-
 function parseValidateAgentNodeArgs(argv: string[]): ValidateAgentNodeOpts | null {
   let wantsAll = false;
   let ids: string[] = [];
@@ -351,9 +319,16 @@ async function registerNodeOnServer(
 
 async function cmdBootstrapNode(argv: string[]): Promise<void> {
   const opts = parseBootstrapNodeArgs(argv);
-  const rl = createInterface({ input, output });
-  const serverUrl = await promptBootstrapEnvironment(rl);
-  rl.close();
+  const serverUrl =
+    opts.serverUrl ??
+    (await (async () => {
+      const rl = createInterface({ input, output });
+      try {
+        return await promptBootstrapEnvironment(rl);
+      } finally {
+        rl.close();
+      }
+    })());
   console.log(`Using server: ${serverUrl}`);
 
   const rootPath = resolveAgentPlayRootPath(opts);
@@ -978,7 +953,7 @@ async function main(): Promise<void> {
   console.error(
     [
       "Usage:",
-      "  agent-play create-main-node | bootstrap-node [--root-file <path>]",
+      "  agent-play create-main-node | bootstrap-node [--root-file <path>] [--server-url <https://...>]",
       "  agent-play inspect-node",
       "  agent-play create-agent-node | create",
       "  agent-play list-agent-nodes | list",

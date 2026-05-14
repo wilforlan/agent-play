@@ -18,12 +18,12 @@ This section describes how to provision **main** and **agent** nodes from the CL
 
 ### First-time main node (`create-main-node` / `bootstrap-node`)
 
-1. Run **`agent-play create-main-node`** (or **`bootstrap-node`**). The CLI prompts for **server URL** (or uses the default / env).
+1. Run **`agent-play create-main-node`** (or **`bootstrap-node`**). The CLI prompts for **server URL** (presets **1–3**, **4** for a custom third-party / self-hosted base URL, or paste an **`http(s)://…`** URL), unless you pass **`--server-url <https://…>`** to skip the prompt.
 2. The CLI generates a **10-word passphrase** (`createNodeCredentialMaterial`), hashes it locally to `passwHash`, derives your **main node id** under the active root key, and calls **`POST /api/nodes`** with **`{ "kind": "main", "nodeId": "<derived>", "passwHash": "<hashed material>" }`**. The server stores `passwHash` only and never re-hashes the supplied material. No **`x-node-id` / `x-node-passw`** headers are sent for this call.
 3. Credentials are saved to **`~/.agent-play/credentials.json`**: **`serverUrl`**, **`nodeId`** (main), and the **human-readable passphrase** (for you to store safely). Losing the phrase means losing access to that node identity.
 4. The CLI prints the **genesis / root key** string and your **main node id**; the genesis value should match **`.root`** when both sides use the same file.
 
-Optional: **`--root-file /path/to/.root`** if your root file is not in the default search paths.
+Optional: **`--root-file /path/to/.root`** if your root file is not in the default search paths. Optional: **`--server-url https://your-host`** for a non-default Agent Play deployment (skips the URL prompt).
 
 ### Hierarchy (mental model)
 
@@ -92,7 +92,7 @@ Deprecated for new work: **`buffer.txt`**-only flows and **`validateNodeDerivati
 
 ## Commands (summary)
 
-- **`create-main-node`** (alias **`bootstrap-node`**) — sign up main node; optional **`--root-file`**. Saves **`~/.agent-play/credentials.json`**.
+- **`create-main-node`** (alias **`bootstrap-node`**) — sign up main node; optional **`--root-file`**, **`--server-url`**. Saves **`~/.agent-play/credentials.json`**.
 - **`inspect-node`** — **`GET /api/nodes`** (authenticated).
 - **`create-agent-node`** (alias **`create`**) — **`POST /api/nodes/agent-node`**.
 - **`list-agent-nodes`** (alias **`list`**) — **`GET /api/agents`**.
@@ -128,6 +128,7 @@ From the repository root after **`npm install`** and **`npm run build:cli`**:
 
 ```bash
 npx agent-play create-main-node
+npx agent-play create-main-node --server-url https://my-agent-play.example.com
 npx agent-play initialize
 npx agent-play validate-main-node
 npx agent-play inspect-node

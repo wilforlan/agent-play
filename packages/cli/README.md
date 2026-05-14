@@ -26,7 +26,7 @@ Root key for derivation: `**--root-file**`, `**AGENT_PLAY_ROOT_FILE_PATH**`, or 
 
 1. **Server:** Redis (`REDIS_URL`) and a deployed web UI/API the CLI can reach (`AGENT_PLAY_SERVER_URL`).
 2. **Local `.root`:** Must match the server genesis root key (see resolution order above).
-3. **`create-main-node`** (`bootstrap-node`): prompts for server URL, generates a passphrase and **`passwHash`** locally with `createNodeCredentialMaterial`, registers **`POST /api/nodes`** with `{ kind: "main", nodeId, passwHash }`, and writes **`~/.agent-play/credentials.json`** with **`serverUrl`**, **`nodeId`**, and the human passphrase.
+3. **`create-main-node`** (`bootstrap-node`): prompts for server URL (or pass **`--server-url`**), or choose option **4** for a custom base URL; generates a passphrase and **`passwHash`** locally with `createNodeCredentialMaterial`, registers **`POST /api/nodes`** with `{ kind: "main", nodeId, passwHash }`, and writes **`~/.agent-play/credentials.json`** with **`serverUrl`**, **`nodeId`**, and the human passphrase.
 4. **`create-agent-node`**: derives an agent node locally with `createNodeCredentialMaterial`, calls **`POST /api/nodes/agent-node`** with `{ kind: "agent", parentNodeId, agentNodeId, agentNodePasswHash }`, and appends the result to **`credentials.json → agentNodes`**.
 5. `**inspect-node**`, `**list-agent-nodes**`, `**delete-***`, `**clear-node-credentials**`: inspect or tear down registrations; see `**docs/cli.md**` for the full table.
 
@@ -45,7 +45,7 @@ For Redis-direct checks (ops/CI), use `**node-tools**` script `**scripts/validat
 
 | Command                      | Aliases            | What it does                                                                                                                                                            |
 | ---------------------------- | ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `**create-main-node**`       | `bootstrap-node`   | Sign up a **main** node: `**POST /api/nodes`** (no node headers), save `**~/.agent-play/credentials.json**`. Optional `**--root-file**`.                                |
+| `**create-main-node**`       | `bootstrap-node`   | Sign up a **main** node: `**POST /api/nodes**` (no node headers), save `**~/.agent-play/credentials.json**`. Optional `**--root-file**`, `**--server-url**` (third-party base URL; skips prompt), or prompt option **4** (custom URL).                                |
 | `**inspect-node**`           | —                  | **GET /api/nodes** — genesis id, main node, **agent node ids** (`create-agent-node`), and **runtime** agent rows (SDK metadata) if present.                             |
 | `**create-agent-node`**      | `create`           | **POST /api/nodes/agent-node** — new agent node under your main node.                                                                                                   |
 | `**list-agent-nodes`**       | `list`             | **GET /api/agents** — lists registered agents.                                                                                                                          |
@@ -67,6 +67,7 @@ Node kinds: `**root` → `main` → `agent**`. Root has no passphrase; main and 
 
 ```bash
 npx agent-play create-main-node
+npx agent-play create-main-node --server-url https://my-agent-play.example.com
 npx agent-play validate-main-node
 npx agent-play inspect-node
 npx agent-play create-agent-node
