@@ -8,6 +8,9 @@
 #   1. Bravo Towers     — car wash
 #   2. My Plaza         — car wash, shop, supermarket
 #   3. SandMill Circle  — shop, supermarket
+#   4. Apple Store      — shop, supermarket
+#   5. Perraw Lane      — supermarket, car wash
+#   6. Albert Crest     — supermarket
 #
 # How to run
 # ----------
@@ -15,7 +18,8 @@
 #    passphrase. The playground session is reused by the script, so this
 #    file does *not* include a `CONNECT` statement.
 # 2. Replace every <PASSPHRASE> placeholder with the matching space's
-#    passphrase.
+#    passphrase. Replace placeholder space node ids for Apple Store, Perraw
+#    Lane, and Albert Crest (node:000…0001 / 0002 / 0003) with real ids.
 # 3. Paste this entire file into the editor and click Run.
 #
 # The script is safe to re-run for *new* slots — the server auto-assigns
@@ -26,8 +30,9 @@
 # Pre-requisites
 # --------------
 # - Each space must already have its amenities attached (you said you do).
-#   If not, run `ADD SPACE AMENITY "shop"` (etc.) for the active space
-#   first.
+#   If not, run `ADD AMENITY "shop"` (etc.) for the active space first.
+# - Spaces 4–6 use placeholder node ids (all zeros + trailing digit); replace
+#   with the real `node:…` from your layout before running.
 # - Every player wallet starts at $70 automatically; nothing to seed there.
 # =============================================================================
 
@@ -170,6 +175,154 @@ ADD SUPERMARKET ITEM ROW 4 NAME "Crayons"     DESCRIPTION "Beeswax, 24 colors"  
 ADD SUPERMARKET ITEM ROW 4 NAME "Wooden Top"  DESCRIPTION "Turned maple, food-safe"   PRICE 8.50  COLUMN 3
 ADD SUPERMARKET ITEM ROW 4 NAME "Rain Boots"  DESCRIPTION "Matte olive, sizes 7-2"    PRICE 29.00 COLUMN 4
 ADD SUPERMARKET ITEM ROW 4 NAME "Puzzle Box"  DESCRIPTION "Coastal wildlife, 48 pc"    PRICE 11.99 COLUMN 5
+
+# =============================================================================
+# 4. Apple Store — shop + supermarket (accessories & services tier, $29.99–$199.99)
+# =============================================================================
+#
+# Replace the USE SPACE NODE id with your real Apple Store space node id.
+
+USE SPACE NODE "node:0000000000000000000000000000000000000001"
+  PASSPHRASE "<APPLE_STORE_PASSPHRASE>"
+
+# ---- shop (TYPE is book | music | coffee — names skew Apple-retail) ----
+
+ADD SHOP ITEM TYPE "music" NAME "AirPods Pro 2"
+  DESCRIPTION "USB-C MagSafe case, active noise cancellation" PRICE 199.99
+ADD SHOP ITEM TYPE "music" NAME "AirPods 4 with ANC"
+  DESCRIPTION "Open-ear adaptive audio, wireless charging" PRICE 179.99
+ADD SHOP ITEM TYPE "music" NAME "HomePod mini"
+  DESCRIPTION "Computational audio, Thread / Matter ready" PRICE 99.99
+ADD SHOP ITEM TYPE "music" NAME "Beats Studio Pro"
+  DESCRIPTION "Lossless USB-C, spatial audio head tracking" PRICE 199.99
+ADD SHOP ITEM TYPE "book" NAME "Swift Programming Language (eBook)"
+  DESCRIPTION "Official language guide — latest language revision" PRICE 49.99
+ADD SHOP ITEM TYPE "book" NAME "Designed by Apple in California"
+  DESCRIPTION "Archive photo volume — products & craft" PRICE 199.99
+ADD SHOP ITEM TYPE "book" NAME "iPhone User Guide"
+  DESCRIPTION "Quick start, safety, and feature tour" PRICE 29.99
+ADD SHOP ITEM TYPE "book" NAME "Tips, Tricks & Shortcuts"
+  DESCRIPTION "Hidden gestures and Focus workflows" PRICE 34.99
+ADD SHOP ITEM TYPE "coffee" NAME "Apple Park Single Origin"
+  DESCRIPTION "Partner-roasted seasonal microlot, whole bean" PRICE 39.99
+ADD SHOP ITEM TYPE "coffee" NAME "Caffè Macs Espresso Blend"
+  DESCRIPTION "Dark chocolate notes, campus roast profile" PRICE 44.99
+
+# ---- supermarket (full 4×5 — accessories & lifestyle SKUs) ----
+
+# Row 1 - iPhone & MagSafe
+ADD SUPERMARKET ITEM ROW 1 NAME "Silicone Case with MagSafe" DESCRIPTION "iPhone 16 Pro, Storm Blue" PRICE 49.99 COLUMN 1
+ADD SUPERMARKET ITEM ROW 1 NAME "FineWoven Wallet with MagSafe" DESCRIPTION "Pacific Blue, Find My ready" PRICE 59.99 COLUMN 2
+ADD SUPERMARKET ITEM ROW 1 NAME "MagSafe Charger 1m" DESCRIPTION "Fast wireless pad, USB-C cable" PRICE 39.99 COLUMN 3
+ADD SUPERMARKET ITEM ROW 1 NAME "Battery Pack MagSafe" DESCRIPTION "Compact travel charge" PRICE 99.99 COLUMN 4
+ADD SUPERMARKET ITEM ROW 1 NAME "AirTag 4-pack" DESCRIPTION "Precision finding ready" PRICE 99.99 COLUMN 5
+
+# Row 2 - Power & iPad
+ADD SUPERMARKET ITEM ROW 2 NAME "140W USB-C Power Adapter" DESCRIPTION "MacBook Pro fast charge" PRICE 99.99 COLUMN 1
+ADD SUPERMARKET ITEM ROW 2 NAME "70W USB-C Compact Adapter" DESCRIPTION "GaN, foldable prongs" PRICE 59.99 COLUMN 2
+ADD SUPERMARKET ITEM ROW 2 NAME "USB-C to USB-C Cable 2m" DESCRIPTION "Thunderbolt 4 rated" PRICE 39.99 COLUMN 3
+ADD SUPERMARKET ITEM ROW 2 NAME "Apple Pencil Pro" DESCRIPTION "Barrel roll & squeeze" PRICE 129.99 COLUMN 4
+ADD SUPERMARKET ITEM ROW 2 NAME "Magic Keyboard iPad Pro 13" DESCRIPTION "Trackpad & function row" PRICE 199.99 COLUMN 5
+
+# Row 3 - Audio & display
+ADD SUPERMARKET ITEM ROW 3 NAME "AirPods Max Ear Cushions" DESCRIPTION "Midnight mesh kit" PRICE 69.99 COLUMN 1
+ADD SUPERMARKET ITEM ROW 3 NAME "USB-C to 3.5mm Adapter" DESCRIPTION "DAC for wired headphones" PRICE 35.00 COLUMN 2
+ADD SUPERMARKET ITEM ROW 3 NAME "Studio Display Nano-texture cloth" DESCRIPTION "Lint-free polishing" PRICE 29.99 COLUMN 3
+ADD SUPERMARKET ITEM ROW 3 NAME "Thunderbolt 4 Pro Cable 3m" DESCRIPTION "Black braided, 40Gb/s" PRICE 159.99 COLUMN 4
+ADD SUPERMARKET ITEM ROW 3 NAME "Polishing Cloth" DESCRIPTION "Safe for nano-texture glass" PRICE 29.99 COLUMN 5
+
+# Row 4 - Watch & bags
+ADD SUPERMARKET ITEM ROW 4 NAME "Sport Band S/M" DESCRIPTION "Soft fluoroelastomer, Starlight" PRICE 49.99 COLUMN 1
+ADD SUPERMARKET ITEM ROW 4 NAME "Trail Loop" DESCRIPTION "Lightweight alpine fit" PRICE 99.99 COLUMN 2
+ADD SUPERMARKET ITEM ROW 4 NAME "Hermès Single Tour" DESCRIPTION "Swift leather, stainless" PRICE 199.99 COLUMN 3
+ADD SUPERMARKET ITEM ROW 4 NAME "AirPods Pro Ear Tips S/M/L" DESCRIPTION "Replacement fit kit" PRICE 29.99 COLUMN 4
+ADD SUPERMARKET ITEM ROW 4 NAME "Incase BIONIC Messenger" DESCRIPTION "Recycled yarn, 16-inch MacBook" PRICE 149.99 COLUMN 5
+
+# =============================================================================
+# 5. Perraw Lane — supermarket + car wash (designer retail + prestige marques)
+# =============================================================================
+
+USE SPACE NODE "node:0000000000000000000000000000000000000002"
+  PASSPHRASE "<PERRAW_LANE_PASSPHRASE>"
+
+# ---- car wash (detail & care tier; names = flagship models) ----
+
+ADD CARWASH CAR SLOT 1 NAME "Spectre"           MODEL "Rolls-Royce" YEAR 2024 PRICE 199.99 COLOR "#0a0a0a"
+ADD CARWASH CAR SLOT 2 NAME "Continental GT"    MODEL "Bentley"     YEAR 2024 PRICE 174.99 COLOR "#1c2838"
+ADD CARWASH CAR SLOT 3 NAME "812 Competizione"  MODEL "Ferrari"     YEAR 2023 PRICE 199.99 COLOR "#c41e1e"
+ADD CARWASH CAR SLOT 4 NAME "Revuelto"          MODEL "Lamborghini" YEAR 2024 PRICE 189.99 COLOR "#6b8f2a"
+ADD CARWASH CAR SLOT 5 NAME "750S"              MODEL "McLaren"     YEAR 2024 PRICE 164.99 COLOR "#ff6600"
+ADD CARWASH CAR SLOT 6 NAME "DB12"              MODEL "Aston Martin" YEAR 2024 PRICE 149.99 COLOR "#0d3b2c"
+ADD CARWASH CAR SLOT 7 NAME "911 Turbo S"       MODEL "Porsche"     YEAR 2024 PRICE 29.99  COLOR "#c9a227"
+ADD CARWASH CAR SLOT 8 NAME "SL 63"             MODEL "Mercedes-AMG" YEAR 2024 PRICE 119.99 COLOR "#8b0000"
+ADD CARWASH CAR SLOT 9 NAME "Chiron Pur Sport"  MODEL "Bugatti"     YEAR 2022 PRICE 199.99 COLOR "#003366"
+
+# ---- supermarket (full 4×5 — designer fashion & objects) ----
+
+# Row 1 - Leather & jewelry
+ADD SUPERMARKET ITEM ROW 1 NAME "Bottega Cassette Card Case" DESCRIPTION "Intrecciato nappa" PRICE 199.99 COLUMN 1
+ADD SUPERMARKET ITEM ROW 1 NAME "Loewe Puzzle Mini" DESCRIPTION "Classic calfskin crossbody" PRICE 199.99 COLUMN 2
+ADD SUPERMARKET ITEM ROW 1 NAME "Cartier Love Bracelet SM" DESCRIPTION "18K rose gold narrow" PRICE 199.99 COLUMN 3
+ADD SUPERMARKET ITEM ROW 1 NAME "Tiffany T Wire Ring" DESCRIPTION "Sterling silver, polished" PRICE 29.99 COLUMN 4
+ADD SUPERMARKET ITEM ROW 1 NAME "Van Cleef Sweet Alhambra" DESCRIPTION "Mother-of-pearl pendant" PRICE 199.99 COLUMN 5
+
+# Row 2 - Mens designer
+ADD SUPERMARKET ITEM ROW 2 NAME "Tom Ford Ombre Leather 50ml" DESCRIPTION "Iconic leather accord" PRICE 199.99 COLUMN 1
+ADD SUPERMARKET ITEM ROW 2 NAME "Zegna Triple Stitch Sneaker" DESCRIPTION "Deerskin, triple cross" PRICE 199.99 COLUMN 2
+ADD SUPERMARKET ITEM ROW 2 NAME "Loro Piana Roadster Coat" DESCRIPTION "Storm System cashmere" PRICE 199.99 COLUMN 3
+ADD SUPERMARKET ITEM ROW 2 NAME "Brunello Cucinelli Crew" DESCRIPTION "Fine-gauge silk-cotton" PRICE 169.99 COLUMN 4
+ADD SUPERMARKET ITEM ROW 2 NAME "Saint Laurent SL 28" DESCRIPTION "Acetate square sunglasses" PRICE 189.99 COLUMN 5
+
+# Row 3 - Womens designer
+ADD SUPERMARKET ITEM ROW 3 NAME "Max Mara Manuela" DESCRIPTION "Camel hair wrap coat" PRICE 199.99 COLUMN 1
+ADD SUPERMARKET ITEM ROW 3 NAME "The Row Margaux 10" DESCRIPTION "Grained leather tote" PRICE 199.99 COLUMN 2
+ADD SUPERMARKET ITEM ROW 3 NAME "Manolo Blahnik Hangisi" DESCRIPTION "Satin pump, crystal buckle" PRICE 199.99 COLUMN 3
+ADD SUPERMARKET ITEM ROW 3 NAME "Dior Tribales Earring" DESCRIPTION "Resin pearl, CD hardware" PRICE 199.99 COLUMN 4
+ADD SUPERMARKET ITEM ROW 3 NAME "Chanel N°5 L'Eau 100ml" DESCRIPTION "Sheer modern floral" PRICE 159.99 COLUMN 5
+
+# Row 4 - Home & kids luxe
+ADD SUPERMARKET ITEM ROW 4 NAME "Hermès Avalon III Throw" DESCRIPTION "90% merino / 10% cashmere" PRICE 199.99 COLUMN 1
+ADD SUPERMARKET ITEM ROW 4 NAME "Fornasetti Architettura Plate" DESCRIPTION "Fine porcelain wall plate" PRICE 149.99 COLUMN 2
+ADD SUPERMARKET ITEM ROW 4 NAME "Bonpoint Cashmere Baby Set" DESCRIPTION "Hat, booties, blanket" PRICE 199.99 COLUMN 3
+ADD SUPERMARKET ITEM ROW 4 NAME "Jacadi Paris Smocked Dress" DESCRIPTION "Cotton voile, occasion" PRICE 129.99 COLUMN 4
+ADD SUPERMARKET ITEM ROW 4 NAME "Christofle Mood Party Set" DESCRIPTION "24-piece flatware egg" PRICE 199.99 COLUMN 5
+
+# =============================================================================
+# 6. Albert Crest — supermarket (global prestige care & apothecary)
+# =============================================================================
+
+USE SPACE NODE "node:0000000000000000000000000000000000000003"
+  PASSPHRASE "<ALBERT_CREST_PASSPHRASE>"
+
+# ---- supermarket (full 4×5 — dermatologist-grade & global care brands) ----
+
+# Row 1 - Cleansers & essences
+ADD SUPERMARKET ITEM ROW 1 NAME "La Mer Cleansing Foam" DESCRIPTION "Miracle Broth gentle foam" PRICE 95.00 COLUMN 1
+ADD SUPERMARKET ITEM ROW 1 NAME "SK-II Facial Treatment Essence 160ml" DESCRIPTION "Pitera flagship toner" PRICE 199.99 COLUMN 2
+ADD SUPERMARKET ITEM ROW 1 NAME "Augustinus Bader The Cream 50ml" DESCRIPTION "TFC8 stem-cell signal complex" PRICE 199.99 COLUMN 3
+ADD SUPERMARKET ITEM ROW 1 NAME "Tatcha Rice Wash" DESCRIPTION "pH-neutral creamy polish" PRICE 38.00 COLUMN 4
+ADD SUPERMARKET ITEM ROW 1 NAME "Dr. Barbara Sturm Cleanser" DESCRIPTION "Purslane calming gel" PRICE 70.00 COLUMN 5
+
+# Row 2 - Serums & treatments
+ADD SUPERMARKET ITEM ROW 2 NAME "SkinCeuticals C E Ferulic" DESCRIPTION "15% L-ascorbic antioxidant" PRICE 199.99 COLUMN 1
+ADD SUPERMARKET ITEM ROW 2 NAME "Drunk Elephant Protini Polypeptide" DESCRIPTION "Signal peptide cream" PRICE 68.00 COLUMN 2
+ADD SUPERMARKET ITEM ROW 2 NAME "Sunday Riley Good Genes" DESCRIPTION "Lactic acid treatment" PRICE 85.00 COLUMN 3
+ADD SUPERMARKET ITEM ROW 2 NAME "Estée Lauder Advanced Night Repair" DESCRIPTION "Chronolux repair serum 50ml" PRICE 125.00 COLUMN 4
+ADD SUPERMARKET ITEM ROW 2 NAME "Shiseido Ultimune Power Infusing" DESCRIPTION "ImuGeneration red defense" PRICE 110.00 COLUMN 5
+
+# Row 3 - Moisturizers & SPF
+ADD SUPERMARKET ITEM ROW 3 NAME "La Mer Moisturizing Soft Cream 30ml" DESCRIPTION "Miracle Broth whipped texture" PRICE 199.99 COLUMN 1
+ADD SUPERMARKET ITEM ROW 3 NAME "Supergoop Unseen Sunscreen SPF 40" DESCRIPTION "Invisible primer-finish" PRICE 38.00 COLUMN 2
+ADD SUPERMARKET ITEM ROW 3 NAME "EltaMD UV Clear SPF 46" DESCRIPTION "Niacinamide for sensitive skin" PRICE 43.00 COLUMN 3
+ADD SUPERMARKET ITEM ROW 3 NAME "Biologique Recherche P50 1970" DESCRIPTION "Classic acid exfoliating toner" PRICE 199.99 COLUMN 4
+ADD SUPERMARKET ITEM ROW 3 NAME "Caudalie Premier Cru Rich Cream" DESCRIPTION "Resveratrol lift complex" PRICE 129.00 COLUMN 5
+
+# Row 4 - Body & hair care
+ADD SUPERMARKET ITEM ROW 4 NAME "Oribe Gold Lust Shampoo" DESCRIPTION "Repair & restore liter refill" PRICE 199.99 COLUMN 1
+ADD SUPERMARKET ITEM ROW 4 NAME "Aesop Resurrection Aromatique" DESCRIPTION "Hand wash 500ml pump" PRICE 45.00 COLUMN 2
+ADD SUPERMARKET ITEM ROW 4 NAME "Le Labo Santal 33 Body Lotion" DESCRIPTION "Vegan lotion 237ml" PRICE 75.00 COLUMN 3
+ADD SUPERMARKET ITEM ROW 4 NAME "Diptyque Philosykos Shower Foam" DESCRIPTION "Fig leaf gel mousse" PRICE 52.00 COLUMN 4
+ADD SUPERMARKET ITEM ROW 4 NAME "Byredo Gypsy Water Body Cream" DESCRIPTION "Bergamot & incense cream" PRICE 99.00 COLUMN 5
 
 # =============================================================================
 # Done. Verify with:
