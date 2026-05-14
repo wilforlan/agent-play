@@ -10,7 +10,7 @@
 #   3. SandMill Circle  — shop, supermarket
 #   4. Apple Store      — shop, supermarket
 #   5. Perraw Lane      — supermarket, car wash
-#   6. Albert Crest     — supermarket
+#   7. Nelson SPA       — shop, supermarket
 #
 # How to run
 # ----------
@@ -323,6 +323,72 @@ ADD SUPERMARKET ITEM ROW 4 NAME "Aesop Resurrection Aromatique" DESCRIPTION "Han
 ADD SUPERMARKET ITEM ROW 4 NAME "Le Labo Santal 33 Body Lotion" DESCRIPTION "Vegan lotion 237ml" PRICE 75.00 COLUMN 3
 ADD SUPERMARKET ITEM ROW 4 NAME "Diptyque Philosykos Shower Foam" DESCRIPTION "Fig leaf gel mousse" PRICE 52.00 COLUMN 4
 ADD SUPERMARKET ITEM ROW 4 NAME "Byredo Gypsy Water Body Cream" DESCRIPTION "Bergamot & incense cream" PRICE 99.00 COLUMN 5
+
+# =============================================================================
+# 7. Nelson SPA — supermarket (bath, body, treatment & gift lines)
+# =============================================================================
+#
+# Replace the USE SPACE NODE id and PASSPHRASE with your Nelson SPA space.
+
+USE SPACE NODE "node:0000000000000000000000000000000000000004"
+  PASSPHRASE "<NELSON_SPA_PASSPHRASE>"
+
+# ---- shop (book | music | coffee — Nelson SPA retail lounge) ----
+
+ADD SHOP ITEM TYPE "book" NAME "Nelson SPA Rituals & Seasons"
+  DESCRIPTION "House guide: steam, dry brush, and lunar bath calendar" PRICE 22.00
+ADD SHOP ITEM TYPE "book" NAME "The Science of Hydrotherapy"
+  DESCRIPTION "Evidence-led protocols for contrast bathing and recovery" PRICE 28.50
+ADD SHOP ITEM TYPE "book" NAME "Aromatherapy for Caregivers"
+  DESCRIPTION "Safe dilutions, diffusion, and workplace calm practices" PRICE 19.95
+ADD SHOP ITEM TYPE "book" NAME "Facial Mapping & Gua Sha Basics"
+  DESCRIPTION "Illustrated lymphatic strokes for home ritual" PRICE 24.00
+ADD SHOP ITEM TYPE "book" NAME "Mindful Breathing in Ten Minutes"
+  DESCRIPTION "Short exercises for pre-treatment and sleep" PRICE 14.50
+ADD SHOP ITEM TYPE "book" NAME "The Quiet Kitchen — Spa Teas"
+  DESCRIPTION "Blending botanicals without added sugar" PRICE 18.00
+
+ADD SHOP ITEM TYPE "music" NAME "Nelson SPA — Dawn Stillness"
+  DESCRIPTION "Ambient piano & distant rain; 62-minute continuous mix" PRICE 12.99
+ADD SHOP ITEM TYPE "music" NAME "Nelson SPA — Forest Floor"
+  DESCRIPTION "Binaural woodland walk; headphones recommended" PRICE 12.99
+ADD SHOP ITEM TYPE "music" NAME "Nelson SPA — Deep Drift"
+  DESCRIPTION "Low-tempo pads for float and massage rooms" PRICE 12.99
+
+ADD SHOP ITEM TYPE "coffee" NAME "Nelson SPA Calm Roast (Decaf)"
+  DESCRIPTION "Swiss-water decaf; milk chocolate and almond finish" PRICE 16.00
+ADD SHOP ITEM TYPE "coffee" NAME "Nelson SPA Adaptogen Latte Blend"
+  DESCRIPTION "Instant powder — ashwagandha, cacao, oat milk notes" PRICE 17.50
+
+# ---- supermarket (full 4×5 — Nelson SPA house collection) ----
+
+# Row 1 — Bath soaks & salts (maps to supermarket row 1 in the UI)
+ADD SUPERMARKET ITEM ROW 1 NAME "Nelson SPA Dead Sea Mineral Soak" DESCRIPTION "Fine crystals, magnesium-rich evening bath" PRICE 24.00 COLUMN 1
+ADD SUPERMARKET ITEM ROW 1 NAME "Nelson SPA Eucalyptus Steam Shower Tabs" DESCRIPTION "Six tabs; menthol-camphor release for sinus steam" PRICE 16.50 COLUMN 2
+ADD SUPERMARKET ITEM ROW 1 NAME "Nelson SPA Coconut Milk Bath" DESCRIPTION "Powder-to-milk, vanilla-orchid comfort soak" PRICE 19.95 COLUMN 3
+ADD SUPERMARKET ITEM ROW 1 NAME "Nelson SPA Magnesium Recovery Flakes" DESCRIPTION "Zechstein flakes for post-workout soak" PRICE 22.00 COLUMN 4
+ADD SUPERMARKET ITEM ROW 1 NAME "Nelson SPA Rose Geranium Bath Oil" DESCRIPTION "Glass dropper, 50ml; disperses without slick ring" PRICE 28.00 COLUMN 5
+
+# Row 2 — Massage, scrubs & muscle care
+ADD SUPERMARKET ITEM ROW 2 NAME "Nelson SPA Warm Stone Massage Oil" DESCRIPTION "Unscented grapeseed & jojoba glide base, 250ml" PRICE 32.00 COLUMN 1
+ADD SUPERMARKET ITEM ROW 2 NAME "Nelson SPA Arctic Mint Muscle Balm" DESCRIPTION "Wintergreen & peppermint, shea-wax stick" PRICE 18.00 COLUMN 2
+ADD SUPERMARKET ITEM ROW 2 NAME "Nelson SPA Jasmine Rice Body Polish" DESCRIPTION "Fine rice bran & sugar scrub, rinse-clean" PRICE 26.00 COLUMN 3
+ADD SUPERMARKET ITEM ROW 2 NAME "Nelson SPA Himalayan Salt Body Scrub" DESCRIPTION "Pink salt, sweet almond oil, small-batch jar" PRICE 29.50 COLUMN 4
+ADD SUPERMARKET ITEM ROW 2 NAME "Nelson SPA Arnica Recovery Gel" DESCRIPTION "Cooling gel for legs & shoulders after deep tissue" PRICE 21.00 COLUMN 5
+
+# Row 3 — Face, eyes & calm ritual
+ADD SUPERMARKET ITEM ROW 3 NAME "Nelson SPA Seaweed Clay Mask" DESCRIPTION "Weekly reset; French green clay & laminaria" PRICE 34.00 COLUMN 1
+ADD SUPERMARKET ITEM ROW 3 NAME "Nelson SPA Cucumber Gel Eye Patches" DESCRIPTION "Cooling hydrogel set of 6 pairs" PRICE 14.00 COLUMN 2
+ADD SUPERMARKET ITEM ROW 3 NAME "Nelson SPA White Tea Face Mist" DESCRIPTION "Niacinamide mist, 100ml glass atomizer" PRICE 22.00 COLUMN 3
+ADD SUPERMARKET ITEM ROW 3 NAME "Nelson SPA Lavender Weighted Eye Mask" DESCRIPTION "Silk cover, glass microbead fill, freezer-safe sleeve" PRICE 42.00 COLUMN 4
+ADD SUPERMARKET ITEM ROW 3 NAME "Nelson SPA Chamomile Alcohol-Free Toner" DESCRIPTION "200ml; soothes after steam or wax" PRICE 19.00 COLUMN 5
+
+# Row 4 — Robes, ambience & gifts
+ADD SUPERMARKET ITEM ROW 4 NAME "Nelson SPA Waffle Robe" DESCRIPTION "Unisex oat cotton, knee length, deep pockets" PRICE 78.00 COLUMN 1
+ADD SUPERMARKET ITEM ROW 4 NAME "Nelson SPA Memory Foam Linen Slippers" DESCRIPTION "Open toe, washable sole, one size adj." PRICE 32.00 COLUMN 2
+ADD SUPERMARKET ITEM ROW 4 NAME "Nelson SPA Cedarwood Soy Candle 220g" DESCRIPTION "Single wick, 45h burn, matte ceramic vessel" PRICE 36.00 COLUMN 3
+ADD SUPERMARKET ITEM ROW 4 NAME "Nelson SPA Spa Day Gift Card" DESCRIPTION "Redeem for 60 or 90 minutes; boxed certificate" PRICE 50.00 COLUMN 4
+ADD SUPERMARKET ITEM ROW 4 NAME "Nelson SPA Serenity Loose Leaf Tea" DESCRIPTION "Chamomile, lemon balm & rose hips, 80g tin" PRICE 15.00 COLUMN 5
 
 # =============================================================================
 # Done. Verify with:

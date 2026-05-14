@@ -41,20 +41,18 @@ import {
   assertAgentToolContract,
   extractAssistToolNames,
 } from "./agent-tool-contract.js";
-import type {
-  PreviewSnapshotJson,
-  SpaceCatalogEntryJson,
-} from "./preview-serialize.js";
 import {
   serializeWorldJourneyUpdate,
-  buildSnapshotWorldMap,
   buildSnapshotWorldLayout,
   normalizePreviewSnapshot,
+  snapshotWorldMapWithResolvedAgents,
+  type PreviewSnapshotJson,
   type PreviewWorldMapAgentOccupantJson,
-  type PreviewWorldMapMcpOccupantJson,
   type PreviewWorldMapHumanOccupantJson,
+  type PreviewWorldMapMcpOccupantJson,
   type PreviewWorldMapOccupantJson,
   type PreviewWorldMapStructureOccupantJson,
+  type SpaceCatalogEntryJson,
   type WorldJourneyUpdateJson,
 } from "./preview-serialize.js";
 import type { RedisFanoutItem } from "./world-redis-sync.js";
@@ -62,6 +60,7 @@ import { runStoredWorldMutation } from "./world-mutation-pipeline.js";
 import {
   applyBoundsFieldUpdateToLayout,
   clampWorldPosition,
+  pickZoneForGroup,
   type WorldBounds,
   type WorldLayout,
   type WorldLayoutBoundsField,
@@ -134,10 +133,16 @@ function snapshotWithOccupants(
   base: PreviewSnapshotJson,
   occupants: PreviewWorldMapOccupantJson[]
 ): PreviewSnapshotJson {
-  const normalized = normalizePreviewSnapshot(base);
+  const normalized = normalizePreviewSnapshot({
+    ...base,
+    worldMap: { ...base.worldMap, occupants },
+  });
   return {
     ...normalized,
-    worldMap: buildSnapshotWorldMap(occupants),
+    worldMap: snapshotWorldMapWithResolvedAgents(
+      normalized.worldMap,
+      normalized.worldLayout
+    ),
   };
 }
 
@@ -628,9 +633,12 @@ export class PlayWorld {
       }
       return emptySnapshot(mainNodeId);
     }
-    const normalized = resolveStructureAnchorsAtRuntime(
-      normalizePreviewSnapshot(raw)
-    );
+    const n = normalizePreviewSnapshot(raw);
+    const withAgents = {
+      ...n,
+      worldMap: snapshotWorldMapWithResolvedAgents(n.worldMap, n.worldLayout),
+    };
+    const normalized = resolveStructureAnchorsAtRuntime(withAgents);
     return await this.hydrateAmenityContent(normalized);
   }
 
@@ -1179,20 +1187,7 @@ export class PlayWorld {
           name: summaryName,
           toolNames: [...effectiveToolNames],
         };
-        const existingOccupants = base.worldMap.occupants.map((o) => ({
-          x: o.x,
-          y: o.y,
-        }));
-        const pos = computeRandomFreeMapCell(occupiedKeysFromSnapshot(base), {
-          existingOccupants,
-          occupantInfo: {
-            id: playerId,
-            kind: "agent",
-            name: summaryName,
-          },
-          worldLayout: this.getWorldLayout(),
-        });
-
+        const agentStreet = pickZoneForGroup(this.getWorldLayout(), "agent");
         const assistList =
           input.agent.assistTools !== undefined
             ? input.agent.assistTools.map((t) => ({ ...t }))
@@ -1203,8 +1198,7 @@ export class PlayWorld {
           nodeId: stored?.nodeId ?? input.mainNodeId,
           agentId: playerId,
           name: summaryName,
-          x: pos.x,
-          y: pos.y,
+          streetId: agentStreet.streetId,
           platform: input.type,
           toolNames: [...effectiveToolNames],
           stationary: true,

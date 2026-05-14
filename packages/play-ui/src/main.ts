@@ -97,6 +97,7 @@ import {
   parsePlayerChainNodeRpcBody,
   pickZoneForGroup,
   pointCellInZone,
+  SPACE_STRUCTURE_ANCHOR_MIN_DISTANCE,
   sortNodeRefsForSerializedFetch,
   STREET_NAME_POOL,
   type AgentPlaySnapshot,
@@ -2341,8 +2342,6 @@ function amenityPaletteForStructure(amenity: string): AmenityBuildingPalette {
   };
 }
 
-const SPACE_ANCHOR_MIN_DISTANCE_WORLD = 3.6;
-
 function compoundStructureGroupKey(st: Structure): string {
   if (st.kind !== "structure") {
     return st.id;
@@ -2636,7 +2635,7 @@ function paintGrid(): void {
           existingOccupants,
           structureAnchors,
           minDistance: DEFAULT_AGENT_SPAWN_MIN_DISTANCE,
-          structureMinDistance: SPACE_ANCHOR_MIN_DISTANCE_WORLD,
+          structureMinDistance: SPACE_STRUCTURE_ANCHOR_MIN_DISTANCE,
         })
       ) {
         const loc = worldToWorldRootLocal(p.x, p.y);

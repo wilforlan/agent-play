@@ -10,6 +10,8 @@ export const OCCUPANCY_POINT_MULTIPLIER = 5;
 export const CONTINUOUS_RENDER_OFFSET = 0.2;
 export const DEFAULT_AGENT_SPAWN_MIN_DISTANCE = 0.9;
 
+export const SPACE_STRUCTURE_ANCHOR_MIN_DISTANCE = 2.1;
+
 /** @deprecated Prefer {@link WorldLayout} zones from snapshot; quartile geometry is legacy. */
 export const SPATIAL_ZONE_INDEX_AGENTS = 0;
 /** @deprecated Prefer {@link WorldLayout} zones from snapshot; quartile geometry is legacy. */

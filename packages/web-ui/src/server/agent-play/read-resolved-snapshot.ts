@@ -1,5 +1,6 @@
 import {
   normalizePreviewSnapshot,
+  snapshotWorldMapWithResolvedAgents,
   type PreviewSnapshotJson,
 } from "./preview-serialize.js";
 import { resolveStructureAnchorsAtRuntime } from "./grid-allocate.js";
@@ -13,7 +14,11 @@ export async function readResolvedSnapshot(options: {
   const { store } = options;
   const cached = await store.getSnapshotJson();
   if (cached !== null) {
-    return resolveStructureAnchorsAtRuntime(normalizePreviewSnapshot(cached));
+    const n = normalizePreviewSnapshot(cached);
+    return resolveStructureAnchorsAtRuntime({
+      ...n,
+      worldMap: snapshotWorldMapWithResolvedAgents(n.worldMap, n.worldLayout),
+    });
   }
   return emptySnapshot(store.playerChainGenesis);
 }

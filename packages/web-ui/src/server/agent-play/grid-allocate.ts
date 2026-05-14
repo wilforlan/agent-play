@@ -17,6 +17,7 @@ import {
   OCCUPANCY_POINT_MULTIPLIER,
   occupancyKeyForPosition,
   pickZoneForGroup,
+  SPACE_STRUCTURE_ANCHOR_MIN_DISTANCE,
   SPATIAL_ZONE_INDEX_AGENTS,
   SPATIAL_ZONE_INDEX_SPACES,
   type OccupancyGridPoint,
@@ -25,8 +26,6 @@ import {
 type GridPoint = OccupancyGridPoint;
 
 const DEFAULT_MIN_OCCUPANT_DISTANCE = DEFAULT_AGENT_SPAWN_MIN_DISTANCE;
-
-export const SPACE_STRUCTURE_ANCHOR_MIN_DISTANCE = 3.6;
 
 function occupantGroupForSpawn(
   kind: "agent" | "mcp" | "unknown" | undefined
@@ -305,7 +304,7 @@ function pickStructureAnchorWithProximityTiers(input: {
  * Proximity is resolved in tiers so that no two structures can ever share a
  * cell, even when the space zone is too small to honour the strict
  * `structureMinDistance`:
- *   1. Strict (`structureMinDistance` = 3.6, `minDistance` = 0.9).
+ *   1. Strict (`structureMinDistance` = 2.1, `minDistance` = 0.9).
  *   2. Relaxed (drop structure proximity, keep agent `minDistance`).
  *   3. Permissive (only require a free occupancy key inside the zone).
  *

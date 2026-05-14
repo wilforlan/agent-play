@@ -15,6 +15,7 @@ import type { Journey, WorldJourneyUpdate } from "./@types/world.js";
 import type { WorldInteractionRole } from "./play-transport.js";
 import type { SpaceAmenityKind } from "./space-amenity.js";
 import { buildWorldMapFromOccupants as computeWorldMapBounds } from "./world-map.js";
+import { materializeAgentOccupantCoordinatesForLayout } from "./agent-occupant-positions.js";
 import {
   MINIMUM_STREET_LAYOUT_BOUNDS,
   STREET_NAME_POOL,
@@ -55,8 +56,9 @@ export type PreviewWorldMapAgentOccupantJson = {
   nodeId?: string;
   agentId: string;
   name: string;
-  x: number;
-  y: number;
+  streetId?: string;
+  x?: number;
+  y?: number;
   platform?: string;
   toolNames?: string[];
   assistToolNames?: string[];
@@ -232,11 +234,23 @@ export function normalizePreviewSnapshot(
     worldLayout?: WorldLayoutJson;
   }
 ): PreviewSnapshotJson {
+  const worldLayout = snapshot.worldLayout ?? getDefaultPreviewWorldLayoutJson();
   return {
     ...snapshot,
     spaces: snapshot.spaces ?? [],
-    worldLayout: snapshot.worldLayout ?? getDefaultPreviewWorldLayoutJson(),
+    worldLayout,
   };
+}
+
+export function snapshotWorldMapWithResolvedAgents(
+  worldMap: PreviewWorldMapJson,
+  worldLayout: WorldLayoutJson
+): PreviewWorldMapJson {
+  const materializedOccupants = materializeAgentOccupantCoordinatesForLayout(
+    worldMap.occupants,
+    worldLayout
+  );
+  return buildSnapshotWorldMap(materializedOccupants);
 }
 
 export function serializeJourney(journey: Journey): JourneyJson {
@@ -278,5 +292,12 @@ export function parseWorldJourneyUpdateJson(
 export function buildSnapshotWorldMap(
   occupants: PreviewWorldMapOccupantJson[]
 ): PreviewWorldMapJson {
+  for (const o of occupants) {
+    if (typeof o.x !== "number" || typeof o.y !== "number") {
+      throw new Error(
+        "buildSnapshotWorldMap: every occupant must have numeric x and y (run materialize first)"
+      );
+    }
+  }
   return computeWorldMapBounds(occupants);
 }

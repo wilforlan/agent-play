@@ -3,6 +3,7 @@ import {
   listOccupancyPointsForZone,
   pickZoneForGroup,
   pointCellInZone,
+  SPACE_STRUCTURE_ANCHOR_MIN_DISTANCE,
 } from "@agent-play/sdk";
 import { createDefaultSeededPlayLayout } from "./world-layout-bootstrap.js";
 import {
@@ -10,7 +11,6 @@ import {
   computeRandomFreeMapCell,
   computeRandomFreeMapCellInSpatialZone,
   computeSpaceStructureAnchor,
-  SPACE_STRUCTURE_ANCHOR_MIN_DISTANCE,
 } from "./grid-allocate.js";
 
 const occupancyKey = (x: number, y: number): string =>

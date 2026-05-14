@@ -252,15 +252,16 @@ export type AgentPlayWorldMapBounds = {
 };
 
 /**
- * One agent on the world map. Coordinates are grid positions; the server enforces unique `(x,y)` per occupant.
+ * One agent on the world map. Prefer `streetId` with layout-driven placement; `x`/`y` are optional on wire before normalization and act as a denormalized cache after materialize.
  */
 export type AgentPlayWorldMapAgentOccupant = {
   kind: "agent";
   nodeId?: string;
   agentId: string;
   name: string;
-  x: number;
-  y: number;
+  streetId?: string;
+  x?: number;
+  y?: number;
   /**
    * Integration label from addPlayer `type` (e.g. `langchain`). Populated from the snapshot field `platform`. The legacy wire field `agentType` is deprecated and accepted only for backward compatibility when parsing JSON.
    */
