@@ -10,6 +10,8 @@ import {
   pickGreeting,
 } from "./sky-decor-logic.js";
 
+export const SKY_PLANE_ANIMATION_ENABLED = false;
+
 const MAX_PLANES = 3;
 const PLANE_SPEED_PX = 62;
 const MARQUEE_SPEED_PX = 36;
@@ -116,6 +118,7 @@ export function createSkyDecorLayer(options: {
 
   function tick(dt: number): void {
     if (reducedMotion) return;
+    if (!SKY_PLANE_ANIMATION_ENABLED) return;
 
     planeSpawnAcc += dt;
     if (planeSpawnAcc >= PLANE_SPAWN_EVERY_SEC) {
