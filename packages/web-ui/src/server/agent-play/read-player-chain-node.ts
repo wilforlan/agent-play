@@ -18,6 +18,10 @@ import type {
 } from "./preview-serialize.js";
 import { readResolvedSnapshot } from "./read-resolved-snapshot.js";
 import type { SessionStore } from "./session-store.js";
+import {
+  buildGeographyHumanOccupantJson,
+  geographyStableKey,
+} from "./world-geography.js";
 
 /** Discriminated union returned by {@link readPlayerChainNode} and the SDK RPC. */
 export type PlayerChainNodeResponse =
@@ -116,6 +120,23 @@ export async function readPlayerChainNode(options: {
       spaceId: row.id,
     });
     return { kind: "space", stableKey, removed: false, space: row };
+  }
+  if (stableKey.startsWith("human:")) {
+    const humanId = stableKey.slice("human:".length);
+    const geography = await options.store.getGeographyHumans();
+    const live = geography.get(humanId);
+    if (live !== undefined) {
+      agentPlayVerbose("player-chain-rpc", "readPlayerChainNode: geography human", {
+        sid: options.sid,
+        stableKey,
+      });
+      return {
+        kind: "occupant",
+        stableKey: geographyStableKey(humanId),
+        removed: false,
+        occupant: buildGeographyHumanOccupantJson(live),
+      };
+    }
   }
   const occ = snapshot.worldMap.occupants.find(
     (o) => stableOccupantSortKey(o) === stableKey

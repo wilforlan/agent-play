@@ -12,6 +12,8 @@ export const WORLD_AGENT_SIGNAL_EVENT = "world:agent_signal" as const;
 
 export const WORLD_SPACE_TRANSITION_EVENT = "world:space_transition" as const;
 
+export const WORLD_GEOGRAPHY_EVENT = "world:geography" as const;
+
 /**
  * Fanout topic emitted when a space amenity's content (shop items,
  * supermarket items, car-wash cars) changes — additions, removals, and

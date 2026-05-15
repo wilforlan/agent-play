@@ -47,6 +47,13 @@ describe("setPreviewViewSettings", () => {
     expect(getPreviewViewSettings().stationaryPanels).toBe(true);
   });
 
+  it("defaults world geography off and persists toggle", () => {
+    expect(getDefaultViewSettings().worldGeographyEnabled).toBe(false);
+    const next = setPreviewViewSettings({ worldGeographyEnabled: true });
+    expect(next.worldGeographyEnabled).toBe(true);
+    expect(getPreviewViewSettings().worldGeographyEnabled).toBe(true);
+  });
+
   it("defaults occupancy debug overlays off and persists toggles", () => {
     expect(getDefaultViewSettings().debugOccupancyQuartiles).toBe(false);
     expect(getDefaultViewSettings().debugOccupancyFreeGrids).toBe(false);

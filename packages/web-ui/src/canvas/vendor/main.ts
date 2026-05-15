@@ -137,6 +137,11 @@ import {
 } from "./preview-debug-joystick.js";
 import { createPreviewDebugPanel } from "./preview-debug-panel.js";
 import {
+  GEOGRAPHY_PUBLISH_INTERVAL_MS,
+  postGeographyLeave,
+  postGeographyPresence,
+} from "./preview-world-geography.js";
+import {
   mountStreetSignPosts,
   type StreetSignZone,
 } from "./world-street-signs.js";
@@ -280,6 +285,7 @@ const WORLD_BOTTOM_MARGIN = 14;
 const WORLD_INTERACTION_SSE = "world:interaction";
 const WORLD_AGENT_SIGNAL_SSE = "world:agent_signal";
 const WORLD_INTERCOM_SSE = "world:intercom";
+const WORLD_GEOGRAPHY_SSE = "world:geography";
 const WORLD_GLOBAL_CHAT_CHANNEL = "intercom:world:global";
 const AP_INTERCOM_PROTOCOL = "ap-intercom";
 function buildIntercomAddress(nodeId: string): string {
@@ -390,6 +396,16 @@ type SnapshotMcpOccupant = {
   url?: string;
 };
 
+type SnapshotHumanOccupant = {
+  kind: "human";
+  id: string;
+  name: string;
+  x: number;
+  y: number;
+  facing?: "left" | "right";
+  isMoving?: boolean;
+};
+
 type SnapshotStructureOccupant = {
   kind: "structure";
   id: string;
@@ -424,6 +440,7 @@ type WorldMapJson = {
     | SnapshotAgentOccupant
     | SnapshotMcpOccupant
     | SnapshotStructureOccupant
+    | SnapshotHumanOccupant
   )[];
 };
 
@@ -508,6 +525,32 @@ function snapshotRealtimeInstructions(raw: unknown): string | undefined {
     return undefined;
   }
   return trimmed;
+}
+
+function listHumanRows(s: Snapshot): SnapshotHumanOccupant[] {
+  return s.worldMap.occupants.filter(
+    (o): o is SnapshotHumanOccupant => o.kind === "human"
+  );
+}
+
+function getLocalGeographyHumanId(): string | null {
+  return getMainNodeIdForIntercom();
+}
+
+function listMapRenderableRows(s: Snapshot): AgentRow[] {
+  const agents = listAgentRows(s);
+  if (!getPreviewViewSettings().worldGeographyEnabled) {
+    return agents;
+  }
+  const localId = getLocalGeographyHumanId();
+  const remoteHumans = listHumanRows(s)
+    .filter((h) => localId === null || h.id !== localId)
+    .map((h) => ({
+      agentId: h.id,
+      name: h.name,
+      structures: [] as Structure[],
+    }));
+  return [...agents, ...remoteHumans];
 }
 
 function listAgentRows(s: Snapshot): AgentRow[] {
@@ -690,6 +733,8 @@ let proximityLegendEl: HTMLDivElement | null = null;
 let proximityTouchPadHandle: { refresh: () => void } | null = null;
 
 const playerWorldPos = new Map<string, { x: number; y: number }>();
+let geographyLastPublishMs = 0;
+const remoteGeographyHumanIds = new Set<string>();
 const waypointQueues = new Map<string, Array<{ x: number; y: number }>>();
 const lastTickWorldPos = new Map<string, { x: number; y: number }>();
 const walkPhaseByPlayer = new Map<string, number>();
@@ -1670,6 +1715,10 @@ let previewBootstrapLock: Promise<void> | null = null;
 function playerDisplayName(playerId: string): string {
   if (playerId === HUMAN_VIEWER_PLAYER_ID) return "You";
   if (snapshot === null) return playerId;
+  const human = listHumanRows(snapshot).find((h) => h.id === playerId);
+  if (human !== undefined) {
+    return human.name;
+  }
   return (
     listAgentRows(snapshot).find((p) => p.agentId === playerId)?.name ??
     playerId
@@ -1859,6 +1908,107 @@ function applyJourneyUpdate(u: JourneyUpdate): void {
   setWaypoints(u.agentId, u.path);
 }
 
+function clearRemoteGeographyPresence(): void {
+  for (const id of remoteGeographyHumanIds) {
+    playerWorldPos.delete(id);
+    waypointQueues.delete(id);
+    walkPhaseByPlayer.delete(id);
+    facingByPlayer.delete(id);
+    movingByPlayer.delete(id);
+    lastTickWorldPos.delete(id);
+  }
+  remoteGeographyHumanIds.clear();
+}
+
+function applyWorldGeographyOccupants(snap: Snapshot): void {
+  if (!getPreviewViewSettings().worldGeographyEnabled) {
+    return;
+  }
+  const wb = getWorldBoundsForClamp();
+  const localId = getLocalGeographyHumanId();
+  const seen = new Set<string>();
+  for (const h of listHumanRows(snap)) {
+    if (localId !== null && h.id === localId) {
+      continue;
+    }
+    seen.add(h.id);
+    remoteGeographyHumanIds.add(h.id);
+    const clamped =
+      wb !== null
+        ? clampWorldPosition({ x: h.x, y: h.y }, wb)
+        : { x: h.x, y: h.y };
+    playerWorldPos.set(h.id, clamped);
+    if (h.facing === "left" || h.facing === "right") {
+      facingByPlayer.set(h.id, h.facing);
+    }
+    if (typeof h.isMoving === "boolean") {
+      movingByPlayer.set(h.id, h.isMoving);
+    }
+  }
+  for (const id of [...remoteGeographyHumanIds]) {
+    if (!seen.has(id)) {
+      remoteGeographyHumanIds.delete(id);
+      playerWorldPos.delete(id);
+      waypointQueues.delete(id);
+      walkPhaseByPlayer.delete(id);
+      facingByPlayer.delete(id);
+      movingByPlayer.delete(id);
+      lastTickWorldPos.delete(id);
+    }
+  }
+}
+
+async function publishLocalGeographyPresence(): Promise<void> {
+  if (!getPreviewViewSettings().worldGeographyEnabled) {
+    return;
+  }
+  const sid = getPreviewSessionIdSync();
+  const humanId = getLocalGeographyHumanId();
+  if (sid === null || humanId === null) {
+    return;
+  }
+  const pos = playerWorldPos.get(HUMAN_VIEWER_PLAYER_ID);
+  if (pos === undefined) {
+    return;
+  }
+  const displayName =
+    humanId.length > 16 ? `${humanId.slice(0, 12)}…` : humanId;
+  await postGeographyPresence({
+    apiBase: API_BASE,
+    sid,
+    humanId,
+    name: displayName,
+    x: pos.x,
+    y: pos.y,
+    facing: facingByPlayer.get(HUMAN_VIEWER_PLAYER_ID) ?? "right",
+    isMoving: movingByPlayer.get(HUMAN_VIEWER_PLAYER_ID) ?? false,
+  });
+}
+
+async function syncWorldGeographyEnabled(enabled: boolean): Promise<void> {
+  const sid = getPreviewSessionIdSync();
+  const humanId = getLocalGeographyHumanId();
+  if (!enabled) {
+    clearRemoteGeographyPresence();
+    if (sid !== null && humanId !== null) {
+      await postGeographyLeave({ apiBase: API_BASE, sid, humanId });
+    }
+    return;
+  }
+  await publishLocalGeographyPresence();
+}
+
+function maybePublishGeographyPresence(nowMs: number): void {
+  if (!getPreviewViewSettings().worldGeographyEnabled) {
+    return;
+  }
+  if (nowMs - geographyLastPublishMs < GEOGRAPHY_PUBLISH_INTERVAL_MS) {
+    return;
+  }
+  geographyLastPublishMs = nowMs;
+  void publishLocalGeographyPresence();
+}
+
 function ingestSnapshot(snap: Snapshot): void {
   snapshot = snap;
   deepLogObject("ingestSnapshot", {
@@ -1898,6 +2048,7 @@ function ingestSnapshot(snap: Snapshot): void {
       playerWorldPos.set(HUMAN_VIEWER_PLAYER_ID, clampWorldPosition(cur, wbSpawn));
     }
   }
+  applyWorldGeographyOccupants(snapshot);
   hydrateChatFromSnapshot(snapshot);
   refreshActiveAmenityFromSnapshot();
   void refreshWalletHud();
@@ -2177,6 +2328,12 @@ function connectSse(sid: string): void {
     void handleWorldMapSse(sid, (ev as MessageEvent).data as string);
   });
   es.addEventListener("world:player_added", (ev) => {
+    void handleWorldMapSse(sid, (ev as MessageEvent).data as string);
+  });
+  es.addEventListener(WORLD_GEOGRAPHY_SSE, (ev) => {
+    if (!getPreviewViewSettings().worldGeographyEnabled) {
+      return;
+    }
     void handleWorldMapSse(sid, (ev as MessageEvent).data as string);
   });
   es.addEventListener(WORLD_INTERACTION_SSE, (ev) => {
@@ -2488,7 +2645,7 @@ function syncStructureNodes(structs: Structure[]): void {
 }
 
 function syncAgentNodes(): void {
-  const rowsBase = snapshot === null ? [] : listAgentRows(snapshot);
+  const rowsBase = snapshot === null ? [] : listMapRenderableRows(snapshot);
   const rows =
     snapshot === null
       ? []
@@ -2886,6 +3043,7 @@ function onTick(dt: number): void {
     movingByPlayer.set(id, motion.isMoving);
     lastTickWorldPos.set(id, { ...next });
   }
+  maybePublishGeographyPresence(performance.now());
   skyDecor?.tick(dt);
   stageController?.update(dt * 1000);
   const currentStageId = stageController?.current()?.id;
@@ -2935,7 +3093,9 @@ function onFrame(): void {
     const displayName =
       snapshot === null
         ? id
-        : listAgentRows(snapshot).find((pl) => pl.agentId === id)?.name ?? id;
+        : listAgentRows(snapshot).find((pl) => pl.agentId === id)?.name ??
+          listHumanRows(snapshot).find((h) => h.id === id)?.name ??
+          id;
     v.nameTag.text = displayName;
     v.nameTag.position.set(-v.nameTag.width / 2, box * 0.45);
     if (getPreviewViewSettings().showChatUi) {
@@ -3125,6 +3285,22 @@ export function bootstrap(): void {
         }),
         setSettings: (partial) => {
           setPreviewViewSettings(partial);
+        },
+      },
+      geographyDebug: {
+        getSettings: () => ({
+          worldGeographyEnabled:
+            getPreviewViewSettings().worldGeographyEnabled,
+        }),
+        setSettings: (partial) => {
+          const prev = getPreviewViewSettings().worldGeographyEnabled;
+          setPreviewViewSettings(partial);
+          if (
+            partial.worldGeographyEnabled !== undefined &&
+            partial.worldGeographyEnabled !== prev
+          ) {
+            void syncWorldGeographyEnabled(partial.worldGeographyEnabled);
+          }
         },
       },
     });

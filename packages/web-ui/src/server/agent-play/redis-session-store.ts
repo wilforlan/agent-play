@@ -47,6 +47,11 @@ import {
   playerChainLeavesKey,
 } from "./player-chain/index.js";
 import { worldFanoutChannel } from "./redis-world-fanout.js";
+import {
+  GEOGRAPHY_REDIS_TTL_SECONDS,
+  parseGeographyHumanState,
+  type GeographyHumanState,
+} from "./world-geography.js";
 import type {
   ExecutePurchaseResult,
   PresenceLease,
@@ -91,6 +96,10 @@ function gridOccupiedKey(hostId: string): string {
 
 function presenceLeaseKey(hostId: string, playerId: string): string {
   return `agent-play:${hostId}:presence:${playerId}`;
+}
+
+function geographyHumansKey(hostId: string, sid: string): string {
+  return `agent-play:${hostId}:geography:${sid}`;
 }
 
 function spaceAmenityLogKey(
@@ -1639,6 +1648,59 @@ export class RedisSessionStore implements SessionStore {
     throw new Error(
       `stopTalkSession: lost ${String(maxAttempts)} CAS retries for talk ${input.viewerNodeId}:${input.agentId}`
     );
+  }
+
+  async getGeographyHumans(): Promise<Map<string, GeographyHumanState>> {
+    const sid = this.getSessionId();
+    const key = geographyHumansKey(this.hostId, sid);
+    const raw = await this.redis.hgetall(key);
+    const out = new Map<string, GeographyHumanState>();
+    for (const [fieldId, json] of Object.entries(raw)) {
+      if (json.length === 0) continue;
+      try {
+        const parsed = JSON.parse(json) as Record<string, unknown>;
+        out.set(fieldId, parseGeographyHumanState({ ...parsed, id: fieldId }));
+      } catch {
+        continue;
+      }
+    }
+    return out;
+  }
+
+  async upsertGeographyHuman(state: GeographyHumanState): Promise<{
+    prev: Map<string, GeographyHumanState>;
+    next: Map<string, GeographyHumanState>;
+  }> {
+    const sid = this.getSessionId();
+    const key = geographyHumansKey(this.hostId, sid);
+    const prev = await this.getGeographyHumans();
+    const next = new Map(prev);
+    next.set(state.id, state);
+    const pipe = this.redis.multi();
+    pipe.hset(key, state.id, JSON.stringify(state));
+    pipe.expire(key, GEOGRAPHY_REDIS_TTL_SECONDS);
+    await pipe.exec();
+    return { prev, next };
+  }
+
+  async removeGeographyHuman(humanId: string): Promise<{
+    prev: Map<string, GeographyHumanState>;
+    next: Map<string, GeographyHumanState>;
+  }> {
+    const sid = this.getSessionId();
+    const key = geographyHumansKey(this.hostId, sid);
+    const prev = await this.getGeographyHumans();
+    const next = new Map(prev);
+    next.delete(humanId);
+    const pipe = this.redis.multi();
+    pipe.hdel(key, humanId);
+    if (next.size === 0) {
+      pipe.del(key);
+    } else {
+      pipe.expire(key, GEOGRAPHY_REDIS_TTL_SECONDS);
+    }
+    await pipe.exec();
+    return { prev, next };
   }
 
   getHostId(): string {

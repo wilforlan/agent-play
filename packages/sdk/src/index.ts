@@ -67,6 +67,7 @@ export {
   WORLD_AGENT_SIGNAL_EVENT,
   WORLD_INTERACTION_EVENT,
   WORLD_JOURNEY_EVENT,
+  WORLD_GEOGRAPHY_EVENT,
   type RemotePlayWorldSessionEvent,
   type WorldAgentSignalPayload,
   type WorldInteractionPayload,

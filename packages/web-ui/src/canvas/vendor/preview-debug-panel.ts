@@ -35,6 +35,8 @@ type OccupancyDebugPick = Pick<
   "debugOccupancyQuartiles" | "debugOccupancyFreeGrids"
 >;
 
+type GeographyDebugPick = Pick<PreviewViewSettings, "worldGeographyEnabled">;
+
 export function createPreviewDebugPanel(options: {
   getSnapshot: () => {
     agents: readonly PreviewDebugAgentRow[];
@@ -44,6 +46,10 @@ export function createPreviewDebugPanel(options: {
   occupancyDebug?: {
     getSettings: () => OccupancyDebugPick;
     setSettings: (partial: Partial<OccupancyDebugPick>) => void;
+  };
+  geographyDebug?: {
+    getSettings: () => GeographyDebugPick;
+    setSettings: (partial: Partial<GeographyDebugPick>) => void;
   };
 }): {
   element: HTMLElement;
@@ -70,6 +76,32 @@ export function createPreviewDebugPanel(options: {
 
   let quartileInput: HTMLInputElement | null = null;
   let freeGridsInput: HTMLInputElement | null = null;
+  let geographyInput: HTMLInputElement | null = null;
+
+  if (options.geographyDebug !== undefined) {
+    const geoWrap = document.createElement("div");
+    geoWrap.className = "preview-debug-panel__geography";
+    const geoTitle = document.createElement("h4");
+    geoTitle.textContent = "World geography";
+    geoWrap.appendChild(geoTitle);
+    const rowGeo = document.createElement("label");
+    rowGeo.className = "preview-debug-panel__occupancy-row";
+    geographyInput = document.createElement("input");
+    geographyInput.type = "checkbox";
+    geographyInput.addEventListener("change", () => {
+      if (geographyInput !== null) {
+        options.geographyDebug?.setSettings({
+          worldGeographyEnabled: geographyInput.checked,
+        });
+      }
+    });
+    const geoLabel = document.createElement("span");
+    geoLabel.textContent =
+      "Enable world geography: view other players in your world";
+    rowGeo.append(geographyInput, geoLabel);
+    geoWrap.appendChild(rowGeo);
+    body.appendChild(geoWrap);
+  }
 
   if (options.occupancyDebug !== undefined) {
     const occ = document.createElement("div");
@@ -208,6 +240,10 @@ export function createPreviewDebugPanel(options: {
       if (freeGridsInput !== null) {
         freeGridsInput.checked = os.debugOccupancyFreeGrids;
       }
+    }
+    if (options.geographyDebug !== undefined && geographyInput !== null) {
+      geographyInput.checked =
+        options.geographyDebug.getSettings().worldGeographyEnabled;
     }
   };
 

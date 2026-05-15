@@ -31,6 +31,7 @@ import type { SessionEventLogEntry } from "./redis-session-store.js";
 import { getPlayerChainGenesisSync } from "./load-player-chain-genesis.js";
 import { buildPlayerChainFromSnapshot } from "./player-chain/index.js";
 import { dispatchWorldFanoutLocal } from "./world-fanout-subscriber.js";
+import type { GeographyHumanState } from "./world-geography.js";
 import type {
   ExecutePurchaseResult,
   PresenceLease,
@@ -76,6 +77,7 @@ export class TestSessionStore implements SessionStore {
   private readonly carWashCars = new Map<string, Map<string, CarWashCar>>();
   private readonly playerWallets = new Map<string, PlayerWallet>();
   private readonly playerPurchases = new Map<string, PurchaseRecord[]>();
+  private readonly geographyHumans = new Map<string, GeographyHumanState>();
   private readonly talkSessions = new Map<
     string,
     {
@@ -241,6 +243,32 @@ export class TestSessionStore implements SessionStore {
       msg.playerChainNotify = options.playerChainNotify;
     }
     dispatchWorldFanoutLocal(msg);
+  }
+
+  async getGeographyHumans(): Promise<Map<string, GeographyHumanState>> {
+    return new Map(this.geographyHumans);
+  }
+
+  async upsertGeographyHuman(state: GeographyHumanState): Promise<{
+    prev: Map<string, GeographyHumanState>;
+    next: Map<string, GeographyHumanState>;
+  }> {
+    const prev = new Map(this.geographyHumans);
+    const next = new Map(prev);
+    next.set(state.id, state);
+    this.geographyHumans.set(state.id, state);
+    return { prev, next };
+  }
+
+  async removeGeographyHuman(humanId: string): Promise<{
+    prev: Map<string, GeographyHumanState>;
+    next: Map<string, GeographyHumanState>;
+  }> {
+    const prev = new Map(this.geographyHumans);
+    const next = new Map(prev);
+    next.delete(humanId);
+    this.geographyHumans.delete(humanId);
+    return { prev, next };
   }
 
   async mergeSettings(partial: Record<string, string>): Promise<void> {

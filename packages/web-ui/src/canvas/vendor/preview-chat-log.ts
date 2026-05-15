@@ -29,7 +29,7 @@ let localSeq = 0;
 
 export function resetChatLogFromSnapshot(snapshot: {
   worldMap?: {
-    occupants: Array<
+    occupants: ReadonlyArray<
       | {
           kind: "agent";
           agentId: string;
@@ -47,6 +47,13 @@ export function resetChatLogFromSnapshot(snapshot: {
           spaceIds: string[];
           primaryAmenity?: string;
           amenities?: string[];
+        }
+      | {
+          kind: "human";
+          id: string;
+          name: string;
+          x: number;
+          y: number;
         }
     >;
   };

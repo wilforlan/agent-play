@@ -37,6 +37,7 @@ export type PreviewViewSettings = {
   debugMode: boolean;
   debugOccupancyQuartiles: boolean;
   debugOccupancyFreeGrids: boolean;
+  worldGeographyEnabled: boolean;
   joystickEnabled: boolean;
   stationaryPanels: boolean;
   p2aEnabled: boolean;
@@ -115,6 +116,7 @@ export function getDefaultViewSettings(): PreviewViewSettings {
     debugMode: defaultDebugModeForHost(),
     debugOccupancyQuartiles: false,
     debugOccupancyFreeGrids: false,
+    worldGeographyEnabled: false,
     joystickEnabled: true,
     stationaryPanels: false,
     p2aEnabled: false,
@@ -150,6 +152,9 @@ function parseStored(raw: string | null): Partial<PreviewViewSettings> | null {
     }
     if (typeof o.debugOccupancyFreeGrids === "boolean") {
       out.debugOccupancyFreeGrids = o.debugOccupancyFreeGrids;
+    }
+    if (typeof o.worldGeographyEnabled === "boolean") {
+      out.worldGeographyEnabled = o.worldGeographyEnabled;
     }
     if (typeof o.joystickEnabled === "boolean") {
       out.joystickEnabled = o.joystickEnabled;
@@ -202,6 +207,7 @@ function sanitize(s: PreviewViewSettings): PreviewViewSettings {
     debugMode: s.debugMode,
     debugOccupancyQuartiles: s.debugOccupancyQuartiles,
     debugOccupancyFreeGrids: s.debugOccupancyFreeGrids,
+    worldGeographyEnabled: s.worldGeographyEnabled,
     joystickEnabled: s.joystickEnabled,
     stationaryPanels: s.stationaryPanels,
     p2aEnabled: s.p2aEnabled,

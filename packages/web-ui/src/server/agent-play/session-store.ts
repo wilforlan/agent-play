@@ -29,6 +29,7 @@ import type {
 import type { PlayerChainFanoutNotify } from "./player-chain/index.js";
 import type { PreviewSnapshotJson } from "./preview-serialize.js";
 import type { SessionEventLogEntry } from "./redis-session-store.js";
+import type { GeographyHumanState } from "./world-geography.js";
 
 export type PublishedSessionMetadata = {
   sid: string | null;
@@ -111,6 +112,15 @@ export type SessionStore = {
     data: unknown,
     options?: WorldFanoutOptions
   ): Promise<void>;
+  getGeographyHumans(): Promise<Map<string, GeographyHumanState>>;
+  upsertGeographyHuman(state: GeographyHumanState): Promise<{
+    prev: Map<string, GeographyHumanState>;
+    next: Map<string, GeographyHumanState>;
+  }>;
+  removeGeographyHuman(humanId: string): Promise<{
+    prev: Map<string, GeographyHumanState>;
+    next: Map<string, GeographyHumanState>;
+  }>;
   mergeSettings(partial: Record<string, string>): Promise<void>;
   appendEventLog(entry: SessionEventLogEntry): Promise<void>;
   getPublishedMetadata(): Promise<PublishedSessionMetadata>;
