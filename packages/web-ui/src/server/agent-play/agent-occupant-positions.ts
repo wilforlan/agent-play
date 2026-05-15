@@ -87,20 +87,22 @@ export function materializeAgentOccupantCoordinatesForLayout(
   const byId = new Map<string, PreviewWorldMapAgentOccupantJson>();
   for (const agent of agents) {
     const zone = zoneForAgentStreet(layout, agent.streetId, agentPrimary);
-    const hasValidCoords =
-      typeof agent.x === "number" &&
-      typeof agent.y === "number" &&
-      Number.isFinite(agent.x) &&
-      Number.isFinite(agent.y) &&
-      pointCellInZone(agent.x, agent.y, zone);
-    if (hasValidCoords) {
-      const key = occupancyKeyForPosition(agent.x, agent.y);
+    const coordX = agent.x;
+    const coordY = agent.y;
+    if (
+      typeof coordX === "number" &&
+      typeof coordY === "number" &&
+      Number.isFinite(coordX) &&
+      Number.isFinite(coordY) &&
+      pointCellInZone(coordX, coordY, zone)
+    ) {
+      const key = occupancyKeyForPosition(coordX, coordY);
       occupiedKeys.add(key);
-      existingOccupants.push({ x: agent.x, y: agent.y });
+      existingOccupants.push({ x: coordX, y: coordY });
       byId.set(agent.agentId, {
         ...agent,
-        x: agent.x,
-        y: agent.y,
+        x: coordX,
+        y: coordY,
         streetId: agent.streetId ?? zone.streetId,
       });
       continue;
