@@ -15,7 +15,9 @@ describe("preview-world-geography", () => {
   });
 
   it("posts presence to geography API", async () => {
-    const fetchMock = vi.fn(async () => ({ ok: true }));
+    const fetchMock = vi.fn<
+      (url: string, init?: RequestInit) => Promise<{ ok: boolean }>
+    >(async () => ({ ok: true }));
     vi.stubGlobal("fetch", fetchMock);
     await postGeographyPresence({
       apiBase: "/api/agent-play",
@@ -28,26 +30,30 @@ describe("preview-world-geography", () => {
       isMoving: true,
     });
     expect(fetchMock).toHaveBeenCalledOnce();
-    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const call = fetchMock.mock.calls[0];
+    expect(call).toBeDefined();
+    const [url, init] = call;
     expect(url).toContain("/geography?sid=sid-1");
-    expect(init.method).toBe("POST");
-    const body = JSON.parse(String(init.body)) as Record<string, unknown>;
+    expect(init?.method).toBe("POST");
+    const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
     expect(body.humanId).toBe("node-a");
     expect(body.x).toBe(1);
     expect(body.isMoving).toBe(true);
   });
 
   it("posts leave to geography API", async () => {
-    const fetchMock = vi.fn(async () => ({ ok: true }));
+    const fetchMock = vi.fn<
+      (url: string, init?: RequestInit) => Promise<{ ok: boolean }>
+    >(async () => ({ ok: true }));
     vi.stubGlobal("fetch", fetchMock);
     await postGeographyLeave({
       apiBase: "/api/agent-play",
       sid: "sid-1",
       humanId: "node-a",
     });
-    const body = JSON.parse(
-      String((fetchMock.mock.calls[0] as [string, RequestInit])[1].body)
-    ) as Record<string, unknown>;
+    const call = fetchMock.mock.calls[0];
+    expect(call).toBeDefined();
+    const body = JSON.parse(String(call[1]?.body)) as Record<string, unknown>;
     expect(body.leave).toBe(true);
   });
 });
