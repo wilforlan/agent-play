@@ -228,7 +228,17 @@ export function occupiedKeysFromSnapshot(
 ): Set<string> {
   const s = new Set<string>();
   for (const o of snapshot.worldMap.occupants) {
-    s.add(occupancyKeyForPosition(o.x, o.y));
+    const x = o.x;
+    const y = o.y;
+    if (
+      typeof x !== "number" ||
+      typeof y !== "number" ||
+      !Number.isFinite(x) ||
+      !Number.isFinite(y)
+    ) {
+      continue;
+    }
+    s.add(occupancyKeyForPosition(x, y));
   }
   return s;
 }
