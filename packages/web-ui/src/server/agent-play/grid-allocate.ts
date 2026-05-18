@@ -340,12 +340,22 @@ export function resolveStructureAnchorsAtRuntime(
   const fixedOccupants = snapshot.worldMap.occupants.filter(
     (o) => !isStructureOccupant(o)
   );
-  const fixedOccupantPositions = fixedOccupants.map((o) => ({
-    x: o.x,
-    y: o.y,
-  }));
+  const fixedOccupantPositions: Array<{ x: number; y: number }> = [];
+  for (const o of fixedOccupants) {
+    const x = o.x;
+    const y = o.y;
+    if (
+      typeof x !== "number" ||
+      typeof y !== "number" ||
+      !Number.isFinite(x) ||
+      !Number.isFinite(y)
+    ) {
+      continue;
+    }
+    fixedOccupantPositions.push({ x, y });
+  }
   const occupied = new Set(
-    fixedOccupants.map((o) => occupancyKeyForPosition(o.x, o.y))
+    fixedOccupantPositions.map((p) => occupancyKeyForPosition(p.x, p.y))
   );
   const structures = snapshot.worldMap.occupants
     .filter(isStructureOccupant)
