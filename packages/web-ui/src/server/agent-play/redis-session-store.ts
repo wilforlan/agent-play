@@ -39,6 +39,7 @@ import {
   getWalletBundleById,
 } from "@agent-play/sdk";
 import { agentPlayVerbose } from "./agent-play-debug.js";
+import { finiteOccupantPosition } from "./agent-journey-cell.js";
 import type { PreviewSnapshotJson } from "./preview-serialize.js";
 import { getPlayerChainGenesisSync } from "./load-player-chain-genesis.js";
 import {
@@ -219,9 +220,13 @@ export class RedisSessionStore implements SessionStore {
   ): void {
     const key = snapshotKey(this.hostId);
     const gridKey = gridOccupiedKey(this.hostId);
-    const coordKeys = snapshot.worldMap.occupants.map(
-      (o) => `${Math.round(o.x)},${Math.round(o.y)}`
-    );
+    const coordKeys = snapshot.worldMap.occupants.flatMap((o) => {
+      const position = finiteOccupantPosition(o);
+      if (position === null) {
+        return [];
+      }
+      return [`${Math.round(position.x)},${Math.round(position.y)}`];
+    });
     chain.set(key, raw);
     chain.del(gridKey);
     if (coordKeys.length > 0) {

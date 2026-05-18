@@ -67,6 +67,10 @@ import {
 } from "@agent-play/sdk";
 import type { StoredAgentRecord } from "./agent-repository.js";
 import {
+  finiteOccupantPositions,
+  resolveAgentMapCellForJourney,
+} from "./agent-journey-cell.js";
+import {
   computeRandomFreeMapCell,
   computeSpaceStructureAnchor,
   occupiedKeysFromSnapshot,
@@ -1352,7 +1356,7 @@ export class PlayWorld {
       (o): o is PreviewWorldMapAgentOccupantJson =>
         o.kind === "agent" && o.agentId === playerId
     );
-    const cell = occ !== undefined ? { x: occ.x, y: occ.y } : { x: 0, y: 0 };
+    const cell = resolveAgentMapCellForJourney(occ);
     const path = journeyPathFromCellAndJourney(
       playerId,
       journey,
@@ -1805,9 +1809,9 @@ export class PlayWorld {
               o.kind === "structure" && o.id !== id
           )
           .map((o) => ({ x: o.x, y: o.y }));
-        const existingOccupants = occupantList
-          .filter((o) => !(o.kind === "structure" && o.id === id))
-          .map((o) => ({ x: o.x, y: o.y }));
+        const existingOccupants = finiteOccupantPositions(
+          occupantList.filter((o) => !(o.kind === "structure" && o.id === id))
+        );
         const anchor = computeSpaceStructureAnchor({
           occupied: occupiedKeysFromSnapshot(normalized),
           existingOccupants,
@@ -1958,10 +1962,9 @@ export class PlayWorld {
           );
         }
         id = randomUUID();
-        const existingOccupants = base.worldMap.occupants.map((o) => ({
-          x: o.x,
-          y: o.y,
-        }));
+        const existingOccupants = finiteOccupantPositions(
+          base.worldMap.occupants
+        );
         const pos = computeRandomFreeMapCell(occupiedKeysFromSnapshot(base), {
           existingOccupants,
           occupantInfo: {

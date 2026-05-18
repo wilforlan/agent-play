@@ -292,12 +292,17 @@ export function parseWorldJourneyUpdateJson(
 export function buildSnapshotWorldMap(
   occupants: PreviewWorldMapOccupantJson[]
 ): PreviewWorldMapJson {
+  const positions: Array<{ x: number; y: number }> = [];
   for (const o of occupants) {
-    if (typeof o.x !== "number" || typeof o.y !== "number") {
+    const x = o.x;
+    const y = o.y;
+    if (typeof x !== "number" || typeof y !== "number") {
       throw new Error(
         "buildSnapshotWorldMap: every occupant must have numeric x and y (run materialize first)"
       );
     }
+    positions.push({ x, y });
   }
-  return computeWorldMapBounds(occupants);
+  const { bounds } = computeWorldMapBounds(positions);
+  return { bounds, occupants };
 }
