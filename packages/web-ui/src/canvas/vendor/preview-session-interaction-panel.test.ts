@@ -59,6 +59,27 @@ describe("createPreviewSessionInteractionPanel", () => {
     sessionStorage.removeItem(CREDENTIALS_KEY);
   });
 
+  it("renders a collapsible Play Pad keyboard help section", () => {
+    const panel = createPreviewSessionInteractionPanel({
+      getSid: () => "sid-1",
+      apiBase: "/api/agent-play",
+      getMainNodeId: () => "main-node-1",
+    });
+    document.body.append(panel.element);
+    const help = panel.element.querySelector(
+      ".preview-session-interaction__play-pad-help"
+    );
+    expect(help).not.toBeNull();
+    expect(
+      help?.querySelector(".preview-session-interaction__play-pad-help-summary")
+        ?.textContent
+    ).toContain("Play Pad keyboard controls");
+    expect(
+      help?.querySelectorAll(".preview-session-interaction__play-pad-help-row")
+        .length
+    ).toBeGreaterThan(0);
+  });
+
   it("posts intercomCommand assist invocation with target player id", async () => {
     const fetchMock = vi.fn(async () => new Response(JSON.stringify({ ok: true })));
     vi.stubGlobal("fetch", fetchMock);

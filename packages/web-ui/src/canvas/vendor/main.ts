@@ -135,6 +135,12 @@ import {
   setJoystickVectorZero,
   shouldClearPrimaryWaypointsWhileJoystickIdle,
 } from "./preview-debug-joystick.js";
+import {
+  isPlayPadKeyChar,
+  isPlayPadTwoLetterCombo,
+  PLAY_PAD_SEQUENCE_WINDOW_MS,
+  resolvePlayPadInputFromKeyBuffer,
+} from "./preview-play-pad-keys.js";
 import { createPreviewDebugPanel } from "./preview-debug-panel.js";
 import {
   GEOGRAPHY_PUBLISH_INTERVAL_MS,
@@ -1129,6 +1135,13 @@ function onDocumentKeyDown(e: KeyboardEvent): void {
     setArrowKey(e.key, true);
     return;
   }
+  if (!inField && !e.repeat && getHumanPlayerId() !== null) {
+    const playPadKey = e.key.toLowerCase();
+    if (isPlayPadKeyChar(playPadKey) && tryHandlePlayPadKeyPress(playPadKey)) {
+      e.preventDefault();
+      return;
+    }
+  }
   if (inField || e.repeat) return;
   if (e.key === "Escape") {
     if (walletInventoryPanel !== null && walletInventoryPanel.isOpen()) {
@@ -1705,6 +1718,58 @@ let debugPanelUpdate: (() => void) | null = null;
 let debugPanelSyncCompanionLayout: (() => void) | null = null;
 let debugMountEl: HTMLElement | null = null;
 let joystickHandle: ReturnType<typeof createPreviewDebugJoystick> | null = null;
+let playPadKeyBuffer = "";
+let playPadKeySequenceTimer: ReturnType<typeof setTimeout> | null = null;
+
+function clearPlayPadKeySequenceTimer(): void {
+  if (playPadKeySequenceTimer !== null) {
+    clearTimeout(playPadKeySequenceTimer);
+    playPadKeySequenceTimer = null;
+  }
+}
+
+function resetPlayPadKeyBuffer(): void {
+  clearPlayPadKeySequenceTimer();
+  playPadKeyBuffer = "";
+}
+
+function tryHandlePlayPadKeyPress(char: string): boolean {
+  if (!getPreviewViewSettings().joystickEnabled || joystickHandle === null) {
+    return false;
+  }
+  playPadKeyBuffer += char;
+  clearPlayPadKeySequenceTimer();
+
+  if (char === "n") {
+    const attachInput = resolvePlayPadInputFromKeyBuffer("n");
+    playPadKeyBuffer = "";
+    if (attachInput === null) return false;
+    return joystickHandle.handlePlayPadInput(attachInput);
+  }
+
+  if (playPadKeyBuffer.length >= 2) {
+    const twoChar = playPadKeyBuffer.slice(-2);
+    if (isPlayPadTwoLetterCombo(twoChar)) {
+      const comboInput = resolvePlayPadInputFromKeyBuffer(twoChar);
+      playPadKeyBuffer = "";
+      if (comboInput === null) return false;
+      return joystickHandle.handlePlayPadInput(comboInput);
+    }
+  }
+
+  const buffered = playPadKeyBuffer;
+  playPadKeySequenceTimer = setTimeout(() => {
+    playPadKeySequenceTimer = null;
+    if (playPadKeyBuffer !== buffered) return;
+    const input = resolvePlayPadInputFromKeyBuffer(playPadKeyBuffer);
+    playPadKeyBuffer = "";
+    if (input !== null) {
+      joystickHandle?.handlePlayPadInput(input);
+    }
+  }, PLAY_PAD_SEQUENCE_WINDOW_MS);
+
+  return true;
+}
 let previewBootstrapStarted = false;
 let previewBootstrapLock: Promise<void> | null = null;
 
@@ -2910,6 +2975,7 @@ function applyJoystickVisibility(): void {
   joystickHandle?.setVisible(show);
   if (!show) {
     setJoystickVectorZero();
+    resetPlayPadKeyBuffer();
   }
 }
 

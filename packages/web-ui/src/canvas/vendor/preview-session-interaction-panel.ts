@@ -21,6 +21,7 @@ import {
 import { RealtimeAgent, RealtimeSession } from "@openai/agents/realtime";
 import { TALK_TICK_SECONDS } from "@agent-play/sdk/browser";
 import { reportPresentationEvent } from "./presentation-analytics.js";
+import { createPlayPadKeysHelpSection } from "./preview-play-pad-keys.js";
 import { getPreviewViewSettings } from "./preview-view-settings.js";
 import type { WalletHudHandle } from "./wallet-hud.js";
 
@@ -798,6 +799,8 @@ export function createPreviewSessionInteractionPanel(options: {
     nodeActionBtn
   );
 
+  const playPadHelp = createPlayPadKeysHelpSection();
+
   const renderNodeInfo = (): void => {
     const creds = readHumanCredentials();
     if (creds === null) {
@@ -878,7 +881,17 @@ export function createPreviewSessionInteractionPanel(options: {
   errorPanel.append(errorHeadline, errorDismiss, errorDebug);
   const result = document.createElement("div");
   result.className = "preview-session-interaction__result";
-  root.append(header, nodeInfo, target, modes, progress, body, errorPanel, result);
+  root.append(
+    header,
+    nodeInfo,
+    playPadHelp,
+    target,
+    modes,
+    progress,
+    body,
+    errorPanel,
+    result
+  );
 
   let mode: Mode = "assist";
   let activeAgentId: string | null = null;
