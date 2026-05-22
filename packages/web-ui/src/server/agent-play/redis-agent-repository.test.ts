@@ -194,6 +194,36 @@ describe("RedisAgentRepository", () => {
     ).rejects.toThrow(/derivative/);
   });
 
+  it("validateNodeIdentity rejects passwHash mismatch after derivation succeeds", async () => {
+    const redis = new FakeRedis();
+    const repository = new RedisAgentRepository({
+      redis: redis as never,
+      hostId: "default",
+      rootKey,
+    });
+    const credential = nodeCredentialFromHumanPhrase({
+      phrase: "amber angle apple arch atlas aura autumn bamboo beacon birch",
+      rootKey,
+    });
+    await repository.createNode({
+      kind: "main",
+      nodeId: credential.nodeId,
+      passwHash: credential.passwHash,
+    });
+    const ok = await repository.validateNodeIdentity({
+      nodeId: credential.nodeId,
+      rootKey,
+      passwHash: credential.passwHash,
+    });
+    expect(ok).toEqual({ ok: true, nodeKind: "main" });
+    const bad = await repository.validateNodeIdentity({
+      nodeId: credential.nodeId,
+      rootKey,
+      passwHash: "deadbeef",
+    });
+    expect(bad).toEqual({ ok: false, reason: "passwHash mismatch", nodeKind: "main" });
+  });
+
   it("generates and returns a phrase only for space nodes when passwHash is omitted", async () => {
     const redis = new FakeRedis();
     const repository = new RedisAgentRepository({

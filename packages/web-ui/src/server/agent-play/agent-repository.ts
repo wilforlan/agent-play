@@ -84,6 +84,8 @@ export type AgentRepository = {
     nodeId: string;
     rootKey: string;
     mainNodeId?: string;
+    /** Client-supplied hashed passphrase (`x-node-passw`); compared to stored hash after derivation check. */
+    passwHash?: string;
   }): Promise<{ ok: boolean; reason?: string; nodeKind?: NodeKind }>;
   findAccountIdForAgentNode(agentId: string): Promise<string | null>;
   createNode(input: CreateNodeRecordInput): Promise<CreateNodeResult>;

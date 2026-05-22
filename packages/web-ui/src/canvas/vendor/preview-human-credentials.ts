@@ -79,8 +79,20 @@ export function getMainNodeIdForIntercom(): string | null {
   return c === null ? null : c.nodeId;
 }
 
-export function downloadHumanCredentialsJson(creds: HumanCredentials): void {
-  const blob = new Blob([JSON.stringify(creds, null, 2)], {
+export function downloadHumanCredentialsJson(options: {
+  nodeId: string;
+  passw: string;
+  serverUrl?: string | undefined;
+}): void {
+  const payload =
+    options.serverUrl !== undefined && options.serverUrl.trim().length > 0
+      ? {
+          serverUrl: options.serverUrl.replace(/\/$/, ""),
+          nodeId: options.nodeId,
+          passw: options.passw,
+        }
+      : { nodeId: options.nodeId, passw: options.passw };
+  const blob = new Blob([JSON.stringify(payload, null, 2)], {
     type: "application/json",
   });
   const url = URL.createObjectURL(blob);

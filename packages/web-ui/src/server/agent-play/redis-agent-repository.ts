@@ -156,6 +156,7 @@ export class RedisAgentRepository implements AgentRepository {
     nodeId: string;
     rootKey: string;
     mainNodeId?: string;
+    passwHash?: string;
   }): Promise<{ ok: boolean; reason?: string; nodeKind?: NodeKind }> {
     await this.ensureRootNodeExists();
     const nodeAuth = await this.redis.hgetall(nodeAuthKey(this.hostId, input.nodeId));
@@ -181,6 +182,13 @@ export class RedisAgentRepository implements AgentRepository {
     });
     if (!derivativeOk) {
       return { ok: false, reason: "derivative mismatch", nodeKind };
+    }
+    if (
+      typeof input.passwHash === "string" &&
+      input.passwHash.length > 0 &&
+      passwHash !== input.passwHash
+    ) {
+      return { ok: false, reason: "passwHash mismatch", nodeKind };
     }
     if (nodeKind === "agent" && input.mainNodeId !== undefined) {
       const parentNodeId = nodeAuth.parentNodeId;
