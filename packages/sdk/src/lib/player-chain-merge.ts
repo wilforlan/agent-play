@@ -7,6 +7,7 @@ import type {
   AgentPlayWorldMapHumanOccupant,
   AgentPlayWorldMapAgentOccupant,
   AgentPlayWorldMapMcpOccupant,
+  AgentPlayWorldMapStructureOccupant,
   PlayerChainFanoutNotify,
   PlayerChainNotifyNodeRef,
   PlayerChainNodeResponse,
@@ -15,6 +16,8 @@ import {
   parseHumanOccupantRow,
   parseAgentOccupantRow,
   parseMcpOccupantRow,
+  parseSpaceCatalogEntry,
+  parseStructureOccupantRow,
 } from "./parse-occupant-row.js";
 import {
   PLAYER_CHAIN_GENESIS_STABLE_KEY,
@@ -30,6 +33,7 @@ function stableOccupantSortKey(
     | AgentPlayWorldMapHumanOccupant
     | AgentPlayWorldMapAgentOccupant
     | AgentPlayWorldMapMcpOccupant
+    | AgentPlayWorldMapStructureOccupant
 ): string {
   if (occ.kind === "human") {
     return `human:${occ.id}`;
@@ -40,6 +44,9 @@ function stableOccupantSortKey(
       throw new Error("stableOccupantSortKey: invalid agent nodeId");
     }
     return `agent:${nodeId}:${occ.agentId}`;
+  }
+  if (occ.kind === "structure") {
+    return `structure:${occ.id}`;
   }
   return `mcp:${occ.id}`;
 }
@@ -146,6 +153,24 @@ export function parsePlayerChainNodeRpcBody(json: unknown): PlayerChainNodeRespo
       bounds: { minX, minY, maxX, maxY },
     };
   }
+  if (n.kind === "space") {
+    if (typeof n.stableKey !== "string" || n.stableKey.length === 0) {
+      throw new Error("getPlayerChainNode: invalid space stableKey");
+    }
+    if (n.removed === true) {
+      return { kind: "space", stableKey: n.stableKey, removed: true };
+    }
+    const sp = n.space;
+    if (!isRecord(sp)) {
+      throw new Error("getPlayerChainNode: invalid space payload");
+    }
+    return {
+      kind: "space",
+      stableKey: n.stableKey,
+      removed: false,
+      space: parseSpaceCatalogEntry(sp),
+    };
+  }
   if (n.kind !== "occupant") {
     throw new Error("getPlayerChainNode: unknown node kind");
   }
@@ -158,7 +183,10 @@ export function parsePlayerChainNodeRpcBody(json: unknown): PlayerChainNodeRespo
   const occ = n.occupant;
   if (
     !isRecord(occ) ||
-    (occ.kind !== "human" && occ.kind !== "agent" && occ.kind !== "mcp")
+    (occ.kind !== "human" &&
+      occ.kind !== "agent" &&
+      occ.kind !== "mcp" &&
+      occ.kind !== "structure")
   ) {
     throw new Error("getPlayerChainNode: invalid occupant payload");
   }
@@ -167,7 +195,9 @@ export function parsePlayerChainNodeRpcBody(json: unknown): PlayerChainNodeRespo
       ? parseHumanOccupantRow(occ)
       : occ.kind === "agent"
       ? parseAgentOccupantRow(occ)
-      : parseMcpOccupantRow(occ);
+      : occ.kind === "mcp"
+      ? parseMcpOccupantRow(occ)
+      : parseStructureOccupantRow(occ);
   return {
     kind: "occupant",
     stableKey: n.stableKey,
@@ -182,6 +212,21 @@ export function mergeSnapshotWithPlayerChainNode(
 ): AgentPlaySnapshot {
   if (node.kind === "genesis") {
     return snapshot;
+  }
+  if (node.kind === "space") {
+    const spaceIdFromKey = node.stableKey.startsWith("space:")
+      ? node.stableKey.slice("space:".length)
+      : "";
+    if (node.removed === true) {
+      return {
+        ...snapshot,
+        spaces: (snapshot.spaces ?? []).filter((s) => s.id !== spaceIdFromKey),
+      };
+    }
+    const merged = (snapshot.spaces ?? []).filter((s) => s.id !== node.space.id);
+    merged.push(node.space);
+    merged.sort((a, b) => a.id.localeCompare(b.id));
+    return { ...snapshot, spaces: merged };
   }
   if (node.kind === "header") {
     return {

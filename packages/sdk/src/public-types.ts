@@ -122,6 +122,12 @@ export type AddAgentInput = PlatformAgentInformation & {
    * Omitted or **`"off"`** disables realtime voice for this registration.
    */
   enableP2a?: P2aEnableFlag;
+  /**
+   * Per-agent instructions for OpenAI Realtime when **`enableP2a`** is **`"on"`** (e.g. from
+   * **`personality.txt`**). Ignored when **`initAudio`** was given explicit **`openai.instructions`**,
+   * which still wins as a global override.
+   */
+  realtimeInstructions?: string;
 };
 
 /**
@@ -133,7 +139,7 @@ export type AddAgentInput = PlatformAgentInformation & {
  * tools are indexed for the watch UI).
  *
  * **`agentId`** is required: use an id from **`agent-play create`** when the server uses a repository
- * (with account **`password`** from **`RemotePlayWorld`**), or any stable string for local dev without Redis.
+ * (with account **`passwHash`** from **`RemotePlayWorld`**), or any stable string for local dev without Redis.
  */
 export type AddPlayerInput = PlatformAgentInformation & {
   /** Registration from {@link langchainRegistration}. */
@@ -149,6 +155,10 @@ export type AddPlayerInput = PlatformAgentInformation & {
    * Same semantics as {@link AddAgentInput} **`enableP2a`**.
    */
   enableP2a?: P2aEnableFlag;
+  /**
+   * Same semantics as {@link AddAgentInput} **`realtimeInstructions`**.
+   */
+  realtimeInstructions?: string;
 };
 
 /** Zone counter event surfaced on snapshots and signals. */
@@ -242,15 +252,16 @@ export type AgentPlayWorldMapBounds = {
 };
 
 /**
- * One agent on the world map. Coordinates are grid positions; the server enforces unique `(x,y)` per occupant.
+ * One agent on the world map. Prefer `streetId` with layout-driven placement; `x`/`y` are optional on wire before normalization and act as a denormalized cache after materialize.
  */
 export type AgentPlayWorldMapAgentOccupant = {
   kind: "agent";
   nodeId?: string;
   agentId: string;
   name: string;
-  x: number;
-  y: number;
+  streetId?: string;
+  x?: number;
+  y?: number;
   /**
    * Integration label from addPlayer `type` (e.g. `langchain`). Populated from the snapshot field `platform`. The legacy wire field `agentType` is deprecated and accepted only for backward compatibility when parsing JSON.
    */
@@ -297,6 +308,39 @@ export type AgentPlayWorldMapMcpOccupant = {
   url?: string;
 };
 
+export type AgentPlaySpaceAmenityKind = "supermarket" | "shop" | "car_wash";
+
+export type AgentPlaySpaceOwner = {
+  displayName: string;
+  playerId?: string;
+  nodeId?: string;
+};
+
+export type AgentPlaySpaceCatalogEntry = {
+  id: string;
+  name: string;
+  description: string;
+  designKey: string;
+  owner: AgentPlaySpaceOwner;
+  amenities: AgentPlaySpaceAmenityKind[];
+  activityObjectIds?: string[];
+};
+
+/** Map anchor linking one or more authored spaces (see {@link AgentPlaySpaceCatalogEntry}). */
+export type AgentPlayWorldMapStructureOccupant = {
+  kind: "structure";
+  id: string;
+  name: string;
+  x: number;
+  y: number;
+  worldId: string;
+  spaceIds: string[];
+  /** When true, the anchor is fixed map furniture (e.g. authored spaces). */
+  stationary?: boolean;
+  primaryAmenity?: AgentPlaySpaceAmenityKind;
+  amenities?: AgentPlaySpaceAmenityKind[];
+};
+
 /** Spatial index: axis-aligned bounds plus every agent and MCP registration placed on the grid. */
 export type AgentPlayWorldMap = {
   bounds: AgentPlayWorldMapBounds;
@@ -304,7 +348,25 @@ export type AgentPlayWorldMap = {
     | AgentPlayWorldMapHumanOccupant
     | AgentPlayWorldMapAgentOccupant
     | AgentPlayWorldMapMcpOccupant
+    | AgentPlayWorldMapStructureOccupant
   )[];
+};
+
+/** Wire shape for seeded world zones (matches server snapshot `worldLayout`). */
+export type AgentPlayWorldLayoutZone = {
+  id: string;
+  streetId: string;
+  streetLabel: string;
+  rect: AgentPlayWorldMapBounds;
+  primaryGroup: "agent" | "space" | "mcp";
+  allowedGroups: readonly ("agent" | "space" | "mcp")[];
+};
+
+export type AgentPlayWorldLayout = {
+  rev: number;
+  bounds: AgentPlayWorldMapBounds;
+  zones: AgentPlayWorldLayoutZone[];
+  streets: readonly { id: string; label: string }[];
 };
 
 /**
@@ -314,6 +376,8 @@ export type AgentPlayWorldMap = {
 export type AgentPlaySnapshot = {
   sid: string;
   worldMap: AgentPlayWorldMap;
+  worldLayout?: AgentPlayWorldLayout;
+  spaces?: AgentPlaySpaceCatalogEntry[];
   mcpServers?: Array<{ id: string; name: string; url?: string }>;
 };
 
@@ -358,14 +422,30 @@ export type PlayerChainOccupantPresentNode = {
   occupant:
     | AgentPlayWorldMapHumanOccupant
     | AgentPlayWorldMapAgentOccupant
-    | AgentPlayWorldMapMcpOccupant;
+    | AgentPlayWorldMapMcpOccupant
+    | AgentPlayWorldMapStructureOccupant;
+};
+
+export type PlayerChainSpaceRemovedNode = {
+  kind: "space";
+  stableKey: string;
+  removed: true;
+};
+
+export type PlayerChainSpacePresentNode = {
+  kind: "space";
+  stableKey: string;
+  removed: false;
+  space: AgentPlaySpaceCatalogEntry;
 };
 
 export type PlayerChainNodeResponse =
   | PlayerChainGenesisNode
   | PlayerChainHeaderNode
   | PlayerChainOccupantRemovedNode
-  | PlayerChainOccupantPresentNode;
+  | PlayerChainOccupantPresentNode
+  | PlayerChainSpaceRemovedNode
+  | PlayerChainSpacePresentNode;
 
 /** Full journey + path update (SSE `world:journey`); coordinates are embedded in `path` steps. */
 export type WorldJourneyUpdate = {

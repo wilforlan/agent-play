@@ -1,10 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { deriveNodeIdFromPassword } from "@agent-play/node-tools";
+import {
+  createNodeCredentialMaterial,
+  nodeCredentialFromHumanPhrase,
+} from "@agent-play/node-tools";
 import type {
   AgentRepository,
-  CreateAgentRecordInput,
   CreateAgentNodeRecordInput,
   CreateAgentRecordResult,
+  CreateNodeRecordInput,
   CreateNodeResult,
   NodeAuthRecord,
   StoredAgentRecord,
@@ -34,25 +37,55 @@ class TestNodeRepository implements AgentRepository {
     return { ok: false, reason: "not used in this test" };
   }
 
-  async createNode(input: { kind: "main"; passw: string }): Promise<CreateNodeResult> {
-    const passw = input.passw;
-    const nodeId = deriveNodeIdFromPassword({
-      password: passw,
-      rootKey: this.rootKey,
-    });
-    if (this.nodes.has(nodeId)) {
+  async createNode(input: CreateNodeRecordInput): Promise<CreateNodeResult> {
+    if (input.kind === "main") {
+      const nodeId = input.nodeId.trim().toLowerCase();
+      if (this.nodes.has(nodeId)) {
+        throw new Error("createNode: node already exists");
+      }
+      this.nodes.set(nodeId, {
+        nodeId,
+        kind: "main",
+        parentNodeId: this.rootKey,
+        passwHash: input.passwHash,
+        createdAt: new Date().toISOString(),
+      });
+      return { nodeId };
+    }
+    if (input.passwHash !== undefined) {
+      const nodeId = `space-${input.spaceId}`;
+      if (this.nodes.has(nodeId)) {
+        throw new Error("createNode: node already exists");
+      }
+      this.nodes.set(nodeId, {
+        nodeId,
+        kind: "space",
+        spaceId: input.spaceId,
+        parentNodeId: this.rootKey,
+        passwHash: input.passwHash,
+        createdAt: new Date().toISOString(),
+      });
+      return { nodeId };
+    }
+    const generated = createNodeCredentialMaterial({ rootKey: this.rootKey });
+    if (this.nodes.has(generated.nodeId)) {
       throw new Error("createNode: node already exists");
     }
-    this.nodes.set(nodeId, {
-      nodeId,
-      kind: "main",
+    this.nodes.set(generated.nodeId, {
+      nodeId: generated.nodeId,
+      kind: "space",
+      spaceId: input.spaceId,
       parentNodeId: this.rootKey,
+      passwHash: generated.passwHash,
       createdAt: new Date().toISOString(),
     });
-    return { nodeId };
+    return { nodeId: generated.nodeId, phrase: generated.phrase };
   }
 
-  async verifyNodePassw(_nodeId: string, _passw: string): Promise<boolean> {
+  async verifyNodePasswHash(_input: {
+    nodeId: string;
+    passwHash: string;
+  }): Promise<boolean> {
     return false;
   }
 
@@ -64,12 +97,6 @@ class TestNodeRepository implements AgentRepository {
     _nodeId: string
   ): Promise<{ deletedAgentCount: number }> {
     return { deletedAgentCount: 0 };
-  }
-
-  async createAgent(
-    _input: CreateAgentRecordInput
-  ): Promise<CreateAgentRecordResult> {
-    throw new Error("not used in this test");
   }
 
   async createAgentNode(
@@ -102,38 +129,89 @@ class TestNodeRepository implements AgentRepository {
 }
 
 describe("parseCreateNodeBody", () => {
-  it("accepts a non-empty passw string", () => {
-    const r = parseCreateNodeBody({ kind: "main", passw: "hello world phrase" });
-    expect(r).toEqual({ ok: true, kind: "main", passw: "hello world phrase" });
+  it("accepts a main body with nodeId and passwHash", () => {
+    const r = parseCreateNodeBody({
+      kind: "main",
+      nodeId: "node-abc",
+      passwHash: "deadbeef",
+    });
+    expect(r).toEqual({
+      ok: true,
+      kind: "main",
+      nodeId: "node-abc",
+      passwHash: "deadbeef",
+    });
   });
 
-  it("rejects missing passw", () => {
-    const r = parseCreateNodeBody({});
+  it("accepts kind space with spaceId only (server-generated phrase)", () => {
+    const r = parseCreateNodeBody({ kind: "space", spaceId: "space-1" });
+    expect(r).toEqual({ ok: true, kind: "space", spaceId: "space-1" });
+  });
+
+  it("accepts kind space with spaceId and a supplied passwHash", () => {
+    const r = parseCreateNodeBody({
+      kind: "space",
+      spaceId: "space-1",
+      passwHash: "abc123",
+    });
+    expect(r).toEqual({
+      ok: true,
+      kind: "space",
+      spaceId: "space-1",
+      passwHash: "abc123",
+    });
+  });
+
+  it("rejects missing nodeId on main", () => {
+    const r = parseCreateNodeBody({ kind: "main", passwHash: "abc" });
     expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.error).toMatch(/passw/);
+    if (!r.ok) expect(r.error).toMatch(/nodeId/);
+  });
+
+  it("rejects missing passwHash on main", () => {
+    const r = parseCreateNodeBody({ kind: "main", nodeId: "node-abc" });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error).toMatch(/passwHash/);
   });
 });
 
 describe("createNodeAccount", () => {
   const rootKey = "fixture-root-key";
 
-  it("registers a new node id for a unique passphrase", async () => {
+  it("registers a new node id from a client-derived main credential", async () => {
     const repo = new TestNodeRepository({ rootKey });
+    const credential = nodeCredentialFromHumanPhrase({
+      phrase: "amber angle apple arch atlas",
+      rootKey,
+    });
     const { nodeId } = await createNodeAccount(repo, {
       kind: "main",
-      passw: "amber angle apple arch atlas",
+      nodeId: credential.nodeId,
+      passwHash: credential.passwHash,
     });
-    expect(nodeId.length).toBeGreaterThan(0);
+    expect(nodeId).toBe(credential.nodeId);
     const row = await repo.getNode(nodeId);
     expect(row?.nodeId).toBe(nodeId);
+    expect(row?.passwHash).toBe(credential.passwHash);
   });
 
-  it("rejects duplicate passphrase registration", async () => {
+  it("rejects re-registering the same nodeId", async () => {
     const repo = new TestNodeRepository({ rootKey });
-    const passw = "amber angle apple arch atlas aura autumn bamboo beacon birch blossom";
-    await createNodeAccount(repo, { kind: "main", passw });
-    await expect(createNodeAccount(repo, { kind: "main", passw })).rejects.toThrow(
-      /already exists/
-    );
+    const credential = nodeCredentialFromHumanPhrase({
+      phrase: "amber angle apple arch atlas aura autumn bamboo beacon birch",
+      rootKey,
+    });
+    await createNodeAccount(repo, {
+      kind: "main",
+      nodeId: credential.nodeId,
+      passwHash: credential.passwHash,
+    });
+    await expect(
+      createNodeAccount(repo, {
+        kind: "main",
+        nodeId: credential.nodeId,
+        passwHash: credential.passwHash,
+      })
+    ).rejects.toThrow(/already exists/);
   });
 });

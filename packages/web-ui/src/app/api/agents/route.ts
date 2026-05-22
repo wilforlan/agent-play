@@ -21,11 +21,11 @@ export async function GET(req: NextRequest) {
     return Response.json({ error: "repository not configured" }, { status: 503 });
   }
   const nodeId = req.headers.get("x-node-id")?.trim() ?? "";
-  const passw = req.headers.get("x-node-passw") ?? "";
-  if (nodeId.length === 0 || passw.length === 0) {
+  const passwHash = req.headers.get("x-node-passw") ?? "";
+  if (nodeId.length === 0 || passwHash.length === 0) {
     return Response.json({ error: "unauthorized" }, { status: 401 });
   }
-  if (!(await repo.verifyNodePassw(nodeId, passw))) {
+  if (!(await repo.verifyNodePasswHash({ nodeId, passwHash }))) {
     return Response.json({ error: "unauthorized" }, { status: 401 });
   }
   const agents = await repo.listAgentsForNode(nodeId);
@@ -37,15 +37,15 @@ export async function GET(req: NextRequest) {
  */
 export async function POST(req: NextRequest) {
   const nodeId = req.headers.get("x-node-id")?.trim() ?? "";
-  const passw = req.headers.get("x-node-passw") ?? "";
-  if (nodeId.length === 0 || passw.length === 0) {
+  const passwHash = req.headers.get("x-node-passw") ?? "";
+  if (nodeId.length === 0 || passwHash.length === 0) {
     return Response.json({ error: "unauthorized" }, { status: 401 });
   }
   const repo = await getRepository();
   if (repo === null) {
     return Response.json({ error: "repository not configured" }, { status: 503 });
   }
-  if (!(await repo.verifyNodePassw(nodeId, passw))) {
+  if (!(await repo.verifyNodePasswHash({ nodeId, passwHash }))) {
     return Response.json({ error: "unauthorized" }, { status: 401 });
   }
   return Response.json(
@@ -65,8 +65,8 @@ export async function POST(req: NextRequest) {
 
 export async function DELETE(req: NextRequest) {
   const nodeId = req.headers.get("x-node-id")?.trim() ?? "";
-  const passw = req.headers.get("x-node-passw") ?? "";
-  if (nodeId.length === 0 || passw.length === 0) {
+  const passwHash = req.headers.get("x-node-passw") ?? "";
+  if (nodeId.length === 0 || passwHash.length === 0) {
     return Response.json({ error: "unauthorized" }, { status: 401 });
   }
   const id = req.nextUrl.searchParams.get("id");
@@ -77,7 +77,7 @@ export async function DELETE(req: NextRequest) {
   if (repo === null) {
     return Response.json({ error: "repository not configured" }, { status: 503 });
   }
-  if (!(await repo.verifyNodePassw(nodeId, passw))) {
+  if (!(await repo.verifyNodePasswHash({ nodeId, passwHash }))) {
     return Response.json({ error: "unauthorized" }, { status: 401 });
   }
   const agent = await repo.getAgent(id);

@@ -33,12 +33,28 @@ const nextConfig = {
         destination: "/api/agent-play/proximity-action",
       },
       {
+        source: "/agent-play/geography",
+        destination: "/api/agent-play/geography",
+      },
+      {
         source: "/agent-play/assist-tool",
         destination: "/api/agent-play/assist-tool",
       },
       {
         source: "/agent-play/bootstrap",
         destination: "/api/agent-play/bootstrap",
+      },
+      {
+        source: "/agent-play/nodes/validate",
+        destination: "/api/nodes/validate",
+      },
+      {
+        source: "/agent-play/world-layout/bounds",
+        destination: "/api/agent-play/world-layout/bounds",
+      },
+      {
+        source: "/agent-play/players/:id/wallet",
+        destination: "/api/agent-play/players/:id/wallet",
       },
     ];
   },

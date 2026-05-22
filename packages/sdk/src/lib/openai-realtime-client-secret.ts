@@ -6,6 +6,8 @@ import type {
 export type ResolveRealtimeInstructionsOptions = {
   openai: RemotePlayWorldOpenAiAudioOptions;
   agentName: string;
+  /** Per-agent instructions (e.g. personality file); used after global explicit instructions. */
+  perAgentInstructions?: string;
 };
 
 /** Resolves OpenAI realtime instructions, preferring explicit text then template fallback. */
@@ -15,6 +17,10 @@ export function resolveRealtimeInstructions(
   const explicit = options.openai.instructions?.trim();
   if (explicit !== undefined && explicit.length > 0) {
     return explicit;
+  }
+  const perAgent = options.perAgentInstructions?.trim();
+  if (perAgent !== undefined && perAgent.length > 0) {
+    return perAgent;
   }
   const template = options.openai.instructionsTemplate?.trim();
   if (template !== undefined && template.length > 0) {

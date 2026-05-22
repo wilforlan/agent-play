@@ -7,9 +7,40 @@ export type CreatePreviewProximityTouchControlsOptions = {
   parent: HTMLElement;
   getBoundsElement: () => HTMLElement;
   getCanAct: () => boolean;
+  /**
+   * When the human is near a structure / space, this returns the space's
+   * display label (used to relabel the `A` button to "Enter"). Returns
+   * `null` / `undefined` when no structure proximity is active. Optional;
+   * undefined preserves the original agent-only behaviour.
+   */
+  getStructureProximityLabel?: () => string | null | undefined;
+  /**
+   * When the human is inside the space yard and walks up to an amenity pad,
+   * this returns the amenity's display label (used to relabel the `P`
+   * button to "Enter"). Returns `null` / `undefined` when no amenity
+   * proximity is active. Amenity proximity takes precedence over structure
+   * proximity (the two are mutually exclusive in practice because they
+   * happen on different stages, but the precedence is here for safety).
+   */
+  getAmenityProximityLabel?: () => string | null | undefined;
+  /**
+   * When the human is **inside** an amenity stage and standing next to a
+   * purchasable item (shop / supermarket / car-wash), this returns a
+   * short verb-action label for the `P` button — typically `"Buy"` or
+   * `"View"` (for a sold item). Returning `null` / `undefined` leaves
+   * the button on its default behaviour. Takes precedence over the
+   * other proximity labels.
+   */
+  getAmenityItemActionLabel?: () => string | null | undefined;
   onAssist: () => void;
   onChat: () => void;
   onPushToTalk: () => void;
+  /**
+   * Tap handler for the `W` (wallet) button. Always enabled — the wallet
+   * inventory is global, so it can be inspected on any stage, regardless
+   * of proximity state.
+   */
+  onWallet?: () => void;
 };
 
 export function createPreviewProximityTouchControls(
@@ -66,7 +97,20 @@ export function createPreviewProximityTouchControls(
   subP.textContent = "Push";
   btnPushToTalk.append(labelP, subP);
 
-  row.append(btnAssist, btnChat, btnPushToTalk);
+  const btnWallet = document.createElement("button");
+  btnWallet.type = "button";
+  btnWallet.className =
+    "preview-proximity-touch-pad__key preview-proximity-touch-pad__key--wallet";
+  btnWallet.setAttribute("aria-label", "Open wallet inventory");
+  const labelW = document.createElement("span");
+  labelW.className = "preview-proximity-touch-pad__key-letter";
+  labelW.textContent = "W";
+  const subW = document.createElement("span");
+  subW.className = "preview-proximity-touch-pad__key-sub";
+  subW.textContent = "Wallet";
+  btnWallet.append(labelW, subW);
+
+  row.append(btnAssist, btnChat, btnPushToTalk, btnWallet);
   root.append(dragHandle, row);
   options.parent.appendChild(root);
 
@@ -74,9 +118,57 @@ export function createPreviewProximityTouchControls(
 
   const applyInteractable = (): void => {
     const can = options.getCanAct();
-    btnAssist.disabled = !can;
-    btnChat.disabled = !can;
-    btnPushToTalk.disabled = !can;
+    const itemActionLabel = options.getAmenityItemActionLabel?.() ?? null;
+    const nearAmenityItem =
+      typeof itemActionLabel === "string" && itemActionLabel.length > 0;
+    const amenityLabel = options.getAmenityProximityLabel?.() ?? null;
+    const nearAmenity =
+      typeof amenityLabel === "string" && amenityLabel.length > 0;
+    const structureLabel = options.getStructureProximityLabel?.() ?? null;
+    const nearStructure =
+      typeof structureLabel === "string" && structureLabel.length > 0;
+    if (nearAmenityItem) {
+      btnAssist.disabled = true;
+      subA.textContent = "Assist";
+      btnAssist.removeAttribute("aria-label");
+      btnChat.disabled = true;
+      btnPushToTalk.disabled = false;
+      subP.textContent = itemActionLabel ?? "Buy";
+      btnPushToTalk.setAttribute(
+        "aria-label",
+        `${itemActionLabel ?? "Buy"} amenity item`
+      );
+    } else if (nearAmenity) {
+      btnAssist.disabled = true;
+      subA.textContent = "Assist";
+      btnAssist.removeAttribute("aria-label");
+      btnChat.disabled = true;
+      btnPushToTalk.disabled = false;
+      subP.textContent = "Enter";
+      btnPushToTalk.setAttribute(
+        "aria-label",
+        `Enter ${amenityLabel ?? "amenity"}`
+      );
+    } else if (nearStructure) {
+      btnAssist.disabled = false;
+      subA.textContent = "Enter";
+      btnAssist.setAttribute(
+        "aria-label",
+        `Enter ${structureLabel ?? "space"}`
+      );
+      btnChat.disabled = true;
+      btnPushToTalk.disabled = true;
+      subP.textContent = "Push";
+      btnPushToTalk.removeAttribute("aria-label");
+    } else {
+      btnAssist.disabled = !can;
+      subA.textContent = "Assist";
+      btnAssist.removeAttribute("aria-label");
+      btnChat.disabled = !can;
+      btnPushToTalk.disabled = !can;
+      subP.textContent = "Push";
+      btnPushToTalk.removeAttribute("aria-label");
+    }
   };
 
   const refresh = (): void => {
@@ -94,6 +186,9 @@ export function createPreviewProximityTouchControls(
   btnPushToTalk.addEventListener("click", () => {
     if (btnPushToTalk.disabled) return;
     options.onPushToTalk();
+  });
+  btnWallet.addEventListener("click", () => {
+    if (typeof options.onWallet === "function") options.onWallet();
   });
 
   let dragOffsetX = 0;

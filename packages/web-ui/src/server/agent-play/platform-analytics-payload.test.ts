@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type Redis from "ioredis";
+import { getDefaultPreviewWorldLayoutJson } from "./preview-serialize.js";
 import { buildPlatformAnalyticsPayload } from "./platform-analytics-payload.js";
 
 type HashRecord = Record<string, string>;
@@ -47,6 +48,7 @@ class FakeRedisForAnalytics {
             },
           ],
         },
+        worldLayout: getDefaultPreviewWorldLayoutJson(),
       })
     );
   }

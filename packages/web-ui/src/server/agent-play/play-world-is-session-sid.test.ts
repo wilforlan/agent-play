@@ -11,7 +11,7 @@ function stubRepo(partial: Partial<AgentRepository>): AgentRepository {
     createNode: async () => {
       throw new Error("unimplemented");
     },
-    verifyNodePassw: async () => false,
+    verifyNodePasswHash: async () => false,
     getNode: async () => null,
     deleteMainNodeCascade: async () => ({ deletedAgentCount: 0 }),
     createAgentNode: async () => {

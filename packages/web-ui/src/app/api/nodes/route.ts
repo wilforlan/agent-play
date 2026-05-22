@@ -29,11 +29,11 @@ export async function GET(req: NextRequest) {
     );
   }
   const nodeId = req.headers.get("x-node-id")?.trim() ?? "";
-  const passw = req.headers.get("x-node-passw") ?? "";
-  if (nodeId.length === 0 || passw.length === 0) {
+  const passwHash = req.headers.get("x-node-passw") ?? "";
+  if (nodeId.length === 0 || passwHash.length === 0) {
     return Response.json({ error: "unauthorized" }, { status: 401 });
   }
-  if (!(await repository.verifyNodePassw(nodeId, passw))) {
+  if (!(await repository.verifyNodePasswHash({ nodeId, passwHash }))) {
     return Response.json({ error: "unauthorized" }, { status: 401 });
   }
   const mainNode = await repository.getNode(nodeId);
@@ -57,12 +57,20 @@ export async function DELETE(req: NextRequest) {
     );
   }
   const nodeId = req.headers.get("x-node-id")?.trim() ?? "";
-  const passw = req.headers.get("x-node-passw") ?? "";
-  if (nodeId.length === 0 || passw.length === 0) {
-    return Response.json({ error: `unauthorized: missing ${nodeId.length === 0 ? "nodeId" : ""} ${passw.length === 0 ? "passw" : ""}` }, { status: 401 });
+  const passwHash = req.headers.get("x-node-passw") ?? "";
+  if (nodeId.length === 0 || passwHash.length === 0) {
+    return Response.json(
+      {
+        error: `unauthorized: missing ${nodeId.length === 0 ? "nodeId" : ""} ${passwHash.length === 0 ? "passwHash" : ""}`,
+      },
+      { status: 401 }
+    );
   }
-  if (!(await repository.verifyNodePassw(nodeId, passw))) {
-    return Response.json({ error: "unauthorized: verifyNodePassw failed" }, { status: 401 });
+  if (!(await repository.verifyNodePasswHash({ nodeId, passwHash }))) {
+    return Response.json(
+      { error: "unauthorized: verifyNodePasswHash failed" },
+      { status: 401 }
+    );
   }
   let body: unknown;
   try {
@@ -113,12 +121,22 @@ export async function POST(req: NextRequest) {
   if (!parsed.ok) {
     return Response.json({ error: parsed.error }, { status: 400 });
   }
-  console.log("parsed input on POST /api/nodes", parsed);
   try {
-    const result = await createNodeAccount(repository, {
-      kind: parsed.kind,
-      passw: parsed.passw,
-    });
+    const input =
+      parsed.kind === "main"
+        ? {
+            kind: "main" as const,
+            nodeId: parsed.nodeId,
+            passwHash: parsed.passwHash,
+          }
+        : {
+            kind: "space" as const,
+            spaceId: parsed.spaceId,
+            ...(parsed.passwHash !== undefined
+              ? { passwHash: parsed.passwHash }
+              : {}),
+          };
+    const result = await createNodeAccount(repository, input);
     return Response.json(result);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);

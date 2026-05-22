@@ -2,6 +2,7 @@ import {
   type AddAgentInput,
   type AddPlayerInput,
   type AgentPlaySnapshot,
+  type AgentPlayWorldLayout,
   type P2aEnableFlag,
   type RealtimeWebrtcClientSecret,
   type AgentPlayWorldMap,
@@ -22,16 +23,17 @@ import {
 } from "../world-events.js";
 import { randomUUID } from "node:crypto";
 import {
-  deriveNodeIdFromPassword,
   loadAgentPlayCredentialsFileFromPathSync,
   loadRootKey,
-  nodeCredentialsMaterialFromHumanPassphrase,
+  nodeCredentialFromHumanPhrase,
   resolveAgentPlayCredentialsPath,
 } from "@agent-play/node-tools";
 import {
   parseHumanOccupantRow,
   parseAgentOccupantRow,
   parseMcpOccupantRow,
+  parseSpaceCatalogEntry,
+  parseStructureOccupantRow,
 } from "./parse-occupant-row.js";
 import {
   mergeSnapshotWithPlayerChainNode,
@@ -51,6 +53,7 @@ import { intercomResultRecordFromLangChainInvokeOutput } from "./intercom-langch
 import {
   mintOpenAiRealtimeClientSecretForSdk,
   resolveRealtimeInstructions,
+  type ResolveRealtimeInstructionsOptions,
 } from "./openai-realtime-client-secret.js";
 
 const PLAYER_CONNECTION_HEARTBEAT_MAX_ATTEMPTS = 10;
@@ -58,8 +61,9 @@ const PLAYER_CONNECTION_HEARTBEAT_RETRY_DELAY_MS = 10_000;
 
 /**
  * Root key (from `.root`) plus **human** passphrase as stored in **`~/.agent-play/credentials.json`**
- * after **`agent-play create-main-node`**. Material for node id and wire auth is
- * **`nodeCredentialsMaterialFromHumanPassphrase(passw)`** (SHA-256 hex; same as CLI **`hashNodePassword`**).
+ * after **`agent-play create-main-node`**. The SDK hashes the phrase once locally via
+ * **`nodeCredentialFromHumanPhrase`** and sends the resulting **`passwHash`** as the
+ * `x-node-passw` header and as the `passwHash` field in repository-backed requests.
  */
 export type RemotePlayWorldNodeCredentials = {
   rootKey: string;
@@ -85,8 +89,8 @@ export type RemotePlayWorldOptions = {
 /** Options for {@link RemotePlayWorld.connect}. */
 export type RemotePlayWorldConnectOptions = {
   /**
-   * Parent **main** node id. When set, `connect` runs `POST /api/nodes/validate` first, then `GET /api/agent-play/session`.
-   * When omitted, only `GET /api/agent-play/session` runs.
+   * Main node id used for `POST /api/nodes/validate` as **`nodeId`** (not the derived credential id) and remembered for {@link RemotePlayWorld.addAgent} (`mainNodeId` on validate and register).
+   * When omitted, connect skips validate and addAgent uses the derived node id for main-parent fields.
    */
   mainNodeId?: string;
 };
@@ -145,10 +149,13 @@ function parseWorldMap(raw: unknown): AgentPlayWorldMap {
   for (const row of occ) {
     if (
       !isRecord(row) ||
-      (row.kind !== "human" && row.kind !== "agent" && row.kind !== "mcp")
+      (row.kind !== "human" &&
+        row.kind !== "agent" &&
+        row.kind !== "mcp" &&
+        row.kind !== "structure")
     ) {
       throw new Error(
-        "getWorldSnapshot: each occupant must have kind human, agent, or mcp"
+        "getWorldSnapshot: each occupant must have kind human, agent, mcp, or structure"
       );
     }
     const xy =
@@ -166,8 +173,10 @@ function parseWorldMap(raw: unknown): AgentPlayWorldMap {
       occupants.push(parseHumanOccupantRow(row));
     } else if (row.kind === "agent") {
       occupants.push(parseAgentOccupantRow(row));
-    } else {
+    } else if (row.kind === "mcp") {
       occupants.push(parseMcpOccupantRow(row));
+    } else {
+      occupants.push(parseStructureOccupantRow(row));
     }
   }
   return { bounds, occupants };
@@ -179,6 +188,17 @@ function parseAgentPlaySnapshot(snapshot: unknown): AgentPlaySnapshot {
   }
   const worldMap = parseWorldMap(snapshot.worldMap);
   const out: AgentPlaySnapshot = { sid: snapshot.sid, worldMap };
+  if ("worldLayout" in snapshot && isRecord(snapshot.worldLayout)) {
+    const wl = snapshot.worldLayout;
+    if (
+      typeof wl.rev === "number" &&
+      isRecord(wl.bounds) &&
+      Array.isArray(wl.zones) &&
+      Array.isArray(wl.streets)
+    ) {
+      out.worldLayout = wl as AgentPlayWorldLayout;
+    }
+  }
   if ("mcpServers" in snapshot && Array.isArray(snapshot.mcpServers)) {
     const servers: NonNullable<AgentPlaySnapshot["mcpServers"]> = [];
     for (const m of snapshot.mcpServers) {
@@ -193,6 +213,18 @@ function parseAgentPlaySnapshot(snapshot: unknown): AgentPlaySnapshot {
       servers.push(row);
     }
     if (servers.length > 0) out.mcpServers = servers;
+  }
+  if ("spaces" in snapshot && Array.isArray(snapshot.spaces)) {
+    const catalog: NonNullable<AgentPlaySnapshot["spaces"]> = [];
+    for (const row of snapshot.spaces) {
+      if (!isRecord(row)) {
+        continue;
+      }
+      catalog.push(parseSpaceCatalogEntry(row));
+    }
+    if (catalog.length > 0) {
+      out.spaces = catalog.sort((a, b) => a.id.localeCompare(b.id));
+    }
   }
   return out;
 }
@@ -362,13 +394,14 @@ export class RemotePlayWorld {
   private readonly rootKey: string;
   /** Node id derived from hashed passphrase material + root (main or agent node id). */
   private readonly derivedNodeId: string;
-  /** Hex password material (`hashNodePassword` on normalized human phrase); sent as `password` for repository addAgent. */
-  private readonly password: string;
+  /** Hex SHA-256 of the normalized human phrase; sent as `x-node-passw` and as `passwHash`. */
+  private readonly passwHash: string;
   private readonly onSessionEvent:
     | ((event: RemotePlayWorldSessionEvent) => void)
     | undefined;
   private readonly transportLog: boolean;
   private sid: string | null = null;
+  private configuredMainNodeId: string | null = null;
   private closed = false;
   private readonly closeListeners = new Set<() => void>();
   private readonly playerConnectionInfo = new Map<
@@ -400,12 +433,12 @@ export class RemotePlayWorld {
       nc.passw.length > 0
     ) {
       this.rootKey = nc.rootKey.trim().toLowerCase();
-      const material = nodeCredentialsMaterialFromHumanPassphrase(nc.passw);
-      this.password = material;
-      this.derivedNodeId = deriveNodeIdFromPassword({
-        password: material,
+      const credential = nodeCredentialFromHumanPhrase({
+        phrase: nc.passw,
         rootKey: this.rootKey,
       });
+      this.passwHash = credential.passwHash;
+      this.derivedNodeId = credential.nodeId;
       return;
     }
 
@@ -455,7 +488,7 @@ export class RemotePlayWorld {
   private authHeaders(): Record<string, string> {
     return {
       "x-node-id": this.derivedNodeId,
-      "x-node-passw": this.password,
+      "x-node-passw": this.passwHash,
     };
   }
 
@@ -516,18 +549,21 @@ export class RemotePlayWorld {
 
   /**
    * Establishes the HTTP session via `GET /api/agent-play/session`. With {@link RemotePlayWorldConnectOptions.mainNodeId},
-   * validates node identity with `POST /api/nodes/validate` first.
+   * validates that node with `POST /api/nodes/validate` using **`nodeId: mainNodeId`** first.
    */
   async connect(options?: RemotePlayWorldConnectOptions): Promise<void> {
     const mainNodeIdOpt = options?.mainNodeId?.trim();
     if (mainNodeIdOpt !== undefined && mainNodeIdOpt.length > 0) {
+      this.configuredMainNodeId = mainNodeIdOpt;
       const validation = await this.validateNodeIdentity({
-        nodeId: this.derivedNodeId,
-        mainNodeId: mainNodeIdOpt,
+        nodeId: mainNodeIdOpt,
+        mainNodeId: undefined,
       });
       console.info(
         `[agent-play] Node identity validated (${validation.nodeKind ?? "unknown"}).`
       );
+    } else {
+      this.configuredMainNodeId = null;
     }
     const res = await fetch(`${this.apiBase}/api/agent-play/session`, {
       headers: this.authHeaders(),
@@ -760,15 +796,16 @@ export class RemotePlayWorld {
   /**
    * Registers an automation agent using **agent node id** (`nodeId`), sent to the server as `agentId`.
    *
+   * Runs `POST /api/nodes/validate` with **`nodeId`** / **`mainNodeId`** from {@link AddAgentInput} before registering.
+   *
    * If {@link initAudio} was called and **`enableP2a`** is **`"on"`**, this call mints a per-agent
    * OpenAI Realtime client secret and forwards it as `realtimeWebrtc`.
    */
   async addAgent(input: AddAgentInput): Promise<RegisteredPlayer> {
     const sid = this.getSessionId();
-    const effectiveMainNodeId = this.derivedNodeId;
     const validation = await this.validateNodeIdentity({
       nodeId: input.nodeId,
-      mainNodeId: effectiveMainNodeId,
+      mainNodeId: input.mainNodeId,
     });
     console.info(
       [
@@ -776,38 +813,44 @@ export class RemotePlayWorld {
         `  status   : validated`,
         `  nodeId   : ${input.nodeId}`,
         `  nodeKind : ${validation.nodeKind ?? "unknown"}`,
-        `  mainNode : ${effectiveMainNodeId}`,
+        `  mainNode : ${input.mainNodeId ?? "n/a"}`,
       ].join("\n")
     );
     const url = `${this.apiBase}/api/agent-play/players?sid=${encodeURIComponent(sid)}`;
     const connectionId = randomUUID();
     const leaseTtlSeconds = 45;
     let realtimeWebrtcFromInit: RealtimeWebrtcClientSecret | undefined;
-    let realtimeInstructionsFromInit: string | undefined;
+    let resolvedRealtimeInstructions: string | undefined;
+
     if (input.enableP2a === "on" && this.audioInitOptions !== null) {
-      console.log("resolving realtime instructions for agent", input.name);
-      realtimeInstructionsFromInit = resolveRealtimeInstructions({
+      const resolveOpts: ResolveRealtimeInstructionsOptions = {
         openai: this.audioInitOptions,
         agentName: input.name,
-      });
-      realtimeWebrtcFromInit = await mintOpenAiRealtimeClientSecretForSdk({
-        openai: this.audioInitOptions,
-        agentName: input.name,
-      });
+        perAgentInstructions: input.realtimeInstructions ?? "",
+      };
+      resolvedRealtimeInstructions = resolveRealtimeInstructions(resolveOpts);
+      realtimeWebrtcFromInit = await mintOpenAiRealtimeClientSecretForSdk(resolveOpts);
       this.logTransport("addAgent:p2a_enabled", {
         agentName: input.name,
         model: this.audioInitOptions.model,
         voice: this.audioInitOptions.voice,
       });
     }
-    console.log("realtimeWebrtcFromInit", realtimeWebrtcFromInit);
-    console.log("realtimeInstructionsFromInit", realtimeInstructionsFromInit);
+
+    const callerRealtimeInstructions =
+      typeof input.realtimeInstructions === "string" &&
+      input.realtimeInstructions.trim().length > 0
+        ? input.realtimeInstructions
+        : undefined;
+    const forwardedRealtimeInstructions =
+      resolvedRealtimeInstructions ?? callerRealtimeInstructions;
+
     const requestPayload = {
       name: input.name,
       type: input.type,
       agent: input.agent,
-      mainNodeId: effectiveMainNodeId,
-      password: this.password,
+      mainNodeId: input.mainNodeId,
+      passwHash: this.passwHash,
       agentId: input.nodeId,
       connectionId,
       leaseTtlSeconds,
@@ -815,8 +858,8 @@ export class RemotePlayWorld {
       ...(realtimeWebrtcFromInit !== undefined
         ? { realtimeWebrtc: realtimeWebrtcFromInit }
         : {}),
-      ...(realtimeInstructionsFromInit !== undefined
-        ? { realtimeInstructions: realtimeInstructionsFromInit }
+      ...(forwardedRealtimeInstructions !== undefined
+        ? { realtimeInstructions: forwardedRealtimeInstructions }
         : {}),
     };
     this.logTransport("addAgent:request_payload", {
@@ -928,6 +971,9 @@ export class RemotePlayWorld {
     }
     if (input.mainNodeId !== undefined) {
       payload.mainNodeId = input.mainNodeId;
+    }
+    if (input.realtimeInstructions !== undefined) {
+      payload.realtimeInstructions = input.realtimeInstructions;
     }
     return this.addAgent(payload);
   }

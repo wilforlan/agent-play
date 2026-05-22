@@ -1,0 +1,398 @@
+# =============================================================================
+# Seed amenity content for all spaces
+# =============================================================================
+#
+# This is an AQL migration script that seeds the shop, supermarket and
+# car-wash amenities across every space currently configured in the world:
+#
+#   1. Bravo Towers     — car wash
+#   2. My Plaza         — car wash, shop, supermarket
+#   3. SandMill Circle  — shop, supermarket
+#   4. Apple Store      — shop, supermarket
+#   5. Perraw Lane      — supermarket, car wash
+#   7. Nelson SPA       — shop, supermarket
+#
+# How to run
+# ----------
+# 1. Open the playground at `/playground` and connect with your main
+#    passphrase. The playground session is reused by the script, so this
+#    file does *not* include a `CONNECT` statement.
+# 2. Replace every <PASSPHRASE> placeholder with the matching space's
+#    passphrase. Replace placeholder space node ids for Apple Store, Perraw
+#    Lane, and Albert Crest (node:000…0001 / 0002 / 0003) with real ids.
+# 3. Paste this entire file into the editor and click Run.
+#
+# The script is safe to re-run for *new* slots — the server auto-assigns
+# free supermarket columns and car-wash slots when omitted. Re-running
+# with the same explicit SLOT/COLUMN values will collide; remove or adjust
+# those rows if you need to top up.
+#
+# Pre-requisites
+# --------------
+# - Each space must already have its amenities attached (you said you do).
+#   If not, run `ADD AMENITY "shop"` (etc.) for the active space first.
+# - Spaces 4–6 use placeholder node ids (all zeros + trailing digit); replace
+#   with the real `node:…` from your layout before running.
+# - Every player wallet starts at $70 automatically; nothing to seed there.
+# =============================================================================
+
+# =============================================================================
+# 1. Bravo Towers — car wash (premium lot; wash-tier prices, low to flagship)
+# =============================================================================
+
+USE SPACE NODE "node:9728e8ed094690727a355be63f711dc3e40df3d068dccb3089bc96b7c338c966"
+  PASSPHRASE "<BRAVO_TOWERS_PASSPHRASE>"
+
+ADD CARWASH CAR SLOT 1 NAME "Phantom Coupe"   MODEL "Rolls XV"    YEAR 2024 PRICE 25.99  COLOR "#d4af37"
+ADD CARWASH CAR SLOT 2 NAME "Continental GT"  MODEL "Bentley"     YEAR 2023 PRICE 35.50  COLOR "#1a2a4a"
+ADD CARWASH CAR SLOT 3 NAME "S-Class Maybach" MODEL "Mercedes"    YEAR 2024 PRICE 44.00  COLOR "#0d0d0d"
+ADD CARWASH CAR SLOT 4 NAME "911 Turbo S"     MODEL "Porsche"     YEAR 2024 PRICE 52.75  COLOR "#b80c1c"
+ADD CARWASH CAR SLOT 5 NAME "Aventador"       MODEL "Lamborghini" YEAR 2022 PRICE 61.25  COLOR "#f7e600"
+ADD CARWASH CAR SLOT 6 NAME "Ghibli Trofeo"   MODEL "Maserati"    YEAR 2023 PRICE 68.00  COLOR "#ecebe9"
+ADD CARWASH CAR SLOT 7 NAME "Range Rover SV"  MODEL "Land Rover"  YEAR 2024 PRICE 76.50  COLOR "#224d33"
+ADD CARWASH CAR SLOT 8 NAME "Model S Plaid"   MODEL "Tesla"       YEAR 2024 PRICE 87.99  COLOR "#61676c"
+ADD CARWASH CAR SLOT 9 NAME "Cullinan"        MODEL "Rolls-Royce" YEAR 2024 PRICE 99.99  COLOR "#1c2540"
+
+# =============================================================================
+# 2. My Plaza — car wash + shop + supermarket (everyday mix)
+# =============================================================================
+
+USE SPACE NODE "node:6ae62056cee16358446278a7f69f3d2d81b18d16a3478fc15f69c75103482e91"
+  PASSPHRASE "<MY_PLAZA_PASSPHRASE>"
+
+# ---- car wash (mid-range, 6 cars; slots 7-9 left open) ----
+
+ADD CARWASH CAR SLOT 1 NAME "Civic Type R" MODEL "Honda"  YEAR 2024 PRICE 48000 COLOR "#f8f9fa"
+ADD CARWASH CAR SLOT 2 NAME "Mustang GT"   MODEL "Ford"   YEAR 2024 PRICE 52000 COLOR "#c91432"
+ADD CARWASH CAR SLOT 3 NAME "Camry XSE"    MODEL "Toyota" YEAR 2024 PRICE 36500 COLOR "#1a1a1a"
+ADD CARWASH CAR SLOT 4 NAME "Wrangler"     MODEL "Jeep"   YEAR 2024 PRICE 42000 COLOR "#5d6b3d"
+ADD CARWASH CAR SLOT 5 NAME "Model 3"      MODEL "Tesla"  YEAR 2024 PRICE 42500 COLOR "#1f3a5f"
+ADD CARWASH CAR SLOT 6 NAME "Outback"      MODEL "Subaru" YEAR 2024 PRICE 34500 COLOR "#4a6041"
+
+# ---- shop (11 items: 6 books, 3 music, 2 coffee) ----
+
+ADD SHOP ITEM TYPE "book"   NAME "The Pragmatic Programmer"
+  DESCRIPTION "20th Anniversary Edition — Hunt & Thomas" PRICE 24.99
+ADD SHOP ITEM TYPE "book"   NAME "Designing Data-Intensive Applications"
+  DESCRIPTION "Reliable, scalable, maintainable systems" PRICE 39.99
+ADD SHOP ITEM TYPE "book"   NAME "Atomic Habits"
+  DESCRIPTION "Tiny changes, remarkable results" PRICE 18.50
+ADD SHOP ITEM TYPE "book"   NAME "Clean Code"
+  DESCRIPTION "Robert C. Martin — craftsmanship and readability" PRICE 32.99
+ADD SHOP ITEM TYPE "book"   NAME "Structure and Interpretation of Computer Programs"
+  DESCRIPTION "Abelson & Sussman — classic CS foundations" PRICE 44.00
+ADD SHOP ITEM TYPE "book"   NAME "Working Effectively with Legacy Code"
+  DESCRIPTION "Michael Feathers — safe refactoring strategies" PRICE 36.50
+ADD SHOP ITEM TYPE "music"  NAME "Kind of Blue"
+  DESCRIPTION "Miles Davis — modal jazz landmark" PRICE 14.99
+ADD SHOP ITEM TYPE "music"  NAME "Random Access Memories"
+  DESCRIPTION "Daft Punk — disco-funk masterpiece" PRICE 16.99
+ADD SHOP ITEM TYPE "music"  NAME "OK Computer"
+  DESCRIPTION "Radiohead — alt-rock classic" PRICE 15.50
+ADD SHOP ITEM TYPE "coffee" NAME "Ethiopian Yirgacheffe"
+  DESCRIPTION "Bright, floral, citrus notes" PRICE 18.00
+ADD SHOP ITEM TYPE "coffee" NAME "Colombian Supremo"
+  DESCRIPTION "Smooth, balanced, medium roast" PRICE 14.50
+
+# ---- supermarket (full grid: row 1-4, ~4-5 items per row) ----
+
+# Row 1 - Fruits
+ADD SUPERMARKET ITEM ROW 1 NAME "Apple"        DESCRIPTION "Crisp Honeycrisp"     PRICE 1.25 COLUMN 1
+ADD SUPERMARKET ITEM ROW 1 NAME "Banana"       DESCRIPTION "Sweet and ripe"        PRICE 0.65 COLUMN 2
+ADD SUPERMARKET ITEM ROW 1 NAME "Mango"        DESCRIPTION "Tropical and juicy"    PRICE 2.10 COLUMN 3
+ADD SUPERMARKET ITEM ROW 1 NAME "Strawberries" DESCRIPTION "Pint, locally grown"   PRICE 4.50 COLUMN 4
+ADD SUPERMARKET ITEM ROW 1 NAME "Cucumber"     DESCRIPTION "Fresh and cool"        PRICE 1.10 COLUMN 5
+
+# Row 2 - Mens
+ADD SUPERMARKET ITEM ROW 2 NAME "T-Shirt"   DESCRIPTION "Cotton crew neck"     PRICE 18.00 COLUMN 1
+ADD SUPERMARKET ITEM ROW 2 NAME "Jeans"     DESCRIPTION "Slim fit denim"        PRICE 49.99 COLUMN 2
+ADD SUPERMARKET ITEM ROW 2 NAME "Sneakers"  DESCRIPTION "All-day comfort"       PRICE 65.00 COLUMN 3
+ADD SUPERMARKET ITEM ROW 2 NAME "Cap"       DESCRIPTION "Adjustable, navy"      PRICE 14.00 COLUMN 4
+ADD SUPERMARKET ITEM ROW 2 NAME "Watch"     DESCRIPTION "Stainless steel band"  PRICE 89.00 COLUMN 5
+
+# Row 3 - Womens
+ADD SUPERMARKET ITEM ROW 3 NAME "Dress"       DESCRIPTION "Summer linen"        PRICE 58.00 COLUMN 1
+ADD SUPERMARKET ITEM ROW 3 NAME "Handbag"     DESCRIPTION "Tote, vegan leather"  PRICE 72.00 COLUMN 2
+ADD SUPERMARKET ITEM ROW 3 NAME "Heels"       DESCRIPTION "Block heel, beige"    PRICE 64.00 COLUMN 3
+ADD SUPERMARKET ITEM ROW 3 NAME "Scarf"       DESCRIPTION "Silk blend"            PRICE 26.00 COLUMN 4
+ADD SUPERMARKET ITEM ROW 3 NAME "Sunglasses"  DESCRIPTION "UV400 polarized"       PRICE 38.00 COLUMN 5
+
+# Row 4 - Kids
+ADD SUPERMARKET ITEM ROW 4 NAME "Teddy Bear"  DESCRIPTION "Soft plush, 14 inch"  PRICE 22.00 COLUMN 1
+ADD SUPERMARKET ITEM ROW 4 NAME "Crayons"     DESCRIPTION "Pack of 48 colors"     PRICE 7.50  COLUMN 2
+ADD SUPERMARKET ITEM ROW 4 NAME "Lunchbox"    DESCRIPTION "Insulated, dinosaur"   PRICE 18.50 COLUMN 3
+ADD SUPERMARKET ITEM ROW 4 NAME "Sneakers"    DESCRIPTION "Velcro, sizes 10-3"    PRICE 32.00 COLUMN 4
+ADD SUPERMARKET ITEM ROW 4 NAME "Storybook"   DESCRIPTION "Bedtime tales, vol 1"  PRICE 12.99 COLUMN 5
+
+# =============================================================================
+# 3. SandMill Circle — shop + supermarket (artisan / local-feel)
+# =============================================================================
+
+USE SPACE NODE "node:b80024b47a7432614329c520010fc98e541c195fb3601d77253f674d539b1917"
+  PASSPHRASE "<SANDMILL_CIRCLE_PASSPHRASE>"
+
+# ---- shop (6 items, local artisan feel) ----
+
+ADD SHOP ITEM TYPE "book"   NAME "Local Histories"
+  DESCRIPTION "Stories from around SandMill"           PRICE 19.99
+ADD SHOP ITEM TYPE "book"   NAME "The Sand Garden"
+  DESCRIPTION "A novel by E. Marlow"                    PRICE 14.99
+ADD SHOP ITEM TYPE "music"  NAME "Coastal Sessions"
+  DESCRIPTION "Acoustic indie, recorded by the pier"   PRICE 13.50
+ADD SHOP ITEM TYPE "music"  NAME "Folk Roots Vol. 2"
+  DESCRIPTION "Songs of the land — multi-artist"       PRICE 12.99
+ADD SHOP ITEM TYPE "coffee" NAME "Sunrise Blend"
+  DESCRIPTION "Light roast, citrus-forward"             PRICE 16.00
+ADD SHOP ITEM TYPE "coffee" NAME "Mill Dark Roast"
+  DESCRIPTION "Bold, smoky, single-origin"              PRICE 15.50
+
+# ---- supermarket (full 4×5 grid; same capacity as My Plaza) ----
+
+# Row 1 - Fruits
+ADD SUPERMARKET ITEM ROW 1 NAME "Apple"        DESCRIPTION "Pick of the orchard"      PRICE 1.10 COLUMN 1
+ADD SUPERMARKET ITEM ROW 1 NAME "Banana"       DESCRIPTION "Fair trade"                PRICE 0.55 COLUMN 2
+ADD SUPERMARKET ITEM ROW 1 NAME "Mango"        DESCRIPTION "Alphonso, in season"       PRICE 2.40 COLUMN 3
+ADD SUPERMARKET ITEM ROW 1 NAME "Strawberries" DESCRIPTION "Sunday market pick"        PRICE 4.20 COLUMN 4
+ADD SUPERMARKET ITEM ROW 1 NAME "Cucumber"     DESCRIPTION "Hothouse, English"         PRICE 1.30 COLUMN 5
+
+# Row 2 - Mens
+ADD SUPERMARKET ITEM ROW 2 NAME "T-Shirt"      DESCRIPTION "Organic cotton tee"        PRICE 22.00 COLUMN 1
+ADD SUPERMARKET ITEM ROW 2 NAME "Work Apron"   DESCRIPTION "Waxed canvas, brass pins"  PRICE 34.00 COLUMN 2
+ADD SUPERMARKET ITEM ROW 2 NAME "Cap"          DESCRIPTION "SandMill embroidered"      PRICE 16.00 COLUMN 3
+ADD SUPERMARKET ITEM ROW 2 NAME "Wool Socks"    DESCRIPTION "Cable knit, natural dye"   PRICE 14.50 COLUMN 4
+ADD SUPERMARKET ITEM ROW 2 NAME "Canvas Belt"   DESCRIPTION "Solid brass buckle"        PRICE 28.00 COLUMN 5
+
+# Row 3 - Womens
+ADD SUPERMARKET ITEM ROW 3 NAME "Linen Wrap"   DESCRIPTION "Breathable, oat color"     PRICE 48.00 COLUMN 1
+ADD SUPERMARKET ITEM ROW 3 NAME "Scarf"        DESCRIPTION "Hand-loomed"               PRICE 32.00 COLUMN 2
+ADD SUPERMARKET ITEM ROW 3 NAME "Market Tote"  DESCRIPTION "Heavy linen, inner pocket" PRICE 36.00 COLUMN 3
+ADD SUPERMARKET ITEM ROW 3 NAME "Sunglasses"    DESCRIPTION "Tortoise frames"           PRICE 42.00 COLUMN 4
+ADD SUPERMARKET ITEM ROW 3 NAME "Silk Bandana" DESCRIPTION "Wildflower print"          PRICE 19.00 COLUMN 5
+
+# Row 4 - Kids
+ADD SUPERMARKET ITEM ROW 4 NAME "Storybook"   DESCRIPTION "Tales of the mill"         PRICE 13.50 COLUMN 1
+ADD SUPERMARKET ITEM ROW 4 NAME "Crayons"     DESCRIPTION "Beeswax, 24 colors"         PRICE 9.00  COLUMN 2
+ADD SUPERMARKET ITEM ROW 4 NAME "Wooden Top"  DESCRIPTION "Turned maple, food-safe"   PRICE 8.50  COLUMN 3
+ADD SUPERMARKET ITEM ROW 4 NAME "Rain Boots"  DESCRIPTION "Matte olive, sizes 7-2"    PRICE 29.00 COLUMN 4
+ADD SUPERMARKET ITEM ROW 4 NAME "Puzzle Box"  DESCRIPTION "Coastal wildlife, 48 pc"    PRICE 11.99 COLUMN 5
+
+# =============================================================================
+# 4. Apple Store — shop + supermarket (accessories & services tier, $29.99–$199.99)
+# =============================================================================
+#
+# Replace the USE SPACE NODE id with your real Apple Store space node id.
+
+USE SPACE NODE "node:0000000000000000000000000000000000000001"
+  PASSPHRASE "<APPLE_STORE_PASSPHRASE>"
+
+# ---- shop (TYPE is book | music | coffee — names skew Apple-retail) ----
+
+ADD SHOP ITEM TYPE "music" NAME "AirPods Pro 2"
+  DESCRIPTION "USB-C MagSafe case, active noise cancellation" PRICE 199.99
+ADD SHOP ITEM TYPE "music" NAME "AirPods 4 with ANC"
+  DESCRIPTION "Open-ear adaptive audio, wireless charging" PRICE 179.99
+ADD SHOP ITEM TYPE "music" NAME "HomePod mini"
+  DESCRIPTION "Computational audio, Thread / Matter ready" PRICE 99.99
+ADD SHOP ITEM TYPE "music" NAME "Beats Studio Pro"
+  DESCRIPTION "Lossless USB-C, spatial audio head tracking" PRICE 199.99
+ADD SHOP ITEM TYPE "book" NAME "Swift Programming Language (eBook)"
+  DESCRIPTION "Official language guide — latest language revision" PRICE 49.99
+ADD SHOP ITEM TYPE "book" NAME "Designed by Apple in California"
+  DESCRIPTION "Archive photo volume — products & craft" PRICE 199.99
+ADD SHOP ITEM TYPE "book" NAME "iPhone User Guide"
+  DESCRIPTION "Quick start, safety, and feature tour" PRICE 29.99
+ADD SHOP ITEM TYPE "book" NAME "Tips, Tricks & Shortcuts"
+  DESCRIPTION "Hidden gestures and Focus workflows" PRICE 34.99
+ADD SHOP ITEM TYPE "coffee" NAME "Apple Park Single Origin"
+  DESCRIPTION "Partner-roasted seasonal microlot, whole bean" PRICE 39.99
+ADD SHOP ITEM TYPE "coffee" NAME "Caffè Macs Espresso Blend"
+  DESCRIPTION "Dark chocolate notes, campus roast profile" PRICE 44.99
+
+# ---- supermarket (full 4×5 — accessories & lifestyle SKUs) ----
+
+# Row 1 - iPhone & MagSafe
+ADD SUPERMARKET ITEM ROW 1 NAME "Silicone Case with MagSafe" DESCRIPTION "iPhone 16 Pro, Storm Blue" PRICE 49.99 COLUMN 1
+ADD SUPERMARKET ITEM ROW 1 NAME "FineWoven Wallet with MagSafe" DESCRIPTION "Pacific Blue, Find My ready" PRICE 59.99 COLUMN 2
+ADD SUPERMARKET ITEM ROW 1 NAME "MagSafe Charger 1m" DESCRIPTION "Fast wireless pad, USB-C cable" PRICE 39.99 COLUMN 3
+ADD SUPERMARKET ITEM ROW 1 NAME "Battery Pack MagSafe" DESCRIPTION "Compact travel charge" PRICE 99.99 COLUMN 4
+ADD SUPERMARKET ITEM ROW 1 NAME "AirTag 4-pack" DESCRIPTION "Precision finding ready" PRICE 99.99 COLUMN 5
+
+# Row 2 - Power & iPad
+ADD SUPERMARKET ITEM ROW 2 NAME "140W USB-C Power Adapter" DESCRIPTION "MacBook Pro fast charge" PRICE 99.99 COLUMN 1
+ADD SUPERMARKET ITEM ROW 2 NAME "70W USB-C Compact Adapter" DESCRIPTION "GaN, foldable prongs" PRICE 59.99 COLUMN 2
+ADD SUPERMARKET ITEM ROW 2 NAME "USB-C to USB-C Cable 2m" DESCRIPTION "Thunderbolt 4 rated" PRICE 39.99 COLUMN 3
+ADD SUPERMARKET ITEM ROW 2 NAME "Apple Pencil Pro" DESCRIPTION "Barrel roll & squeeze" PRICE 129.99 COLUMN 4
+ADD SUPERMARKET ITEM ROW 2 NAME "Magic Keyboard iPad Pro 13" DESCRIPTION "Trackpad & function row" PRICE 199.99 COLUMN 5
+
+# Row 3 - Audio & display
+ADD SUPERMARKET ITEM ROW 3 NAME "AirPods Max Ear Cushions" DESCRIPTION "Midnight mesh kit" PRICE 69.99 COLUMN 1
+ADD SUPERMARKET ITEM ROW 3 NAME "USB-C to 3.5mm Adapter" DESCRIPTION "DAC for wired headphones" PRICE 35.00 COLUMN 2
+ADD SUPERMARKET ITEM ROW 3 NAME "Studio Display Nano-texture cloth" DESCRIPTION "Lint-free polishing" PRICE 29.99 COLUMN 3
+ADD SUPERMARKET ITEM ROW 3 NAME "Thunderbolt 4 Pro Cable 3m" DESCRIPTION "Black braided, 40Gb/s" PRICE 159.99 COLUMN 4
+ADD SUPERMARKET ITEM ROW 3 NAME "Polishing Cloth" DESCRIPTION "Safe for nano-texture glass" PRICE 29.99 COLUMN 5
+
+# Row 4 - Watch & bags
+ADD SUPERMARKET ITEM ROW 4 NAME "Sport Band S/M" DESCRIPTION "Soft fluoroelastomer, Starlight" PRICE 49.99 COLUMN 1
+ADD SUPERMARKET ITEM ROW 4 NAME "Trail Loop" DESCRIPTION "Lightweight alpine fit" PRICE 99.99 COLUMN 2
+ADD SUPERMARKET ITEM ROW 4 NAME "Hermès Single Tour" DESCRIPTION "Swift leather, stainless" PRICE 199.99 COLUMN 3
+ADD SUPERMARKET ITEM ROW 4 NAME "AirPods Pro Ear Tips S/M/L" DESCRIPTION "Replacement fit kit" PRICE 29.99 COLUMN 4
+ADD SUPERMARKET ITEM ROW 4 NAME "Incase BIONIC Messenger" DESCRIPTION "Recycled yarn, 16-inch MacBook" PRICE 149.99 COLUMN 5
+
+# =============================================================================
+# 5. Perraw Lane — supermarket + car wash (designer retail + prestige marques)
+# =============================================================================
+
+USE SPACE NODE "node:0000000000000000000000000000000000000002"
+  PASSPHRASE "<PERRAW_LANE_PASSPHRASE>"
+
+# ---- car wash (detail & care tier; names = flagship models) ----
+
+ADD CARWASH CAR SLOT 1 NAME "Spectre"           MODEL "Rolls-Royce" YEAR 2024 PRICE 199.99 COLOR "#0a0a0a"
+ADD CARWASH CAR SLOT 2 NAME "Continental GT"    MODEL "Bentley"     YEAR 2024 PRICE 174.99 COLOR "#1c2838"
+ADD CARWASH CAR SLOT 3 NAME "812 Competizione"  MODEL "Ferrari"     YEAR 2023 PRICE 199.99 COLOR "#c41e1e"
+ADD CARWASH CAR SLOT 4 NAME "Revuelto"          MODEL "Lamborghini" YEAR 2024 PRICE 189.99 COLOR "#6b8f2a"
+ADD CARWASH CAR SLOT 5 NAME "750S"              MODEL "McLaren"     YEAR 2024 PRICE 164.99 COLOR "#ff6600"
+ADD CARWASH CAR SLOT 6 NAME "DB12"              MODEL "Aston Martin" YEAR 2024 PRICE 149.99 COLOR "#0d3b2c"
+ADD CARWASH CAR SLOT 7 NAME "911 Turbo S"       MODEL "Porsche"     YEAR 2024 PRICE 29.99  COLOR "#c9a227"
+ADD CARWASH CAR SLOT 8 NAME "SL 63"             MODEL "Mercedes-AMG" YEAR 2024 PRICE 119.99 COLOR "#8b0000"
+ADD CARWASH CAR SLOT 9 NAME "Chiron Pur Sport"  MODEL "Bugatti"     YEAR 2022 PRICE 199.99 COLOR "#003366"
+
+# ---- supermarket (full 4×5 — designer fashion & objects) ----
+
+# Row 1 - Leather & jewelry
+ADD SUPERMARKET ITEM ROW 1 NAME "Bottega Cassette Card Case" DESCRIPTION "Intrecciato nappa" PRICE 199.99 COLUMN 1
+ADD SUPERMARKET ITEM ROW 1 NAME "Loewe Puzzle Mini" DESCRIPTION "Classic calfskin crossbody" PRICE 199.99 COLUMN 2
+ADD SUPERMARKET ITEM ROW 1 NAME "Cartier Love Bracelet SM" DESCRIPTION "18K rose gold narrow" PRICE 199.99 COLUMN 3
+ADD SUPERMARKET ITEM ROW 1 NAME "Tiffany T Wire Ring" DESCRIPTION "Sterling silver, polished" PRICE 29.99 COLUMN 4
+ADD SUPERMARKET ITEM ROW 1 NAME "Van Cleef Sweet Alhambra" DESCRIPTION "Mother-of-pearl pendant" PRICE 199.99 COLUMN 5
+
+# Row 2 - Mens designer
+ADD SUPERMARKET ITEM ROW 2 NAME "Tom Ford Ombre Leather 50ml" DESCRIPTION "Iconic leather accord" PRICE 199.99 COLUMN 1
+ADD SUPERMARKET ITEM ROW 2 NAME "Zegna Triple Stitch Sneaker" DESCRIPTION "Deerskin, triple cross" PRICE 199.99 COLUMN 2
+ADD SUPERMARKET ITEM ROW 2 NAME "Loro Piana Roadster Coat" DESCRIPTION "Storm System cashmere" PRICE 199.99 COLUMN 3
+ADD SUPERMARKET ITEM ROW 2 NAME "Brunello Cucinelli Crew" DESCRIPTION "Fine-gauge silk-cotton" PRICE 169.99 COLUMN 4
+ADD SUPERMARKET ITEM ROW 2 NAME "Saint Laurent SL 28" DESCRIPTION "Acetate square sunglasses" PRICE 189.99 COLUMN 5
+
+# Row 3 - Womens designer
+ADD SUPERMARKET ITEM ROW 3 NAME "Max Mara Manuela" DESCRIPTION "Camel hair wrap coat" PRICE 199.99 COLUMN 1
+ADD SUPERMARKET ITEM ROW 3 NAME "The Row Margaux 10" DESCRIPTION "Grained leather tote" PRICE 199.99 COLUMN 2
+ADD SUPERMARKET ITEM ROW 3 NAME "Manolo Blahnik Hangisi" DESCRIPTION "Satin pump, crystal buckle" PRICE 199.99 COLUMN 3
+ADD SUPERMARKET ITEM ROW 3 NAME "Dior Tribales Earring" DESCRIPTION "Resin pearl, CD hardware" PRICE 199.99 COLUMN 4
+ADD SUPERMARKET ITEM ROW 3 NAME "Chanel N°5 L'Eau 100ml" DESCRIPTION "Sheer modern floral" PRICE 159.99 COLUMN 5
+
+# Row 4 - Home & kids luxe
+ADD SUPERMARKET ITEM ROW 4 NAME "Hermès Avalon III Throw" DESCRIPTION "90% merino / 10% cashmere" PRICE 199.99 COLUMN 1
+ADD SUPERMARKET ITEM ROW 4 NAME "Fornasetti Architettura Plate" DESCRIPTION "Fine porcelain wall plate" PRICE 149.99 COLUMN 2
+ADD SUPERMARKET ITEM ROW 4 NAME "Bonpoint Cashmere Baby Set" DESCRIPTION "Hat, booties, blanket" PRICE 199.99 COLUMN 3
+ADD SUPERMARKET ITEM ROW 4 NAME "Jacadi Paris Smocked Dress" DESCRIPTION "Cotton voile, occasion" PRICE 129.99 COLUMN 4
+ADD SUPERMARKET ITEM ROW 4 NAME "Christofle Mood Party Set" DESCRIPTION "24-piece flatware egg" PRICE 199.99 COLUMN 5
+
+# =============================================================================
+# 6. Albert Crest — supermarket (global prestige care & apothecary)
+# =============================================================================
+
+USE SPACE NODE "node:0000000000000000000000000000000000000003"
+  PASSPHRASE "<ALBERT_CREST_PASSPHRASE>"
+
+# ---- supermarket (full 4×5 — dermatologist-grade & global care brands) ----
+
+# Row 1 - Cleansers & essences
+ADD SUPERMARKET ITEM ROW 1 NAME "La Mer Cleansing Foam" DESCRIPTION "Miracle Broth gentle foam" PRICE 95.00 COLUMN 1
+ADD SUPERMARKET ITEM ROW 1 NAME "SK-II Facial Treatment Essence 160ml" DESCRIPTION "Pitera flagship toner" PRICE 199.99 COLUMN 2
+ADD SUPERMARKET ITEM ROW 1 NAME "Augustinus Bader The Cream 50ml" DESCRIPTION "TFC8 stem-cell signal complex" PRICE 199.99 COLUMN 3
+ADD SUPERMARKET ITEM ROW 1 NAME "Tatcha Rice Wash" DESCRIPTION "pH-neutral creamy polish" PRICE 38.00 COLUMN 4
+ADD SUPERMARKET ITEM ROW 1 NAME "Dr. Barbara Sturm Cleanser" DESCRIPTION "Purslane calming gel" PRICE 70.00 COLUMN 5
+
+# Row 2 - Serums & treatments
+ADD SUPERMARKET ITEM ROW 2 NAME "SkinCeuticals C E Ferulic" DESCRIPTION "15% L-ascorbic antioxidant" PRICE 199.99 COLUMN 1
+ADD SUPERMARKET ITEM ROW 2 NAME "Drunk Elephant Protini Polypeptide" DESCRIPTION "Signal peptide cream" PRICE 68.00 COLUMN 2
+ADD SUPERMARKET ITEM ROW 2 NAME "Sunday Riley Good Genes" DESCRIPTION "Lactic acid treatment" PRICE 85.00 COLUMN 3
+ADD SUPERMARKET ITEM ROW 2 NAME "Estée Lauder Advanced Night Repair" DESCRIPTION "Chronolux repair serum 50ml" PRICE 125.00 COLUMN 4
+ADD SUPERMARKET ITEM ROW 2 NAME "Shiseido Ultimune Power Infusing" DESCRIPTION "ImuGeneration red defense" PRICE 110.00 COLUMN 5
+
+# Row 3 - Moisturizers & SPF
+ADD SUPERMARKET ITEM ROW 3 NAME "La Mer Moisturizing Soft Cream 30ml" DESCRIPTION "Miracle Broth whipped texture" PRICE 199.99 COLUMN 1
+ADD SUPERMARKET ITEM ROW 3 NAME "Supergoop Unseen Sunscreen SPF 40" DESCRIPTION "Invisible primer-finish" PRICE 38.00 COLUMN 2
+ADD SUPERMARKET ITEM ROW 3 NAME "EltaMD UV Clear SPF 46" DESCRIPTION "Niacinamide for sensitive skin" PRICE 43.00 COLUMN 3
+ADD SUPERMARKET ITEM ROW 3 NAME "Biologique Recherche P50 1970" DESCRIPTION "Classic acid exfoliating toner" PRICE 199.99 COLUMN 4
+ADD SUPERMARKET ITEM ROW 3 NAME "Caudalie Premier Cru Rich Cream" DESCRIPTION "Resveratrol lift complex" PRICE 129.00 COLUMN 5
+
+# Row 4 - Body & hair care
+ADD SUPERMARKET ITEM ROW 4 NAME "Oribe Gold Lust Shampoo" DESCRIPTION "Repair & restore liter refill" PRICE 199.99 COLUMN 1
+ADD SUPERMARKET ITEM ROW 4 NAME "Aesop Resurrection Aromatique" DESCRIPTION "Hand wash 500ml pump" PRICE 45.00 COLUMN 2
+ADD SUPERMARKET ITEM ROW 4 NAME "Le Labo Santal 33 Body Lotion" DESCRIPTION "Vegan lotion 237ml" PRICE 75.00 COLUMN 3
+ADD SUPERMARKET ITEM ROW 4 NAME "Diptyque Philosykos Shower Foam" DESCRIPTION "Fig leaf gel mousse" PRICE 52.00 COLUMN 4
+ADD SUPERMARKET ITEM ROW 4 NAME "Byredo Gypsy Water Body Cream" DESCRIPTION "Bergamot & incense cream" PRICE 99.00 COLUMN 5
+
+# =============================================================================
+# 7. Nelson SPA — supermarket (bath, body, treatment & gift lines)
+# =============================================================================
+#
+# Replace the USE SPACE NODE id and PASSPHRASE with your Nelson SPA space.
+
+USE SPACE NODE "node:0000000000000000000000000000000000000004"
+  PASSPHRASE "<NELSON_SPA_PASSPHRASE>"
+
+# ---- shop (book | music | coffee — Nelson SPA retail lounge) ----
+
+ADD SHOP ITEM TYPE "book" NAME "Nelson SPA Rituals & Seasons"
+  DESCRIPTION "House guide: steam, dry brush, and lunar bath calendar" PRICE 22.00
+ADD SHOP ITEM TYPE "book" NAME "The Science of Hydrotherapy"
+  DESCRIPTION "Evidence-led protocols for contrast bathing and recovery" PRICE 28.50
+ADD SHOP ITEM TYPE "book" NAME "Aromatherapy for Caregivers"
+  DESCRIPTION "Safe dilutions, diffusion, and workplace calm practices" PRICE 19.95
+ADD SHOP ITEM TYPE "book" NAME "Facial Mapping & Gua Sha Basics"
+  DESCRIPTION "Illustrated lymphatic strokes for home ritual" PRICE 24.00
+ADD SHOP ITEM TYPE "book" NAME "Mindful Breathing in Ten Minutes"
+  DESCRIPTION "Short exercises for pre-treatment and sleep" PRICE 14.50
+ADD SHOP ITEM TYPE "book" NAME "The Quiet Kitchen — Spa Teas"
+  DESCRIPTION "Blending botanicals without added sugar" PRICE 18.00
+
+ADD SHOP ITEM TYPE "music" NAME "Nelson SPA — Dawn Stillness"
+  DESCRIPTION "Ambient piano & distant rain; 62-minute continuous mix" PRICE 12.99
+ADD SHOP ITEM TYPE "music" NAME "Nelson SPA — Forest Floor"
+  DESCRIPTION "Binaural woodland walk; headphones recommended" PRICE 12.99
+ADD SHOP ITEM TYPE "music" NAME "Nelson SPA — Deep Drift"
+  DESCRIPTION "Low-tempo pads for float and massage rooms" PRICE 12.99
+
+ADD SHOP ITEM TYPE "coffee" NAME "Nelson SPA Calm Roast (Decaf)"
+  DESCRIPTION "Swiss-water decaf; milk chocolate and almond finish" PRICE 16.00
+ADD SHOP ITEM TYPE "coffee" NAME "Nelson SPA Adaptogen Latte Blend"
+  DESCRIPTION "Instant powder — ashwagandha, cacao, oat milk notes" PRICE 17.50
+
+# ---- supermarket (full 4×5 — Nelson SPA house collection) ----
+
+# Row 1 — Bath soaks & salts (maps to supermarket row 1 in the UI)
+ADD SUPERMARKET ITEM ROW 1 NAME "Nelson SPA Dead Sea Mineral Soak" DESCRIPTION "Fine crystals, magnesium-rich evening bath" PRICE 24.00 COLUMN 1
+ADD SUPERMARKET ITEM ROW 1 NAME "Nelson SPA Eucalyptus Steam Shower Tabs" DESCRIPTION "Six tabs; menthol-camphor release for sinus steam" PRICE 16.50 COLUMN 2
+ADD SUPERMARKET ITEM ROW 1 NAME "Nelson SPA Coconut Milk Bath" DESCRIPTION "Powder-to-milk, vanilla-orchid comfort soak" PRICE 19.95 COLUMN 3
+ADD SUPERMARKET ITEM ROW 1 NAME "Nelson SPA Magnesium Recovery Flakes" DESCRIPTION "Zechstein flakes for post-workout soak" PRICE 22.00 COLUMN 4
+ADD SUPERMARKET ITEM ROW 1 NAME "Nelson SPA Rose Geranium Bath Oil" DESCRIPTION "Glass dropper, 50ml; disperses without slick ring" PRICE 28.00 COLUMN 5
+
+# Row 2 — Massage, scrubs & muscle care
+ADD SUPERMARKET ITEM ROW 2 NAME "Nelson SPA Warm Stone Massage Oil" DESCRIPTION "Unscented grapeseed & jojoba glide base, 250ml" PRICE 32.00 COLUMN 1
+ADD SUPERMARKET ITEM ROW 2 NAME "Nelson SPA Arctic Mint Muscle Balm" DESCRIPTION "Wintergreen & peppermint, shea-wax stick" PRICE 18.00 COLUMN 2
+ADD SUPERMARKET ITEM ROW 2 NAME "Nelson SPA Jasmine Rice Body Polish" DESCRIPTION "Fine rice bran & sugar scrub, rinse-clean" PRICE 26.00 COLUMN 3
+ADD SUPERMARKET ITEM ROW 2 NAME "Nelson SPA Himalayan Salt Body Scrub" DESCRIPTION "Pink salt, sweet almond oil, small-batch jar" PRICE 29.50 COLUMN 4
+ADD SUPERMARKET ITEM ROW 2 NAME "Nelson SPA Arnica Recovery Gel" DESCRIPTION "Cooling gel for legs & shoulders after deep tissue" PRICE 21.00 COLUMN 5
+
+# Row 3 — Face, eyes & calm ritual
+ADD SUPERMARKET ITEM ROW 3 NAME "Nelson SPA Seaweed Clay Mask" DESCRIPTION "Weekly reset; French green clay & laminaria" PRICE 34.00 COLUMN 1
+ADD SUPERMARKET ITEM ROW 3 NAME "Nelson SPA Cucumber Gel Eye Patches" DESCRIPTION "Cooling hydrogel set of 6 pairs" PRICE 14.00 COLUMN 2
+ADD SUPERMARKET ITEM ROW 3 NAME "Nelson SPA White Tea Face Mist" DESCRIPTION "Niacinamide mist, 100ml glass atomizer" PRICE 22.00 COLUMN 3
+ADD SUPERMARKET ITEM ROW 3 NAME "Nelson SPA Lavender Weighted Eye Mask" DESCRIPTION "Silk cover, glass microbead fill, freezer-safe sleeve" PRICE 42.00 COLUMN 4
+ADD SUPERMARKET ITEM ROW 3 NAME "Nelson SPA Chamomile Alcohol-Free Toner" DESCRIPTION "200ml; soothes after steam or wax" PRICE 19.00 COLUMN 5
+
+# Row 4 — Robes, ambience & gifts
+ADD SUPERMARKET ITEM ROW 4 NAME "Nelson SPA Waffle Robe" DESCRIPTION "Unisex oat cotton, knee length, deep pockets" PRICE 78.00 COLUMN 1
+ADD SUPERMARKET ITEM ROW 4 NAME "Nelson SPA Memory Foam Linen Slippers" DESCRIPTION "Open toe, washable sole, one size adj." PRICE 32.00 COLUMN 2
+ADD SUPERMARKET ITEM ROW 4 NAME "Nelson SPA Cedarwood Soy Candle 220g" DESCRIPTION "Single wick, 45h burn, matte ceramic vessel" PRICE 36.00 COLUMN 3
+ADD SUPERMARKET ITEM ROW 4 NAME "Nelson SPA Spa Day Gift Card" DESCRIPTION "Redeem for 60 or 90 minutes; boxed certificate" PRICE 50.00 COLUMN 4
+ADD SUPERMARKET ITEM ROW 4 NAME "Nelson SPA Serenity Loose Leaf Tea" DESCRIPTION "Chamomile, lemon balm & rose hips, 80g tin" PRICE 15.00 COLUMN 5
+
+# =============================================================================
+# Done. Verify with:
+#   USE SPACE NODE "node:..." PASSPHRASE "<...>"
+#   INSPECT AMENITY "shop"
+#   SHOW RESPONSE
+# =============================================================================

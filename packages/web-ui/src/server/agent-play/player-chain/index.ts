@@ -119,7 +119,8 @@ export type PlayerChainDigest = {
 };
 
 /**
- * Canonical stable key for an occupant row: `human:{id}`, `agent:{nodeId}:{agentId}`, or `mcp:{id}`.
+ * Canonical stable key for an occupant row: `human:{id}`, `agent:{nodeId}:{agentId}`,
+ * `structure:{id}`, or `mcp:{id}`.
  * Matches sort order for leaves after genesis and header.
  */
 export function stableOccupantSortKey(
@@ -132,11 +133,19 @@ export function stableOccupantSortKey(
     const nodeId = occ.nodeId ?? "__legacy__";
     return `agent:${nodeId}:${occ.agentId}`;
   }
+  if (occ.kind === "structure") {
+    return `structure:${occ.id}`;
+  }
   return `mcp:${occ.id}`;
 }
 
+export function stableSpaceCatalogSortKey(spaceId: string): string {
+  return `space:${spaceId}`;
+}
+
 /**
- * Ordered leaves: `__genesis__`, `__header__`, then occupants sorted by {@link stableOccupantSortKey}.
+ * Ordered leaves: `__genesis__`, `__header__`, occupants sorted by {@link stableOccupantSortKey},
+ * then space catalog rows sorted by id (`space:{id}`).
  * Each entry’s digest is `digestLeaf(payload)` for the canonical UTF-8 payload.
  */
 export function buildLeafEntriesFromSnapshot(
@@ -166,6 +175,15 @@ export function buildLeafEntriesFromSnapshot(
     entries.push({
       stableKey: stableOccupantSortKey(occ),
       leafDigestHex: digestLeaf(stableStringify(occ)),
+    });
+  }
+  const spacesSorted = [...(snapshot.spaces ?? [])].sort((a, b) =>
+    a.id.localeCompare(b.id)
+  );
+  for (const sp of spacesSorted) {
+    entries.push({
+      stableKey: stableSpaceCatalogSortKey(sp.id),
+      leafDigestHex: digestLeaf(stableStringify(sp)),
     });
   }
   return entries;

@@ -35,7 +35,11 @@ export type PreviewViewSettings = {
   themeId: SceneThemeId;
   showChatUi: boolean;
   debugMode: boolean;
+  debugOccupancyQuartiles: boolean;
+  debugOccupancyFreeGrids: boolean;
+  worldGeographyEnabled: boolean;
   joystickEnabled: boolean;
+  stationaryPanels: boolean;
   p2aEnabled: boolean;
   deepLogsEnabled: boolean;
   profileAvatarPresetId: ProfileAvatarPresetId;
@@ -110,7 +114,11 @@ export function getDefaultViewSettings(): PreviewViewSettings {
     themeId: "park",
     showChatUi: true,
     debugMode: defaultDebugModeForHost(),
+    debugOccupancyQuartiles: false,
+    debugOccupancyFreeGrids: false,
+    worldGeographyEnabled: false,
     joystickEnabled: true,
+    stationaryPanels: false,
     p2aEnabled: false,
     deepLogsEnabled: defaultDeepLogsForHost(),
     profileAvatarPresetId: "default",
@@ -139,8 +147,20 @@ function parseStored(raw: string | null): Partial<PreviewViewSettings> | null {
     if (typeof o.debugMode === "boolean") {
       out.debugMode = o.debugMode;
     }
+    if (typeof o.debugOccupancyQuartiles === "boolean") {
+      out.debugOccupancyQuartiles = o.debugOccupancyQuartiles;
+    }
+    if (typeof o.debugOccupancyFreeGrids === "boolean") {
+      out.debugOccupancyFreeGrids = o.debugOccupancyFreeGrids;
+    }
+    if (typeof o.worldGeographyEnabled === "boolean") {
+      out.worldGeographyEnabled = o.worldGeographyEnabled;
+    }
     if (typeof o.joystickEnabled === "boolean") {
       out.joystickEnabled = o.joystickEnabled;
+    }
+    if (typeof o.stationaryPanels === "boolean") {
+      out.stationaryPanels = o.stationaryPanels;
     }
     if (typeof o.p2aEnabled === "boolean") {
       out.p2aEnabled = o.p2aEnabled;
@@ -185,7 +205,11 @@ function sanitize(s: PreviewViewSettings): PreviewViewSettings {
     themeId,
     showChatUi: s.showChatUi,
     debugMode: s.debugMode,
+    debugOccupancyQuartiles: s.debugOccupancyQuartiles,
+    debugOccupancyFreeGrids: s.debugOccupancyFreeGrids,
+    worldGeographyEnabled: s.worldGeographyEnabled,
     joystickEnabled: s.joystickEnabled,
+    stationaryPanels: s.stationaryPanels,
     p2aEnabled: s.p2aEnabled,
     deepLogsEnabled: s.deepLogsEnabled,
     profileAvatarPresetId,

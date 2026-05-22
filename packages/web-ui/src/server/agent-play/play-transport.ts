@@ -10,6 +10,28 @@ export const WORLD_INTERACTION_EVENT = "world:interaction" as const;
 
 export const WORLD_AGENT_SIGNAL_EVENT = "world:agent_signal" as const;
 
+export const WORLD_SPACE_TRANSITION_EVENT = "world:space_transition" as const;
+
+export const WORLD_GEOGRAPHY_EVENT = "world:geography" as const;
+
+/**
+ * Fanout topic emitted when a space amenity's content (shop items,
+ * supermarket items, car-wash cars) changes — additions, removals, and
+ * sold-state transitions during a purchase.
+ *
+ * @remarks
+ * Consumed by the client play-ui to re-render amenity stages without a full
+ * snapshot resync (the next snapshot still carries the authoritative state).
+ */
+export const SPACE_AMENITY_CONTENT_UPDATED_EVENT =
+  "space:amenity_content_updated" as const;
+
+/**
+ * Fanout topic emitted when a new player's wallet is auto-seeded to the
+ * default starting balance.
+ */
+export const PLAYER_WALLET_SEEDED_EVENT = "player:wallet_seeded" as const;
+
 export const WORLD_FANOUT_PLAYER_ID = "__world__";
 
 export type WorldAgentSignalPayload = {
@@ -26,6 +48,23 @@ export type WorldInteractionPayload = {
   text: string;
   at: string;
   seq: number;
+};
+
+export type WorldSpaceTransitionPayload = {
+  playerId: string;
+  from: {
+    playerId: string;
+    worldId: string;
+    structureId?: string;
+    spaceId?: string;
+  };
+  to: {
+    playerId: string;
+    worldId: string;
+    structureId?: string;
+    spaceId?: string;
+  };
+  at: string;
 };
 
 export class InMemoryPlayBus extends EventEmitter {

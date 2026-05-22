@@ -24,6 +24,17 @@ export const MINIMUM_PLAY_WORLD_BOUNDS: WorldBounds = {
   maxY: 19,
 };
 
+/**
+ * Default bounds for {@link createVerticalStripSeedLayout} (street / zone map).
+ * Shorter on Y than {@link MINIMUM_PLAY_WORLD_BOUNDS}: three vertical strips across span X = 20, height 3.
+ */
+export const MINIMUM_STREET_LAYOUT_BOUNDS: WorldBounds = {
+  minX: 0,
+  minY: 0,
+  maxX: 19,
+  maxY: 2,
+};
+
 export function expandBoundsToMinimumPlayArea(bounds: WorldBounds): WorldBounds {
   return {
     minX: Math.min(bounds.minX, MINIMUM_PLAY_WORLD_BOUNDS.minX),

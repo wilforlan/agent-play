@@ -17,6 +17,55 @@
  */
 import { Color, Container, Graphics, Text } from "pixi.js";
 import { nextAvatarMotion } from "./avatar-anim.js";
+import {
+  createStageController,
+  type StageController,
+} from "./stage-controller.js";
+import { createOverworldStage } from "./overworld-stage.js";
+import {
+  buildSpaceYardStage,
+  clampYardPosition,
+  yardSpawnPosition,
+  YARD_BOUNDS,
+  EXIT_DOOR_PROXIMITY_RADIUS_WORLD,
+  nextEnclosedStageInputDirection,
+  findNearestYardAmenityPad,
+  YARD_AMENITY_PROXIMITY_RADIUS_WORLD,
+  type SpaceYardStageHandle,
+  type YardPlayerAnim,
+  type YardAmenityPadPosition,
+} from "./space-yard-stage.js";
+import {
+  buildAmenityShopStage,
+  SHOP_BOUNDS,
+  type AmenityShopStageHandle,
+} from "./amenity-shop-stage.js";
+import {
+  buildAmenitySupermarketStage,
+  SUPERMARKET_BOUNDS,
+  type AmenitySupermarketStageHandle,
+} from "./amenity-supermarket-stage.js";
+import {
+  buildAmenityCarWashStage,
+  CAR_WASH_BOUNDS,
+  type AmenityCarWashStageHandle,
+} from "./amenity-carwash-stage.js";
+import type { AmenityStageBounds } from "./amenity-stage-base.js";
+import { resolveAmenityContent } from "./amenity-content-resolver.js";
+import {
+  resolveNearestAmenityBuyable,
+  type AmenityBuyable,
+} from "./amenity-item-buyable.js";
+import { createItemTooltip, type ItemTooltipHandle } from "./item-tooltip.js";
+import { executePurchase } from "./purchase-client.js";
+import { createWalletHud, type WalletHudHandle } from "./wallet-hud.js";
+import { fetchPlayerWallet } from "./wallet-client.js";
+import {
+  createWalletInventoryPanel,
+  type WalletInventoryPanelHandle,
+} from "./wallet-inventory-panel.js";
+import { fetchPurchases } from "./wallet-purchases-client.js";
+import { redeemWalletBundle } from "./wallet-bundle-client.js";
 import { deepLogObject, deepLogText, deepLogTree } from "./browser-deep-logs.js";
 import { buildCrowdLayer } from "./crowd-draw.js";
 import { layoutCrowdClusters } from "./crowd-layout.js";
@@ -34,14 +83,27 @@ import {
 } from "./agent-chat-panel-position.js";
 import {
   clampWorldPosition,
+  createVerticalStripSeedLayout,
+  DEFAULT_AGENT_SPAWN_MIN_DISTANCE,
   expandBoundsToMinimumPlayArea,
+  isAgentSpawnOccupancyPointAvailableInZone,
+  isSpaceAnchorOccupancyPointAvailableInZone,
+  listOccupancyPointsForZone,
   mergeSnapshotWithPlayerChainNode,
   MINIMUM_PLAY_WORLD_BOUNDS,
+  MINIMUM_STREET_LAYOUT_BOUNDS,
+  occupancyKeyForPosition,
   parsePlayerChainFanoutNotifyFromSsePayload,
   parsePlayerChainNodeRpcBody,
+  pickZoneForGroup,
+  pointCellInZone,
+  SPACE_STRUCTURE_ANCHOR_MIN_DISTANCE,
   sortNodeRefsForSerializedFetch,
+  STREET_NAME_POOL,
   type AgentPlaySnapshot,
+  type OccupantGroup,
   type WorldBounds,
+  type WorldLayout,
 } from "@agent-play/sdk/browser";
 import {
   appendChatLogLine,
@@ -73,16 +135,38 @@ import {
   setJoystickVectorZero,
   shouldClearPrimaryWaypointsWhileJoystickIdle,
 } from "./preview-debug-joystick.js";
+import {
+  isPlayPadKeyChar,
+  isPlayPadTwoLetterCombo,
+  PLAY_PAD_SEQUENCE_WINDOW_MS,
+  resolvePlayPadInputFromKeyBuffer,
+} from "./preview-play-pad-keys.js";
 import { createPreviewDebugPanel } from "./preview-debug-panel.js";
+import {
+  GEOGRAPHY_PUBLISH_INTERVAL_MS,
+  postGeographyLeave,
+  postGeographyPresence,
+} from "./preview-world-geography.js";
+import {
+  mountStreetSignPosts,
+  type StreetSignZone,
+} from "./world-street-signs.js";
 import { createPixiPreview, type PixiPreviewHandle } from "./pixi-multiverse.js";
-import { attachMobileSidePanelControls } from "./preview-mobile-side-panels.js";
+import {
+  attachMobileSidePanelControls,
+  PREVIEW_WIDE_SIDEBAR_MEDIA_QUERY,
+} from "./preview-mobile-side-panels.js";
 import { createPreviewProximityTouchControls } from "./preview-proximity-touch-controls.js";
 import { createPreviewGlobalChatRoom } from "./preview-global-chat-room";
-import { createPreviewRingerEngine } from "./preview-ringer-engine.js";
+import { createPreviewSpacesCtaPanel } from "./preview-spaces-cta-panel";
 import {
   createPreviewBottomBar,
   ensurePreviewLayoutStyles,
 } from "./preview-settings-toolbar.js";
+import {
+  attachPreviewFloatingPanelDrag,
+  syncPreviewCanvasHostScale,
+} from "./preview-floating-panel.js";
 import {
   getPreviewViewSettings,
   setPreviewViewSettings,
@@ -91,9 +175,13 @@ import { reportP2aToggleIfChanged } from "./presentation-analytics.js";
 import { createSkyDecorLayer } from "./sky-decor.js";
 import { ENABLE_CROWD_LAYER, getActiveSceneTheme } from "./scene-theme.js";
 import {
+  drawCarWashStructure,
   drawHomeStructure,
   drawMcpStore,
+  drawShopStructure,
+  drawSupermarketStructure,
   drawVendorStall,
+  type AmenityBuildingPalette,
 } from "./structure-art.js";
 import { buildParkWorldBackdrop } from "./scene-backgrounds.js";
 import {
@@ -104,10 +192,40 @@ import {
 import type { AvatarFacing } from "./avatar-anim.js";
 import {
   DEFAULT_PROXIMITY_RADIUS,
+  DEFAULT_STRUCTURE_PROXIMITY_RADIUS,
   findNearestProximityPartner,
+  findNearestStructureProximityTarget,
   proximityKeyToAction,
   type ProximityActionKind,
+  type StructureProximityTarget,
 } from "./proximity-interaction.js";
+import {
+  countAmenitiesInSpaceCompound,
+  representativePrimaryAmenityForCompound,
+} from "./space-compound-art.js";
+
+type ConsoleWorldLayoutBoundsField = "minX" | "minY" | "maxX" | "maxY";
+
+type ConsoleWorldLayoutBoundsSnapshot = {
+  minX: number;
+  minY: number;
+  maxX: number;
+  maxY: number;
+};
+
+type ConsoleWorldLayoutZoneSnapshot = {
+  id: string;
+  streetId: string;
+  streetLabel: string;
+  primaryGroup: OccupantGroup;
+  rect: ConsoleWorldLayoutBoundsSnapshot;
+};
+
+type ConsoleWorldLayoutSnapshot = {
+  rev: number;
+  bounds: ConsoleWorldLayoutBoundsSnapshot;
+  zones: readonly ConsoleWorldLayoutZoneSnapshot[];
+};
 
 type ConsoleWorldApi = {
   occupant: {
@@ -130,6 +248,16 @@ type ConsoleWorldApi = {
     minY: number;
     maxX: number;
     maxY: number;
+  };
+  layout: {
+    get: () => ConsoleWorldLayoutSnapshot | null;
+    bounds: {
+      get: () => ConsoleWorldLayoutBoundsSnapshot | null;
+      set: (
+        field: ConsoleWorldLayoutBoundsField,
+        value: number
+      ) => Promise<ConsoleWorldLayoutSnapshot>;
+    };
   };
 };
 
@@ -163,6 +291,7 @@ const WORLD_BOTTOM_MARGIN = 14;
 const WORLD_INTERACTION_SSE = "world:interaction";
 const WORLD_AGENT_SIGNAL_SSE = "world:agent_signal";
 const WORLD_INTERCOM_SSE = "world:intercom";
+const WORLD_GEOGRAPHY_SSE = "world:geography";
 const WORLD_GLOBAL_CHAT_CHANNEL = "intercom:world:global";
 const AP_INTERCOM_PROTOCOL = "ap-intercom";
 function buildIntercomAddress(nodeId: string): string {
@@ -186,9 +315,13 @@ type Structure = {
   y: number;
   kind: string;
   label?: string;
+  name?: string;
   toolName?: string;
   agentId?: string;
   playerId?: string;
+  primaryAmenity?: string;
+  amenities?: string[];
+  spaceIds?: readonly string[];
 };
 
 type PathStep = {
@@ -269,9 +402,52 @@ type SnapshotMcpOccupant = {
   url?: string;
 };
 
+type SnapshotHumanOccupant = {
+  kind: "human";
+  id: string;
+  name: string;
+  x: number;
+  y: number;
+  facing?: "left" | "right";
+  isMoving?: boolean;
+};
+
+type SnapshotStructureOccupant = {
+  kind: "structure";
+  id: string;
+  name: string;
+  x: number;
+  y: number;
+  worldId: string;
+  spaceIds: string[];
+  primaryAmenity?: string;
+  amenities?: string[];
+};
+
+type SnapshotWorldLayoutZone = {
+  id: string;
+  streetId: string;
+  streetLabel: string;
+  rect: WorldBounds;
+  primaryGroup: OccupantGroup;
+  allowedGroups: readonly OccupantGroup[];
+};
+
+type SnapshotWorldLayout = {
+  rev: number;
+  bounds: WorldBounds;
+  zones: readonly SnapshotWorldLayoutZone[];
+  streets: readonly { id: string; label: string }[];
+};
+
 type WorldMapJson = {
   bounds: { minX: number; minY: number; maxX: number; maxY: number };
-  occupants: (SnapshotAgentOccupant | SnapshotMcpOccupant)[];
+  occupants: (
+    | SnapshotAgentOccupant
+    | SnapshotMcpOccupant
+    | SnapshotStructureOccupant
+    | SnapshotHumanOccupant
+  )[];
 };
 
 type SnapshotMcpRegistration = {
@@ -280,10 +456,21 @@ type SnapshotMcpRegistration = {
   url?: string;
 };
 
+type SnapshotSpaceCatalogEntry = {
+  id: string;
+  amenityContent?: {
+    shopItems?: ReadonlyArray<unknown>;
+    supermarketItems?: ReadonlyArray<unknown>;
+    carWashCars?: ReadonlyArray<unknown>;
+  };
+};
+
 type Snapshot = {
   sid: string;
   worldMap: WorldMapJson;
+  worldLayout?: SnapshotWorldLayout;
   mcpServers?: SnapshotMcpRegistration[];
+  spaces?: SnapshotSpaceCatalogEntry[];
 };
 
 function mapOccupantLastUpdate(
@@ -346,6 +533,32 @@ function snapshotRealtimeInstructions(raw: unknown): string | undefined {
   return trimmed;
 }
 
+function listHumanRows(s: Snapshot): SnapshotHumanOccupant[] {
+  return s.worldMap.occupants.filter(
+    (o): o is SnapshotHumanOccupant => o.kind === "human"
+  );
+}
+
+function getLocalGeographyHumanId(): string | null {
+  return getMainNodeIdForIntercom();
+}
+
+function listMapRenderableRows(s: Snapshot): AgentRow[] {
+  const agents = listAgentRows(s);
+  if (!getPreviewViewSettings().worldGeographyEnabled) {
+    return agents;
+  }
+  const localId = getLocalGeographyHumanId();
+  const remoteHumans = listHumanRows(s)
+    .filter((h) => localId === null || h.id !== localId)
+    .map((h) => ({
+      agentId: h.id,
+      name: h.name,
+      structures: [] as Structure[],
+    }));
+  return [...agents, ...remoteHumans];
+}
+
 function listAgentRows(s: Snapshot): AgentRow[] {
   return s.worldMap.occupants
     .filter((o): o is SnapshotAgentOccupant => o.kind === "agent")
@@ -378,7 +591,7 @@ type AgentVisual = {
 };
 
 type StructureVisual = {
-  box: Graphics;
+  root: Container;
   caption: Text;
 };
 
@@ -520,11 +733,14 @@ const arrowKeys = {
 };
 
 let lastProximityPartnerId: string | null = null;
+let lastStructureProximityTarget: StructureProximityTarget | null = null;
 let proximityPromptEl: HTMLDivElement | null = null;
 let proximityLegendEl: HTMLDivElement | null = null;
 let proximityTouchPadHandle: { refresh: () => void } | null = null;
 
 const playerWorldPos = new Map<string, { x: number; y: number }>();
+let geographyLastPublishMs = 0;
+const remoteGeographyHumanIds = new Set<string>();
 const waypointQueues = new Map<string, Array<{ x: number; y: number }>>();
 const lastTickWorldPos = new Map<string, { x: number; y: number }>();
 const walkPhaseByPlayer = new Map<string, number>();
@@ -534,12 +750,62 @@ const movingByPlayer = new Map<string, boolean>();
 /** Latest RPC snapshot; drives rendering and chat. */
 let snapshot: Snapshot | null = null;
 
+function wireLayoutToRuntime(layout: SnapshotWorldLayout): WorldLayout {
+  return {
+    rev: layout.rev,
+    bounds: { ...layout.bounds },
+    zones: layout.zones.map((z) => ({
+      ...z,
+      rect: { ...z.rect },
+      allowedGroups: [...z.allowedGroups],
+    })),
+    streets: layout.streets.map((s) => ({ ...s })),
+  };
+}
+
+function resolveWorldLayout(): WorldLayout {
+  if (
+    snapshot?.worldLayout !== undefined &&
+    snapshot.worldLayout.zones.length > 0
+  ) {
+    return wireLayoutToRuntime(snapshot.worldLayout);
+  }
+  const s0 = STREET_NAME_POOL[0];
+  const s1 = STREET_NAME_POOL[1];
+  const s2 = STREET_NAME_POOL[2];
+  if (s0 === undefined || s1 === undefined || s2 === undefined) {
+    throw new Error("resolveWorldLayout: invalid street pool");
+  }
+  return createVerticalStripSeedLayout({
+    bounds: MINIMUM_STREET_LAYOUT_BOUNDS,
+    streets: [s0, s1, s2],
+  });
+}
+
+function zoneDebugStroke(primary: OccupantGroup): {
+  width: number;
+  color: number;
+  alpha: number;
+} {
+  if (primary === "agent") {
+    return { width: 3, color: 0xf97316, alpha: 0.95 };
+  }
+  if (primary === "space") {
+    return { width: 3, color: 0x2563eb, alpha: 0.95 };
+  }
+  return { width: 3, color: 0xa855f7, alpha: 0.95 };
+}
+
 /**
  * @returns `__human__` id when snapshot exists (viewer-controlled pawn), else `null`.
  * @remarks **Callers:** keyboard handlers. **Callees:** none.
  */
 function getHumanPlayerId(): string | null {
   return snapshot === null ? null : HUMAN_VIEWER_PLAYER_ID;
+}
+
+function getViewerWalletPlayerId(): string | null {
+  return getMainNodeIdForIntercom();
 }
 
 function isLocalHostRuntime(): boolean {
@@ -592,6 +858,54 @@ function moveOccupantFromConsole(
   return { id, x: clamped.x, y: clamped.y };
 }
 
+function snapshotConsoleWorldLayout(): ConsoleWorldLayoutSnapshot | null {
+  if (snapshot === null) return null;
+  const wl = snapshot.worldLayout;
+  if (wl === undefined) return null;
+  return {
+    rev: wl.rev,
+    bounds: { ...wl.bounds },
+    zones: wl.zones.map((z) => ({
+      id: z.id,
+      streetId: z.streetId,
+      streetLabel: z.streetLabel,
+      primaryGroup: z.primaryGroup as OccupantGroup,
+      rect: { ...z.rect },
+    })),
+  };
+}
+
+async function postLayoutBoundsField(
+  field: ConsoleWorldLayoutBoundsField,
+  value: number
+): Promise<ConsoleWorldLayoutSnapshot> {
+  const sid = getSid();
+  if (sid === null || sid.length === 0) {
+    throw new Error("[agent-play:world] missing sid");
+  }
+  const url = `${API_BASE}/world-layout/bounds?sid=${encodeURIComponent(sid)}`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ field, value }),
+  });
+  const json = (await res.json().catch(() => ({}))) as {
+    worldLayout?: ConsoleWorldLayoutSnapshot;
+    error?: string;
+  };
+  if (!res.ok) {
+    const msg =
+      typeof json.error === "string" && json.error.length > 0
+        ? json.error
+        : `HTTP ${String(res.status)}`;
+    throw new Error(`[agent-play:world] world-layout/bounds: ${msg}`);
+  }
+  if (json.worldLayout === undefined) {
+    throw new Error("[agent-play:world] world-layout/bounds: missing worldLayout");
+  }
+  return json.worldLayout;
+}
+
 function exposeWorldConsoleApi(): void {
   if (!isLocalHostRuntime()) {
     delete globalThis.world;
@@ -628,6 +942,22 @@ function exposeWorldConsoleApi(): void {
       maxX: mapMaxX,
       maxY: mapMaxY,
     }),
+    layout: {
+      get: () => snapshotConsoleWorldLayout(),
+      bounds: {
+        get: () => snapshotConsoleWorldLayout()?.bounds ?? null,
+        set: async (field, value) => {
+          const next = await postLayoutBoundsField(field, value);
+          console.info("[agent-play:world] layout bounds updated", {
+            field,
+            value,
+            rev: next.rev,
+            bounds: next.bounds,
+          });
+          return next;
+        },
+      },
+    },
   };
 }
 
@@ -805,11 +1135,63 @@ function onDocumentKeyDown(e: KeyboardEvent): void {
     setArrowKey(e.key, true);
     return;
   }
+  if (!inField && !e.repeat && getHumanPlayerId() !== null) {
+    const playPadKey = e.key.toLowerCase();
+    if (isPlayPadKeyChar(playPadKey) && tryHandlePlayPadKeyPress(playPadKey)) {
+      e.preventDefault();
+      return;
+    }
+  }
   if (inField || e.repeat) return;
+  if (e.key === "Escape") {
+    if (walletInventoryPanel !== null && walletInventoryPanel.isOpen()) {
+      e.preventDefault();
+      walletInventoryPanel.close();
+      return;
+    }
+    const stage = stageController?.current();
+    if (stage !== null && stage !== undefined && stage.id !== "overworld") {
+      e.preventDefault();
+      leaveCurrentEnclosedStageToPrevious();
+    }
+    return;
+  }
+  if (e.key.toLowerCase() === "w") {
+    e.preventDefault();
+    openWalletInventoryPanel();
+    return;
+  }
+  if (
+    e.key.toLowerCase() === "p" &&
+    lastYardAmenityPadTarget !== null &&
+    stageController?.current()?.id === "spaceYard"
+  ) {
+    e.preventDefault();
+    void enterAmenityFromYardPad(lastYardAmenityPadTarget);
+    return;
+  }
+  if (e.key.toLowerCase() === "p" && activeAmenityStage !== null) {
+    const stage = activeAmenityStage;
+    const buyable = stage.nearestBuyable;
+    if (buyable !== null) {
+      e.preventDefault();
+      cycleAmenityItemAction(stage, buyable);
+      return;
+    }
+  }
   const partner = registeredAgentPartnerForProximityOrNull(
     lastProximityPartnerId
   );
-  if (partner === null || partner === HUMAN_VIEWER_PLAYER_ID) return;
+  if (partner === null || partner === HUMAN_VIEWER_PLAYER_ID) {
+    if (
+      e.key.toLowerCase() === "a" &&
+      lastStructureProximityTarget !== null
+    ) {
+      e.preventDefault();
+      void enterStructureSpaceFromProximity(lastStructureProximityTarget);
+    }
+    return;
+  }
   const act = proximityKeyToAction(e.key);
   if (act === null) return;
   e.preventDefault();
@@ -844,7 +1226,469 @@ const structureLayer = new Container();
 const gridGraphics = new Graphics();
 const agentsLayer = new Container();
 const parkBackdropLayer = new Container();
+const streetSignsLayer = new Container();
 const worldRoot = new Container();
+/**
+ * The DOM element that contains the Pixi canvas. Captured by
+ * `bootstrap()` so that helpers outside the bootstrap closure (e.g.
+ * the amenity tooltip positioner) can convert player coordinates from
+ * canvas-host space into viewport pixels via `getBoundingClientRect()`.
+ */
+let canvasHostRef: HTMLElement | null = null;
+let stageController: StageController | null = null;
+let walletHud: WalletHudHandle | null = null;
+let walletInventoryPanel: WalletInventoryPanelHandle | null = null;
+let walletBalanceCached: number | null = null;
+
+async function refreshWalletHud(): Promise<void> {
+  if (walletHud === null) return;
+  const sid = getSid();
+  const playerId = getViewerWalletPlayerId();
+  if (sid === null || playerId === null) {
+    // No active player yet (snapshot still loading) — show a placeholder
+    // rather than a hard error so the HUD stays visible.
+    walletHud.setLoading();
+    return;
+  }
+  if (walletBalanceCached === null) {
+    walletHud.setLoading();
+  }
+  try {
+    const wallet = await fetchPlayerWallet({ playerId, sid });
+    walletBalanceCached = wallet.balanceUsd;
+    walletHud?.setBalance(wallet.balanceUsd);
+    walletHud?.setPowerUps(wallet.powerUps);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "wallet fetch failed";
+    walletHud?.setError(message);
+  }
+}
+
+async function refreshWalletInventoryPanel(): Promise<void> {
+  if (walletInventoryPanel === null) return;
+  const sid = getSid();
+  const playerId = getViewerWalletPlayerId();
+  if (sid === null || playerId === null) {
+    walletInventoryPanel.setError("Sign in to view your inventory.");
+    return;
+  }
+  walletInventoryPanel.setLoading();
+  try {
+    const result = await fetchPurchases({ sid, playerId });
+    walletBalanceCached = result.wallet.balanceUsd;
+    walletHud?.setBalance(result.wallet.balanceUsd);
+    walletHud?.setPowerUps(result.wallet.powerUps);
+    walletInventoryPanel.setData({
+      balanceUsd: result.wallet.balanceUsd,
+      powerUps: result.wallet.powerUps,
+      purchases: result.purchases,
+      items: result.items,
+    });
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "inventory fetch failed";
+    walletInventoryPanel.setError(message);
+  }
+}
+
+function openWalletInventoryPanel(): void {
+  if (walletInventoryPanel === null) return;
+  walletInventoryPanel.open();
+}
+
+const STRUCTURE_AMENITY_KIND_MAP: Record<string, "shop" | "supermarket" | "car_wash"> = {
+  shop: "shop",
+  supermarket: "supermarket",
+  car_wash: "car_wash",
+  carwash: "car_wash",
+};
+
+function deriveYardAmenitiesForSpace(spaceId: string): Array<{
+  kind: "shop" | "supermarket" | "car_wash";
+}> {
+  if (snapshot === null) return [];
+  const structs = collectStructuresForRender(snapshot);
+  const kinds = new Set<"shop" | "supermarket" | "car_wash">();
+  for (const st of structs) {
+    if (st.spaceIds === undefined || !st.spaceIds.includes(spaceId)) continue;
+    const candidates = [st.primaryAmenity, ...(st.amenities ?? [])];
+    for (const raw of candidates) {
+      if (raw === undefined) continue;
+      const mapped = STRUCTURE_AMENITY_KIND_MAP[raw];
+      if (mapped !== undefined) kinds.add(mapped);
+    }
+  }
+  return Array.from(kinds).slice(0, 3).map((kind) => ({ kind }));
+}
+
+let activeYardStage: SpaceYardStageHandle | null = null;
+let activeYardSpaceId: string | null = null;
+let lastYardAmenityPadTarget: YardAmenityPadPosition | null = null;
+
+type AmenityKind = "shop" | "supermarket" | "car_wash";
+
+const AMENITY_DISPLAY_LABEL: Record<AmenityKind, string> = {
+  shop: "Shop",
+  supermarket: "Supermarket",
+  car_wash: "Car Wash",
+};
+
+const AMENITY_STAGE_BOUNDS: Record<AmenityKind, AmenityStageBounds> = {
+  shop: SHOP_BOUNDS,
+  supermarket: SUPERMARKET_BOUNDS,
+  car_wash: CAR_WASH_BOUNDS,
+};
+
+type ActiveAmenityStage = {
+  kind: AmenityKind;
+  spaceId: string;
+  handle:
+    | AmenityShopStageHandle
+    | AmenitySupermarketStageHandle
+    | AmenityCarWashStageHandle;
+  bounds: AmenityStageBounds;
+  cellScale: number;
+  spawn: { x: number; y: number };
+  exitDoorAnchor: { x: number; y: number };
+  playerLayer: Container;
+  heroGraphic: Graphics;
+  offsetX: number;
+  offsetY: number;
+  nearestBuyable: AmenityBuyable | null;
+  tooltipOpenForItemId: string | null;
+};
+
+let activeAmenityStage: ActiveAmenityStage | null = null;
+let amenityItemTooltip: ItemTooltipHandle | null = null;
+
+/**
+ * Trigger `stageController.back()` and clear the active enclosed-stage
+ * reference once the transition resolves. Centralised so both the Esc path
+ * and the exit-door proximity path drop `activeYardStage` /
+ * `activeAmenityStage` at the right moment — never during the inbound
+ * transition (which used to break the per-stage tick).
+ */
+function leaveCurrentEnclosedStageToPrevious(): void {
+  const controller = stageController;
+  if (controller === null) return;
+  const wasAmenity = activeAmenityStage !== null;
+  void controller
+    .back()
+    .then(() => {
+      if (wasAmenity) {
+        activeAmenityStage = null;
+        amenityItemTooltip?.hide();
+      } else {
+        activeYardStage = null;
+        activeYardSpaceId = null;
+      }
+    })
+    .catch(() => {});
+}
+
+const leaveYardStageToPrevious = leaveCurrentEnclosedStageToPrevious;
+const yardPlayerState: {
+  pos: { x: number; y: number };
+  facing: "left" | "right";
+  walkPhase: number;
+  isMoving: boolean;
+} = {
+  pos: yardSpawnPosition(),
+  facing: "right",
+  walkPhase: 0,
+  isMoving: false,
+};
+let yardExitDebounceMs = 0;
+
+const YARD_PLAYER_SPEED_CELLS_PER_SEC = 3.2;
+
+function tickYardPlayer(dtSec: number): void {
+  const stage = activeYardStage;
+  if (stage === null) return;
+  const direction = nextEnclosedStageInputDirection({
+    joystickEnabled: getPreviewViewSettings().joystickEnabled,
+    joystickVector: getJoystickVector(),
+    arrowKeys,
+  });
+  const { dx, dy, source } = direction;
+  const isMoving = source !== "idle";
+  if (isMoving) {
+    const step = YARD_PLAYER_SPEED_CELLS_PER_SEC * dtSec;
+    yardPlayerState.pos.x = yardPlayerState.pos.x + dx * step;
+    yardPlayerState.pos.y = yardPlayerState.pos.y + dy * step;
+    yardPlayerState.pos = clampYardPosition(yardPlayerState.pos);
+    if (dx !== 0) yardPlayerState.facing = dx > 0 ? "right" : "left";
+    yardPlayerState.walkPhase = (yardPlayerState.walkPhase + dtSec * 4) % 1;
+  } else {
+    yardPlayerState.walkPhase = 0;
+  }
+  yardPlayerState.isMoving = isMoving;
+  const anim: YardPlayerAnim = {
+    facing: yardPlayerState.facing,
+    walkPhase: yardPlayerState.walkPhase,
+    isMoving,
+  };
+  stage.setPlayerYardPosition(yardPlayerState.pos, anim);
+
+  lastYardAmenityPadTarget = findNearestYardAmenityPad({
+    player: yardPlayerState.pos,
+    pads: stage.amenityPads,
+    radius: YARD_AMENITY_PROXIMITY_RADIUS_WORLD,
+  });
+
+  if (yardExitDebounceMs > 0) {
+    yardExitDebounceMs = Math.max(0, yardExitDebounceMs - dtSec * 1000);
+    return;
+  }
+  const door = stage.exitDoorAnchor;
+  const distToDoor = Math.hypot(
+    yardPlayerState.pos.x - door.x,
+    yardPlayerState.pos.y - door.y
+  );
+  if (distToDoor <= EXIT_DOOR_PROXIMITY_RADIUS_WORLD) {
+    yardExitDebounceMs = 400;
+    lastYardAmenityPadTarget = null;
+    leaveCurrentEnclosedStageToPrevious();
+  }
+}
+
+const amenityPlayerState: {
+  pos: { x: number; y: number };
+  facing: "left" | "right";
+  walkPhase: number;
+  isMoving: boolean;
+} = {
+  pos: { x: 0, y: 0 },
+  facing: "right",
+  walkPhase: 0,
+  isMoving: false,
+};
+let amenityExitDebounceMs = 0;
+
+const AMENITY_PLAYER_SPEED_CELLS_PER_SEC = 3.2;
+const AMENITY_HEADER_BAND_PX = 56;
+
+function amenitySpawnInside(bounds: AmenityStageBounds): { x: number; y: number } {
+  // Spawn near the bottom-centre, away from the (0,0) exit door.
+  return {
+    x: (bounds.minX + bounds.maxX) / 2,
+    y: bounds.maxY - 1,
+  };
+}
+
+function tickAmenityPlayer(dtSec: number): void {
+  const stage = activeAmenityStage;
+  if (stage === null) return;
+  const direction = nextEnclosedStageInputDirection({
+    joystickEnabled: getPreviewViewSettings().joystickEnabled,
+    joystickVector: getJoystickVector(),
+    arrowKeys,
+  });
+  const { dx, dy, source } = direction;
+  const isMoving = source !== "idle";
+  if (isMoving) {
+    const step = AMENITY_PLAYER_SPEED_CELLS_PER_SEC * dtSec;
+    amenityPlayerState.pos.x = amenityPlayerState.pos.x + dx * step;
+    amenityPlayerState.pos.y = amenityPlayerState.pos.y + dy * step;
+    amenityPlayerState.pos = stage.handle.clampPosition(amenityPlayerState.pos);
+    if (dx !== 0) amenityPlayerState.facing = dx > 0 ? "right" : "left";
+    amenityPlayerState.walkPhase =
+      (amenityPlayerState.walkPhase + dtSec * 4) % 1;
+  } else {
+    amenityPlayerState.walkPhase = 0;
+  }
+  amenityPlayerState.isMoving = isMoving;
+  renderAmenityPlayer(stage);
+  refreshNearestAmenityBuyable(stage);
+
+  if (amenityExitDebounceMs > 0) {
+    amenityExitDebounceMs = Math.max(0, amenityExitDebounceMs - dtSec * 1000);
+    return;
+  }
+  const door = stage.exitDoorAnchor;
+  const distToDoor = Math.hypot(
+    amenityPlayerState.pos.x - door.x,
+    amenityPlayerState.pos.y - door.y
+  );
+  if (distToDoor <= EXIT_DOOR_PROXIMITY_RADIUS_WORLD) {
+    amenityExitDebounceMs = 400;
+    leaveCurrentEnclosedStageToPrevious();
+  }
+}
+
+function renderAmenityPlayer(stage: ActiveAmenityStage): void {
+  stage.playerLayer.position.set(
+    amenityPlayerState.pos.x * stage.cellScale,
+    amenityPlayerState.pos.y * stage.cellScale
+  );
+  const playerScale = Math.max(0.5, Math.min(1.1, stage.cellScale / 48));
+  drawPlatformHero(stage.heroGraphic, {
+    scale: playerScale,
+    facing: amenityPlayerState.facing,
+    walkPhase: amenityPlayerState.walkPhase,
+    isMoving: amenityPlayerState.isMoving,
+  });
+}
+
+async function enterAmenityFromYardPad(
+  target: YardAmenityPadPosition
+): Promise<void> {
+  if (stageController === null) return;
+  if (activeAmenityStage !== null) return;
+  const current = stageController.current();
+  if (current === null || current.id !== "spaceYard") return;
+
+  const kind = target.kind as AmenityKind;
+  const bounds = AMENITY_STAGE_BOUNDS[kind];
+  const availableHeight = Math.max(0, VIEW_H - AMENITY_HEADER_BAND_PX);
+  const boundsW = Math.max(1, bounds.maxX - bounds.minX);
+  const boundsH = Math.max(1, bounds.maxY - bounds.minY);
+  const cellScale = Math.max(
+    16,
+    Math.min(VIEW_W / boundsW, availableHeight / boundsH)
+  );
+  const stageW = boundsW * cellScale;
+  const stageH = boundsH * cellScale;
+  const offsetX = (VIEW_W - stageW) / 2;
+  const offsetY = AMENITY_HEADER_BAND_PX + (availableHeight - stageH) / 2;
+
+  const resolvedContent =
+    activeYardSpaceId !== null
+      ? resolveAmenityContent({
+          snapshot,
+          spaceId: activeYardSpaceId,
+          kind,
+        })
+      : { shopItems: [], supermarketItems: [], carWashCars: [] };
+
+  let handle:
+    | AmenityShopStageHandle
+    | AmenitySupermarketStageHandle
+    | AmenityCarWashStageHandle;
+  if (kind === "shop") {
+    handle = buildAmenityShopStage({
+      cellScale,
+      items: resolvedContent.shopItems,
+    });
+  } else if (kind === "supermarket") {
+    handle = buildAmenitySupermarketStage({
+      cellScale,
+      items: resolvedContent.supermarketItems,
+    });
+  } else {
+    handle = buildAmenityCarWashStage({
+      cellScale,
+      cars: resolvedContent.carWashCars,
+    });
+  }
+  // The amenity stages return `root` typed as the minimal `StageRoot`
+  // contract for testability, but the live object is a Pixi `Container`.
+  const rootContainer = handle.root as unknown as Container;
+  rootContainer.position.set(offsetX, offsetY);
+
+  const header = new Graphics();
+  header
+    .rect(0, 0, VIEW_W, AMENITY_HEADER_BAND_PX)
+    .fill({ color: 0x111827 });
+  header
+    .rect(0, AMENITY_HEADER_BAND_PX - 2, VIEW_W, 2)
+    .fill({ color: 0x374151, alpha: 0.7 });
+  header.position.set(-offsetX, -offsetY);
+  rootContainer.addChild(header);
+
+  const headline = new Text({
+    text: AMENITY_DISPLAY_LABEL[kind],
+    style: {
+      fontFamily: "system-ui, sans-serif",
+      fontSize: 22,
+      fontWeight: "700",
+      fill: 0xffffff,
+      stroke: { color: 0x000000, width: 2, alpha: 0.45 },
+    },
+  });
+  headline.anchor.set(0.5, 0.5);
+  headline.position.set(VIEW_W / 2 - offsetX, AMENITY_HEADER_BAND_PX / 2 - offsetY);
+  rootContainer.addChild(headline);
+
+  const playerLayer = new Container();
+  const heroGraphic = new Graphics();
+  playerLayer.addChild(heroGraphic);
+  rootContainer.addChild(playerLayer);
+
+  const spawn = amenitySpawnInside(bounds);
+  amenityPlayerState.pos = handle.clampPosition({ x: spawn.x, y: spawn.y });
+  amenityPlayerState.facing = yardPlayerState.facing;
+  amenityPlayerState.walkPhase = 0;
+  amenityPlayerState.isMoving = false;
+  amenityExitDebounceMs = 250;
+
+  activeAmenityStage = {
+    kind,
+    spaceId: activeYardSpaceId ?? "",
+    handle,
+    bounds,
+    cellScale,
+    spawn,
+    exitDoorAnchor: handle.exitDoorAnchor,
+    playerLayer,
+    heroGraphic,
+    offsetX,
+    offsetY,
+    nearestBuyable: null,
+    tooltipOpenForItemId: null,
+  };
+  lastYardAmenityPadTarget = null;
+  renderAmenityPlayer(activeAmenityStage);
+
+  try {
+    await stageController.enter(handle);
+    deepLogText("stage:enter:amenity", { kind });
+  } catch (error) {
+    console.warn("[agent-play:world] enter amenity failed", error);
+    activeAmenityStage = null;
+  }
+}
+
+async function enterStructureSpaceFromProximity(
+  target: StructureProximityTarget
+): Promise<void> {
+  if (stageController === null) return;
+  const current = stageController.current();
+  if (current !== null && current.id !== "overworld") return;
+  try {
+    const amenities = deriveYardAmenitiesForSpace(target.spaceId);
+    const yard = buildSpaceYardStage({
+      spaceName: target.label ?? target.spaceId,
+      amenities,
+      viewportSize: { width: VIEW_W, height: VIEW_H },
+      palette,
+    });
+    activeYardStage = yard;
+    activeYardSpaceId = target.spaceId;
+    yardPlayerState.pos = yardSpawnPosition();
+    const overworldFacing =
+      getHumanPlayerId() !== null
+        ? facingByPlayer.get(getHumanPlayerId() as string) ?? "right"
+        : "right";
+    yardPlayerState.facing = overworldFacing;
+    yardPlayerState.walkPhase = 0;
+    yardPlayerState.isMoving = false;
+    yard.setPlayerYardPosition(yardPlayerState.pos, {
+      facing: yardPlayerState.facing,
+      walkPhase: 0,
+      isMoving: false,
+    });
+    yardExitDebounceMs = 250;
+    await stageController.enter(yard);
+    void refreshWalletHud();
+    deepLogText("stage:enter:space", {
+      spaceId: target.spaceId,
+      amenityCount: amenities.length,
+    });
+  } catch (error) {
+    console.warn("[agent-play:world] enter space failed", error);
+  }
+}
 
 let cameraX = 0;
 let cameraY = 0;
@@ -857,8 +1701,8 @@ let refreshPreviewChat: () => void = () => {};
 let agentChatOverlays: ReturnType<typeof createPreviewAgentChatOverlays> | null =
   null;
 let globalChatRoom: ReturnType<typeof createPreviewGlobalChatRoom> | null = null;
+let spacesCtaPanel: ReturnType<typeof createPreviewSpacesCtaPanel> | null = null;
 let activeIntercomAddress: string | null = null;
-const ringerEngine = createPreviewRingerEngine();
 let sessionInteractionPanel:
   | ReturnType<typeof createPreviewSessionInteractionPanel>
   | null = null;
@@ -871,8 +1715,61 @@ let sceneRootContainer: Container | null = null;
 let crowdLayerContainer: Container | null = null;
 let skyDecor: ReturnType<typeof createSkyDecorLayer> | null = null;
 let debugPanelUpdate: (() => void) | null = null;
+let debugPanelSyncCompanionLayout: (() => void) | null = null;
 let debugMountEl: HTMLElement | null = null;
 let joystickHandle: ReturnType<typeof createPreviewDebugJoystick> | null = null;
+let playPadKeyBuffer = "";
+let playPadKeySequenceTimer: ReturnType<typeof setTimeout> | null = null;
+
+function clearPlayPadKeySequenceTimer(): void {
+  if (playPadKeySequenceTimer !== null) {
+    clearTimeout(playPadKeySequenceTimer);
+    playPadKeySequenceTimer = null;
+  }
+}
+
+function resetPlayPadKeyBuffer(): void {
+  clearPlayPadKeySequenceTimer();
+  playPadKeyBuffer = "";
+}
+
+function tryHandlePlayPadKeyPress(char: string): boolean {
+  if (!getPreviewViewSettings().joystickEnabled || joystickHandle === null) {
+    return false;
+  }
+  playPadKeyBuffer += char;
+  clearPlayPadKeySequenceTimer();
+
+  if (char === "n") {
+    const attachInput = resolvePlayPadInputFromKeyBuffer("n");
+    playPadKeyBuffer = "";
+    if (attachInput === null) return false;
+    return joystickHandle.handlePlayPadInput(attachInput);
+  }
+
+  if (playPadKeyBuffer.length >= 2) {
+    const twoChar = playPadKeyBuffer.slice(-2);
+    if (isPlayPadTwoLetterCombo(twoChar)) {
+      const comboInput = resolvePlayPadInputFromKeyBuffer(twoChar);
+      playPadKeyBuffer = "";
+      if (comboInput === null) return false;
+      return joystickHandle.handlePlayPadInput(comboInput);
+    }
+  }
+
+  const buffered = playPadKeyBuffer;
+  playPadKeySequenceTimer = setTimeout(() => {
+    playPadKeySequenceTimer = null;
+    if (playPadKeyBuffer !== buffered) return;
+    const input = resolvePlayPadInputFromKeyBuffer(playPadKeyBuffer);
+    playPadKeyBuffer = "";
+    if (input !== null) {
+      joystickHandle?.handlePlayPadInput(input);
+    }
+  }, PLAY_PAD_SEQUENCE_WINDOW_MS);
+
+  return true;
+}
 let previewBootstrapStarted = false;
 let previewBootstrapLock: Promise<void> | null = null;
 
@@ -883,6 +1780,10 @@ let previewBootstrapLock: Promise<void> | null = null;
 function playerDisplayName(playerId: string): string {
   if (playerId === HUMAN_VIEWER_PLAYER_ID) return "You";
   if (snapshot === null) return playerId;
+  const human = listHumanRows(snapshot).find((h) => h.id === playerId);
+  if (human !== undefined) {
+    return human.name;
+  }
   return (
     listAgentRows(snapshot).find((p) => p.agentId === playerId)?.name ??
     playerId
@@ -919,39 +1820,6 @@ function resolvePersonalIntercomAddress(): string | null {
     return null;
   }
   return buildIntercomAddress(mainNodeId);
-}
-
-function readIntercomMessageForPlayback(data: {
-  message?: unknown;
-  result?: unknown;
-}): string | null {
-  if (typeof data.message === "string" && data.message.trim().length > 0) {
-    return data.message.trim();
-  }
-  if (typeof data.result !== "object" || data.result === null) {
-    return null;
-  }
-  const result = data.result as Record<string, unknown>;
-  const message = result.message;
-  if (typeof message === "string" && message.trim().length > 0) {
-    return message.trim();
-  }
-  const kind = result.messageKind;
-  if (kind === "media") {
-    const media = result.media;
-    if (
-      typeof media === "object" &&
-      media !== null &&
-      typeof (media as Record<string, unknown>).url === "string"
-    ) {
-      return `Media: ${(media as Record<string, unknown>).url as string}`;
-    }
-    return "Media message received.";
-  }
-  if (kind === "audio") {
-    return "Audio message received.";
-  }
-  return null;
 }
 
 function registeredAgentPartnerForProximityOrNull(
@@ -1013,14 +1881,27 @@ function hydrateChatFromSnapshot(s: Snapshot): void {
 function collectStructuresForRender(s: Snapshot): Structure[] {
   const out: Structure[] = [];
   for (const o of s.worldMap.occupants) {
-    if (o.kind !== "mcp") continue;
-    out.push({
-      id: `mcp:${o.id}`,
-      kind: "tool",
-      x: o.x,
-      y: o.y,
-      label: o.name,
-    });
+    if (o.kind === "mcp") {
+      out.push({
+        id: `mcp:${o.id}`,
+        kind: "tool",
+        x: o.x,
+        y: o.y,
+        label: o.name,
+      });
+    } else if (o.kind === "structure") {
+      out.push({
+        id: o.id,
+        kind: "structure",
+        x: o.x,
+        y: o.y,
+        label: o.name,
+        name: o.name,
+        primaryAmenity: o.primaryAmenity,
+        amenities: o.amenities,
+        spaceIds: o.spaceIds,
+      });
+    }
   }
   out.sort((a, b) => a.id.localeCompare(b.id));
   return out;
@@ -1092,6 +1973,107 @@ function applyJourneyUpdate(u: JourneyUpdate): void {
   setWaypoints(u.agentId, u.path);
 }
 
+function clearRemoteGeographyPresence(): void {
+  for (const id of remoteGeographyHumanIds) {
+    playerWorldPos.delete(id);
+    waypointQueues.delete(id);
+    walkPhaseByPlayer.delete(id);
+    facingByPlayer.delete(id);
+    movingByPlayer.delete(id);
+    lastTickWorldPos.delete(id);
+  }
+  remoteGeographyHumanIds.clear();
+}
+
+function applyWorldGeographyOccupants(snap: Snapshot): void {
+  if (!getPreviewViewSettings().worldGeographyEnabled) {
+    return;
+  }
+  const wb = getWorldBoundsForClamp();
+  const localId = getLocalGeographyHumanId();
+  const seen = new Set<string>();
+  for (const h of listHumanRows(snap)) {
+    if (localId !== null && h.id === localId) {
+      continue;
+    }
+    seen.add(h.id);
+    remoteGeographyHumanIds.add(h.id);
+    const clamped =
+      wb !== null
+        ? clampWorldPosition({ x: h.x, y: h.y }, wb)
+        : { x: h.x, y: h.y };
+    playerWorldPos.set(h.id, clamped);
+    if (h.facing === "left" || h.facing === "right") {
+      facingByPlayer.set(h.id, h.facing);
+    }
+    if (typeof h.isMoving === "boolean") {
+      movingByPlayer.set(h.id, h.isMoving);
+    }
+  }
+  for (const id of [...remoteGeographyHumanIds]) {
+    if (!seen.has(id)) {
+      remoteGeographyHumanIds.delete(id);
+      playerWorldPos.delete(id);
+      waypointQueues.delete(id);
+      walkPhaseByPlayer.delete(id);
+      facingByPlayer.delete(id);
+      movingByPlayer.delete(id);
+      lastTickWorldPos.delete(id);
+    }
+  }
+}
+
+async function publishLocalGeographyPresence(): Promise<void> {
+  if (!getPreviewViewSettings().worldGeographyEnabled) {
+    return;
+  }
+  const sid = getPreviewSessionIdSync();
+  const humanId = getLocalGeographyHumanId();
+  if (sid === null || humanId === null) {
+    return;
+  }
+  const pos = playerWorldPos.get(HUMAN_VIEWER_PLAYER_ID);
+  if (pos === undefined) {
+    return;
+  }
+  const displayName =
+    humanId.length > 16 ? `${humanId.slice(0, 12)}…` : humanId;
+  await postGeographyPresence({
+    apiBase: API_BASE,
+    sid,
+    humanId,
+    name: displayName,
+    x: pos.x,
+    y: pos.y,
+    facing: facingByPlayer.get(HUMAN_VIEWER_PLAYER_ID) ?? "right",
+    isMoving: movingByPlayer.get(HUMAN_VIEWER_PLAYER_ID) ?? false,
+  });
+}
+
+async function syncWorldGeographyEnabled(enabled: boolean): Promise<void> {
+  const sid = getPreviewSessionIdSync();
+  const humanId = getLocalGeographyHumanId();
+  if (!enabled) {
+    clearRemoteGeographyPresence();
+    if (sid !== null && humanId !== null) {
+      await postGeographyLeave({ apiBase: API_BASE, sid, humanId });
+    }
+    return;
+  }
+  await publishLocalGeographyPresence();
+}
+
+function maybePublishGeographyPresence(nowMs: number): void {
+  if (!getPreviewViewSettings().worldGeographyEnabled) {
+    return;
+  }
+  if (nowMs - geographyLastPublishMs < GEOGRAPHY_PUBLISH_INTERVAL_MS) {
+    return;
+  }
+  geographyLastPublishMs = nowMs;
+  void publishLocalGeographyPresence();
+}
+
 function ingestSnapshot(snap: Snapshot): void {
   snapshot = snap;
   deepLogObject("ingestSnapshot", {
@@ -1104,6 +2086,7 @@ function ingestSnapshot(snap: Snapshot): void {
   else {
     applyBounds(MINIMUM_PLAY_WORLD_BOUNDS);
   }
+  paintStreetSigns();
   const wbSpawn = getWorldBoundsForClamp();
   const humanSpawn =
     wbSpawn !== null ? defaultHumanSpawnInWorld(wbSpawn) : { x: 0, y: 0 };
@@ -1130,7 +2113,202 @@ function ingestSnapshot(snap: Snapshot): void {
       playerWorldPos.set(HUMAN_VIEWER_PLAYER_ID, clampWorldPosition(cur, wbSpawn));
     }
   }
+  applyWorldGeographyOccupants(snapshot);
   hydrateChatFromSnapshot(snapshot);
+  refreshActiveAmenityFromSnapshot();
+  void refreshWalletHud();
+}
+
+function refreshActiveAmenityFromSnapshot(): void {
+  const stage = activeAmenityStage;
+  if (stage === null || activeYardSpaceId === null) return;
+  const content = resolveAmenityContent({
+    snapshot,
+    spaceId: activeYardSpaceId,
+    kind: stage.kind,
+  });
+  if (stage.kind === "shop") {
+    (stage.handle as AmenityShopStageHandle).refresh(content.shopItems);
+  } else if (stage.kind === "supermarket") {
+    (stage.handle as AmenitySupermarketStageHandle).refresh(
+      content.supermarketItems
+    );
+  } else {
+    (stage.handle as AmenityCarWashStageHandle).refresh(content.carWashCars);
+  }
+  // If the tooltip is open and the underlying item changed (e.g. sold via
+  // fanout), re-render with the latest model.
+  if (stage.tooltipOpenForItemId !== null) {
+    const refreshed = computeNearestAmenityBuyable(stage);
+    if (
+      refreshed !== null &&
+      refreshed.itemRef.id === stage.tooltipOpenForItemId
+    ) {
+      stage.nearestBuyable = refreshed;
+      showAmenityItemTooltip(stage, refreshed);
+    }
+  }
+}
+
+function computeNearestAmenityBuyable(
+  stage: ActiveAmenityStage
+): AmenityBuyable | null {
+  return resolveNearestAmenityBuyable({
+    kind: stage.kind,
+    findShop: () =>
+      stage.kind === "shop"
+        ? (stage.handle as AmenityShopStageHandle).findNearbyItem(
+            amenityPlayerState.pos
+          )
+        : null,
+    findSupermarket: () =>
+      stage.kind === "supermarket"
+        ? (stage.handle as AmenitySupermarketStageHandle).findNearbyItem(
+            amenityPlayerState.pos
+          )
+        : null,
+    findCar: () =>
+      stage.kind === "car_wash"
+        ? (stage.handle as AmenityCarWashStageHandle).findNearbyCar(
+            amenityPlayerState.pos
+          )
+        : null,
+  });
+}
+
+function refreshNearestAmenityBuyable(stage: ActiveAmenityStage): void {
+  const prevId = stage.nearestBuyable?.itemRef.id ?? null;
+  const next = computeNearestAmenityBuyable(stage);
+  stage.nearestBuyable = next;
+  const nextId = next?.itemRef.id ?? null;
+  if (prevId !== nextId) {
+    proximityTouchPadHandle?.refresh();
+  }
+  // If the tooltip was opened for an item we have walked away from, hide it.
+  if (
+    stage.tooltipOpenForItemId !== null &&
+    (next === null || next.itemRef.id !== stage.tooltipOpenForItemId)
+  ) {
+    amenityItemTooltip?.hide();
+    stage.tooltipOpenForItemId = null;
+  }
+}
+
+/**
+ * Single entry point for the `P` key / `P` touch-pad button while
+ * standing next to an amenity item. Implements the three-step cycle:
+ *
+ * 1. tooltip is not showing this item → show it.
+ * 2. tooltip is showing this item, item is available, no purchase
+ *    in flight → execute the purchase (same effect as clicking Buy).
+ * 3. tooltip is showing this item, purchase in flight → no-op.
+ *
+ * A previous purchase failure leaves the tooltip in a not-busy state
+ * with an inline error message, so the next press lands in case 2 and
+ * retries automatically. Sold items only enter case 1; there is no
+ * Buy action for them.
+ *
+ * @remarks **Callers:** {@link onDocumentKeyDown}, the touch-pad
+ *   `onPushToTalk` callback. **Callees:** {@link showAmenityItemTooltip},
+ *   {@link buyAmenityItem}.
+ */
+function cycleAmenityItemAction(
+  stage: ActiveAmenityStage,
+  buyable: AmenityBuyable
+): void {
+  const tooltip = amenityItemTooltip;
+  if (tooltip === null) return;
+  const tooltipShowingThisItem =
+    tooltip.isOpen() && stage.tooltipOpenForItemId === buyable.itemRef.id;
+  if (!tooltipShowingThisItem) {
+    showAmenityItemTooltip(stage, buyable);
+    return;
+  }
+  if (buyable.tooltipModel.sale.status !== "available") return;
+  if (tooltip.isBusy()) return;
+  void buyAmenityItem(stage, buyable);
+}
+
+function showAmenityItemTooltip(
+  stage: ActiveAmenityStage,
+  buyable: AmenityBuyable
+): void {
+  if (amenityItemTooltip === null) return;
+  stage.tooltipOpenForItemId = buyable.itemRef.id;
+  amenityItemTooltip.show({
+    model: buyable.tooltipModel,
+    onBuy: () => {
+      void buyAmenityItem(stage, buyable);
+    },
+  });
+  positionAmenityItemTooltip(stage);
+}
+
+function positionAmenityItemTooltip(stage: ActiveAmenityStage): void {
+  if (amenityItemTooltip === null) return;
+  const host = canvasHostRef;
+  // Player position in canvas-host px (pre-transform / "logical" coords).
+  const localX = stage.offsetX + amenityPlayerState.pos.x * stage.cellScale;
+  const localY = stage.offsetY + amenityPlayerState.pos.y * stage.cellScale;
+  if (host === null) {
+    // Fallback: behave as before. Should not happen at runtime because
+    // canvasHostRef is captured during bootstrap before any amenity
+    // stage can mount.
+    amenityItemTooltip.root.style.left = `${String(Math.round(localX - 140))}px`;
+    amenityItemTooltip.root.style.top = `${String(Math.round(localY - 180))}px`;
+    return;
+  }
+  // Convert canvas-host px → viewport px via the rendered bounding
+  // box. `getBoundingClientRect()` accounts for the CSS `transform`
+  // applied by `syncWorldScale`.
+  const hostRect = host.getBoundingClientRect();
+  const scaleX = hostRect.width / VIEW_W;
+  const scaleY = hostRect.height / VIEW_H;
+  const anchorX = hostRect.left + localX * scaleX;
+  // Anchor slightly above the player's centre so the default "above"
+  // placement clears the sprite.
+  const anchorY = hostRect.top + (localY - 32) * scaleY;
+  amenityItemTooltip.position({ x: anchorX, y: anchorY });
+}
+
+async function buyAmenityItem(
+  stage: ActiveAmenityStage,
+  buyable: AmenityBuyable
+): Promise<void> {
+  const tooltip = amenityItemTooltip;
+  if (tooltip === null) return;
+  const sid = getSid();
+  const playerId = getViewerWalletPlayerId();
+  if (sid === null || playerId === null) {
+    tooltip.setError("sign in to play");
+    return;
+  }
+  tooltip.setBusy();
+  const result = await executePurchase({
+    sid,
+    playerId,
+    spaceId: stage.spaceId,
+    amenityKind: stage.kind,
+    itemRef: buyable.itemRef,
+  });
+  if (result.ok) {
+    walletBalanceCached = result.wallet.balanceUsd;
+    walletHud?.setBalance(result.wallet.balanceUsd);
+    walletHud?.setPowerUps(result.wallet.powerUps);
+    if (walletInventoryPanel !== null && walletInventoryPanel.isOpen()) {
+      void refreshWalletInventoryPanel();
+    }
+    tooltip.hide();
+    stage.tooltipOpenForItemId = null;
+    return;
+  }
+  if (result.error === "INSUFFICIENT_FUNDS") {
+    tooltip.setError("Insufficient funds");
+  } else if (result.error === "ITEM_ALREADY_SOLD") {
+    tooltip.setError("Already sold");
+  } else {
+    tooltip.setError(result.message);
+  }
 }
 
 async function loadSnapshot(sid: string): Promise<void> {
@@ -1217,6 +2395,12 @@ function connectSse(sid: string): void {
   es.addEventListener("world:player_added", (ev) => {
     void handleWorldMapSse(sid, (ev as MessageEvent).data as string);
   });
+  es.addEventListener(WORLD_GEOGRAPHY_SSE, (ev) => {
+    if (!getPreviewViewSettings().worldGeographyEnabled) {
+      return;
+    }
+    void handleWorldMapSse(sid, (ev as MessageEvent).data as string);
+  });
   es.addEventListener(WORLD_INTERACTION_SSE, (ev) => {
     const data = JSON.parse((ev as MessageEvent).data) as {
       agentId?: string;
@@ -1260,19 +2444,6 @@ function connectSse(sid: string): void {
         status?: unknown;
         ts?: unknown;
       };
-      if (
-        getPreviewViewSettings().p2aEnabled &&
-        row.status === "completed" &&
-        typeof row.fromPlayerId === "string"
-      ) {
-        const playbackMessage = readIntercomMessageForPlayback(row);
-        if (playbackMessage !== null) {
-          void ringerEngine.playIncomingMessage({
-            targetName: globalSenderName(row.fromPlayerId),
-            message: playbackMessage,
-          });
-        }
-      }
       if (typeof row.intercomAddress === "string" && isValidIntercomAddress(row.intercomAddress)) {
         activeIntercomAddress = row.intercomAddress;
         globalChatRoom?.refreshP2a();
@@ -1366,61 +2537,168 @@ function makeAgentVisual(): AgentVisual {
   return { root, hero, nameTag };
 }
 
+function amenityPaletteForStructure(amenity: string): AmenityBuildingPalette {
+  if (amenity === "supermarket") {
+    return {
+      facade: 0xe2e8f0,
+      roof: 0x1d4ed8,
+      trim: 0x0f172a,
+      accent: 0xf97316,
+      glass: 0x38bdf8,
+    };
+  }
+  if (amenity === "car_wash") {
+    return {
+      facade: 0x64748b,
+      roof: 0x0ea5e9,
+      trim: 0xf8fafc,
+      accent: 0x22d3ee,
+    };
+  }
+  return {
+    facade: 0xd6d3d1,
+    roof: 0x92400e,
+    trim: 0x1c1917,
+    accent: 0xf59e0b,
+    glass: 0xa8a29e,
+  };
+}
+
+function compoundStructureGroupKey(st: Structure): string {
+  if (st.kind !== "structure") {
+    return st.id;
+  }
+  if (st.spaceIds !== undefined && st.spaceIds.length > 0) {
+    return `compound:${[...st.spaceIds].sort().join("|")}`;
+  }
+  return `compound:solo:${st.id}`;
+}
+
+function makeCaptionText(): Text {
+  return new Text({
+    text: "",
+    style: {
+      fontFamily: "ui-monospace, monospace",
+      fontSize: 11,
+      fontWeight: "600",
+      fill: cssColorToPixi(palette.text),
+      wordWrap: true,
+      wordWrapWidth: 200,
+    },
+  });
+}
+
+function destroyStructureVisual(n: StructureVisual): void {
+  structureLayer.removeChild(n.root);
+  structureLayer.removeChild(n.caption);
+  n.root.destroy({ children: true });
+  n.caption.destroy();
+}
+
 function syncStructureNodes(structs: Structure[]): void {
   const theme = getActiveSceneTheme();
-  const alive = new Set(structs.map((s) => s.id));
+  const alive = new Set<string>();
+  const compoundGroups = new Map<string, Structure[]>();
+  const standalone: Structure[] = [];
+
+  for (const st of structs) {
+    if (st.kind === "structure") {
+      const ck = compoundStructureGroupKey(st);
+      alive.add(ck);
+      const arr = compoundGroups.get(ck) ?? [];
+      arr.push(st);
+      compoundGroups.set(ck, arr);
+    } else {
+      alive.add(st.id);
+      standalone.push(st);
+    }
+  }
+
   for (const id of structureNodes.keys()) {
     if (!alive.has(id)) {
       const n = structureNodes.get(id);
       if (n !== undefined) {
-        structureLayer.removeChild(n.box);
-        structureLayer.removeChild(n.caption);
-        n.box.destroy();
-        n.caption.destroy();
+        destroyStructureVisual(n);
       }
       structureNodes.delete(id);
     }
   }
+
   const box = Math.max(16, Math.min(40, cellScale * 0.85));
-  for (const st of structs) {
-    let n = structureNodes.get(st.id);
+  const buildingBox = box * 1.12;
+
+  for (const [compoundKey, group] of compoundGroups) {
+    let n = structureNodes.get(compoundKey);
     if (n === undefined) {
-      const boxG = new Graphics({ roundPixels: true });
-      const cap = new Text({
-        text: "",
-        style: {
-          fontFamily: "ui-monospace, monospace",
-          fontSize: 11,
-          fontWeight: "600",
-          fill: cssColorToPixi(palette.text),
-          wordWrap: true,
-          wordWrapWidth: 140,
-        },
-      });
-      n = { box: boxG, caption: cap };
-      structureNodes.set(st.id, n);
-      structureLayer.addChild(boxG);
+      const root = new Container();
+      const cap = makeCaptionText();
+      n = { root, caption: cap };
+      structureNodes.set(compoundKey, n);
+      structureLayer.addChild(root);
       structureLayer.addChild(cap);
     }
+    n.root.removeChildren();
+    const centroidX =
+      group.reduce((sum, st) => sum + st.x, 0) / group.length;
+    const centroidY =
+      group.reduce((sum, st) => sum + st.y, 0) / group.length;
+    const { x: cx, y: cy } = worldToWorldRootLocal(centroidX, centroidY);
+
+    const sorted = [...group].sort((a, b) =>
+      (a.primaryAmenity ?? "").localeCompare(b.primaryAmenity ?? "")
+    );
+    const amenity = representativePrimaryAmenityForCompound(sorted);
+    const pal = amenityPaletteForStructure(amenity);
+    const buildingG = new Graphics({ roundPixels: true });
+    if (amenity === "supermarket") {
+      drawSupermarketStructure(buildingG, buildingBox, pal);
+    } else if (amenity === "car_wash") {
+      drawCarWashStructure(buildingG, buildingBox, pal);
+    } else {
+      drawShopStructure(buildingG, buildingBox, pal);
+    }
+    buildingG.position.set(cx - buildingBox * 0.42, cy - buildingBox * 0.48);
+    n.root.addChild(buildingG);
+
+    const title = (sorted[0]?.label ?? sorted[0]?.name ?? "Space").slice(0, 28);
+    const amenityTotal = countAmenitiesInSpaceCompound(sorted);
+    const amenityLine =
+      amenityTotal === 1 ? "1 amenity" : `${String(amenityTotal)} amenities`;
+    n.caption.text = `${title}\n${amenityLine}`;
+    n.caption.position.set(cx - n.caption.width / 2, cy - buildingBox * 0.92);
+  }
+
+  for (const st of standalone) {
+    let n = structureNodes.get(st.id);
+    if (n === undefined) {
+      const root = new Container();
+      const cap = makeCaptionText();
+      n = { root, caption: cap };
+      structureNodes.set(st.id, n);
+      structureLayer.addChild(root);
+      structureLayer.addChild(cap);
+    }
+    n.root.removeChildren();
+    const boxG = new Graphics({ roundPixels: true });
+    n.root.addChild(boxG);
     const { x: sx, y: sy } = worldToWorldRootLocal(st.x, st.y);
-    const strokeCol = cssColorToPixi(palette.stroke);
     const isMcpStore = st.id.startsWith("mcp:");
     if (st.kind === "home") {
-      drawHomeStructure(n.box, box, theme.house);
-      n.box.position.set(sx, sy);
+      drawHomeStructure(boxG, box, theme.house);
+      boxG.position.set(sx, sy);
       n.caption.text = (st.label ?? "Home").slice(0, 24);
       n.caption.position.set(sx - n.caption.width / 2, sy - box * 1.15);
     } else if (isMcpStore) {
       const storePal = mcpStorePalette(palette);
       const storeBox = box * 1.12;
-      drawMcpStore(n.box, storeBox, storePal);
-      n.box.position.set(sx - storeBox * 0.42, sy - storeBox * 0.48);
+      drawMcpStore(boxG, storeBox, storePal);
+      boxG.position.set(sx - storeBox * 0.42, sy - storeBox * 0.48);
       n.caption.text = (st.label ?? "Store").slice(0, 22);
       n.caption.position.set(sx - n.caption.width / 2, sy - storeBox * 0.92);
     } else {
       const stallPal = vendorStallPalette(palette);
-      drawVendorStall(n.box, box, stallPal);
-      n.box.position.set(sx - box * 0.38, sy - box * 0.42);
+      drawVendorStall(boxG, box, stallPal);
+      boxG.position.set(sx - box * 0.38, sy - box * 0.42);
       const capText =
         st.toolName !== undefined && st.toolName.length > 0
           ? st.toolName
@@ -1432,7 +2710,7 @@ function syncStructureNodes(structs: Structure[]): void {
 }
 
 function syncAgentNodes(): void {
-  const rowsBase = snapshot === null ? [] : listAgentRows(snapshot);
+  const rowsBase = snapshot === null ? [] : listMapRenderableRows(snapshot);
   const rows =
     snapshot === null
       ? []
@@ -1472,8 +2750,123 @@ function syncAgentNodes(): void {
   }
 }
 
+function occupiedKeysFromLiveSnapshot(): Set<string> {
+  if (snapshot === null) {
+    return new Set();
+  }
+  const keys = new Set<string>();
+  for (const o of snapshot.worldMap.occupants) {
+    keys.add(occupancyKeyForPosition(o.x, o.y));
+  }
+  return keys;
+}
+
+function structureAnchorsFromLiveSnapshot(): Array<{ x: number; y: number }> {
+  if (snapshot === null) {
+    return [];
+  }
+  return snapshot.worldMap.occupants
+    .filter((o): o is SnapshotStructureOccupant => o.kind === "structure")
+    .map((o) => ({ x: o.x, y: o.y }));
+}
+
+function paintStreetSigns(): void {
+  if (snapshot === null) {
+    for (const ch of [...streetSignsLayer.children]) {
+      streetSignsLayer.removeChild(ch);
+      ch.destroy({ children: true });
+    }
+    return;
+  }
+  const layout = resolveWorldLayout();
+  const zones: StreetSignZone[] = layout.zones.map((z) => ({
+    id: z.id,
+    streetLabel: z.streetLabel,
+    rect: { ...z.rect },
+  }));
+  mountStreetSignPosts({
+    layer: streetSignsLayer,
+    palette,
+    worldToLocal: worldToWorldRootLocal,
+    cellScale,
+    zones,
+  });
+}
+
 function paintGrid(): void {
   gridGraphics.clear();
+  const settings = getPreviewViewSettings();
+  if (!settings.debugOccupancyQuartiles && !settings.debugOccupancyFreeGrids) {
+    return;
+  }
+
+  const strokeZoneRect = (bounds: WorldBounds, stroke: {
+    width: number;
+    color: number;
+    alpha: number;
+  }): void => {
+    const minWx = bounds.minX;
+    const maxWx = bounds.maxX + 1;
+    const minWy = bounds.minY;
+    const maxWy = bounds.maxY + 1;
+    const tl = worldToWorldRootLocal(minWx, maxWy);
+    const w = (maxWx - minWx) * cellScale;
+    const h = (maxWy - minWy) * cellScale;
+    gridGraphics.rect(tl.x, tl.y, w, h).stroke(stroke);
+  };
+
+  if (settings.debugOccupancyQuartiles) {
+    const layout = resolveWorldLayout();
+    for (const zone of layout.zones) {
+      strokeZoneRect(zone.rect, zoneDebugStroke(zone.primaryGroup));
+    }
+  }
+
+  if (settings.debugOccupancyFreeGrids) {
+    const layout = resolveWorldLayout();
+    const agentZone = pickZoneForGroup(layout, "agent");
+    const spaceZone = pickZoneForGroup(layout, "space");
+    const occupied = occupiedKeysFromLiveSnapshot();
+    const existingOccupants = [...playerWorldPos.values()].map((pos) => ({
+      x: pos.x,
+      y: pos.y,
+    }));
+    const structureAnchors = structureAnchorsFromLiveSnapshot();
+    const dotR = Math.max(2.5, cellScale * 0.065);
+    for (const p of listOccupancyPointsForZone(agentZone)) {
+      if (
+        isAgentSpawnOccupancyPointAvailableInZone({
+          zone: agentZone,
+          point: p,
+          occupiedKeys: occupied,
+          existingOccupants,
+        })
+      ) {
+        const loc = worldToWorldRootLocal(p.x, p.y);
+        gridGraphics
+          .circle(loc.x, loc.y, dotR)
+          .fill({ color: 0x22c55e, alpha: 0.5 });
+      }
+    }
+    for (const p of listOccupancyPointsForZone(spaceZone)) {
+      if (
+        isSpaceAnchorOccupancyPointAvailableInZone({
+          zone: spaceZone,
+          point: p,
+          occupiedKeys: occupied,
+          existingOccupants,
+          structureAnchors,
+          minDistance: DEFAULT_AGENT_SPAWN_MIN_DISTANCE,
+          structureMinDistance: SPACE_STRUCTURE_ANCHOR_MIN_DISTANCE,
+        })
+      ) {
+        const loc = worldToWorldRootLocal(p.x, p.y);
+        gridGraphics
+          .circle(loc.x, loc.y, dotR)
+          .fill({ color: 0x38bdf8, alpha: 0.55 });
+      }
+    }
+  }
 }
 
 function getDebugSnapshot(): {
@@ -1490,10 +2883,19 @@ function getDebugSnapshot(): {
     y: number;
     toolName?: string;
     playerId?: string;
+    primaryAmenity?: string;
+    amenities?: readonly string[];
+  }[];
+  zones: readonly {
+    id: string;
+    streetId: string;
+    streetLabel: string;
+    primaryGroup: OccupantGroup;
+    occupantCount: number;
   }[];
 } {
   if (snapshot === null) {
-    return { agents: [], structures: [] };
+    return { agents: [], structures: [], zones: [] };
   }
   const agents = listAgentRows(snapshot).map((p) => {
     const pos = playerWorldPos.get(p.agentId);
@@ -1520,8 +2922,33 @@ function getDebugSnapshot(): {
     y: s.y,
     toolName: s.toolName,
     playerId: s.agentId ?? s.playerId,
+    primaryAmenity: s.primaryAmenity,
+    amenities: s.amenities,
   }));
-  return { agents, structures };
+  const layout = resolveWorldLayout();
+  const allOccupantPositions: { x: number; y: number }[] = snapshot.worldMap.occupants.map((o) => ({
+    x: o.x,
+    y: o.y,
+  }));
+  if (humanPos !== undefined) {
+    allOccupantPositions.push({ x: humanPos.x, y: humanPos.y });
+  }
+  const zones = layout.zones.map((z) => {
+    let occupantCount = 0;
+    for (const p of allOccupantPositions) {
+      if (pointCellInZone(p.x, p.y, z)) {
+        occupantCount += 1;
+      }
+    }
+    return {
+      id: z.id,
+      streetId: z.streetId,
+      streetLabel: z.streetLabel,
+      primaryGroup: z.primaryGroup,
+      occupantCount,
+    };
+  });
+  return { agents, structures, zones };
 }
 
 function applyChatVisibility(): void {
@@ -1538,6 +2965,7 @@ function applyDebugVisibility(): void {
   debugMountEl.classList.toggle("preview-debug-mount--visible", on);
   if (on) {
     debugPanelUpdate?.();
+    debugPanelSyncCompanionLayout?.();
   }
 }
 
@@ -1547,6 +2975,7 @@ function applyJoystickVisibility(): void {
   joystickHandle?.setVisible(show);
   if (!show) {
     setJoystickVectorZero();
+    resetPlayPadKeyBuffer();
   }
 }
 
@@ -1583,6 +3012,7 @@ function rebuildSceneForTheme(): void {
     appStage.addChildAt(crowdLayerContainer, 0);
   }
   rebuildParkWorldBackdrop();
+  paintStreetSigns();
   skyDecor?.setBounds(VIEW_W, VIEW_H, theme.grassBandTopRatio);
 }
 
@@ -1593,6 +3023,9 @@ function onTick(dt: number): void {
   const wb = getWorldBoundsForClamp();
   const settings = getPreviewViewSettings();
   const primaryId = getHumanPlayerId();
+  const overworldActive =
+    stageController === null ||
+    stageController.current()?.id === "overworld";
   const joystickActive =
     settings.joystickEnabled && primaryId !== null;
   const jv = joystickActive ? getJoystickVector() : { x: 0, y: 0 };
@@ -1601,6 +3034,7 @@ function onTick(dt: number): void {
     arrowKeys.up || arrowKeys.down || arrowKeys.left || arrowKeys.right;
 
   if (
+    overworldActive &&
     shouldClearPrimaryWaypointsWhileJoystickIdle({
       joystickActive,
       joyVectorLength: joyLen,
@@ -1612,6 +3046,11 @@ function onTick(dt: number): void {
 
   for (const [id, pos] of playerWorldPos) {
     if (id !== HUMAN_VIEWER_PLAYER_ID) continue;
+    if (!overworldActive) {
+      lastTickWorldPos.set(id, { ...pos });
+      movingByPlayer.set(id, false);
+      continue;
+    }
     const prev = { ...pos };
     let next = { ...pos };
     const useJoy =
@@ -1670,7 +3109,19 @@ function onTick(dt: number): void {
     movingByPlayer.set(id, motion.isMoving);
     lastTickWorldPos.set(id, { ...next });
   }
+  maybePublishGeographyPresence(performance.now());
   skyDecor?.tick(dt);
+  stageController?.update(dt * 1000);
+  const currentStageId = stageController?.current()?.id;
+  if (currentStageId === "spaceYard") {
+    tickYardPlayer(dt);
+  } else if (
+    currentStageId === "amenityShop" ||
+    currentStageId === "amenitySupermarket" ||
+    currentStageId === "amenityCarWash"
+  ) {
+    tickAmenityPlayer(dt);
+  }
   updateCameraAndWorldRoot();
 }
 
@@ -1683,7 +3134,14 @@ function onFrame(): void {
   syncAgentNodes();
   const aliveIds =
     snapshot === null ? [] : listAgentRows(snapshot).map((p) => p.agentId);
-  agentChatOverlays?.syncAgentIds(aliveIds);
+  const stageId = stageController?.current()?.id ?? "overworld";
+  if (agentChatOverlays !== null && agentChatOverlays.root !== undefined) {
+    agentChatOverlays.root.style.display =
+      stageId === "overworld" ? "" : "none";
+  }
+  if (stageId === "overworld") {
+    agentChatOverlays?.syncAgentIds(aliveIds);
+  }
   const box = Math.max(16, Math.min(40, cellScale * 0.85));
   for (const [id, wpos] of playerWorldPos) {
     const v = agentNodes.get(id);
@@ -1701,7 +3159,9 @@ function onFrame(): void {
     const displayName =
       snapshot === null
         ? id
-        : listAgentRows(snapshot).find((pl) => pl.agentId === id)?.name ?? id;
+        : listAgentRows(snapshot).find((pl) => pl.agentId === id)?.name ??
+          listHumanRows(snapshot).find((h) => h.id === id)?.name ??
+          id;
     v.nameTag.text = displayName;
     v.nameTag.position.set(-v.nameTag.width / 2, box * 0.45);
     if (getPreviewViewSettings().showChatUi) {
@@ -1724,7 +3184,10 @@ function onFrame(): void {
   }
   const prevProximityPartnerId = lastProximityPartnerId;
   const primaryPid = getHumanPlayerId();
+  const onOverworld =
+    stageController === null || stageController.current()?.id === "overworld";
   if (
+    onOverworld &&
     primaryPid !== null &&
     (snapshot === null ? 0 : listAgentRows(snapshot).length) >= 1
   ) {
@@ -1744,9 +3207,46 @@ function onFrame(): void {
   ) {
     sessionInteractionPanel?.closeVoiceConnection();
   }
+  const humanWorldPos =
+    primaryPid !== null ? playerWorldPos.get(primaryPid) ?? null : null;
+  if (
+    onOverworld &&
+    lastProximityPartnerId === null &&
+    humanWorldPos !== null &&
+    structs.length > 0
+  ) {
+    lastStructureProximityTarget = findNearestStructureProximityTarget({
+      player: humanWorldPos,
+      structures: structs,
+      radius: DEFAULT_STRUCTURE_PROXIMITY_RADIUS,
+    });
+  } else {
+    lastStructureProximityTarget = null;
+  }
+  if (stageController?.current()?.id !== "spaceYard") {
+    lastYardAmenityPadTarget = null;
+  }
   if (proximityLegendEl !== null) {
-    if (lastProximityPartnerId !== null) {
+    if (
+      activeAmenityStage !== null &&
+      activeAmenityStage.nearestBuyable !== null
+    ) {
+      const buyable = activeAmenityStage.nearestBuyable;
+      const sold = buyable.tooltipModel.sale.status === "sold";
+      proximityLegendEl.textContent = sold
+        ? `Near ${buyable.tooltipModel.name} (SOLD). P: view`
+        : `Near ${buyable.tooltipModel.name}. P: buy ($${buyable.tooltipModel.priceUsd.toFixed(2)})`;
+    } else if (lastYardAmenityPadTarget !== null) {
+      const amenityName =
+        AMENITY_DISPLAY_LABEL[lastYardAmenityPadTarget.kind as AmenityKind];
+      proximityLegendEl.textContent = `Near ${amenityName}. P: enter ${amenityName.toLowerCase()}`;
+    } else if (lastProximityPartnerId !== null) {
       proximityLegendEl.textContent = `Near ${playerDisplayName(lastProximityPartnerId)}. A: for assist · C: for chat · P: push to talk · Z: for zone · Y: for yield`;
+    } else if (lastStructureProximityTarget !== null) {
+      const spaceName =
+        lastStructureProximityTarget.label ??
+        lastStructureProximityTarget.spaceId;
+      proximityLegendEl.textContent = `Near ${spaceName}. A: enter space`;
     } else {
       proximityLegendEl.textContent =
         "Near another player: A: for assist · C: for chat · P: push to talk · Z: for zone · Y: for yield";
@@ -1757,12 +3257,30 @@ function onFrame(): void {
       const pos = playerWorldPos.get(lastProximityPartnerId);
       if (pos !== undefined) {
         const { cx, cy } = getAgentHeroAnchorScreen(lastProximityPartnerId, pos, box);
+        proximityPromptEl.textContent =
+          "A: for assist\nC: for chat\nP: push to talk";
         proximityPromptEl.style.display = "block";
         proximityPromptEl.style.left = `${cx}px`;
         proximityPromptEl.style.top = `${cy - box * 1.35}px`;
       } else {
         proximityPromptEl.style.display = "none";
       }
+    } else if (lastStructureProximityTarget !== null) {
+      const centroidLocal = worldToWorldRootLocal(
+        lastStructureProximityTarget.centroid.x,
+        lastStructureProximityTarget.centroid.y
+      );
+      const centroidScreen = worldRootLocalToCanvas(
+        centroidLocal.x,
+        centroidLocal.y
+      );
+      const spaceName =
+        lastStructureProximityTarget.label ??
+        lastStructureProximityTarget.spaceId;
+      proximityPromptEl.textContent = `A: enter ${spaceName}`;
+      proximityPromptEl.style.display = "block";
+      proximityPromptEl.style.left = `${centroidScreen.x}px`;
+      proximityPromptEl.style.top = `${centroidScreen.y - box * 1.6}px`;
     } else {
       proximityPromptEl.style.display = "none";
     }
@@ -1824,8 +3342,36 @@ export function bootstrap(): void {
     debugMountEl = debugMount;
     const debug = createPreviewDebugPanel({
       getSnapshot: getDebugSnapshot,
+      occupancyDebug: {
+        getSettings: () => ({
+          debugOccupancyQuartiles:
+            getPreviewViewSettings().debugOccupancyQuartiles,
+          debugOccupancyFreeGrids:
+            getPreviewViewSettings().debugOccupancyFreeGrids,
+        }),
+        setSettings: (partial) => {
+          setPreviewViewSettings(partial);
+        },
+      },
+      geographyDebug: {
+        getSettings: () => ({
+          worldGeographyEnabled:
+            getPreviewViewSettings().worldGeographyEnabled,
+        }),
+        setSettings: (partial) => {
+          const prev = getPreviewViewSettings().worldGeographyEnabled;
+          setPreviewViewSettings(partial);
+          if (
+            partial.worldGeographyEnabled !== undefined &&
+            partial.worldGeographyEnabled !== prev
+          ) {
+            void syncWorldGeographyEnabled(partial.worldGeographyEnabled);
+          }
+        },
+      },
     });
     debugPanelUpdate = debug.update;
+    debugPanelSyncCompanionLayout = debug.syncCompanionLayout;
     debugMount.appendChild(debug.element);
     globalChatRoom = createPreviewGlobalChatRoom({
       apiBase: API_BASE,
@@ -1853,7 +3399,7 @@ export function bootstrap(): void {
         return activeIntercomAddress;
       },
     });
-    leftCol.append(globalChatRoom.element, debugMount);
+    spacesCtaPanel = createPreviewSpacesCtaPanel();
 
     const centerCol = document.createElement("div");
     centerCol.className = "preview-game-col preview-game-col--center";
@@ -1862,7 +3408,9 @@ export function bootstrap(): void {
     canvasWrap.className = "preview-canvas-wrap";
 
     const canvasHost = document.createElement("div");
-    canvasHost.style.cssText = `display:block;position:relative;width:${VIEW_W}px;max-width:100%;height:${VIEW_H}px;margin:0 auto;overflow:hidden;`;
+    canvasHost.className = "preview-canvas-host";
+    canvasHost.style.cssText = `display:block;position:absolute;width:${VIEW_W}px;height:${VIEW_H}px;overflow:hidden;`;
+    canvasHostRef = canvasHost;
 
     const joystickWrap = document.createElement("div");
     joystickWrap.className = "preview-joystick-wrap";
@@ -1887,11 +3435,7 @@ export function bootstrap(): void {
     toggleRight.textContent = "Session";
     toggleRight.setAttribute("aria-controls", "preview-side-right");
 
-    centerCol.append(
-      canvasWrap,
-      joystickWrap,
-      mobileBackdrop
-    );
+    centerCol.append(canvasWrap, joystickWrap, mobileBackdrop);
 
     const rightCol = document.createElement("div");
     rightCol.className = "preview-game-col preview-game-col--right";
@@ -1925,6 +3469,12 @@ export function bootstrap(): void {
       getSid,
       apiBase: API_BASE,
       getMainNodeId: getMainNodeIdForIntercom,
+      getWalletHud: () => walletHud,
+      onServerWalletAppliedToHud: () => {
+        if (walletInventoryPanel !== null && walletInventoryPanel.isOpen()) {
+          void refreshWalletInventoryPanel();
+        }
+      },
       onHumanNodeLifecycle: async (action) => {
         if (action === "replace") {
           clearHumanCredentials();
@@ -1941,7 +3491,22 @@ export function bootstrap(): void {
     });
 
     controlStack.append(proximityLegend, sessionInteractionPanel.element);
-    rightCol.appendChild(controlStack);
+    const wideOnBoot = window.matchMedia(
+      PREVIEW_WIDE_SIDEBAR_MEDIA_QUERY
+    ).matches;
+    const stationaryOnBoot =
+      getPreviewViewSettings().stationaryPanels && wideOnBoot;
+    if (stationaryOnBoot) {
+      leftCol.append(globalChatRoom.element, spacesCtaPanel.element);
+      rightCol.append(controlStack, debugMount);
+    } else {
+      leftCol.append(
+        globalChatRoom.element,
+        spacesCtaPanel.element,
+        debugMount
+      );
+      rightCol.append(controlStack);
+    }
 
     canvasStage.append(leftCol, centerCol, rightCol);
     gameRow.appendChild(canvasStage);
@@ -1956,6 +3521,7 @@ export function bootstrap(): void {
     });
 
     worldRoot.addChild(parkBackdropLayer);
+    worldRoot.addChild(streetSignsLayer);
     worldRoot.addChild(gridGraphics);
     worldRoot.addChild(structureLayer);
     worldRoot.addChild(agentsLayer);
@@ -1985,13 +3551,33 @@ export function bootstrap(): void {
       crowdLayerContainer = buildCrowdLayer(crowdClusters);
       handle.app.stage.addChild(crowdLayerContainer);
     }
-    handle.app.stage.addChild(worldRoot);
+    stageController = createStageController({ parent: handle.app.stage });
+    await stageController.enter(
+      createOverworldStage({ root: worldRoot })
+    );
     skyDecor = createSkyDecorLayer({
       width: VIEW_W,
       height: VIEW_H,
       grassBandTopRatio: theme.grassBandTopRatio,
     });
     handle.app.stage.addChild(skyDecor.container);
+    const syncWorldScale = (): void => {
+      syncPreviewCanvasHostScale({
+        stage: canvasWrap,
+        host: canvasHost,
+        viewWidth: VIEW_W,
+        viewHeight: VIEW_H,
+      });
+    };
+    syncWorldScale();
+    const resizeObserver =
+      typeof ResizeObserver === "undefined"
+        ? null
+        : new ResizeObserver(() => {
+            syncWorldScale();
+          });
+    resizeObserver?.observe(canvasWrap);
+    window.addEventListener("resize", syncWorldScale);
     const motionQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
     const syncSkyMotion = (): void => {
       skyDecor?.setReducedMotion(motionQuery.matches);
@@ -2000,10 +3586,36 @@ export function bootstrap(): void {
     motionQuery.addEventListener("change", syncSkyMotion);
 
     canvasHost.appendChild(agentChatOverlays.root);
+    // Wallet HUD, inventory panel, and the amenity item tooltip use
+    // `position: fixed` to escape the `centerCol` stacking context (and
+    // the `transform` on `canvasHost` which would otherwise constrain
+    // fixed-position children). Mounting them on `document.body` keeps
+    // their containing block as the viewport, which is what they want.
+    walletHud = createWalletHud({
+      parent: document.body,
+      onClick: () => openWalletInventoryPanel(),
+    });
+    walletInventoryPanel = createWalletInventoryPanel({
+      parent: document.body,
+      onRefresh: () => {
+        void refreshWalletInventoryPanel();
+      },
+      onRedeemBundle: async (bundleId) => {
+        const sid = getSid();
+        const playerId = getViewerWalletPlayerId();
+        if (sid === null || playerId === null) {
+          throw new Error("Sign in to redeem bundles.");
+        }
+        await redeemWalletBundle({ sid, playerId, bundleId });
+        await refreshWalletInventoryPanel();
+      },
+    });
+    void refreshWalletHud();
     proximityPromptEl = document.createElement("div");
     proximityPromptEl.className = "preview-proximity-prompt";
     proximityPromptEl.textContent = "A: for assist\nC: for chat\nP: push to talk";
     canvasHost.appendChild(proximityPromptEl);
+    amenityItemTooltip = createItemTooltip({ parent: document.body });
 
     proximityTouchPadHandle = createPreviewProximityTouchControls({
       parent: canvasWrap,
@@ -2014,22 +3626,264 @@ export function bootstrap(): void {
         );
         return partner !== null && partner !== HUMAN_VIEWER_PLAYER_ID;
       },
+      getStructureProximityLabel: () => {
+        if (lastProximityPartnerId !== null) return null;
+        const target = lastStructureProximityTarget;
+        if (target === null) return null;
+        return target.label ?? target.spaceId;
+      },
+      getAmenityProximityLabel: () => {
+        const target = lastYardAmenityPadTarget;
+        if (target === null) return null;
+        return AMENITY_DISPLAY_LABEL[target.kind as AmenityKind];
+      },
+      getAmenityItemActionLabel: () => {
+        const stage = activeAmenityStage;
+        if (stage === null) return null;
+        const buyable = stage.nearestBuyable;
+        if (buyable === null) return null;
+        return buyable.tooltipModel.sale.status === "sold" ? "View" : "Buy";
+      },
       onAssist: () => {
+        if (
+          lastProximityPartnerId === null &&
+          lastStructureProximityTarget !== null
+        ) {
+          void enterStructureSpaceFromProximity(lastStructureProximityTarget);
+          return;
+        }
         triggerProximityAssistOrChat("assist");
       },
       onChat: () => {
         triggerProximityAssistOrChat("chat");
       },
       onPushToTalk: () => {
+        if (activeAmenityStage !== null) {
+          const stage = activeAmenityStage;
+          const buyable = stage.nearestBuyable;
+          if (buyable !== null) {
+            cycleAmenityItemAction(stage, buyable);
+            return;
+          }
+        }
+        if (lastYardAmenityPadTarget !== null) {
+          void enterAmenityFromYardPad(lastYardAmenityPadTarget);
+          return;
+        }
         void triggerProximityPushToTalk();
+      },
+      onWallet: () => {
+        openWalletInventoryPanel();
       },
     });
 
     joystickHandle = createPreviewDebugJoystick({ parent: joystickWrap });
+    const wideSidebarMq = window.matchMedia(PREVIEW_WIDE_SIDEBAR_MEDIA_QUERY);
+    const previewDockStationaryActive = (): boolean =>
+      getPreviewViewSettings().stationaryPanels && wideSidebarMq.matches;
+
+    const previewMessagesFloatingPlacement = (): {
+      leftPx: number;
+      topPx: number;
+    } => ({ leftPx: 16, topPx: 16 });
+
+    const previewSessionFloatingPlacement = (): {
+      leftPx: number;
+      topPx: number;
+    } => ({
+      leftPx: Math.max(16, window.innerWidth - 376),
+      topPx: 16,
+    });
+
+    const previewDebugFloatingPlacement = (): {
+      leftPx: number;
+      topPx: number;
+    } => ({ leftPx: 16, topPx: 380 });
+
+    const previewMessagesStationaryPlacement = (): {
+      leftPx: number;
+      topPx: number;
+    } => ({ leftPx: 16, topPx: 16 });
+
+    const previewSessionStationaryPlacement = (): {
+      leftPx: number;
+      topPx: number;
+    } => {
+      const w = rightCol.clientWidth;
+      const panelW = Math.min(380, Math.max(200, w - 24));
+      return {
+        leftPx: Math.max(16, w - panelW - 16),
+        topPx: 16,
+      };
+    };
+
+    const previewDebugStationaryPlacement = (): {
+      leftPx: number;
+      topPx: number;
+    } => {
+      const w = rightCol.clientWidth;
+      const panelW = Math.min(360, Math.max(200, w - 24));
+      const leftPx = Math.max(16, w - panelW - 16);
+      const gap = 12;
+      const topPx = controlStack.offsetTop + controlStack.offsetHeight + gap;
+      return { leftPx, topPx };
+    };
+
+    const floatingPanelHandles = {
+      messages: attachPreviewFloatingPanelDrag({
+        element: globalChatRoom.element,
+        getBoundsElement: () =>
+          previewDockStationaryActive() ? leftCol : canvasStage,
+        label: "World messages",
+        initialPlacement: { leftPx: 16, topPx: 16 },
+        className: "preview-floating-panel--messages",
+        layoutMode: stationaryOnBoot ? "stationary" : "floating",
+        resolvePlacement: (mode) =>
+          mode === "stationary"
+            ? previewMessagesStationaryPlacement()
+            : previewMessagesFloatingPlacement(),
+      }),
+      session: attachPreviewFloatingPanelDrag({
+        element: controlStack,
+        getBoundsElement: () =>
+          previewDockStationaryActive() ? rightCol : canvasStage,
+        label: "Human agent interaction",
+        initialPlacement: {
+          leftPx: Math.max(16, window.innerWidth - 376),
+          topPx: 16,
+        },
+        className: "preview-floating-panel--session",
+        layoutMode: stationaryOnBoot ? "stationary" : "floating",
+        resolvePlacement: (mode) =>
+          mode === "stationary"
+            ? previewSessionStationaryPlacement()
+            : previewSessionFloatingPlacement(),
+      }),
+      debug: attachPreviewFloatingPanelDrag({
+        element: debugMount,
+        getBoundsElement: () =>
+          previewDockStationaryActive() ? rightCol : canvasStage,
+        label: "Debug",
+        initialPlacement: { leftPx: 16, topPx: 380 },
+        className: "preview-floating-panel--debug",
+        layoutMode: stationaryOnBoot ? "stationary" : "floating",
+        resolvePlacement: (mode) =>
+          mode === "stationary"
+            ? previewDebugStationaryPlacement()
+            : previewDebugFloatingPlacement(),
+      }),
+    };
+    const floatingPanels = [
+      floatingPanelHandles.messages,
+      floatingPanelHandles.session,
+      floatingPanelHandles.debug,
+    ];
+    const applyPreviewPanelLayout = (): void => {
+      const room = globalChatRoom;
+      if (room === null) return;
+      const wantStationary =
+        getPreviewViewSettings().stationaryPanels && wideSidebarMq.matches;
+      canvasStage.classList.toggle(
+        "preview-canvas-stage--stationary-panels",
+        wantStationary
+      );
+      shell.classList.toggle(
+        "preview-shell--stationary-panels",
+        wantStationary
+      );
+      if (wantStationary) {
+        leftCol.append(room.element);
+        rightCol.append(controlStack, debugMount);
+      } else {
+        leftCol.append(room.element, debugMount);
+        rightCol.append(controlStack);
+      }
+      const mode = wantStationary ? "stationary" : "floating";
+      floatingPanelHandles.messages.setLayoutMode(mode);
+      floatingPanelHandles.session.setLayoutMode(mode);
+      floatingPanelHandles.messages.refreshBounds();
+      floatingPanelHandles.session.refreshBounds();
+      requestAnimationFrame(() => {
+        floatingPanelHandles.debug.setLayoutMode(mode);
+        floatingPanelHandles.debug.refreshBounds();
+        floatingPanels.forEach((panel) => panel.refreshBounds());
+        debugPanelSyncCompanionLayout?.();
+        refreshSpacesCtaPlacement();
+      });
+    };
+
+    const refreshSpacesCtaPlacement = (): void => {
+      const room = globalChatRoom;
+      const cta = spacesCtaPanel;
+      if (room === null || cta === null || cta.isDismissed()) return;
+      const boundsHost = previewDockStationaryActive() ? leftCol : canvasStage;
+      const boundsRect = boundsHost.getBoundingClientRect();
+      const anchorRect = room.element.getBoundingClientRect();
+      cta.refresh({
+        anchorRect: {
+          left: anchorRect.left,
+          top: anchorRect.top,
+          width: anchorRect.width,
+          height: anchorRect.height,
+        },
+        boundsRect: {
+          left: boundsRect.left,
+          top: boundsRect.top,
+          width: boundsRect.width,
+          height: boundsRect.height,
+        },
+      });
+    };
+    const scheduleSpacesCtaRefresh = (): void => {
+      requestAnimationFrame(refreshSpacesCtaPlacement);
+    };
+
+    applyPreviewPanelLayout();
+    wideSidebarMq.addEventListener("change", applyPreviewPanelLayout);
+    window.addEventListener("resize", () => {
+      floatingPanels.forEach((panel) => panel.refreshBounds());
+      scheduleSpacesCtaRefresh();
+    });
+
+    if (globalChatRoom !== null && spacesCtaPanel !== null) {
+      const messagesElement = globalChatRoom.element;
+      if (typeof ResizeObserver !== "undefined") {
+        const resizeObs = new ResizeObserver(() => {
+          scheduleSpacesCtaRefresh();
+        });
+        resizeObs.observe(messagesElement);
+      }
+      const mutationObs = new MutationObserver(() => {
+        scheduleSpacesCtaRefresh();
+      });
+      mutationObs.observe(messagesElement, {
+        attributes: true,
+        attributeFilter: ["style", "class", "hidden"],
+      });
+      scheduleSpacesCtaRefresh();
+    }
 
     let messagesPanelVisible = true;
     const applyMessagesPanelVisibility = (): void => {
-      leftCol.style.display = messagesPanelVisible ? "flex" : "none";
+      leftCol.style.display = "";
+      leftCol.classList.toggle(
+        "preview-game-col--messages-hidden",
+        !messagesPanelVisible
+      );
+      if (globalChatRoom !== null) {
+        globalChatRoom.element.hidden = !messagesPanelVisible;
+      }
+      if (spacesCtaPanel !== null && !spacesCtaPanel.isDismissed()) {
+        spacesCtaPanel.element.hidden = !messagesPanelVisible;
+      }
+      debugMount.classList.toggle(
+        "preview-debug-mount--messages-hidden",
+        !messagesPanelVisible
+      );
+      if (messagesPanelVisible) {
+        debug.element.classList.remove("preview-debug-panel--expanded");
+      }
+      debug.syncCompanionLayout();
       if (messagesPanelVisible && mobileSidePanelControls?.isMobileViewport() === true) {
         mobileSidePanelControls.openLeftPanel();
       }
@@ -2050,6 +3904,7 @@ export function bootstrap(): void {
         applyChatVisibility();
         applyDebugVisibility();
         applyJoystickVisibility();
+        applyPreviewPanelLayout();
       },
       includeThemePanel: false,
     });

@@ -1,9 +1,68 @@
 import { describe, expect, it } from "vitest";
+import { playPadStickVisualAtDirectionProgress } from "./preview-play-pad-keys.js";
 import {
   screenDeltaToWorldJoystick,
   shouldClampWorldPositionWhenJoystickDriving,
   shouldClearPrimaryWaypointsWhileJoystickIdle,
 } from "./preview-debug-joystick.js";
+
+describe("playPadStickVisualAtDirectionProgress", () => {
+  const max = 56;
+
+  it("starts left sweep at -90° with stick centered", () => {
+    const v = playPadStickVisualAtDirectionProgress({
+      direction: "left",
+      progress: 0,
+      maxOffsetPx: max,
+    });
+    expect(v.offsetXPx).toBe(0);
+    expect(v.offsetYPx).toBe(0);
+    expect(v.rotateDeg).toBe(-90);
+  });
+
+  it("ends left sweep at full left deflection after -360° rotation", () => {
+    const v = playPadStickVisualAtDirectionProgress({
+      direction: "left",
+      progress: 1,
+      maxOffsetPx: max,
+    });
+    expect(v.offsetXPx).toBe(-max);
+    expect(v.offsetYPx).toBe(0);
+    expect(v.rotateDeg).toBe(-450);
+  });
+
+  it("starts right sweep at 90° with stick centered", () => {
+    const v = playPadStickVisualAtDirectionProgress({
+      direction: "right",
+      progress: 0,
+      maxOffsetPx: max,
+    });
+    expect(v.offsetXPx).toBe(0);
+    expect(v.offsetYPx).toBe(0);
+    expect(v.rotateDeg).toBe(90);
+  });
+
+  it("ends right sweep at full right deflection after +360° rotation", () => {
+    const v = playPadStickVisualAtDirectionProgress({
+      direction: "right",
+      progress: 1,
+      maxOffsetPx: max,
+    });
+    expect(v.offsetXPx).toBe(max);
+    expect(v.offsetYPx).toBe(0);
+    expect(v.rotateDeg).toBe(450);
+  });
+
+  it("interpolates rotation and offset midway through a sweep", () => {
+    const v = playPadStickVisualAtDirectionProgress({
+      direction: "left",
+      progress: 0.5,
+      maxOffsetPx: max,
+    });
+    expect(v.offsetXPx).toBe(-max / 2);
+    expect(v.rotateDeg).toBe(-270);
+  });
+});
 
 describe("screenDeltaToWorldJoystick", () => {
   it("maps right to positive x and up on screen to positive world y", () => {

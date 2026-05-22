@@ -1,9 +1,6 @@
 #!/usr/bin/env node
 import Redis from "ioredis";
-import {
-  hashNodePassword,
-  deriveNodeIdFromPassword,
-} from "../dist/index.js";
+import { verifyStoredNodeCredential } from "../dist/index.js";
 
 function parseArgs(argv) {
   const out = {
@@ -56,48 +53,27 @@ async function readStoredNodeCredentials(options) {
   const redis = new Redis(options.redisUrl);
   try {
     if (options.mainNodeId.length > 0) {
-      const key = `agent-play:${options.hostId}:node:${options.mainNodeId}:auth:agent-node:${options.nodeId}`;
-      const v = await redis.get(key);
-      if (typeof v !== "string" || v.length === 0) {
-        throw new Error("No stored agent credentials found under parent main node");
+      const authKey = `agent-play:${options.hostId}:node:${options.nodeId}:auth`;
+      const passwHash = await redis.hget(authKey, "passwHash");
+      if (typeof passwHash !== "string" || passwHash.length === 0) {
+        throw new Error("No stored passwHash found for agent node id");
       }
-      const parsed = JSON.parse(v);
-      if (
-        typeof parsed !== "object" ||
-        parsed === null ||
-        typeof parsed.passw !== "string" ||
-        parsed.passw.length === 0
-      ) {
-        throw new Error("Invalid agent credential record");
-      }
-      return {
-        passw: parsed.passw,
-        passwHash: parsed.passw,
-        key,
-        nodeKind: "agent",
-      };
+      return { passwHash, key: authKey, nodeKind: "agent" };
     }
     const mainAuthKey = `agent-play:${options.hostId}:node:${options.nodeId}:auth`;
     const mainKind = await redis.hget(mainAuthKey, "kind");
     if (mainKind === "root") {
-      return { passw: "", passwHash: "", key: mainAuthKey, nodeKind: "root" };
+      return { passwHash: "", key: mainAuthKey, nodeKind: "root" };
     }
     const mainPasswHash = await redis.hget(mainAuthKey, "passwHash");
-    const mainPassw = await redis.hget(mainAuthKey, "passw");
-    if (
-      typeof mainPasswHash === "string" &&
-      mainPasswHash.length > 0 &&
-      typeof mainPassw === "string" &&
-      mainPassw.length > 0
-    ) {
+    if (typeof mainPasswHash === "string" && mainPasswHash.length > 0) {
       return {
         passwHash: mainPasswHash,
-        passw: mainPassw,
         key: mainAuthKey,
         nodeKind: "main",
       };
     }
-    throw new Error("No stored main node credentials (passw/passwHash) found for node id");
+    throw new Error("No stored passwHash found for node id");
   } finally {
     await redis.quit();
   }
@@ -146,30 +122,26 @@ async function main() {
     }
     return;
   }
-  const derivativeOk =
-    deriveNodeIdFromPassword({
-      password: stored.passw,
-      rootKey,
-    }) === nodeId.trim().toLowerCase();
-  const hashOk =
-    stored.passwHash === stored.passw;
+  const derivativeOk = verifyStoredNodeCredential({
+    nodeId,
+    passwHash: stored.passwHash,
+    rootKey,
+  });
 
-  const ok = derivativeOk && hashOk;
   console.log(
     JSON.stringify(
       {
-        ok,
+        ok: derivativeOk,
         nodeId,
         nodeKind: stored.nodeKind,
         derivativeOk,
-        hashOk,
         dataKey: stored.key,
       },
       null,
       2
     )
   );
-  if (!ok) {
+  if (!derivativeOk) {
     process.exitCode = 1;
   }
 }

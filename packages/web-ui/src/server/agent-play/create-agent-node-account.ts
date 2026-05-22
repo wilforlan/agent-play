@@ -5,7 +5,7 @@ export type ParseCreateAgentNodeBodyResult =
       ok: true;
       kind: "agent";
       agentNodeId: string;
-      agentNodePassw: string;
+      agentNodePasswHash: string;
       parentNodeId?: string;
     }
   | { ok: false; error: string };
@@ -19,7 +19,7 @@ export function parseCreateAgentNodeBody(
   const raw = body as {
     kind?: unknown;
     agentNodeId?: unknown;
-    agentNodePassw?: unknown;
+    agentNodePasswHash?: unknown;
     parentNodeId?: unknown;
   };
   if (raw.kind !== undefined && raw.kind !== "agent") {
@@ -32,21 +32,21 @@ export function parseCreateAgentNodeBody(
     return { ok: false, error: "agentNodeId required" };
   }
   if (
-    typeof raw.agentNodePassw !== "string" ||
-    raw.agentNodePassw.trim().length === 0
+    typeof raw.agentNodePasswHash !== "string" ||
+    raw.agentNodePasswHash.trim().length === 0
   ) {
-    return { ok: false, error: "agentNodePassw required" };
+    return { ok: false, error: "agentNodePasswHash required" };
   }
   const base: {
     ok: true;
     kind: "agent";
     agentNodeId: string;
-    agentNodePassw: string;
+    agentNodePasswHash: string;
   } = {
     ok: true,
     kind: "agent",
     agentNodeId: raw.agentNodeId.trim(),
-    agentNodePassw: raw.agentNodePassw.trim(),
+    agentNodePasswHash: raw.agentNodePasswHash.trim(),
   };
   if (
     typeof raw.parentNodeId === "string" &&
@@ -61,13 +61,13 @@ export async function createAgentNodeAccount(options: {
   repository: AgentRepository;
   mainNodeId: string;
   agentNodeId: string;
-  agentNodePassw: string;
+  agentNodePasswHash: string;
 }): Promise<{ agentId: string }> {
   const parentNodeId = options.mainNodeId;
   const created = await options.repository.createAgentNode({
     parentNodeId,
     agentId: options.agentNodeId,
-    passw: options.agentNodePassw,
+    passwHash: options.agentNodePasswHash,
   });
   return { agentId: created.agentId };
 }

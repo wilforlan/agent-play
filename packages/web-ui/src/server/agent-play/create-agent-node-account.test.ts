@@ -3,6 +3,7 @@ import type {
   AgentRepository,
   CreateAgentNodeRecordInput,
   CreateAgentRecordResult,
+  CreateNodeRecordInput,
   CreateNodeResult,
   NodeAuthRecord,
   StoredAgentRecord,
@@ -27,11 +28,14 @@ class TestAgentNodeRepository implements AgentRepository {
     return { ok: false, reason: "not used in this test" };
   }
 
-  async createNode(_input: { kind: "main"; passw: string }): Promise<CreateNodeResult> {
+  async createNode(_input: CreateNodeRecordInput): Promise<CreateNodeResult> {
     throw new Error("not used in this test");
   }
 
-  async verifyNodePassw(_nodeId: string, _passw: string): Promise<boolean> {
+  async verifyNodePasswHash(_input: {
+    nodeId: string;
+    passwHash: string;
+  }): Promise<boolean> {
     return false;
   }
 
@@ -76,18 +80,18 @@ class TestAgentNodeRepository implements AgentRepository {
 }
 
 describe("parseCreateAgentNodeBody", () => {
-  it("accepts agentNodeId", () => {
+  it("accepts agentNodeId with agentNodePasswHash", () => {
     expect(
       parseCreateAgentNodeBody({
         kind: "agent",
         agentNodeId: "agent-node-1",
-        agentNodePassw: "amber angle apple",
+        agentNodePasswHash: "hashed-material",
       })
     ).toEqual({
       ok: true,
       kind: "agent",
       agentNodeId: "agent-node-1",
-      agentNodePassw: "amber angle apple",
+      agentNodePasswHash: "hashed-material",
     });
   });
 
@@ -95,18 +99,23 @@ describe("parseCreateAgentNodeBody", () => {
     expect(
       parseCreateAgentNodeBody({
         agentNodeId: "agent-node-1",
-        agentNodePassw: "amber angle apple",
+        agentNodePasswHash: "hashed-material",
       })
     ).toEqual({
       ok: true,
       kind: "agent",
       agentNodeId: "agent-node-1",
-      agentNodePassw: "amber angle apple",
+      agentNodePasswHash: "hashed-material",
     });
   });
 
   it("rejects missing agentNodeId", () => {
-    const r = parseCreateAgentNodeBody({});
+    const r = parseCreateAgentNodeBody({ agentNodePasswHash: "x" });
+    expect(r.ok).toBe(false);
+  });
+
+  it("rejects missing agentNodePasswHash", () => {
+    const r = parseCreateAgentNodeBody({ agentNodeId: "agent-node-1" });
     expect(r.ok).toBe(false);
   });
 
@@ -117,19 +126,19 @@ describe("parseCreateAgentNodeBody", () => {
 });
 
 describe("createAgentNodeAccount", () => {
-  it("attaches provided agent node id to the provided main node id", async () => {
+  it("forwards the hashed material to the repository as passwHash", async () => {
     const repo = new TestAgentNodeRepository();
     const created = await createAgentNodeAccount({
       repository: repo,
       mainNodeId: "main-node-1",
       agentNodeId: "agent-node-1",
-      agentNodePassw: "amber angle apple",
+      agentNodePasswHash: "hashed-material",
     });
     expect(created.agentId).toBe("agent-node-1");
     expect(repo.lastCreateAgentNodeInput).toEqual({
       parentNodeId: "main-node-1",
       agentId: "agent-node-1",
-      passw: "amber angle apple",
+      passwHash: "hashed-material",
     });
   });
 });

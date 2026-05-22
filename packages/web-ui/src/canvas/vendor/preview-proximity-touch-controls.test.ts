@@ -1,12 +1,16 @@
 // @vitest-environment happy-dom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createPreviewProximityTouchControls } from "./preview-proximity-touch-controls.js";
+import {
+  createPreviewProximityTouchControls,
+  type CreatePreviewProximityTouchControlsOptions,
+} from "./preview-proximity-touch-controls.js";
 
 describe("createPreviewProximityTouchControls", () => {
   let parent: HTMLElement;
   let onAssist: ReturnType<typeof vi.fn>;
   let onChat: ReturnType<typeof vi.fn>;
   let onPushToTalk: ReturnType<typeof vi.fn>;
+  let onWallet: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
     parent = document.createElement("div");
@@ -17,6 +21,7 @@ describe("createPreviewProximityTouchControls", () => {
     onAssist = vi.fn();
     onChat = vi.fn();
     onPushToTalk = vi.fn();
+    onWallet = vi.fn();
   });
 
   afterEach(() => {
@@ -135,5 +140,201 @@ describe("createPreviewProximityTouchControls", () => {
     expect(onPushToTalk).toHaveBeenCalledTimes(1);
     expect(onAssist).not.toHaveBeenCalled();
     expect(onChat).not.toHaveBeenCalled();
+  });
+
+  it("relabels A to 'Enter' and enables it when getStructureProximity returns a label", () => {
+    let label: string | null = null;
+    const { root, refresh } = createPreviewProximityTouchControls({
+      parent,
+      getBoundsElement: () => parent,
+      getCanAct: () => false,
+      getStructureProximityLabel: () => label,
+      onAssist,
+      onChat,
+      onPushToTalk,
+    });
+    const assistBtn = root.querySelector(
+      ".preview-proximity-touch-pad__key--assist"
+    ) as HTMLButtonElement;
+    const chatBtn = root.querySelector(
+      ".preview-proximity-touch-pad__key--chat"
+    ) as HTMLButtonElement;
+    const subA = root.querySelector(
+      ".preview-proximity-touch-pad__key--assist .preview-proximity-touch-pad__key-sub"
+    ) as HTMLElement;
+    expect(assistBtn.disabled).toBe(true);
+    expect(subA.textContent).toBe("Assist");
+    label = "SandMill Circle";
+    refresh();
+    expect(assistBtn.disabled).toBe(false);
+    expect(subA.textContent).toBe("Enter");
+    expect(chatBtn.disabled).toBe(true);
+    assistBtn.click();
+    expect(onAssist).toHaveBeenCalledTimes(1);
+  });
+
+  it("relabels P to 'Enter <amenity>' and enables P when getAmenityProximityLabel returns a label", () => {
+    let label: string | null = null;
+    const opts: CreatePreviewProximityTouchControlsOptions = {
+      parent,
+      getBoundsElement: () => parent,
+      getCanAct: () => false,
+      getAmenityProximityLabel: () => label,
+      onAssist,
+      onChat,
+      onPushToTalk,
+    };
+    const { root, refresh } = createPreviewProximityTouchControls(opts);
+    const assistBtn = root.querySelector(
+      ".preview-proximity-touch-pad__key--assist"
+    ) as HTMLButtonElement;
+    const chatBtn = root.querySelector(
+      ".preview-proximity-touch-pad__key--chat"
+    ) as HTMLButtonElement;
+    const pttBtn = root.querySelector(
+      ".preview-proximity-touch-pad__key--ptt"
+    ) as HTMLButtonElement;
+    const subP = root.querySelector(
+      ".preview-proximity-touch-pad__key--ptt .preview-proximity-touch-pad__key-sub"
+    ) as HTMLElement;
+    expect(pttBtn.disabled).toBe(true);
+    expect(subP.textContent).toBe("Push");
+    label = "Shop";
+    refresh();
+    expect(pttBtn.disabled).toBe(false);
+    expect(subP.textContent).toBe("Enter");
+    expect(assistBtn.disabled).toBe(true);
+    expect(chatBtn.disabled).toBe(true);
+    pttBtn.click();
+    expect(onPushToTalk).toHaveBeenCalledTimes(1);
+  });
+
+  it("relabels P to the amenity-item action label and clicks invoke onPushToTalk", () => {
+    let label: string | null = null;
+    const opts: CreatePreviewProximityTouchControlsOptions = {
+      parent,
+      getBoundsElement: () => parent,
+      getCanAct: () => false,
+      getAmenityItemActionLabel: () => label,
+      onAssist,
+      onChat,
+      onPushToTalk,
+    };
+    const { root, refresh } = createPreviewProximityTouchControls(opts);
+    const pttBtn = root.querySelector(
+      ".preview-proximity-touch-pad__key--ptt"
+    ) as HTMLButtonElement;
+    const subP = root.querySelector(
+      ".preview-proximity-touch-pad__key--ptt .preview-proximity-touch-pad__key-sub"
+    ) as HTMLElement;
+    expect(pttBtn.disabled).toBe(true);
+    expect(subP.textContent).toBe("Push");
+    label = "Buy";
+    refresh();
+    expect(pttBtn.disabled).toBe(false);
+    expect(subP.textContent).toBe("Buy");
+    pttBtn.click();
+    expect(onPushToTalk).toHaveBeenCalledTimes(1);
+  });
+
+  it("amenity-item action label takes precedence over amenity / structure proximity labels", () => {
+    const opts: CreatePreviewProximityTouchControlsOptions = {
+      parent,
+      getBoundsElement: () => parent,
+      getCanAct: () => false,
+      getStructureProximityLabel: () => "SandMill Circle",
+      getAmenityProximityLabel: () => "Shop",
+      getAmenityItemActionLabel: () => "Buy",
+      onAssist,
+      onChat,
+      onPushToTalk,
+    };
+    const { root } = createPreviewProximityTouchControls(opts);
+    const subP = root.querySelector(
+      ".preview-proximity-touch-pad__key--ptt .preview-proximity-touch-pad__key-sub"
+    ) as HTMLElement;
+    expect(subP.textContent).toBe("Buy");
+  });
+
+  it("renders a W (wallet) button and invokes onWallet when tapped, even with no proximity", () => {
+    const { root } = createPreviewProximityTouchControls({
+      parent,
+      getBoundsElement: () => parent,
+      getCanAct: () => false,
+      onAssist,
+      onChat,
+      onPushToTalk,
+      onWallet,
+    });
+    const walletBtn = root.querySelector(
+      ".preview-proximity-touch-pad__key--wallet"
+    ) as HTMLButtonElement | null;
+    expect(walletBtn).not.toBeNull();
+    const subW = walletBtn?.querySelector(
+      ".preview-proximity-touch-pad__key-sub"
+    ) as HTMLElement;
+    expect(subW.textContent).toBe("Wallet");
+    expect(walletBtn?.disabled).toBe(false);
+    walletBtn?.click();
+    expect(onWallet).toHaveBeenCalledTimes(1);
+  });
+
+  it("W button stays enabled regardless of proximity state", () => {
+    const { root, refresh } = createPreviewProximityTouchControls({
+      parent,
+      getBoundsElement: () => parent,
+      getCanAct: () => true,
+      getStructureProximityLabel: () => "SandMill Circle",
+      getAmenityProximityLabel: () => "Shop",
+      getAmenityItemActionLabel: () => "Buy",
+      onAssist,
+      onChat,
+      onPushToTalk,
+      onWallet,
+    });
+    refresh();
+    const walletBtn = root.querySelector(
+      ".preview-proximity-touch-pad__key--wallet"
+    ) as HTMLButtonElement;
+    expect(walletBtn.disabled).toBe(false);
+    walletBtn.click();
+    expect(onWallet).toHaveBeenCalledTimes(1);
+  });
+
+  it("W button is safe to tap when no onWallet handler is provided", () => {
+    const { root } = createPreviewProximityTouchControls({
+      parent,
+      getBoundsElement: () => parent,
+      getCanAct: () => false,
+      onAssist,
+      onChat,
+      onPushToTalk,
+    });
+    const walletBtn = root.querySelector(
+      ".preview-proximity-touch-pad__key--wallet"
+    ) as HTMLButtonElement;
+    expect(() => walletBtn.click()).not.toThrow();
+  });
+
+  it("prefers amenity proximity over structure proximity (yard-only state wins)", () => {
+    const opts: CreatePreviewProximityTouchControlsOptions = {
+      parent,
+      getBoundsElement: () => parent,
+      getCanAct: () => false,
+      getStructureProximityLabel: () => "SandMill Circle",
+      getAmenityProximityLabel: () => "Shop",
+      onAssist,
+      onChat,
+      onPushToTalk,
+    };
+    const { root } = createPreviewProximityTouchControls(opts);
+    const assistBtn = root.querySelector(
+      ".preview-proximity-touch-pad__key--assist"
+    ) as HTMLButtonElement;
+    const pttBtn = root.querySelector(
+      ".preview-proximity-touch-pad__key--ptt"
+    ) as HTMLButtonElement;
+    expect(assistBtn.disabled).toBe(true);
+    expect(pttBtn.disabled).toBe(false);
   });
 });

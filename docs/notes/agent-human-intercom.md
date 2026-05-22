@@ -14,6 +14,7 @@ This note describes how chat and assist traffic flows between the browser human 
 - One reusable **human node** per human after explicit consent.
 - Browser flow: consent modal, `createHumanNode` RPC with `{ consent: true, passw }`, server persists via `createNodeAccount` when a repository is available.
 - Credentials: `sessionStorage` (`agent-play.humanCredentials`) plus optional `credentials.json` download; passphrase shown once in onboarding.
+- **Restore**: onboarding modal accepts an uploaded `credentials.json` (CLI or prior browser backup). The browser hashes the passphrase with **@agent-play/node-tools** and calls `POST /api/nodes/validate` with **`x-node-id`** / **`x-node-passw`** (no bootstrap fetch). The server checks derivation and compares `passwHash` to Redis before writing session credentials (no `createHumanNode` RPC).
 - `mainNodeId` in `intercomCommand` must match this node id. Use the same value for `fromPlayerId` (not `__human__`) so the agent’s `intercomResponse` targets the human node and the watch UI receives completions.
 
 ## Channel keys

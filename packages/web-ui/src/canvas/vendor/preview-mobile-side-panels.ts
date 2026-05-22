@@ -7,7 +7,9 @@ import {
   type SidePanelOpen,
 } from "./preview-side-panel-state.js";
 
-const WIDE_SCREEN_QUERY = "(min-width: 1024px)";
+export const PREVIEW_WIDE_SIDEBAR_MEDIA_QUERY = "(min-width: 1024px)";
+
+const WIDE_SCREEN_QUERY = PREVIEW_WIDE_SIDEBAR_MEDIA_QUERY;
 
 export function attachMobileSidePanelControls(options: {
   shell: HTMLElement;

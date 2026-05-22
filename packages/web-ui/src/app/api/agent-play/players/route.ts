@@ -118,8 +118,8 @@ export async function POST(req: NextRequest) {
     return Response.json({ error: "invalid agent" }, { status: 400 });
   }
 
-  const password =
-    typeof body.password === "string" ? body.password : undefined;
+  const passwHash =
+    typeof body.passwHash === "string" ? body.passwHash : undefined;
   const mainNodeId =
     typeof body.mainNodeId === "string" ? body.mainNodeId.trim() : undefined;
   const connectionId =
@@ -154,7 +154,7 @@ export async function POST(req: NextRequest) {
       type,
       agent,
       mainNodeId,
-      password,
+      passwHash,
       agentId,
       connectionId,
       leaseTtlSeconds,

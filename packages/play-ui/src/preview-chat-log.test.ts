@@ -9,6 +9,31 @@ import {
 const emptyWorld = { worldMap: { occupants: [] as const } };
 
 describe("preview chat log", () => {
+  it("ignores structure occupants when rebuilding from snapshot", () => {
+    resetChatLogFromSnapshot({
+      worldMap: {
+        occupants: [
+          {
+            kind: "structure",
+            id: "s1",
+            name: "Building",
+            x: 0,
+            y: 0,
+            worldId: "w",
+            spaceIds: [],
+          },
+          {
+            kind: "agent",
+            agentId: "a",
+            name: "A",
+            recentInteractions: [{ role: "user", text: "hello", seq: 1 }],
+          },
+        ],
+      },
+    });
+    expect(getChatLogLinesForAgent("a").map((l) => l.text)).toEqual(["hello"]);
+  });
+
   it("rebuilds from snapshot recentInteractions", () => {
     resetChatLogFromSnapshot({
       worldMap: {

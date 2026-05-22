@@ -59,6 +59,27 @@ describe("createPreviewSessionInteractionPanel", () => {
     sessionStorage.removeItem(CREDENTIALS_KEY);
   });
 
+  it("renders a collapsible Play Pad keyboard help section", () => {
+    const panel = createPreviewSessionInteractionPanel({
+      getSid: () => "sid-1",
+      apiBase: "/api/agent-play",
+      getMainNodeId: () => "main-node-1",
+    });
+    document.body.append(panel.element);
+    const help = panel.element.querySelector(
+      ".preview-session-interaction__play-pad-help"
+    );
+    expect(help).not.toBeNull();
+    expect(
+      help?.querySelector(".preview-session-interaction__play-pad-help-summary")
+        ?.textContent
+    ).toContain("Play Pad keyboard controls");
+    expect(
+      help?.querySelectorAll(".preview-session-interaction__play-pad-help-row")
+        .length
+    ).toBeGreaterThan(0);
+  });
+
   it("posts intercomCommand assist invocation with target player id", async () => {
     const fetchMock = vi.fn(async () => new Response(JSON.stringify({ ok: true })));
     vi.stubGlobal("fetch", fetchMock);
@@ -797,5 +818,98 @@ describe("createPreviewSessionInteractionPanel", () => {
     confirmBtn?.click();
     await Promise.resolve();
     expect(onHumanNodeLifecycle).toHaveBeenCalledWith("replace");
+  });
+
+  it("invokes onServerWalletAppliedToHud after talk billing applies server wallet", async () => {
+    realtimeSessionConnectMock.mockImplementationOnce(async () => {});
+    vi.stubGlobal("navigator", {
+      mediaDevices: {
+        getUserMedia: vi.fn(async () => ({
+          getTracks: () => [{ stop: vi.fn() }],
+        })),
+      },
+    });
+    vi.stubGlobal("crypto", {
+      randomUUID: () => "req-ptt-wallet-sync",
+    });
+    const onServerWalletAppliedToHud = vi.fn();
+    const walletHud = {
+      root: document.createElement("div"),
+      setBalance: vi.fn(),
+      setPowerUps: vi.fn(),
+      setPowerUpsLoading: vi.fn(),
+      setLoading: vi.fn(),
+      setError: vi.fn(),
+      destroy: vi.fn(),
+    };
+    const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
+      const raw = String(init?.body ?? "{}");
+      const parsed = JSON.parse(raw) as { op?: string };
+      if (parsed.op === "intercomCommand") {
+        return new Response(JSON.stringify({ ok: true }));
+      }
+      if (parsed.op === "talkSessionStart") {
+        return new Response(
+          JSON.stringify({
+            ok: true,
+            wallet: { balanceUsd: 12.5, powerUps: 3 },
+          })
+        );
+      }
+      return new Response(JSON.stringify({ ok: true }));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const panel = createPreviewSessionInteractionPanel({
+      getSid: () => "sid-1",
+      apiBase: "/api/agent-play",
+      getMainNodeId: () => "main-node-1",
+      getWalletHud: () => walletHud,
+      onServerWalletAppliedToHud,
+    });
+    panel.setAgents([
+      {
+        agentId: "agent-1",
+        name: "Agent One",
+        enableP2a: "on",
+        realtimeWebrtc: {
+          clientSecret: "cs_test_123",
+          model: "gpt-realtime",
+        },
+      },
+    ]);
+    document.body.append(panel.element);
+    panel.setContext("agent-1");
+    panel.setMode("push_to_talk");
+    const connectPromise = panel.preparePushToTalkConnection("agent-1");
+    await Promise.resolve();
+    panel.applyIntercomEvent({
+      requestId: "req-ptt-wallet-sync",
+      mainNodeId: "main-node-1",
+      toPlayerId: "main-node-1",
+      fromPlayerId: "agent-1",
+      kind: "chat",
+      status: "completed",
+      result: {
+        messageKind: "text",
+        message: "Realtime credentials ready.",
+        realtimeWebrtc: {
+          clientSecret: "cs_test_123",
+          model: "gpt-realtime",
+        },
+      },
+      ts: "2026-04-10T12:00:00.000Z",
+    });
+    await connectPromise;
+    await vi.waitFor(() => {
+      expect(onServerWalletAppliedToHud).toHaveBeenCalled();
+    });
+    expect(walletHud.setBalance).toHaveBeenCalledWith(12.5);
+    expect(walletHud.setPowerUps).toHaveBeenCalledWith(3);
+    const talkStarts = fetchMock.mock.calls.filter((call) => {
+      const init = call[1] as RequestInit | undefined;
+      const body = JSON.parse(String(init?.body ?? "{}")) as { op?: string };
+      return body.op === "talkSessionStart";
+    });
+    expect(talkStarts.length).toBeGreaterThan(0);
   });
 });

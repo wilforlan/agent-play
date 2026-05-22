@@ -80,5 +80,6 @@ describe("PlayWorld snapshot via shared session store", () => {
       snapshot.worldMap.occupants.filter((o) => o.kind === "agent").length
     ).toBe(1);
     expect(snapshot.worldMap.occupants.length).toBe(1);
+    expect(snapshot.worldLayout.zones.length).toBe(3);
   });
 });

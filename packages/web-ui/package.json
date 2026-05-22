@@ -1,6 +1,6 @@
 {
   "name": "@agent-play/web-ui",
-  "version": "3.3.2",
+  "version": "3.4.2",
   "private": true,
   "type": "module",
   "scripts": {
@@ -17,9 +17,9 @@
     "sanity:typegen": "sanity schema extract --path=schema.json && sanity typegen generate"
   },
   "dependencies": {
-    "@agent-play/intercom": "^3.3.0",
-    "@agent-play/node-tools": "^3.1.0",
-    "@agent-play/sdk": "^3.2.1",
+    "@agent-play/intercom": "^3.3.3",
+    "@agent-play/node-tools": "^3.2.1",
+    "@agent-play/sdk": "^3.3.5",
     "@openai/agents": "^0.8.5",
     "@sanity/assist": "3.2.2",
     "@sanity/icons": "3.7.4",

@@ -1,6 +1,45 @@
+/**
+ * @packageDocumentation
+ * @module @agent-play/web-ui/server/redis-session-store
+ *
+ * Production Redis-backed implementation of {@link ./session-store.ts |
+ * `SessionStore`}. All amenity-content writes are stored under
+ * `agent-play:${hostId}:space:${spaceId}:{shop-items|supermarket-items|carwash-cars}`
+ * hashes; wallets and purchase records live under
+ * `agent-play:${hostId}:player:${playerId}:{wallet,purchases}`.
+ *
+ * **Atomicity** — `getPlayerWallet`, `setPlayerWalletBalance`,
+ * `adjustPlayerWalletBalance`, and `purchase` all use `WATCH`/`MULTI` so
+ * concurrent first-reads / purchases cannot race past each other. First-time
+ * wallet reads atomically seed the balance to
+ * {@link @agent-play/sdk!DEFAULT_PLAYER_WALLET_BALANCE_USD | $70}.
+ *
+ * @see ./session-store.test-double.ts for the in-memory mirror used in tests.
+ */
 import { randomUUID } from "node:crypto";
 import type Redis from "ioredis";
+import type {
+  CarWashCar,
+  PlayerWallet,
+  PurchaseRecord,
+  ShopItem,
+  SupermarketItem,
+} from "@agent-play/sdk";
+import {
+  CarWashCarSchema,
+  PlayerWalletSchema,
+  PurchaseRecordSchema,
+  ShopItemSchema,
+  SupermarketItemSchema,
+  TALK_PRICE_PER_SECOND_USD,
+  computeTalkAgentPowerUpsEarned,
+  createInitialAgentRewardWallet,
+  createInitialPlayerWallet,
+  costForSeconds,
+  getWalletBundleById,
+} from "@agent-play/sdk";
 import { agentPlayVerbose } from "./agent-play-debug.js";
+import { finiteOccupantPosition } from "./agent-journey-cell.js";
 import type { PreviewSnapshotJson } from "./preview-serialize.js";
 import { getPlayerChainGenesisSync } from "./load-player-chain-genesis.js";
 import {
@@ -9,17 +48,28 @@ import {
   playerChainLeavesKey,
 } from "./player-chain/index.js";
 import { worldFanoutChannel } from "./redis-world-fanout.js";
+import {
+  GEOGRAPHY_REDIS_TTL_SECONDS,
+  parseGeographyHumanState,
+  type GeographyHumanState,
+} from "./world-geography.js";
 import type {
+  ExecutePurchaseResult,
   PresenceLease,
   PersistSnapshotRev,
   PublishedSessionMetadata,
   SessionStore,
+  SpaceAmenityLogEntry,
+  SpaceLeaseRecord,
   WorldChatMessage,
   WorldFanoutOptions,
 } from "./session-store.js";
 
+const PURCHASES_MAX = 500;
+
 const EVENT_LOG_MAX = 200;
 const WORLD_CHAT_MAX = 5000;
+const SPACE_AMENITY_LOG_MAX = 500;
 
 function sessionHashKey(hostId: string): string {
   return `agent-play:${hostId}:session`;
@@ -47,6 +97,82 @@ function gridOccupiedKey(hostId: string): string {
 
 function presenceLeaseKey(hostId: string, playerId: string): string {
   return `agent-play:${hostId}:presence:${playerId}`;
+}
+
+function geographyHumansKey(hostId: string, sid: string): string {
+  return `agent-play:${hostId}:geography:${sid}`;
+}
+
+function spaceAmenityLogKey(
+  hostId: string,
+  spaceId: string,
+  kind: string
+): string {
+  return `agent-play:${hostId}:space:${spaceId}:amenity:${kind}:log`;
+}
+
+function spaceLeasesHashKey(hostId: string, spaceId: string): string {
+  return `agent-play:${hostId}:space:${spaceId}:leases`;
+}
+
+function spaceShopItemsHashKey(hostId: string, spaceId: string): string {
+  return `agent-play:${hostId}:space:${spaceId}:shop-items`;
+}
+
+function spaceSupermarketItemsHashKey(hostId: string, spaceId: string): string {
+  return `agent-play:${hostId}:space:${spaceId}:supermarket-items`;
+}
+
+function spaceCarWashCarsHashKey(hostId: string, spaceId: string): string {
+  return `agent-play:${hostId}:space:${spaceId}:carwash-cars`;
+}
+
+function playerWalletKey(hostId: string, playerId: string): string {
+  return `agent-play:${hostId}:player:${playerId}:wallet`;
+}
+
+function talkSessionKey(
+  hostId: string,
+  viewerNodeId: string,
+  agentId: string
+): string {
+  return `agent-play:${hostId}:talk:${viewerNodeId}:${agentId}`;
+}
+
+type TalkSessionStored = {
+  startedAtIso: string;
+  lastBilledAtIso: string;
+  totalBilledSeconds: number;
+  totalChargedUsd: number;
+};
+
+function parseTalkSessionStored(raw: string): TalkSessionStored | null {
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (typeof parsed !== "object" || parsed === null) return null;
+    const o = parsed as Record<string, unknown>;
+    if (
+      typeof o.startedAtIso !== "string" ||
+      typeof o.lastBilledAtIso !== "string" ||
+      typeof o.totalBilledSeconds !== "number"
+    ) {
+      return null;
+    }
+    const totalChargedUsd =
+      typeof o.totalChargedUsd === "number" ? o.totalChargedUsd : 0;
+    return {
+      startedAtIso: o.startedAtIso,
+      lastBilledAtIso: o.lastBilledAtIso,
+      totalBilledSeconds: o.totalBilledSeconds,
+      totalChargedUsd,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function playerPurchasesKey(hostId: string, playerId: string): string {
+  return `agent-play:${hostId}:player:${playerId}:purchases`;
 }
 
 export type RedisSessionStoreOptions = {
@@ -94,9 +220,13 @@ export class RedisSessionStore implements SessionStore {
   ): void {
     const key = snapshotKey(this.hostId);
     const gridKey = gridOccupiedKey(this.hostId);
-    const coordKeys = snapshot.worldMap.occupants.map(
-      (o) => `${Math.round(o.x)},${Math.round(o.y)}`
-    );
+    const coordKeys = snapshot.worldMap.occupants.flatMap((o) => {
+      const position = finiteOccupantPosition(o);
+      if (position === null) {
+        return [];
+      }
+      return [`${Math.round(position.x)},${Math.round(position.y)}`];
+    });
     chain.set(key, raw);
     chain.del(gridKey);
     if (coordKeys.length > 0) {
@@ -608,6 +738,974 @@ export class RedisSessionStore implements SessionStore {
       }
     }
     return out;
+  }
+
+  async appendSpaceAmenityLog(input: {
+    spaceId: string;
+    amenityKind: string;
+    entry: SpaceAmenityLogEntry;
+  }): Promise<void> {
+    const key = spaceAmenityLogKey(
+      this.hostId,
+      input.spaceId,
+      input.amenityKind
+    );
+    const line = JSON.stringify(input.entry);
+    await this.redis.lpush(key, line);
+    await this.redis.ltrim(key, 0, SPACE_AMENITY_LOG_MAX - 1);
+  }
+
+  async listSpaceAmenityLogs(input: {
+    spaceId: string;
+    amenityKind?: string;
+    limit: number;
+  }): Promise<SpaceAmenityLogEntry[]> {
+    const lim = Math.min(Math.max(input.limit, 1), SPACE_AMENITY_LOG_MAX);
+    if (input.amenityKind !== undefined) {
+      const key = spaceAmenityLogKey(
+        this.hostId,
+        input.spaceId,
+        input.amenityKind
+      );
+      const raw = await this.redis.lrange(key, 0, lim - 1);
+      return raw
+        .map((line) => {
+          try {
+            return JSON.parse(line) as SpaceAmenityLogEntry;
+          } catch {
+            return null;
+          }
+        })
+        .filter((x): x is SpaceAmenityLogEntry => x !== null);
+    }
+    const merged: SpaceAmenityLogEntry[] = [];
+    for (const kind of ["supermarket", "shop", "car_wash"]) {
+      const key = spaceAmenityLogKey(this.hostId, input.spaceId, kind);
+      const raw = await this.redis.lrange(key, 0, SPACE_AMENITY_LOG_MAX - 1);
+      for (const line of raw) {
+        try {
+          merged.push(JSON.parse(line) as SpaceAmenityLogEntry);
+        } catch {
+          continue;
+        }
+      }
+    }
+    merged.sort((a, b) => b.at.localeCompare(a.at));
+    return merged.slice(0, lim);
+  }
+
+  async upsertSpaceLease(record: SpaceLeaseRecord): Promise<void> {
+    const key = spaceLeasesHashKey(this.hostId, record.spaceId);
+    await this.redis.hset(key, record.leaseId, JSON.stringify(record));
+  }
+
+  async listSpaceLeases(spaceId: string): Promise<SpaceLeaseRecord[]> {
+    const key = spaceLeasesHashKey(this.hostId, spaceId);
+    const raw = await this.redis.hgetall(key);
+    const out: SpaceLeaseRecord[] = [];
+    for (const value of Object.values(raw)) {
+      try {
+        out.push(JSON.parse(value) as SpaceLeaseRecord);
+      } catch {
+        continue;
+      }
+    }
+    return out.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  }
+
+  async deleteSpaceLease(input: {
+    spaceId: string;
+    leaseId: string;
+  }): Promise<boolean> {
+    const key = spaceLeasesHashKey(this.hostId, input.spaceId);
+    const removed = await this.redis.hdel(key, input.leaseId);
+    return removed === 1;
+  }
+
+  async deleteSpaceSidecar(spaceId: string): Promise<void> {
+    await this.redis.del(spaceLeasesHashKey(this.hostId, spaceId));
+    for (const kind of ["supermarket", "shop", "car_wash"] as const) {
+      await this.redis.del(spaceAmenityLogKey(this.hostId, spaceId, kind));
+    }
+    await this.redis.del(spaceShopItemsHashKey(this.hostId, spaceId));
+    await this.redis.del(spaceSupermarketItemsHashKey(this.hostId, spaceId));
+    await this.redis.del(spaceCarWashCarsHashKey(this.hostId, spaceId));
+  }
+
+  async upsertShopItem(item: ShopItem): Promise<void> {
+    const key = spaceShopItemsHashKey(this.hostId, item.spaceId);
+    await this.redis.hset(key, item.id, JSON.stringify(item));
+  }
+
+  async listShopItems(spaceId: string): Promise<ShopItem[]> {
+    const key = spaceShopItemsHashKey(this.hostId, spaceId);
+    const raw = await this.redis.hgetall(key);
+    const out: ShopItem[] = [];
+    for (const value of Object.values(raw)) {
+      try {
+        out.push(ShopItemSchema.parse(JSON.parse(value)));
+      } catch {
+        continue;
+      }
+    }
+    return out.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  }
+
+  async removeShopItem(input: {
+    spaceId: string;
+    itemId: string;
+  }): Promise<boolean> {
+    const key = spaceShopItemsHashKey(this.hostId, input.spaceId);
+    const removed = await this.redis.hdel(key, input.itemId);
+    return removed === 1;
+  }
+
+  async upsertSupermarketItem(item: SupermarketItem): Promise<void> {
+    const key = spaceSupermarketItemsHashKey(this.hostId, item.spaceId);
+    await this.redis.hset(key, item.id, JSON.stringify(item));
+  }
+
+  async listSupermarketItems(spaceId: string): Promise<SupermarketItem[]> {
+    const key = spaceSupermarketItemsHashKey(this.hostId, spaceId);
+    const raw = await this.redis.hgetall(key);
+    const out: SupermarketItem[] = [];
+    for (const value of Object.values(raw)) {
+      try {
+        out.push(SupermarketItemSchema.parse(JSON.parse(value)));
+      } catch {
+        continue;
+      }
+    }
+    return out.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  }
+
+  async removeSupermarketItem(input: {
+    spaceId: string;
+    itemId: string;
+  }): Promise<boolean> {
+    const key = spaceSupermarketItemsHashKey(this.hostId, input.spaceId);
+    const removed = await this.redis.hdel(key, input.itemId);
+    return removed === 1;
+  }
+
+  async upsertCarWashCar(car: CarWashCar): Promise<void> {
+    const key = spaceCarWashCarsHashKey(this.hostId, car.spaceId);
+    await this.redis.hset(key, car.id, JSON.stringify(car));
+  }
+
+  async listCarWashCars(spaceId: string): Promise<CarWashCar[]> {
+    const key = spaceCarWashCarsHashKey(this.hostId, spaceId);
+    const raw = await this.redis.hgetall(key);
+    const out: CarWashCar[] = [];
+    for (const value of Object.values(raw)) {
+      try {
+        out.push(CarWashCarSchema.parse(JSON.parse(value)));
+      } catch {
+        continue;
+      }
+    }
+    return out.sort((a, b) => a.slot - b.slot);
+  }
+
+  async removeCarWashCar(input: {
+    spaceId: string;
+    carId: string;
+  }): Promise<boolean> {
+    const key = spaceCarWashCarsHashKey(this.hostId, input.spaceId);
+    const removed = await this.redis.hdel(key, input.carId);
+    return removed === 1;
+  }
+
+  /**
+   * Lazy wallet seed on first read.
+   *
+   * @remarks
+   * Uses `WATCH`/`MULTI` so two concurrent first-reads cannot both write a new
+   * wallet; the losing transaction re-reads the freshly written value.
+   */
+  async getPlayerWallet(playerId: string): Promise<PlayerWallet> {
+    const key = playerWalletKey(this.hostId, playerId);
+    const raw = await this.redis.get(key);
+    if (raw !== null && raw.length > 0) {
+      try {
+        return PlayerWalletSchema.parse(JSON.parse(raw));
+      } catch {
+        // fall through to seed below
+      }
+    }
+    const seeded = createInitialPlayerWallet({
+      playerId,
+      now: new Date().toISOString(),
+    });
+    // Atomic seed: WATCH the key, only write if still empty.
+    await this.redis.watch(key);
+    const stillRaw = await this.redis.get(key);
+    if (stillRaw !== null && stillRaw.length > 0) {
+      await this.redis.unwatch();
+      try {
+        return PlayerWalletSchema.parse(JSON.parse(stillRaw));
+      } catch {
+        // best-effort: overwrite malformed value via SET below.
+      }
+    }
+    const multi = this.redis.multi();
+    multi.set(key, JSON.stringify(seeded));
+    const exec = await multi.exec();
+    if (exec === null) {
+      // Lost the race; re-read what the winner wrote.
+      const winnerRaw = await this.redis.get(key);
+      if (winnerRaw !== null && winnerRaw.length > 0) {
+        try {
+          return PlayerWalletSchema.parse(JSON.parse(winnerRaw));
+        } catch {
+          // fall through and return our seed value; the winner wrote $70 too.
+        }
+      }
+    }
+    return seeded;
+  }
+
+  async getOrCreateAgentWalletForTalkRewards(
+    playerId: string
+  ): Promise<PlayerWallet> {
+    const key = playerWalletKey(this.hostId, playerId);
+    const raw = await this.redis.get(key);
+    if (raw !== null && raw.length > 0) {
+      try {
+        return PlayerWalletSchema.parse(JSON.parse(raw));
+      } catch {
+        // fall through to seed
+      }
+    }
+    const seeded = createInitialAgentRewardWallet({
+      playerId,
+      now: new Date().toISOString(),
+    });
+    await this.redis.watch(key);
+    const stillRaw = await this.redis.get(key);
+    if (stillRaw !== null && stillRaw.length > 0) {
+      await this.redis.unwatch();
+      try {
+        return PlayerWalletSchema.parse(JSON.parse(stillRaw));
+      } catch {
+        // best-effort: overwrite malformed value via SET below.
+      }
+    }
+    const multi = this.redis.multi();
+    multi.set(key, JSON.stringify(seeded));
+    const exec = await multi.exec();
+    if (exec === null) {
+      const winnerRaw = await this.redis.get(key);
+      if (winnerRaw !== null && winnerRaw.length > 0) {
+        try {
+          return PlayerWalletSchema.parse(JSON.parse(winnerRaw));
+        } catch {
+          // fall through
+        }
+      }
+    }
+    return seeded;
+  }
+
+  async setPlayerWalletBalance(input: {
+    playerId: string;
+    balanceUsd: number;
+  }): Promise<PlayerWallet> {
+    if (input.balanceUsd < 0 || !Number.isFinite(input.balanceUsd)) {
+      throw new Error(
+        "setPlayerWalletBalance: balanceUsd must be a finite, non-negative number"
+      );
+    }
+    const current = await this.getPlayerWallet(input.playerId);
+    const wallet: PlayerWallet = {
+      ...current,
+      balanceUsd: input.balanceUsd,
+      updatedAt: new Date().toISOString(),
+    };
+    await this.redis.set(
+      playerWalletKey(this.hostId, input.playerId),
+      JSON.stringify(wallet)
+    );
+    return wallet;
+  }
+
+  /**
+   * Atomic increment/decrement of the wallet balance via WATCH/MULTI.
+   *
+   * @throws when the resulting balance would be negative.
+   */
+  async adjustPlayerWalletBalance(input: {
+    playerId: string;
+    deltaUsd: number;
+  }): Promise<PlayerWallet> {
+    const key = playerWalletKey(this.hostId, input.playerId);
+    const maxAttempts = 5;
+    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+      const current = await this.getPlayerWallet(input.playerId);
+      await this.redis.watch(key);
+      const nextBalance = current.balanceUsd + input.deltaUsd;
+      if (nextBalance < 0 || !Number.isFinite(nextBalance)) {
+        await this.redis.unwatch();
+        throw new Error(
+          `adjustPlayerWalletBalance: insufficient funds for player ${input.playerId}`
+        );
+      }
+      const next: PlayerWallet = {
+        ...current,
+        balanceUsd: nextBalance,
+        updatedAt: new Date().toISOString(),
+      };
+      const multi = this.redis.multi();
+      multi.set(key, JSON.stringify(next));
+      const exec = await multi.exec();
+      if (exec !== null) {
+        return next;
+      }
+    }
+    throw new Error(
+      `adjustPlayerWalletBalance: lost ${String(maxAttempts)} CAS retries for player ${input.playerId}`
+    );
+  }
+
+  async appendPurchaseRecord(record: PurchaseRecord): Promise<void> {
+    const key = playerPurchasesKey(this.hostId, record.playerId);
+    await this.redis.lpush(key, JSON.stringify(record));
+    await this.redis.ltrim(key, 0, PURCHASES_MAX - 1);
+  }
+
+  async listPurchases(input: {
+    playerId: string;
+    limit: number;
+  }): Promise<PurchaseRecord[]> {
+    const key = playerPurchasesKey(this.hostId, input.playerId);
+    const lim = Math.min(Math.max(input.limit, 1), PURCHASES_MAX);
+    const raw = await this.redis.lrange(key, 0, lim - 1);
+    const out: PurchaseRecord[] = [];
+    for (const line of raw) {
+      try {
+        out.push(PurchaseRecordSchema.parse(JSON.parse(line)));
+      } catch {
+        continue;
+      }
+    }
+    return out;
+  }
+
+  /**
+   * Atomic purchase: WATCH the item-bucket hash and the wallet key, re-read
+   * both, and apply the sold flag + balance debit in a single MULTI.
+   *
+   * @remarks
+   * Concurrent buyers both reach the WATCH but only one EXEC succeeds; the
+   * losing call returns `ITEM_ALREADY_SOLD` on retry.
+   */
+  async executePurchase(input: {
+    spaceId: string;
+    amenityKind: "shop" | "supermarket" | "car_wash";
+    itemRef: { kind: "shop" | "supermarket" | "carwash"; id: string };
+    playerId: string;
+    now: string;
+    recordId: string;
+  }): Promise<ExecutePurchaseResult> {
+    const expectedKind: typeof input.itemRef.kind =
+      input.amenityKind === "car_wash" ? "carwash" : input.amenityKind;
+    if (input.itemRef.kind !== expectedKind) {
+      return { ok: false, error: "AMENITY_KIND_MISMATCH" };
+    }
+    const itemKey =
+      input.itemRef.kind === "shop"
+        ? spaceShopItemsHashKey(this.hostId, input.spaceId)
+        : input.itemRef.kind === "supermarket"
+          ? spaceSupermarketItemsHashKey(this.hostId, input.spaceId)
+          : spaceCarWashCarsHashKey(this.hostId, input.spaceId);
+    const walletKey = playerWalletKey(this.hostId, input.playerId);
+    const purchasesKeyName = playerPurchasesKey(this.hostId, input.playerId);
+
+    await this.getPlayerWallet(input.playerId);
+
+    const maxAttempts = 5;
+    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+      await this.redis.watch(itemKey, walletKey);
+      const rawItem = await this.redis.hget(itemKey, input.itemRef.id);
+      if (rawItem === null) {
+        await this.redis.unwatch();
+        return { ok: false, error: "ITEM_NOT_FOUND" };
+      }
+      let item: ShopItem | SupermarketItem | CarWashCar;
+      try {
+        const parsed = JSON.parse(rawItem) as unknown;
+        if (input.itemRef.kind === "shop") {
+          item = ShopItemSchema.parse(parsed);
+        } else if (input.itemRef.kind === "supermarket") {
+          item = SupermarketItemSchema.parse(parsed);
+        } else {
+          item = CarWashCarSchema.parse(parsed);
+        }
+      } catch {
+        await this.redis.unwatch();
+        return { ok: false, error: "ITEM_NOT_FOUND" };
+      }
+      if (item.sale.status !== "available") {
+        await this.redis.unwatch();
+        return { ok: false, error: "ITEM_ALREADY_SOLD" };
+      }
+      const rawWallet = await this.redis.get(walletKey);
+      if (rawWallet === null) {
+        await this.redis.unwatch();
+        return { ok: false, error: "INSUFFICIENT_FUNDS" };
+      }
+      let wallet: PlayerWallet;
+      try {
+        wallet = PlayerWalletSchema.parse(JSON.parse(rawWallet));
+      } catch {
+        await this.redis.unwatch();
+        return { ok: false, error: "INSUFFICIENT_FUNDS" };
+      }
+      if (wallet.balanceUsd < item.priceUsd) {
+        await this.redis.unwatch();
+        return { ok: false, error: "INSUFFICIENT_FUNDS" };
+      }
+      const updatedItem = {
+        ...item,
+        sale: {
+          status: "sold" as const,
+          soldToPlayerId: input.playerId,
+          soldAt: input.now,
+        },
+      };
+      const earnedPowerUps = Math.floor(item.priceUsd) * 3;
+      const updatedWallet: PlayerWallet = {
+        ...wallet,
+        balanceUsd: wallet.balanceUsd - item.priceUsd,
+        powerUps: (wallet.powerUps ?? 0) + earnedPowerUps,
+        updatedAt: input.now,
+      };
+      const record: PurchaseRecord = {
+        id: input.recordId,
+        playerId: input.playerId,
+        spaceId: input.spaceId,
+        amenityKind: input.amenityKind,
+        itemRef: input.itemRef,
+        priceUsd: item.priceUsd,
+        at: input.now,
+      };
+      const multi = this.redis.multi();
+      multi.hset(itemKey, input.itemRef.id, JSON.stringify(updatedItem));
+      multi.set(walletKey, JSON.stringify(updatedWallet));
+      multi.lpush(purchasesKeyName, JSON.stringify(record));
+      multi.ltrim(purchasesKeyName, 0, PURCHASES_MAX - 1);
+      const exec = await multi.exec();
+      if (exec !== null) {
+        return {
+          ok: true,
+          record,
+          wallet: updatedWallet,
+          updatedItem,
+        };
+      }
+    }
+    return { ok: false, error: "ITEM_ALREADY_SOLD" };
+  }
+
+  async addPowerUps(input: {
+    playerId: string;
+    amount: number;
+    now: string;
+  }): Promise<PlayerWallet> {
+    if (
+      !Number.isFinite(input.amount) ||
+      !Number.isInteger(input.amount) ||
+      input.amount <= 0
+    ) {
+      throw new Error(
+        "addPowerUps: amount must be a finite positive integer"
+      );
+    }
+    const key = playerWalletKey(this.hostId, input.playerId);
+    const maxAttempts = 5;
+    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+      const current = await this.getPlayerWallet(input.playerId);
+      await this.redis.watch(key);
+      const rawWallet = await this.redis.get(key);
+      let wallet: PlayerWallet;
+      try {
+        wallet =
+          rawWallet !== null && rawWallet.length > 0
+            ? PlayerWalletSchema.parse(JSON.parse(rawWallet))
+            : current;
+      } catch {
+        await this.redis.unwatch();
+        continue;
+      }
+      const next: PlayerWallet = {
+        ...wallet,
+        powerUps: (wallet.powerUps ?? 0) + input.amount,
+        updatedAt: input.now,
+      };
+      const multi = this.redis.multi();
+      multi.set(key, JSON.stringify(next));
+      const exec = await multi.exec();
+      if (exec !== null) {
+        return next;
+      }
+    }
+    throw new Error(
+      `addPowerUps: lost ${String(maxAttempts)} CAS retries for player ${input.playerId}`
+    );
+  }
+
+  async redeemWalletBundle(input: {
+    playerId: string;
+    bundleId: string;
+    now: string;
+    recordId: string;
+  }): Promise<
+    | { ok: true; wallet: PlayerWallet; record: PurchaseRecord }
+    | { ok: false; error: "INVALID_BUNDLE" | "INSUFFICIENT_POWER_UPS" }
+  > {
+    const bundle = getWalletBundleById(input.bundleId.trim());
+    if (bundle === undefined) {
+      return { ok: false, error: "INVALID_BUNDLE" };
+    }
+    await this.getPlayerWallet(input.playerId);
+    const walletKey = playerWalletKey(this.hostId, input.playerId);
+    const purchasesKeyName = playerPurchasesKey(this.hostId, input.playerId);
+    const maxAttempts = 5;
+    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+      await this.redis.watch(walletKey);
+      const rawWallet = await this.redis.get(walletKey);
+      if (rawWallet === null || rawWallet.length === 0) {
+        await this.redis.unwatch();
+        return { ok: false, error: "INSUFFICIENT_POWER_UPS" };
+      }
+      let wallet: PlayerWallet;
+      try {
+        wallet = PlayerWalletSchema.parse(JSON.parse(rawWallet));
+      } catch {
+        await this.redis.unwatch();
+        return { ok: false, error: "INSUFFICIENT_POWER_UPS" };
+      }
+      const pu = wallet.powerUps ?? 0;
+      if (pu < bundle.powerUpsCost) {
+        await this.redis.unwatch();
+        return { ok: false, error: "INSUFFICIENT_POWER_UPS" };
+      }
+      const nextBalance = wallet.balanceUsd + bundle.creditUsd;
+      if (!Number.isFinite(nextBalance) || nextBalance < 0) {
+        await this.redis.unwatch();
+        return { ok: false, error: "INVALID_BUNDLE" };
+      }
+      const updatedWallet: PlayerWallet = {
+        ...wallet,
+        balanceUsd: nextBalance,
+        powerUps: pu - bundle.powerUpsCost,
+        updatedAt: input.now,
+      };
+      const record: PurchaseRecord = PurchaseRecordSchema.parse({
+        id: input.recordId,
+        playerId: input.playerId,
+        spaceId: "__wallet__",
+        amenityKind: "wallet_bundle",
+        itemRef: { kind: "shop", id: bundle.id },
+        priceUsd: bundle.creditUsd,
+        at: input.now,
+        detail: `Exchanged ${String(bundle.powerUpsCost)} power-ups for $${String(bundle.creditUsd)} balance`,
+        powerUpsSpent: bundle.powerUpsCost,
+      });
+      const multi = this.redis.multi();
+      multi.set(walletKey, JSON.stringify(updatedWallet));
+      multi.lpush(purchasesKeyName, JSON.stringify(record));
+      multi.ltrim(purchasesKeyName, 0, PURCHASES_MAX - 1);
+      const exec = await multi.exec();
+      if (exec !== null) {
+        return { ok: true, wallet: updatedWallet, record };
+      }
+    }
+    throw new Error(
+      `redeemWalletBundle: lost ${String(maxAttempts)} CAS retries for player ${input.playerId}`
+    );
+  }
+
+  async startTalkSession(input: {
+    viewerNodeId: string;
+    agentId: string;
+    now: string;
+  }): Promise<
+    | {
+        ok: true;
+        startedAt: string;
+        ratePerSecondUsd: number;
+        wallet: PlayerWallet;
+      }
+    | { ok: false; error: "ALREADY_ACTIVE" | "INSUFFICIENT_FUNDS" }
+  > {
+    const wallet = await this.getPlayerWallet(input.viewerNodeId);
+    if (wallet.balanceUsd <= 0) {
+      return { ok: false, error: "INSUFFICIENT_FUNDS" };
+    }
+    const key = talkSessionKey(
+      this.hostId,
+      input.viewerNodeId,
+      input.agentId
+    );
+    const initial: TalkSessionStored = {
+      startedAtIso: input.now,
+      lastBilledAtIso: input.now,
+      totalBilledSeconds: 0,
+      totalChargedUsd: 0,
+    };
+    const setResult = await this.redis.set(
+      key,
+      JSON.stringify(initial),
+      "NX"
+    );
+    if (setResult === null) {
+      return { ok: false, error: "ALREADY_ACTIVE" };
+    }
+    return {
+      ok: true,
+      startedAt: input.now,
+      ratePerSecondUsd: TALK_PRICE_PER_SECOND_USD,
+      wallet,
+    };
+  }
+
+  private async appendTalkTimePurchaseRecord(input: {
+    playerId: string;
+    agentId: string;
+    priceUsd: number;
+    billedSeconds: number;
+    at: string;
+  }): Promise<void> {
+    const record: PurchaseRecord = PurchaseRecordSchema.parse({
+      id: `talk-${randomUUID()}`,
+      playerId: input.playerId,
+      spaceId: "__talk__",
+      amenityKind: "talk_time",
+      itemRef: { kind: "shop", id: "openai-realtime" },
+      priceUsd: input.priceUsd,
+      at: input.at,
+      detail: `Realtime voice · ${String(input.billedSeconds)}s · agent ${input.agentId}`,
+    });
+    await this.appendPurchaseRecord(record);
+  }
+
+  async tickTalkSession(input: {
+    viewerNodeId: string;
+    agentId: string;
+    now: string;
+  }): Promise<
+    | {
+        ok: true;
+        secondsBilledThisTick: number;
+        secondsBilledTotal: number;
+        costUsd: number;
+        wallet: PlayerWallet;
+      }
+    | { ok: false; error: "NO_SESSION" | "INSUFFICIENT_FUNDS" }
+  > {
+    await this.getOrCreateAgentWalletForTalkRewards(input.agentId);
+    const talkKey = talkSessionKey(
+      this.hostId,
+      input.viewerNodeId,
+      input.agentId
+    );
+    const walletKey = playerWalletKey(this.hostId, input.viewerNodeId);
+    const agentWalletKey = playerWalletKey(this.hostId, input.agentId);
+    const maxAttempts = 5;
+    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+      await this.redis.watch(talkKey, walletKey, agentWalletKey);
+      const rawTalk = await this.redis.get(talkKey);
+      const session =
+        rawTalk !== null && rawTalk.length > 0
+          ? parseTalkSessionStored(rawTalk)
+          : null;
+      if (session === null) {
+        await this.redis.unwatch();
+        return { ok: false, error: "NO_SESSION" };
+      }
+      const rawWallet = await this.redis.get(walletKey);
+      if (rawWallet === null || rawWallet.length === 0) {
+        await this.redis.unwatch();
+        const multiDel = this.redis.multi();
+        multiDel.del(talkKey);
+        await multiDel.exec();
+        return { ok: false, error: "INSUFFICIENT_FUNDS" };
+      }
+      let wallet: PlayerWallet;
+      try {
+        wallet = PlayerWalletSchema.parse(JSON.parse(rawWallet));
+      } catch {
+        await this.redis.unwatch();
+        const multiDel = this.redis.multi();
+        multiDel.del(talkKey);
+        await multiDel.exec();
+        return { ok: false, error: "INSUFFICIENT_FUNDS" };
+      }
+      const rawAgentWallet = await this.redis.get(agentWalletKey);
+      let agentWallet: PlayerWallet;
+      if (rawAgentWallet === null || rawAgentWallet.length === 0) {
+        agentWallet = createInitialAgentRewardWallet({
+          playerId: input.agentId,
+          now: input.now,
+        });
+      } else {
+        try {
+          agentWallet = PlayerWalletSchema.parse(JSON.parse(rawAgentWallet));
+        } catch {
+          agentWallet = createInitialAgentRewardWallet({
+            playerId: input.agentId,
+            now: input.now,
+          });
+        }
+      }
+      const elapsedMs =
+        Date.parse(input.now) - Date.parse(session.lastBilledAtIso);
+      const billSeconds =
+        elapsedMs > 0 ? Math.ceil(elapsedMs / 1000) : 0;
+      const costUsd = costForSeconds(billSeconds);
+      if (costUsd > wallet.balanceUsd) {
+        await this.redis.unwatch();
+        await this.redis.del(talkKey);
+        return { ok: false, error: "INSUFFICIENT_FUNDS" };
+      }
+      const nextBalance = wallet.balanceUsd - costUsd;
+      const nextWallet: PlayerWallet = {
+        ...wallet,
+        balanceUsd: nextBalance,
+        updatedAt: input.now,
+      };
+      const agentPuEarned = computeTalkAgentPowerUpsEarned({
+        billedWholeSeconds: billSeconds,
+        costUsd,
+      });
+      const nextAgentWallet: PlayerWallet = {
+        ...agentWallet,
+        powerUps: Math.max(0, (agentWallet.powerUps ?? 0) + agentPuEarned),
+        updatedAt: input.now,
+      };
+      const nextSession: TalkSessionStored = {
+        ...session,
+        lastBilledAtIso: input.now,
+        totalBilledSeconds: session.totalBilledSeconds + billSeconds,
+        totalChargedUsd: session.totalChargedUsd + costUsd,
+      };
+      const multi = this.redis.multi();
+      multi.set(walletKey, JSON.stringify(nextWallet));
+      multi.set(agentWalletKey, JSON.stringify(nextAgentWallet));
+      multi.set(talkKey, JSON.stringify(nextSession));
+      const exec = await multi.exec();
+      if (exec !== null) {
+        if (costUsd > 0) {
+          await this.appendTalkTimePurchaseRecord({
+            playerId: input.viewerNodeId,
+            agentId: input.agentId,
+            priceUsd: costUsd,
+            billedSeconds: billSeconds,
+            at: input.now,
+          });
+        }
+        return {
+          ok: true,
+          secondsBilledThisTick: billSeconds,
+          secondsBilledTotal: nextSession.totalBilledSeconds,
+          costUsd,
+          wallet: nextWallet,
+        };
+      }
+    }
+    throw new Error(
+      `tickTalkSession: lost ${String(maxAttempts)} CAS retries for talk ${input.viewerNodeId}:${input.agentId}`
+    );
+  }
+
+  async stopTalkSession(input: {
+    viewerNodeId: string;
+    agentId: string;
+    now: string;
+  }): Promise<
+    | {
+        ok: true;
+        totalCostUsd: number;
+        secondsBilledTotal: number;
+        wallet: PlayerWallet;
+      }
+    | { ok: false; error: "NO_SESSION" }
+  > {
+    await this.getOrCreateAgentWalletForTalkRewards(input.agentId);
+    const talkKey = talkSessionKey(
+      this.hostId,
+      input.viewerNodeId,
+      input.agentId
+    );
+    const walletKey = playerWalletKey(this.hostId, input.viewerNodeId);
+    const agentWalletKey = playerWalletKey(this.hostId, input.agentId);
+    const maxAttempts = 5;
+    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+      await this.redis.watch(talkKey, walletKey, agentWalletKey);
+      const rawTalk = await this.redis.get(talkKey);
+      const session =
+        rawTalk !== null && rawTalk.length > 0
+          ? parseTalkSessionStored(rawTalk)
+          : null;
+      if (session === null) {
+        await this.redis.unwatch();
+        return { ok: false, error: "NO_SESSION" };
+      }
+      const rawWallet = await this.redis.get(walletKey);
+      if (rawWallet === null || rawWallet.length === 0) {
+        await this.redis.unwatch();
+        await this.redis.del(talkKey);
+        const w = await this.getPlayerWallet(input.viewerNodeId);
+        return {
+          ok: true,
+          totalCostUsd: session.totalChargedUsd,
+          secondsBilledTotal: session.totalBilledSeconds,
+          wallet: w,
+        };
+      }
+      let wallet: PlayerWallet;
+      try {
+        wallet = PlayerWalletSchema.parse(JSON.parse(rawWallet));
+      } catch {
+        await this.redis.unwatch();
+        await this.redis.del(talkKey);
+        const w = await this.getPlayerWallet(input.viewerNodeId);
+        return {
+          ok: true,
+          totalCostUsd: session.totalChargedUsd,
+          secondsBilledTotal: session.totalBilledSeconds,
+          wallet: w,
+        };
+      }
+      const rawAgentWallet = await this.redis.get(agentWalletKey);
+      let agentWallet: PlayerWallet;
+      if (rawAgentWallet === null || rawAgentWallet.length === 0) {
+        agentWallet = createInitialAgentRewardWallet({
+          playerId: input.agentId,
+          now: input.now,
+        });
+      } else {
+        try {
+          agentWallet = PlayerWalletSchema.parse(JSON.parse(rawAgentWallet));
+        } catch {
+          agentWallet = createInitialAgentRewardWallet({
+            playerId: input.agentId,
+            now: input.now,
+          });
+        }
+      }
+      const elapsedMs =
+        Date.parse(input.now) - Date.parse(session.lastBilledAtIso);
+      const billSeconds =
+        elapsedMs > 0 ? Math.ceil(elapsedMs / 1000) : 0;
+      const finalCostUsd = costForSeconds(billSeconds);
+      if (finalCostUsd > wallet.balanceUsd) {
+        await this.redis.unwatch();
+        await this.redis.del(talkKey);
+        return {
+          ok: true,
+          totalCostUsd: session.totalChargedUsd,
+          secondsBilledTotal: session.totalBilledSeconds,
+          wallet,
+        };
+      }
+      const nextWallet: PlayerWallet = {
+        ...wallet,
+        balanceUsd: wallet.balanceUsd - finalCostUsd,
+        updatedAt: input.now,
+      };
+      const agentPuEarned = computeTalkAgentPowerUpsEarned({
+        billedWholeSeconds: billSeconds,
+        costUsd: finalCostUsd,
+      });
+      const nextAgentWallet: PlayerWallet = {
+        ...agentWallet,
+        powerUps: Math.max(0, (agentWallet.powerUps ?? 0) + agentPuEarned),
+        updatedAt: input.now,
+      };
+      const totalCostUsd = session.totalChargedUsd + finalCostUsd;
+      const secondsBilledTotal =
+        session.totalBilledSeconds + billSeconds;
+      const multi = this.redis.multi();
+      multi.set(walletKey, JSON.stringify(nextWallet));
+      multi.set(agentWalletKey, JSON.stringify(nextAgentWallet));
+      multi.del(talkKey);
+      const exec = await multi.exec();
+      if (exec !== null) {
+        if (finalCostUsd > 0) {
+          await this.appendTalkTimePurchaseRecord({
+            playerId: input.viewerNodeId,
+            agentId: input.agentId,
+            priceUsd: finalCostUsd,
+            billedSeconds: billSeconds,
+            at: input.now,
+          });
+        }
+        return {
+          ok: true,
+          totalCostUsd,
+          secondsBilledTotal,
+          wallet: nextWallet,
+        };
+      }
+    }
+    throw new Error(
+      `stopTalkSession: lost ${String(maxAttempts)} CAS retries for talk ${input.viewerNodeId}:${input.agentId}`
+    );
+  }
+
+  async getGeographyHumans(): Promise<Map<string, GeographyHumanState>> {
+    const sid = this.getSessionId();
+    const key = geographyHumansKey(this.hostId, sid);
+    const raw = await this.redis.hgetall(key);
+    const out = new Map<string, GeographyHumanState>();
+    for (const [fieldId, json] of Object.entries(raw)) {
+      if (json.length === 0) continue;
+      try {
+        const parsed = JSON.parse(json) as Record<string, unknown>;
+        out.set(fieldId, parseGeographyHumanState({ ...parsed, id: fieldId }));
+      } catch {
+        continue;
+      }
+    }
+    return out;
+  }
+
+  async upsertGeographyHuman(state: GeographyHumanState): Promise<{
+    prev: Map<string, GeographyHumanState>;
+    next: Map<string, GeographyHumanState>;
+  }> {
+    const sid = this.getSessionId();
+    const key = geographyHumansKey(this.hostId, sid);
+    const prev = await this.getGeographyHumans();
+    const next = new Map(prev);
+    next.set(state.id, state);
+    const pipe = this.redis.multi();
+    pipe.hset(key, state.id, JSON.stringify(state));
+    pipe.expire(key, GEOGRAPHY_REDIS_TTL_SECONDS);
+    await pipe.exec();
+    return { prev, next };
+  }
+
+  async removeGeographyHuman(humanId: string): Promise<{
+    prev: Map<string, GeographyHumanState>;
+    next: Map<string, GeographyHumanState>;
+  }> {
+    const sid = this.getSessionId();
+    const key = geographyHumansKey(this.hostId, sid);
+    const prev = await this.getGeographyHumans();
+    const next = new Map(prev);
+    next.delete(humanId);
+    const pipe = this.redis.multi();
+    pipe.hdel(key, humanId);
+    if (next.size === 0) {
+      pipe.del(key);
+    } else {
+      pipe.expire(key, GEOGRAPHY_REDIS_TTL_SECONDS);
+    }
+    await pipe.exec();
+    return { prev, next };
   }
 
   getHostId(): string {

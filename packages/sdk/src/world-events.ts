@@ -41,6 +41,9 @@ export const WORLD_AGENT_SIGNAL_EVENT = "world:agent_signal";
 /** Full journey + path update for a player. */
 export const WORLD_JOURNEY_EVENT = "world:journey";
 
+/** Ephemeral human positions (not persisted on the world snapshot). */
+export const WORLD_GEOGRAPHY_EVENT = "world:geography";
+
 /**
  * Payload for {@link WORLD_AGENT_SIGNAL_EVENT}.
  *

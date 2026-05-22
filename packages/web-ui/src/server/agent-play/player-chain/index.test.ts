@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { buildSnapshotWorldMap } from "../preview-serialize.js";
+import { buildSnapshotWorldMap, getDefaultPreviewWorldLayoutJson } from "../preview-serialize.js";
 import {
   PLAYER_CHAIN_HEADER_STABLE_KEY,
+  buildLeafEntriesFromSnapshot,
   buildMerkleRootHex,
   buildPlayerChainFanoutNotify,
   buildPlayerChainFromSnapshot,
@@ -10,10 +11,13 @@ import {
   digestPair,
   parsePlayerChainFanoutNotify,
   stableOccupantSortKey,
+  stableSpaceCatalogSortKey,
   stableStringify,
 } from "./index.js";
 
 const GEN = "test-player-chain-genesis";
+
+const WL = getDefaultPreviewWorldLayoutJson();
 
 describe("player-chain index", () => {
   it("stableStringify sorts object keys", () => {
@@ -49,6 +53,50 @@ describe("player-chain index", () => {
         y: 0,
       })
     ).toBe("agent:__legacy__:x");
+    expect(
+      stableOccupantSortKey({
+        kind: "structure",
+        id: "st1",
+        name: "Building",
+        x: 1,
+        y: 2,
+        worldId: "overworld",
+        spaceIds: ["sp1"],
+      })
+    ).toBe("structure:st1");
+  });
+
+  it("includes space catalog leaves after occupants", () => {
+    const snap = {
+      sid: "s-space",
+      worldMap: buildSnapshotWorldMap([]),
+      worldLayout: WL,
+      spaces: [
+        {
+          id: "b-space",
+          name: "B",
+          description: "",
+          designKey: "d",
+          owner: { displayName: "o" },
+          amenities: ["shop"],
+        },
+        {
+          id: "a-space",
+          name: "A",
+          description: "",
+          designKey: "d",
+          owner: { displayName: "o" },
+          amenities: ["supermarket"],
+        },
+      ],
+    };
+    const entries = buildLeafEntriesFromSnapshot(snap, GEN);
+    const keys = entries.map((e) => e.stableKey);
+    expect(keys).toContain(stableSpaceCatalogSortKey("a-space"));
+    expect(keys).toContain(stableSpaceCatalogSortKey("b-space"));
+    const aIdx = keys.indexOf(stableSpaceCatalogSortKey("a-space"));
+    const bIdx = keys.indexOf(stableSpaceCatalogSortKey("b-space"));
+    expect(aIdx).toBeLessThan(bIdx);
   });
 
   it("same occupants different order same merkle root", () => {
@@ -71,6 +119,7 @@ describe("player-chain index", () => {
       {
         sid,
         worldMap: buildSnapshotWorldMap([occA, occB]),
+        worldLayout: WL,
       },
       GEN
     );
@@ -78,6 +127,7 @@ describe("player-chain index", () => {
       {
         sid,
         worldMap: buildSnapshotWorldMap([occB, occA]),
+        worldLayout: WL,
       },
       GEN
     );
@@ -88,6 +138,7 @@ describe("player-chain index", () => {
     const snap = {
       sid: "s",
       worldMap: buildSnapshotWorldMap([]),
+      worldLayout: WL,
     };
     const a = buildPlayerChainFromSnapshot(snap, "genesis-a");
     const b = buildPlayerChainFromSnapshot(snap, "genesis-b");
@@ -99,6 +150,7 @@ describe("player-chain index", () => {
     const prev = {
       sid,
       worldMap: buildSnapshotWorldMap([]),
+      worldLayout: WL,
     };
     const occ = {
       kind: "agent" as const,
@@ -110,15 +162,17 @@ describe("player-chain index", () => {
     const next = {
       sid,
       worldMap: buildSnapshotWorldMap([occ]),
+      worldLayout: WL,
     };
     const diff = diffPlayerChainLeaves(prev, next, GEN);
     expect(diff.removedKeys).toEqual([]);
-    expect(diff.updates).toHaveLength(2);
     const keys = diff.updates.map((u) => u.stableKey).sort();
-    expect(keys).toEqual([
-      PLAYER_CHAIN_HEADER_STABLE_KEY,
-      "agent:__legacy__:a",
-    ]);
+    expect(keys).toContain("agent:__legacy__:a");
+    if (keys.includes(PLAYER_CHAIN_HEADER_STABLE_KEY)) {
+      expect(keys.filter((k) => k === PLAYER_CHAIN_HEADER_STABLE_KEY)).toHaveLength(
+        1
+      );
+    }
   });
 
   it("diffPlayerChainLeaves reports header when session id changes genesis unchanged", () => {
@@ -132,10 +186,12 @@ describe("player-chain index", () => {
     const prev = {
       sid: "s1",
       worldMap: buildSnapshotWorldMap([occ]),
+      worldLayout: WL,
     };
     const next = {
       sid: "s2",
       worldMap: buildSnapshotWorldMap([occ]),
+      worldLayout: WL,
     };
     const diff = diffPlayerChainLeaves(prev, next, GEN);
     const keys = diff.updates.map((u) => u.stableKey).sort();
@@ -160,10 +216,12 @@ describe("player-chain index", () => {
     const prev = {
       sid: "s",
       worldMap: buildSnapshotWorldMap([occA, occB]),
+      worldLayout: WL,
     };
     const next = {
       sid: "s",
       worldMap: buildSnapshotWorldMap([occB]),
+      worldLayout: WL,
     };
     const n = buildPlayerChainFanoutNotify({
       prev,

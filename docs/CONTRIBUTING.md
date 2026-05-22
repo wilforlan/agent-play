@@ -20,6 +20,7 @@ Thank you for helping improve agent-play. This document is intentionally short; 
 1. **Tests** — From the repo root: `npm test` (runs workspace tests where defined), or `npm run test -w @agent-play/sdk` (and `-w @agent-play/play-ui`, `-w @agent-play/web-ui`) for a single package.
 2. **Play UI + host** — If you changed `packages/play-ui/src`, run `npm run prebuild -w @agent-play/web-ui` (or full `npm run build -w @agent-play/web-ui`) so vendored canvas sources stay in sync; run play-ui tests if you touched that package.
 3. **Lint** — Follow each package’s lint script when you touch its sources (`packages/sdk`, `packages/web-ui`, etc.).
+4. **Cross-repo verification** — If your change affects the published surface of `@agent-play/sdk`, `@agent-play/intercom`, or `@agent-play/node-tools`, verify it against the downstream consumer you target (for example `~/Documents/agent-service`) by linking the packages locally — see [Local linking for downstream projects](development.md#local-linking-for-downstream-projects). Run `npm run link:local -- --consumer <path>` from this repo, then exercise the consumer.
 
 ## Pull request guidelines
 

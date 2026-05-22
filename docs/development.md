@@ -99,6 +99,81 @@ The example registers a player and drives `RemotePlayWorld` RPCs against your lo
 
 ---
 
+## Local linking for downstream projects
+
+The Agent Play packages (`@agent-play/sdk`, `@agent-play/intercom`, `@agent-play/node-tools`, …) are consumed as **compiled `dist/`** by anything outside this monorepo. There are two supported workflows when you want changes you make in `packages/sdk` (or its deps) to show up immediately in another project — for example a downstream service like `~/Documents/agent-service` that depends on **`@agent-play/sdk`**.
+
+### Option A — `file:` install (no live updates)
+
+If the downstream project already declares the SDK as a file install:
+
+```json
+{
+  "dependencies": {
+    "@agent-play/sdk": "file:../agent-play/packages/sdk"
+  }
+}
+```
+
+then rebuild the packages and re-run `npm install` in the consumer:
+
+```bash
+# In agent-play
+npm run build:node-tools && npm run build:intercom && npm run build:sdk
+
+# In the consumer (e.g. ~/Documents/agent-service)
+npm install
+```
+
+`file:` copies the built `dist/` into the consumer's `node_modules`; you must re-run **`npm install`** after each rebuild.
+
+### Option B — `npm link` (live updates via symlinks)
+
+Use the bundled helper to build the SDK trio, register them as global links, and wire them into a consumer project in one command:
+
+```bash
+# From the agent-play repo root
+npm run link:local -- --consumer ~/Documents/agent-service
+```
+
+What the script does:
+
+1. Runs **`npm run build`** in `packages/node-tools`, `packages/intercom`, then `packages/sdk` (dependency order).
+2. Runs **`npm link`** inside each package to register a global link.
+3. Runs **`npm link @agent-play/node-tools @agent-play/intercom @agent-play/sdk`** in the consumer directory so its `node_modules/@agent-play/*` become symlinks to your local `dist/`.
+
+After this, rebuild just the package you changed and the consumer picks it up automatically — no re-install needed:
+
+```bash
+cd packages/sdk && npm run build
+```
+
+Common flags:
+
+```bash
+# Include the CLI as well as the SDK trio
+npm run link:local -- --packages node-tools,intercom,sdk,cli \
+                       --consumer ~/Documents/agent-service
+
+# Skip the rebuild step if you have fresh dist/ output already
+npm run link:local -- --no-build --consumer ../agent-service
+
+# Register the global links only (run `npm link <pkg>` manually in the consumer)
+npm run link:local
+```
+
+To restore the consumer to its declared `package.json` deps, drop the links and reinstall:
+
+```bash
+npm run unlink:local -- --consumer ~/Documents/agent-service
+```
+
+**Caveat.** Running **`npm install`** in the consumer replaces the symlinks with whatever its `package.json` declares (e.g. the `file:` copy). Re-run `npm run link:local -- --consumer …` whenever that happens. The script prints a reminder when it finishes.
+
+The helper source is at **`scripts/link-local-packages.mjs`**; run `node scripts/link-local-packages.mjs --help` for the full CLI.
+
+---
+
 ## Using the platform end-to-end
 
 1. **Session** — `RemotePlayWorld.connect()` (or **`GET /api/agent-play/session`**) creates a **`sid`**. Share **`/agent-play/watch?sid=…`** for viewers.
@@ -117,6 +192,10 @@ The example registers a player and drives `RemotePlayWorld` RPCs against your lo
 | `npm run build:web-ui` | Production build of web UI only |
 | `npm run test` | All workspace tests (`--workspaces --if-present`) |
 | `npm run example` / `npm run example:02` | SDK examples |
+| `npm run link:local` | Build `node-tools`/`intercom`/`sdk` and `npm link` them into a downstream project (see [Local linking for downstream projects](#local-linking-for-downstream-projects)) |
+| `npm run unlink:local` | Drop the local-link symlinks created by `link:local` |
+| `npm run publish:packages` | Publish `@agent-play/*` to npm in dependency order (see [Publishing](npm-and-ci.md#publishing-manual)) |
+| `npm run publish:packages:dry` | Same as above but `--dry-run --yes` — inspect tarballs without hitting the registry |
 
 ---
 

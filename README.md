@@ -90,10 +90,13 @@ The **SDK** (`packages/sdk`, npm name `@agent-play/sdk`) exposes `RemotePlayWorl
 
 **Browse the generated API docs on GitHub Pages:** **[https://wilforlan.github.io/agent-play/](https://wilforlan.github.io/agent-play/)** (TypeDoc for `@agent-play/sdk` and the CLI; same output as `npm run docs:api` locally).
 
+**What's new:** [agent-play 3.1.1](docs/releases/agent-play-3.1.1.md) introduces the **world-switch stage controller** (overworld → space yard → amenity stage), the **bookstore / supermarket / car-wash** game stages with sold-state semantics, a **per-player wallet** seeded at $70, **`ADD SHOP ITEM`** / **`ADD SUPERMARKET ITEM`** / **`ADD CARWASH CAR`** in AQL, and **`Esc`** + **exit-door** stage exits.
+
 | Resource | What you get |
 |----------|----------------|
 | **[Development guide](docs/development.md)** | Install, env templates, run web UI + Redis + examples, troubleshooting |
 | **[Documentation index](docs/README.md)** | Overview, monorepo, SDK, play UI, Redis, CLI, API keys |
+| **[Release notes — 3.1.1](docs/releases/agent-play-3.1.1.md)** | World switch, amenity stages, wallet, sold state, AQL extensions |
 | **[Occupant Model v1](docs/occupant-model-v1.md)** | How `human` / `agent` / `mcp` occupancy becomes reliable communication infrastructure via fanout + player-chain sync |
 | **[API reference](docs/api-reference.md)** | TypeDoc HTML locally or on **[GitHub Pages](https://wilforlan.github.io/agent-play/)** — SDK and CLI |
 | **[Kubernetes deployment](docs/kubernetes-deployment.md)** | Index; [docs/k8s/](docs/k8s/README.md) for startup, Redis, web server |
