@@ -197,7 +197,11 @@ export default function PlaygroundClient({ defaultServerUrl }: PlaygroundClientP
       const base = trimmedUrl.replace(/\/$/, "");
       const validateRes = await fetch(`${base}/api/nodes/validate`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "x-node-id": trimmedMain,
+          "x-node-passw": material,
+        },
         body: JSON.stringify({
           nodeId: trimmedMain,
           rootKey: rootKeyEnv.toLowerCase(),

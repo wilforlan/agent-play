@@ -214,6 +214,10 @@ export default function PlatformPage() {
 
       const validated = await postJson({
         url: `${base}/api/nodes/validate`,
+        headers: {
+          "x-node-id": trimmedNode,
+          "x-node-passw": material,
+        },
         body: { nodeId: trimmedNode, rootKey: rootKeyEnv.toLowerCase() },
       });
       if (!validated.ok || validated.json.ok !== true) {
