@@ -37,6 +37,11 @@ const KEYWORD_SUGGESTIONS: AqlSuggestion[] = [
   { label: "USE AMENITY", insertText: "USE AMENITY ", kind: "keyword" },
   { label: "ADD AMENITY", insertText: "ADD AMENITY ", kind: "keyword" },
   { label: "REMOVE SPACE", insertText: "REMOVE SPACE ", kind: "keyword" },
+  {
+    label: "REMOVE SPACE NODE",
+    insertText: "REMOVE SPACE NODE \"\"",
+    kind: "keyword",
+  },
   { label: "REMOVE AMENITY", insertText: "REMOVE AMENITY ", kind: "keyword" },
   {
     label: "REMOVE AMENITY ITEMS ALL",

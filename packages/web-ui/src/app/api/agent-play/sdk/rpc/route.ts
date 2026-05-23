@@ -11,6 +11,8 @@
  * (`createSpace`, `addSpaceAmenity`, `addShopItem`, `addSupermarketItem`,
  * `addCarWashCar`, `setPlayerWalletBalance`) also require the
  * `x-agent-service-key` request header to match.
+ * `removeSpaceNode` always requires a configured `AGENT_SERVICE_KEY` and the
+ * matching header (503 when unset, 403 when missing or wrong).
  *
  * **Added in 3.1.1**:
  * - `addShopItem`, `addSupermarketItem`, `addCarWashCar` (+ matching
@@ -75,7 +77,10 @@ import { createNodeAccount } from "@/server/agent-play/create-node-account";
 import { getRepository } from "@/server/get-world";
 import { publishWorldIntercomEvent } from "@/server/agent-play/intercom/fanout";
 import { isSpaceAmenityKind } from "@/server/agent-play/space-amenity";
-import { verifyAgentServicePlatformKey } from "@/server/agent-play/agent-service-platform-key";
+import {
+  requireAgentServicePlatformKey,
+  verifyAgentServicePlatformKey,
+} from "@/server/agent-play/agent-service-platform-key";
 
 function requireSid(req: NextRequest): string | null {
   const raw = req.nextUrl.searchParams.get("sid");
@@ -431,6 +436,34 @@ export async function POST(req: NextRequest) {
           force: p.force === true,
         });
         return Response.json({ ok: true });
+      }
+      case "removeSpaceNode": {
+        const platformGate = requireAgentServicePlatformKey(req);
+        if (platformGate !== null) {
+          return platformGate;
+        }
+        const repository = await getRepository();
+        if (repository === null) {
+          return Response.json({ error: "repository unavailable" }, { status: 503 });
+        }
+        const p = body.payload as { nodeId?: unknown; force?: unknown };
+        if (typeof p.nodeId !== "string" || p.nodeId.trim().length === 0) {
+          return Response.json({ error: "invalid payload" }, { status: 400 });
+        }
+        const nodeId = p.nodeId.trim().toLowerCase();
+        const row = await repository.getNode(nodeId);
+        if (row === null || row.kind !== "space") {
+          return Response.json({ error: "space node not found" }, { status: 404 });
+        }
+        const spaceId = row.spaceId?.trim() ?? "";
+        if (spaceId.length === 0) {
+          return Response.json({ error: "space node missing spaceId" }, { status: 400 });
+        }
+        await world.removeSpaceNode(spaceId, {
+          force: p.force === true,
+          ownerNodeId: nodeId,
+        });
+        return Response.json({ ok: true, nodeId, spaceId });
       }
       case "inspectSpace": {
         const p = body.payload as { spaceId?: unknown };

@@ -43,6 +43,26 @@ INSPECT AGENT`;
     expect(parsed.program.statements[0]?.kind).toBe("UsePlatformKeyStmt");
   });
 
+  it("parses REMOVE SPACE NODE with optional FORCE", () => {
+    const parsed = parseAql(
+      tokenizeAql(`REMOVE SPACE NODE "node:abc"\nREMOVE SPACE NODE "node:def" FORCE`)
+    );
+    expect(parsed.diagnostics).toHaveLength(0);
+    expect(parsed.program.statements[0]?.kind).toBe("RemoveSpaceNodeStmt");
+    expect(parsed.program.statements[1]?.kind).toBe("RemoveSpaceNodeStmt");
+    if (parsed.program.statements[1]?.kind === "RemoveSpaceNodeStmt") {
+      expect(parsed.program.statements[1].force).toBe(true);
+    }
+  });
+
+  it("requires USE PLATFORM KEY before REMOVE SPACE NODE", () => {
+    const parsed = parseAql(tokenizeAql(`REMOVE SPACE NODE "node:abc"`));
+    expect(parsed.diagnostics).toHaveLength(0);
+    const validated = validateAql(parsed.program);
+    expect(validated.diagnostics.length).toBeGreaterThan(0);
+    expect(validated.diagnostics[0]?.message).toContain("USE PLATFORM KEY");
+  });
+
   it("parses CREATE SPACE, USE SPACE NODE, amenities, leases, and REMOVE", () => {
     const phrase = "one two three four five six seven eight nine ten";
     const source = `CREATE SPACE "n" DESIGN "d" OWNER "o" DESCRIPTION "x" STRUCTURE "sn"
@@ -407,5 +427,89 @@ INSPECT SPACE`;
     expect(result.diagnostics).toHaveLength(0);
     expect(lastHeaders["x-agent-service-key"]).toBe("plat-secret-16b");
     expect(result.state.platformServiceKey).toBe("plat-secret-16b");
+  });
+
+  it("REMOVE SPACE NODE calls removeSpaceNode with platform key header", async () => {
+    const source = `USE PLATFORM KEY "plat-secret-16b"
+REMOVE SPACE NODE "node:space-1" FORCE`;
+    const parsed = parseAql(tokenizeAql(source));
+    expect(parsed.diagnostics).toHaveLength(0);
+    const validated = validateAql(parsed.program);
+    expect(validated.diagnostics).toHaveLength(0);
+    let lastRpc: { op: string; payload: Record<string, unknown>; extraHeaders?: Record<string, string> } | null =
+      null;
+    const runtimeClient = {
+      ensureSession: async () => ({ sid: "s1" }),
+      inspectMainNode: async () => ({ mainNode: { nodeId: "main-1" } }),
+      sdkRpc: async (input: {
+        op: string;
+        payload: Record<string, unknown>;
+        extraHeaders?: Record<string, string>;
+      }) => {
+        lastRpc = input;
+        return { ok: true, nodeId: "node:space-1", spaceId: "catalog-1" };
+      },
+      fetchSnapshot: async () => ({ snapshot: {} }),
+      fetchSessionDetails: async () => ({ meta: {} }),
+      sendIntercomCommand: async () => ({ ok: false }),
+    };
+    const result = await executeAqlProgram({
+      program: parsed.program,
+      runtimeClient,
+      initialState: {
+        serverUrl: "http://localhost:3000",
+        mainNodeId: "",
+        sid: "sid-x",
+        nodePasswordMaterial: null,
+        spaceCatalogId: "catalog-1",
+        spaceNodeId: "node:space-1",
+        spacePasswordMaterial: "pass",
+        targetAmenityKind: null,
+        targetAgentId: null,
+        targetNodeId: null,
+        timeoutMs: 8000,
+        headers: {},
+        platformServiceKey: null,
+      },
+    });
+    expect(result.diagnostics).toHaveLength(0);
+    expect(lastRpc?.op).toBe("removeSpaceNode");
+    expect(lastRpc?.payload).toEqual({ nodeId: "node:space-1", force: true });
+    expect(lastRpc?.extraHeaders?.["x-agent-service-key"]).toBe("plat-secret-16b");
+    expect(result.state.spaceCatalogId).toBeNull();
+    expect(result.state.spaceNodeId).toBeNull();
+  });
+
+  it("REMOVE SPACE NODE fails at runtime without USE PLATFORM KEY", async () => {
+    const parsed = parseAql(tokenizeAql(`REMOVE SPACE NODE "node:abc"`));
+    const runtimeClient = {
+      ensureSession: async () => ({ sid: "s1" }),
+      inspectMainNode: async () => ({ mainNode: { nodeId: "main-1" } }),
+      sdkRpc: async () => ({ ok: true }),
+      fetchSnapshot: async () => ({ snapshot: {} }),
+      fetchSessionDetails: async () => ({ meta: {} }),
+      sendIntercomCommand: async () => ({ ok: false }),
+    };
+    const result = await executeAqlProgram({
+      program: parsed.program,
+      runtimeClient,
+      initialState: {
+        serverUrl: "http://localhost:3000",
+        mainNodeId: "",
+        sid: "sid-x",
+        nodePasswordMaterial: null,
+        spaceCatalogId: null,
+        spaceNodeId: null,
+        spacePasswordMaterial: null,
+        targetAmenityKind: null,
+        targetAgentId: null,
+        targetNodeId: null,
+        timeoutMs: 8000,
+        headers: {},
+        platformServiceKey: null,
+      },
+    });
+    expect(result.diagnostics.length).toBeGreaterThan(0);
+    expect(result.diagnostics[0]?.message).toContain("USE PLATFORM KEY");
   });
 });

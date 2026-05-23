@@ -23,3 +23,14 @@ export function verifyAgentServicePlatformKey(req: Request): Response | null {
   }
   return null;
 }
+
+export function requireAgentServicePlatformKey(req: Request): Response | null {
+  const expected = getConfiguredAgentServiceKey();
+  if (expected === null) {
+    return Response.json(
+      { error: "agent_service_key_not_configured" },
+      { status: 503 }
+    );
+  }
+  return verifyAgentServicePlatformKey(req);
+}

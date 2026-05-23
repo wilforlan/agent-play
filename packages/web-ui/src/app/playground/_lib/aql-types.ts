@@ -86,6 +86,7 @@ export type AqlStatement =
   | { kind: "AddSpaceAmenityStmt"; amenityKind: AqlExpr }
   | { kind: "RemoveSpaceAmenityStmt"; spaceId: AqlExpr; amenityKind: AqlExpr }
   | { kind: "RemoveSpaceStmt"; spaceId: AqlExpr }
+  | { kind: "RemoveSpaceNodeStmt"; nodeId: AqlExpr; force: boolean }
   | {
       kind: "RemoveAmenityItemsStmt";
       all: boolean;

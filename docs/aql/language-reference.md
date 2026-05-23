@@ -165,11 +165,22 @@ Routes a message to the active agent node. **Requires** `USE AGENT NODE`.
 
 ## Space lifecycle
 
-### `CREATE SPACE` / `REMOVE SPACE`
+### `CREATE SPACE` / `REMOVE SPACE` / `REMOVE SPACE NODE`
 
 ```aql
 CREATE SPACE "SandMill Circle"
 REMOVE SPACE "space-sandmill-circle"
+```
+
+`REMOVE SPACE NODE` deletes a **space node** by `node:…` id: catalog entry,
+amenity sidecar data (shop / supermarket / car wash rows, leases, logs), and the
+Redis node auth record. Requires `USE PLATFORM KEY` in the script (server must
+have `AGENT_SERVICE_KEY` set). Optional `FORCE` skips active-lease checks.
+
+```aql
+USE PLATFORM KEY "<AGENT_SERVICE_KEY>"
+REMOVE SPACE NODE "node:…"
+REMOVE SPACE NODE "node:…" FORCE
 ```
 
 ### `ADD SPACE AMENITY` / `REMOVE SPACE AMENITY`

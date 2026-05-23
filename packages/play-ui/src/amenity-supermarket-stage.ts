@@ -3,7 +3,7 @@
  * @module @agent-play/play-ui/amenity-supermarket-stage
  *
  * The "supermarket" amenity stage — a 4×5 grid of slots with row banners
- * labelled `Fruits / Mens / Womens / Kids`. Each filled cell hosts a
+ * labelled `Lane 1` … `Lane 4`. Each filled cell hosts a
  * {@link buildGroceryItemSprite}; empty cells render as faint placeholders
  * so the grid stays legible.
  *
@@ -43,10 +43,10 @@ export const SUPERMARKET_BOUNDS: AmenityStageBounds = {
  * @public
  */
 export const SUPERMARKET_ROW_LABELS: Record<SupermarketRow, string> = {
-  1: "Fruits",
-  2: "Mens",
-  3: "Womens",
-  4: "Kids",
+  1: "Lane 1",
+  2: "Lane 2",
+  3: "Lane 3",
+  4: "Lane 4",
 };
 
 /**

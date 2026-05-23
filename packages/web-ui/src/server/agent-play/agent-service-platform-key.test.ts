@@ -2,6 +2,7 @@ import { describe, expect, it, afterEach, vi } from "vitest";
 import {
   AGENT_SERVICE_PLATFORM_KEY_HEADER,
   getConfiguredAgentServiceKey,
+  requireAgentServicePlatformKey,
   verifyAgentServicePlatformKey,
 } from "./agent-service-platform-key.js";
 
@@ -44,5 +45,20 @@ describe("agent-service-platform-key", () => {
       headers: { [AGENT_SERVICE_PLATFORM_KEY_HEADER]: "test-service-key-16" },
     });
     expect(verifyAgentServicePlatformKey(req)).toBeNull();
+  });
+
+  it("requireAgentServicePlatformKey rejects when AGENT_SERVICE_KEY is unset", () => {
+    vi.stubEnv("AGENT_SERVICE_KEY", "");
+    const req = new Request("http://localhost/", {
+      headers: { [AGENT_SERVICE_PLATFORM_KEY_HEADER]: "any-key__________" },
+    });
+    const res = requireAgentServicePlatformKey(req);
+    expect(res?.status).toBe(503);
+  });
+
+  it("requireAgentServicePlatformKey rejects missing header when key is set", () => {
+    vi.stubEnv("AGENT_SERVICE_KEY", "test-service-key-16");
+    const res = requireAgentServicePlatformKey(new Request("http://localhost/"));
+    expect(res?.status).toBe(403);
   });
 });
