@@ -1,0 +1,23 @@
+# =============================================================================
+# Remove a space node and all persisted data (catalog, sidecar, Redis auth)
+# =============================================================================
+#
+# Requires AGENT_SERVICE_KEY on the server and USE PLATFORM KEY in this script.
+# Optional FORCE skips active/pending lease checks.
+#
+# How to run
+# ----------
+# 1. Open `/playground` and CONNECT with your main node (or an existing sid).
+# 2. Set USE PLATFORM KEY to the same value as server AGENT_SERVICE_KEY.
+# 3. Replace the node id below with the space node you want to delete.
+# 4. Paste into the editor and Run.
+#
+# Tip: run scripts/remove-amenity-items-all-spaces.aql first if you only need
+# to clear shop/supermarket/car-wash rows but keep the space node.
+# =============================================================================
+
+USE PLATFORM KEY "<AGENT_SERVICE_KEY>"
+
+REMOVE SPACE NODE "node:0000000000000000000000000000000000000000000000000000000000000001"
+
+# REMOVE SPACE NODE "node:…" FORCE

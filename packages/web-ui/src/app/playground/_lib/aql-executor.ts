@@ -624,6 +624,47 @@ async function execStatement(
       context.outputs.lastHeaders = headers;
       return;
     }
+    case "RemoveSpaceNodeStmt": {
+      const sid = context.state.sid;
+      if (sid === null) {
+        throw new Error("AQL_RUNTIME_ERROR: run CONNECT before REMOVE SPACE NODE");
+      }
+      const platformKey = context.state.platformServiceKey?.trim() ?? "";
+      if (platformKey.length === 0) {
+        throw new Error(
+          "AQL_RUNTIME_ERROR: REMOVE SPACE NODE requires USE PLATFORM KEY first"
+        );
+      }
+      const nodeId = String(evalExpr(statement.nodeId, context.vars)).trim().toLowerCase();
+      if (nodeId.length === 0) {
+        throw new Error("AQL_RUNTIME_ERROR: REMOVE SPACE NODE requires a node id");
+      }
+      const startedAt = performance.now();
+      const rawResponse = await context.rpc.sdkRpc({
+        sid,
+        op: "removeSpaceNode",
+        payload: {
+          nodeId,
+          ...(statement.force ? { force: true } : {}),
+        },
+        extraHeaders: sdkRpcExtraHeaders(context.state),
+      });
+      const { payload: response, headers } = splitHttpMeta(rawResponse);
+      const timingMs = Math.round(performance.now() - startedAt);
+      context.outputs.lastOutput = {
+        response,
+        headers,
+        status: 200,
+        timingMs,
+      };
+      context.outputs.lastResponse = response;
+      context.outputs.lastHeaders = headers;
+      context.state.spaceCatalogId = null;
+      context.state.spaceNodeId = null;
+      context.state.spacePasswordMaterial = null;
+      context.state.targetAmenityKind = null;
+      return;
+    }
     case "RemoveSpaceStmt": {
       const sid = context.state.sid;
       if (sid === null) {

@@ -15,8 +15,8 @@ export type PlaygroundRuntimeClient = {
     sid: string;
     op: string;
     payload: Record<string, unknown>;
-    nodeId: string;
-    passwordMaterial: string;
+    nodeId?: string;
+    passwordMaterial?: string;
     extraHeaders?: Record<string, string>;
   }) => Promise<JsonObject>;
   sendIntercomCommand: (input: {
@@ -100,8 +100,12 @@ export function createRuntimeClient(baseUrl: string): PlaygroundRuntimeClient {
           headers: {
             "Content-Type": "application/json",
             ...(input.extraHeaders ?? {}),
-            "x-node-id": input.nodeId,
-            "x-node-passw": input.passwordMaterial,
+            ...(input.nodeId !== undefined && input.nodeId.length > 0
+              ? { "x-node-id": input.nodeId }
+              : {}),
+            ...(input.passwordMaterial !== undefined && input.passwordMaterial.length > 0
+              ? { "x-node-passw": input.passwordMaterial }
+              : {}),
           },
           body: JSON.stringify({ op: input.op, payload: input.payload }),
         }

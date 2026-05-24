@@ -156,4 +156,81 @@ describe("POST /api/agent-play/sdk/rpc — AGENT_SERVICE_KEY gate", () => {
     expect(res.status).toBe(200);
     expect(store.upsertShopItem).toHaveBeenCalledOnce();
   });
+
+  it("returns 503 for removeSpaceNode when AGENT_SERVICE_KEY is unset", async () => {
+    getPlayWorld.mockResolvedValue({
+      removeSpaceNode: vi.fn(async () => undefined),
+    });
+    getSessionStore.mockReturnValue(buildStoreMock());
+    getRepository.mockResolvedValue(buildSpaceNodeRepoMock());
+    validateAgentPlaySession.mockResolvedValue(true);
+
+    const res = await POST(
+      new NextRequest("http://localhost/api/agent-play/sdk/rpc?sid=s1", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          op: "removeSpaceNode",
+          payload: { nodeId: "node:space-1" },
+        }),
+      })
+    );
+    expect(res.status).toBe(503);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe("agent_service_key_not_configured");
+  });
+
+  it("returns 403 for removeSpaceNode when key is set but header missing", async () => {
+    vi.stubEnv("AGENT_SERVICE_KEY", "platform-key-16chars");
+    getPlayWorld.mockResolvedValue({
+      removeSpaceNode: vi.fn(async () => undefined),
+    });
+    getSessionStore.mockReturnValue(buildStoreMock());
+    getRepository.mockResolvedValue(buildSpaceNodeRepoMock());
+    validateAgentPlaySession.mockResolvedValue(true);
+
+    const res = await POST(
+      new NextRequest("http://localhost/api/agent-play/sdk/rpc?sid=s1", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          op: "removeSpaceNode",
+          payload: { nodeId: "node:space-1" },
+        }),
+      })
+    );
+    expect(res.status).toBe(403);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe("missing_agent_service_key");
+  });
+
+  it("removeSpaceNode resolves space id and cascades when platform key matches", async () => {
+    vi.stubEnv("AGENT_SERVICE_KEY", "platform-key-16chars");
+    const removeSpaceNode = vi.fn(async () => undefined);
+    getPlayWorld.mockResolvedValue({ removeSpaceNode });
+    getSessionStore.mockReturnValue(buildStoreMock());
+    getRepository.mockResolvedValue(buildSpaceNodeRepoMock());
+    validateAgentPlaySession.mockResolvedValue(true);
+
+    const res = await POST(
+      new NextRequest("http://localhost/api/agent-play/sdk/rpc?sid=s1", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          [AGENT_SERVICE_PLATFORM_KEY_HEADER]: "platform-key-16chars",
+        },
+        body: JSON.stringify({
+          op: "removeSpaceNode",
+          payload: { nodeId: "node:space-1", force: true },
+        }),
+      })
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { ok: boolean; nodeId: string; spaceId: string };
+    expect(body).toEqual({ ok: true, nodeId: "node:space-1", spaceId: "space-1" });
+    expect(removeSpaceNode).toHaveBeenCalledWith("space-1", {
+      force: true,
+      ownerNodeId: "node:space-1",
+    });
+  });
 });

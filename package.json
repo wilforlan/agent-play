@@ -37,7 +37,10 @@
     "setup:k8s-server": "bash k8s/setup.sh",
     "compose:up": "docker compose up --build",
     "compose:agents": "docker compose -f docker-compose.agents.yml up --build",
-    "validate-main-node": "node scripts/validate-main-node.mjs"
+    "validate-main-node": "node scripts/validate-main-node.mjs",
+    "redis:backup": "node scripts/redis-db.mjs backup",
+    "redis:wipe": "node scripts/redis-db.mjs wipe",
+    "redis:copy": "node scripts/redis-db.mjs copy"
   },
   "engines": {
     "node": ">=20"

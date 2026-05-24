@@ -32,6 +32,7 @@ export function validateAql(program: AqlProgram): ValidationResult {
   let hasAgentTarget = false;
   let hasSpaceUse = false;
   let hasAmenityScope = false;
+  let hasPlatformKey = false;
 
   const validateExpr = (expr: AqlExpr): void => {
     const varName = exprVarName(expr);
@@ -68,6 +69,7 @@ export function validateAql(program: AqlProgram): ValidationResult {
         return;
       case "UsePlatformKeyStmt":
         validateExpr(stmt.key);
+        hasPlatformKey = true;
         return;
       case "UseAmenityStmt":
         validateExpr(stmt.amenityKind);
@@ -202,6 +204,19 @@ export function validateAql(program: AqlProgram): ValidationResult {
         return;
       case "RemoveSpaceStmt":
         validateExpr(stmt.spaceId);
+        return;
+      case "RemoveSpaceNodeStmt":
+        validateExpr(stmt.nodeId);
+        if (!hasPlatformKey) {
+          diagnostics.push({
+            code: "AQL_SEMANTIC_ERROR",
+            severity: "error",
+            message:
+              "REMOVE SPACE NODE requires USE PLATFORM KEY first (and AGENT_SERVICE_KEY on the server)",
+            line: 1,
+            column: 1,
+          });
+        }
         return;
       case "RemoveAmenityItemsStmt": {
         if (stmt.itemIds !== undefined) {

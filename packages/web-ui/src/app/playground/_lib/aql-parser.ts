@@ -273,6 +273,18 @@ class Parser {
     const token = this.peek();
     if (token !== null && token.kind === "keyword" && token.value === "SPACE") {
       this.advance();
+      if (this.checkKeyword("NODE")) {
+        this.advance();
+        const nodeId = this.parseExpr();
+        if (nodeId === null) {
+          return null;
+        }
+        const force = this.checkKeyword("FORCE");
+        if (force) {
+          this.advance();
+        }
+        return { kind: "RemoveSpaceNodeStmt", nodeId, force };
+      }
       const spaceId = this.parseExpr();
       return spaceId === null ? null : { kind: "RemoveSpaceStmt", spaceId };
     }

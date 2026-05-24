@@ -1,0 +1,116 @@
+# =============================================================================
+# Remove all amenity item data (shop / supermarket / car wash) per space
+# =============================================================================
+#
+# Clears persisted content rows only — amenity slots stay on each space catalog.
+# To drop an amenity from a space entirely, use REMOVE AMENITY "<spaceId>" "<kind>".
+#
+# How to run
+# ----------
+# 1. Open `/playground` and connect with your main passphrase (no CONNECT here).
+# 2. Replace every <*_PASSPHRASE> placeholder with that space's ten-word passphrase.
+# 3. Replace placeholder node ids (000…0001–0004) if your deployment uses real ids.
+# 4. Paste this file into the editor and Run.
+#
+# Notes
+# -----
+# - Skips amenity kinds a space does not have (only the kinds listed per section).
+# - Sold items may fail removal unless cleared server-side with force; re-run
+#   INSPECT AMENITY after each block if anything remains.
+# =============================================================================
+
+# =============================================================================
+# 1. Bravo Towers — car wash only
+# =============================================================================
+
+USE SPACE NODE "node:9728e8ed094690727a355be63f711dc3e40df3d068dccb3089bc96b7c338c966"
+  PASSPHRASE "<BRAVO_TOWERS_PASSPHRASE>"
+
+USE AMENITY "car_wash"
+REMOVE AMENITY ITEMS ALL
+
+# =============================================================================
+# 2. My Plaza — car wash + shop + supermarket
+# =============================================================================
+
+USE SPACE NODE "node:6ae62056cee16358446278a7f69f3d2d81b18d16a3478fc15f69c75103482e91"
+  PASSPHRASE "<MY_PLAZA_PASSPHRASE>"
+
+USE AMENITY "car_wash"
+REMOVE AMENITY ITEMS ALL
+
+USE AMENITY "shop"
+REMOVE AMENITY ITEMS ALL
+
+USE AMENITY "supermarket"
+REMOVE AMENITY ITEMS ALL
+
+# =============================================================================
+# 3. SandMill Circle — shop + supermarket
+# =============================================================================
+
+USE SPACE NODE "node:b80024b47a7432614329c520010fc98e541c195fb3601d77253f674d539b1917"
+  PASSPHRASE "<SANDMILL_CIRCLE_PASSPHRASE>"
+
+USE AMENITY "shop"
+REMOVE AMENITY ITEMS ALL
+
+USE AMENITY "supermarket"
+REMOVE AMENITY ITEMS ALL
+
+# =============================================================================
+# 4. Apple Store — shop + supermarket
+# =============================================================================
+
+USE SPACE NODE "node:0000000000000000000000000000000000000001"
+  PASSPHRASE "<APPLE_STORE_PASSPHRASE>"
+
+USE AMENITY "shop"
+REMOVE AMENITY ITEMS ALL
+
+USE AMENITY "supermarket"
+REMOVE AMENITY ITEMS ALL
+
+# =============================================================================
+# 5. Perraw Lane — supermarket + car wash
+# =============================================================================
+
+USE SPACE NODE "node:0000000000000000000000000000000000000002"
+  PASSPHRASE "<PERRAW_LANE_PASSPHRASE>"
+
+USE AMENITY "car_wash"
+REMOVE AMENITY ITEMS ALL
+
+USE AMENITY "supermarket"
+REMOVE AMENITY ITEMS ALL
+
+# =============================================================================
+# 6. Albert Crest — supermarket only
+# =============================================================================
+
+USE SPACE NODE "node:0000000000000000000000000000000000000003"
+  PASSPHRASE "<ALBERT_CREST_PASSPHRASE>"
+
+USE AMENITY "supermarket"
+REMOVE AMENITY ITEMS ALL
+
+# =============================================================================
+# 7. Nelson SPA — shop + supermarket
+# =============================================================================
+
+USE SPACE NODE "node:0000000000000000000000000000000000000004"
+  PASSPHRASE "<NELSON_SPA_PASSPHRASE>"
+
+USE AMENITY "shop"
+REMOVE AMENITY ITEMS ALL
+
+USE AMENITY "supermarket"
+REMOVE AMENITY ITEMS ALL
+
+# =============================================================================
+# Verify (per space):
+#   USE SPACE NODE "node:..." PASSPHRASE "<...>"
+#   USE AMENITY "shop"
+#   INSPECT AMENITY
+#   SHOW RESPONSE
+# =============================================================================

@@ -1591,7 +1591,7 @@ export class PlayWorld {
 
   async removeSpaceNode(
     spaceId: string,
-    options?: { force?: boolean }
+    options?: { force?: boolean; ownerNodeId?: string }
   ): Promise<void> {
     const leases = await this.sessionStore.listSpaceLeases(spaceId);
     if (
@@ -1603,9 +1603,13 @@ export class PlayWorld {
       );
     }
     const snapBefore = await this.getSnapshotJson();
-    const ownerNodeId =
+    const ownerFromCatalog =
       snapBefore?.spaces?.find((s) => s.id === spaceId)?.owner.nodeId?.trim() ??
       "";
+    const ownerNodeId =
+      options?.ownerNodeId !== undefined && options.ownerNodeId.trim().length > 0
+        ? options.ownerNodeId.trim()
+        : ownerFromCatalog;
     await runStoredWorldMutation({
       store: this.sessionStore,
       mutate: async (cached) => {

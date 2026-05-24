@@ -49,12 +49,12 @@ describe("amenity-supermarket-stage: layoutSupermarketSlots", () => {
 });
 
 describe("amenity-supermarket-stage: row labels", () => {
-  it("labels rows 1..4 as Fruits/Mens/Womens/Kids", () => {
+  it("labels rows 1..4 as Lane 1 through Lane 4", () => {
     expect(SUPERMARKET_ROW_LABELS).toEqual({
-      1: "Fruits",
-      2: "Mens",
-      3: "Womens",
-      4: "Kids",
+      1: "Lane 1",
+      2: "Lane 2",
+      3: "Lane 3",
+      4: "Lane 4",
     });
   });
 });
