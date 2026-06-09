@@ -11,7 +11,8 @@ const assistExplainStructure = tool(
   (_args: { toolName: string; audience?: "developer" | "stakeholder" }) => "explained",
   {
     name: "assist_explain_structure",
-    description: "Explain how a tool-derived structure on the Agent Play map relates to your agent.",
+    description:
+      "Explain how an authored space or structure anchor on the Agent Play map relates to your agent (not tool-derived layout).",
     schema: z.object({
       toolName: z.string(),
       audience: z.enum(["developer", "stakeholder"]).optional(),

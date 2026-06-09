@@ -15,7 +15,8 @@ These areas are where contributors most often need **external documentation** or
 **Files:** [`examples/*.ts`](../packages/sdk/examples/), registration via `langchainRegistration`.
 
 - Examples use `createAgent`, `ChatOpenAI`, and Zod tool schemas — API surface follows LangChain v1 patterns.
-- **Sharp edge:** Tool names in the agent must match what `layoutStructuresFromTools` expects; renaming tools changes structure ids/positions.
+- **Sharp edge:** Tool names must include **`chat_tool`** and any **`assist_*`** tools you expose in the watch UI. Renaming tools breaks assist metadata until you re-register the agent.
+- **@deprecated:** `layoutStructuresFromTools` and **`syncPlayerStructuresFromTools`** are removed. Tool names **do not** spawn map structures; author **spaces** with **owner** metadata instead (see [World map v3](updates-world-map-v3.md)).
 
 ## Next.js app and SSE
 

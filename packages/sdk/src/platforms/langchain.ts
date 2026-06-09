@@ -2,8 +2,12 @@
  * LangChain adapter: derives tool names and assist metadata from a LangChain agent for
  * {@link LangChainAgentRegistration}.
  *
- * @remarks **Primary export:** {@link langchainRegistration}. Private helpers build error strings and
- * `AssistToolSpec` rows from Zod schemas when available.
+ * @remarks **Primary export:** {@link langchainRegistration}. Tool names feed **assist/chat
+ * UI** on the watch canvas only.
+ *
+ * @deprecated Map layout from tool names (`syncPlayerStructuresFromTools`, tool-derived
+ * `WorldStructure` tiles) was removed in world map v3. Author **spaces** with explicit
+ * **owner** metadata via AQL or `registerSpaceNode` instead.
  */
 import { agentPlayDebug } from "../lib/agent-play-debug.js";
 import type {
@@ -24,7 +28,8 @@ function formatMissingAgentToolsError(): string {
   return [
     "langchainRegistration: expected a LangChain agent with a tools array.",
     "",
-    "  Pass the object returned from createAgent({ tools: [...] }) (or equivalent) so tool names are available for the play world.",
+    "  Pass the object returned from createAgent({ tools: [...] }) (or equivalent) so tool names are available for assist/chat UI.",
+    "  Tool names no longer spawn map structures; author spaces separately with an owner (see world map v3 docs).",
     "  The tools array must include named tools; see the separate message if \"chat_tool\" or assist_* tools are missing.",
   ].join("\n");
 }

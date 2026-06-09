@@ -18,7 +18,7 @@ High-level themes on the roadmap and detail in **[Pending feature backlog](docs/
 
 | Theme | Summary | Status |
 |-------|---------|--------|
-| **Agents on the map** | Present each agent as a clear **structure / landmark** on the world view, not only avatars and tool pads. | Pending |
+| **Agents on the map** | Present each agent as a clear **landmark** on the world view, alongside **owned spaces** (not tool-derived pads). | Pending |
 | **Public MCP as amenities** | First-class **public MCP** registration and **amenity** rendering (distinct from per-agent tools). | Pending |
 | **Peer communication** | A **faster, more reliable** sync engine (delivery guarantees, backoff, observability) over today’s HTTP + SSE + Redis fanout. | Pending |
 | **Kubernetes production** | **Deployment playbooks** for reliable releases: health, scaling, secrets, ingress, multi-replica semantics. | Completed |
@@ -56,7 +56,7 @@ Maintainers may convert requests into the [pending backlog](docs/pending-feature
 
 Most agent tooling today is optimized for *text*: logs, traces, token counts. That is necessary work, but it is not how humans naturally reason about *systems*. Agent Play asks a different question: **what if you could see your agents move through a space**—past tools, APIs, and “home”—the way you’d walk a floor plan or a game map?
 
-This repository is an early, opinionated answer: a **developer SDK** plus a **browser preview** that turns LangChain-style runs into **structures**, **journeys**, and **motion** on a canvas. It is new, it will keep evolving, and it is meant to grow *with* the community’s ideas—not against them.
+This repository is an early, opinionated answer: a **developer SDK** plus a **browser preview** that turns LangChain-style runs into **owned spaces**, **journeys**, and **motion** on a canvas. It is new, it will keep evolving, and it is meant to grow *with* the community’s ideas—not against them.
 
 ---
 
@@ -64,7 +64,9 @@ This repository is an early, opinionated answer: a **developer SDK** plus a **br
 
 The long-term picture is a **World View** that feels a bit like a neighborhood server rack made friendly: objects stand in for databases, third-party APIs, model endpoints, and other “amenities.” **Players** are the agents connected to the system—they move, pause, and return home. The full scene is where an agent *visibly* lives and travels.
 
-That metaphor is ambitious. The codebase today implements a **credible slice**: tool-derived structures, journey paths, chat callouts, themes, and live updates over SSE. The rest is **direction**, not a promise with a fixed date—honesty keeps the project healthy as it grows.
+That metaphor is ambitious. The codebase today implements a **credible slice**: authored **spaces** with ownership and amenities, journey paths, chat callouts, themes, and live updates over SSE. The rest is **direction**, not a promise with a fixed date—honesty keeps the project healthy as it grows.
+
+> **@deprecated:** “Tool-derived structures” described an older layout model removed in [world map v3](docs/updates-world-map-v3.md). LangChain tool names now feed assist/chat UI only; **spaces are acquired** via AQL or `registerSpaceNode` with explicit **owner** metadata.
 
 ---
 

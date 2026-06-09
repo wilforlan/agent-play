@@ -372,13 +372,16 @@ function printAgentPlayIntegrationGuide(): void {
     "  • Use ~/.agent-play/credentials.json + .root with RemotePlayWorld({ nodeCredentials })."
   );
   console.log(
-    "  • LangChain: use langchainRegistration(agent) and pass agent.toolNames to addPlayer."
+    "  • LangChain: use langchainRegistration(agent) for chat_tool + assist_* UI metadata."
   );
   console.log(
     '  • The tool contract requires a tool named "chat_tool" in that list (add it if missing).'
   );
   console.log(
-    "  • Structures on the map are derived from those tool names — keep them aligned with your real tools."
+    "  • Map layout: author spaces with an owner (AQL CREATE SPACE or registerSpaceNode)—not from tool names."
+  );
+  console.log(
+    "  • @deprecated: tool names no longer spawn map structures (removed in world map v3)."
   );
   console.log(
     "  • RemotePlayWorld({ nodeCredentials: { rootKey, passw } }) and addAgent({ nodeId, ... })."

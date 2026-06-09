@@ -45,7 +45,7 @@ export type AssistToolSpec = {
  * Serializable shape returned by {@link langchainRegistration} for agent registration.
  *
  * @property type - Always `"langchain"` for this adapter.
- * @property toolNames - All tool names from the agent (must include `chat_tool`).
+ * @property toolNames - All tool names from the agent (must include `chat_tool`). Used for assist/chat UI only; **does not** spawn map structures (see world map v3).
  * @property assistTools - Subset of tools with `assist_` prefix, for UI buttons.
  */
 export type LangChainAgentRegistration = {

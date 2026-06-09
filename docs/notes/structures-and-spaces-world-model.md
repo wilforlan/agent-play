@@ -1,6 +1,10 @@
 # Structures and Spaces World Model
 
-This note describes how outer-world **structures** attach to authored **spaces**, how metadata and amenities are represented, and how snapshots, the player chain, and the preview canvas stay aligned.
+This note describes how outer-world **structure anchors** attach to authored **spaces**, how **ownership** and leases work, how metadata and amenities are represented, and how snapshots, the player chain, and the preview canvas stay aligned.
+
+## Deprecated: tool-derived map layout
+
+> **@deprecated (world map v3):** LangChain **tool names no longer create map structures**. Removed APIs: **`syncPlayerStructuresFromTools`**, SSE **`world:structures`**, tool-derived **`WorldStructure`** tiles. `langchainRegistration` still validates **`chat_tool`** and **`assist_*`** for watch UI only. Spatial inventory is **authored** as **spaces** with explicit **owners**. See [World map v3](../updates-world-map-v3.md).
 
 ## Naming
 
@@ -13,9 +17,9 @@ This note describes how outer-world **structures** attach to authored **spaces**
 Canonical metadata for each space, deduped by `id`. Defined as `SpaceCatalogEntryJson` in `packages/web-ui/src/server/agent-play/preview-serialize.ts`:
 
 - `id`, `name`, `description`, `designKey`
-- `owner`: `{ displayName, playerId?, nodeId? }`
+- **`owner`**: `{ displayName, playerId?, nodeId? }` — **required for acquisition**; declares who holds the space
 - `amenities`: ordered array of `supermarket` | `shop` | `car_wash` (see `space-amenity.ts`)
-- Optional `activityObjectIds`
+- Optional `activityObjectIds`, `amenityContent`, lease sidecar data
 
 Normalized with `normalizePreviewSnapshot`: missing `spaces` is treated as `[]`.
 
@@ -25,6 +29,20 @@ Map anchors use occupant `kind: "structure"` (`PreviewWorldMapStructureOccupantJ
 
 - `id`, `name`, `x`, `y`, `worldId`, `spaceIds`
 - Denormalized for clients: `primaryAmenity`, `amenities` (derived from attached catalog rows for rendering)
+
+> **@deprecated:** Caller-supplied **`x` / `y`** on `registerStructureNode` are ignored; anchors are auto-placed from the **worldLayout space zone** (see `resolveStructureAnchorsAtRuntime` in `grid-allocate.ts`).
+
+## Ownership and acquisition
+
+Spaces are **acquired** when an individual or node authors them with owner metadata:
+
+| Path | How ownership is set |
+|------|----------------------|
+| **`registerSpaceNode`** | `owner.displayName` required; optional `playerId`, `nodeId` |
+| **AQL `CREATE SPACE`** | `OWNER "Display Name"` (and optional structure name) after `CONNECT` |
+| **`CREATE LEASE AMENITY`** | Tenancy on an amenity slot: tenant email/address, duration, optional `humanPlayerId` |
+
+Structure sprites are **visual entry points** into owned catalog rows—they do not themselves confer ownership without a matching `snapshot.spaces` entry.
 
 ## Player chain leaves
 
@@ -42,6 +60,7 @@ In `packages/web-ui/src/server/agent-play/player-chain/index.ts`:
 - `registerSpaceNode` / `registerStructureNode` persist via `runStoredWorldMutation` into `snapshot.spaces` and structure occupants.
 - `listSpaceNodes` / `listStructureNodes` read from the snapshot (async).
 - `enterStructureSpace` resolves the structure from snapshot occupants and emits `world:space_transition`.
+- `createAmenityLease` / `cancelAmenityLease` manage amenity tenancy records.
 - Player location remains tracked in-memory (`locationsByPlayerId`) for transitions.
 
 Registration requires at least one amenity per space.
