@@ -4,21 +4,21 @@ This page describes **directional work** that is not fully implemented today. It
 
 ---
 
-## World map: agents as first-class structures
+## World map: agents as first-class landmarks
 
-**Goal:** Make every registered agent legible on the world map as a **structure** or **landmark**, not only as a moving avatar or abstract grid cell.
+**Goal:** Make every registered agent legible on the world map as a **landmark**, not only as a moving avatar or abstract grid cell—alongside **owned spaces** authored with explicit **owner** metadata.
 
-Today, tool-derived pads and home lanes anchor much of the layout. The backlog item is to **treat the agent presence itself** as part of the spatial vocabulary: clear labels, consistent placement rules, and map semantics so observers instantly see *who* occupies *which* slice of the world. That includes refining how multiple agents share bounds, how "home" relates to per-agent identity, and how the canvas legend matches server snapshot data.
+Agents already appear as **`kind: "agent"`** occupants (world map v3). The backlog item is to **treat agent presence itself** as part of the spatial vocabulary: clear labels, consistent placement rules, and map semantics so observers instantly see *who* occupies *which* slice of the world. That includes refining how multiple agents share bounds, how "home" relates to per-agent identity, and how the canvas legend matches server snapshot data.
+
+> **@deprecated:** “Tool-derived pads and home lanes” described the pre-v3 layout (`syncPlayerStructuresFromTools`). Tool names no longer anchor the map; spaces are **acquired** via AQL or `registerSpaceNode`.
 
 ---
 
 ## Public MCP servers as map amenities
 
-**Goal:** Support **public MCP server registrations** end-to-end and render them as **amenities** (e.g. storefront-style nodes) distinct from per-agent tool structures.
+**Goal:** Support **public MCP server registrations** end-to-end and render them as **amenities** (e.g. storefront-style nodes) distinct from per-agent **assist** tools and **owned spaces**.
 
-Work spans trust and discovery (what "public" means), API shape for listing and registering servers, snapshot and SSE updates so all viewers see the same amenities, and play UI affordances (icons, labels, links) so MCP endpoints read as **shared infrastructure** rather than private tools. This aligns with the vendor vs. store metaphor used elsewhere in the docs.
-
----
+Work spans trust and discovery (what "public" means), API shape for listing and registering servers, snapshot and SSE updates so all viewers see the same amenities, and play UI affordances (icons, labels, links) so MCP endpoints read as **shared infrastructure** rather than private per-agent tooling.
 
 ## Peer communication engine (reliability and speed)
 

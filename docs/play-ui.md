@@ -10,4 +10,6 @@ The play UI is built with Vite and outputs HTML, JavaScript, and assets under `p
 
 **Chat and settings.** The floating toolbar controls theme, **your avatar** (preset colors), **gender** (session label), chat visibility, and optional debug panels. Nothing in the UI stores secrets; it only displays data the server streams.
 
-**Who moves.** SDK-registered agents are **stationary** (fixed layout: home + tool grid). The **human** viewer (`__human__` on the server for proximity actions) is rendered as **You** and is the only figure that moves (joystick and arrow keys). Proximity Assist / Chat / Zone / Yield targets the nearest **agent** when you are in range.
+**Who moves.** SDK-registered agents are **stationary** at their allocated grid cells. The **human** viewer (`__human__` on the server for proximity actions) is rendered as **You** and is the only figure that moves (joystick and arrow keys). **Owned spaces** appear as structure anchors on the overworld; press **A** near one to enter its yard. Proximity Assist / Chat / Zone / Yield targets the nearest **agent** when you are in range.
+
+> **@deprecated:** “home + tool grid” described tool-derived layout removed in [World map v3](updates-world-map-v3.md).

@@ -15,9 +15,11 @@ npm install
 
 ## Step 1: Understand the three pieces
 
-1. **`RemotePlayWorld`** — HTTP client: `start()` → session, `addPlayer`, RPC for interactions and tool sync.
-2. **LangChain adapter** — `langchainRegistration(agent)` validates **`chat_tool`** and indexes **`assist_*`** tools for the watch UI; pair it with **`RemotePlayWorld`** (requires **`apiKey`** on construction).
+1. **`RemotePlayWorld`** — HTTP client: `connect()` → session, `addAgent`, RPC for interactions and journeys.
+2. **LangChain adapter** — `langchainRegistration(agent)` validates **`chat_tool`** and indexes **`assist_*`** tools for the watch UI (not map layout); pair it with **`RemotePlayWorld`** (requires **`apiKey`** on construction).
 3. **Watch UI** — Served by **`@agent-play/web-ui`** at `/agent-play/watch`; resolves session via `/api/agent-play/session` and streams updates (SSE, etc.).
+
+> **@deprecated:** `start()` → use **`connect()`**; tool-sync RPC and tool-derived structures were removed in world map v3. Author **spaces** via AQL or `registerSpaceNode` with an **owner**.
 
 ## Step 2: Run the web app
 

@@ -1,6 +1,8 @@
 # World map model v3 (protocol updates)
 
-This note summarizes a breaking-ish cleanup: one spatial model for “who is on the grid,” simpler RPC names, and no tool-derived **`WorldStructure`** tiles in the snapshot.
+This note summarizes a breaking-ish cleanup: one spatial model for “who is on the grid,” simpler RPC names, **authored spaces with ownership**, and no tool-derived **`WorldStructure`** tiles in the snapshot.
+
+> **Successor model:** Map inventory is **spaces** in `snapshot.spaces` (with **`owner`**, amenities, leases) plus **`kind: "structure"`** canvas anchors—not LangChain tool pads. See [Structures and spaces world model](notes/structures-and-spaces-world-model.md).
 
 ## Snapshot shape
 
@@ -63,4 +65,5 @@ For a full developer-oriented walkthrough (world model, Redis keys, **`playerCha
 2. Read agents only from **`snapshot.worldMap.occupants`** where **`kind === "agent"`**.
 3. Pass **`agentId`** on every **`addPlayer`**; read **`registeredAgent`** from the HTTP response instead of **`structures`**.
 4. Drop any client code that depended on **`world:structures`** or tool-sync RPC.
-5. If you consumed Redis fanout **`playerChainDelta`** (per-leaf digests on the wire), migrate to **`playerChainNotify`** + **`getPlayerChainNode`** or keep using **`getWorldSnapshot`** only.
+5. Author **spaces** with explicit **owner** metadata (AQL `CREATE SPACE … OWNER …`, `registerSpaceNode`, or ops scripts) instead of expecting tools to spawn map tiles.
+6. If you consumed Redis fanout **`playerChainDelta`** (per-leaf digests on the wire), migrate to **`playerChainNotify`** + **`getPlayerChainNode`** or keep using **`getWorldSnapshot`** only.

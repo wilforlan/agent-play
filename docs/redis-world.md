@@ -14,7 +14,9 @@ Implementation detail (see `packages/sdk/src/lib/redis-agent-repository.ts`):
 
 ## What is not streamed
 
-Agent **positions** are not stored or streamed through Redis for NPC-style agents. Snapshots mark agents as **stationary**; the play UI renders SDK-registered agents at fixed layout positions (home + tool grid). Only **human** movement is client-side. Repository data supports **metadata** the world needs for snapshots and signals (assist/chat/zone/yield aggregates, API key verification), not locomotion.
+Agent **positions** are not stored or streamed through Redis for NPC-style agents. Snapshots mark agents as **stationary**; the play UI renders SDK-registered agents at fixed grid cells allocated from **`worldMap.occupants`**. **Spaces** and structure anchors are authored separately (`snapshot.spaces`, `registerSpaceNode`, AQL). Only **human** movement is client-side. Repository data supports **metadata** the world needs for snapshots and signals (assist/chat/zone/yield aggregates, API key verification), not locomotion.
+
+> **@deprecated:** “home + tool grid” and tool-derived structures — removed in [World map v3](updates-world-map-v3.md).
 
 ## Swapping storage
 
