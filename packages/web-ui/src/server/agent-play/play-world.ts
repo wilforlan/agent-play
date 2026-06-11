@@ -1147,7 +1147,7 @@ export class PlayWorld {
           }
 
           const validPasswHash = await this.repository.verifyNodePasswHash({
-            nodeId: resolvedMainNodeId,
+            nodeId: trimmedId,
             passwHash: input.passwHash,
           });
           if (!validPasswHash) {

@@ -75,7 +75,12 @@ export type RemotePlayWorldLogging = "off" | "on";
 export type RemotePlayWorldOptions = {
   baseUrl?: string;
   /**
-   * `rootKey` from `.root` and **`passw`** human phrase from **`credentials.json`** (see **`loadAgentPlayCredentialsFileFromPathSync`** in **@agent-play/node-tools**).
+   * Main node bootstrap credentials: `rootKey` from `.root` and **`passw`** human phrase for the
+   * main node (session connect, snapshot, SSE). Alias: **`nodeCredentials`**.
+   */
+  mainNodeCredentials?: RemotePlayWorldNodeCredentials;
+  /**
+   * @deprecated Alias for {@link RemotePlayWorldOptions.mainNodeCredentials}.
    */
   nodeCredentials?: RemotePlayWorldNodeCredentials;
   /** Called for session lifecycle events (`session:connected`, `session:closed`; see `world-events`). */
@@ -97,7 +102,7 @@ export type RemotePlayWorldConnectOptions = {
 
 function formatMissingCredentialsError(): string {
   return [
-    "RemotePlayWorld: provide nodeCredentials: { rootKey, passw },",
+    "RemotePlayWorld: provide mainNodeCredentials: { rootKey, passw },",
     "or run agent-play create-main-node so ~/.agent-play/credentials.json exists.",
   ].join(" ");
 }
@@ -392,10 +397,10 @@ function normalizeIntercomSubscribePlayerIds(
 export class RemotePlayWorld {
   private readonly apiBase: string;
   private readonly rootKey: string;
-  /** Node id derived from hashed passphrase material + root (main or agent node id). */
-  private readonly derivedNodeId: string;
-  /** Hex SHA-256 of the normalized human phrase; sent as `x-node-passw` and as `passwHash`. */
-  private readonly passwHash: string;
+  /** Main node id derived from main passphrase material (session bootstrap). */
+  private readonly mainDerivedNodeId: string;
+  /** Main node passwHash (session bootstrap, snapshot, SSE). */
+  private readonly mainPasswHash: string;
   private readonly onSessionEvent:
     | ((event: RemotePlayWorldSessionEvent) => void)
     | undefined;
@@ -404,6 +409,10 @@ export class RemotePlayWorld {
   private configuredMainNodeId: string | null = null;
   private closed = false;
   private readonly closeListeners = new Set<() => void>();
+  private readonly playerAgentCredentials = new Map<
+    string,
+    { nodeId: string; passwHash: string }
+  >();
   private readonly playerConnectionInfo = new Map<
     string,
     { connectionId: string; leaseTtlSeconds: number; timer: ReturnType<typeof setInterval> }
@@ -423,6 +432,7 @@ export class RemotePlayWorld {
     this.transportLog = options.logging === "on";
 
     const nc =
+      options.mainNodeCredentials ??
       options.nodeCredentials ??
       (creds === null ? undefined : { rootKey: loadRootKey(), passw: creds.passw });
     if (
@@ -437,8 +447,8 @@ export class RemotePlayWorld {
         phrase: nc.passw,
         rootKey: this.rootKey,
       });
-      this.passwHash = credential.passwHash;
-      this.derivedNodeId = credential.nodeId;
+      this.mainPasswHash = credential.passwHash;
+      this.mainDerivedNodeId = credential.nodeId;
       return;
     }
 
@@ -485,18 +495,77 @@ export class RemotePlayWorld {
     };
   }
 
-  private authHeaders(): Record<string, string> {
+  private credentialFromHumanPhrase(phrase: string): {
+    nodeId: string;
+    passwHash: string;
+  } {
+    const credential = nodeCredentialFromHumanPhrase({
+      phrase,
+      rootKey: this.rootKey,
+    });
+    return { nodeId: credential.nodeId, passwHash: credential.passwHash };
+  }
+
+  private resolveAgentCredential(input: {
+    nodeId: string;
+    agentPassphrase?: string;
+  }): { nodeId: string; passwHash: string } {
+    const phrase =
+      input.agentPassphrase !== undefined && input.agentPassphrase.length > 0
+        ? input.agentPassphrase
+        : undefined;
+    if (phrase === undefined) {
+      return { nodeId: input.nodeId.trim(), passwHash: this.mainPasswHash };
+    }
+    const derived = this.credentialFromHumanPhrase(phrase);
+    return { nodeId: input.nodeId.trim(), passwHash: derived.passwHash };
+  }
+
+  private mainAuthHeaders(): Record<string, string> {
     return {
-      "x-node-id": this.derivedNodeId,
-      "x-node-passw": this.passwHash,
+      "x-node-id": this.mainDerivedNodeId,
+      "x-node-passw": this.mainPasswHash,
     };
   }
 
-  private jsonHeaders(): Record<string, string> {
+  private agentAuthHeaders(credential: {
+    nodeId: string;
+    passwHash: string;
+  }): Record<string, string> {
+    return {
+      "x-node-id": credential.nodeId,
+      "x-node-passw": credential.passwHash,
+    };
+  }
+
+  private agentAuthHeadersForPlayer(playerId: string): Record<string, string> {
+    const stored = this.playerAgentCredentials.get(playerId);
+    if (stored === undefined) {
+      return this.mainAuthHeaders();
+    }
+    return this.agentAuthHeaders(stored);
+  }
+
+  private jsonHeaders(auth: Record<string, string>): Record<string, string> {
     return {
       "content-type": "application/json",
-      ...this.authHeaders(),
+      ...auth,
     };
+  }
+
+  private mainJsonHeaders(): Record<string, string> {
+    return this.jsonHeaders(this.mainAuthHeaders());
+  }
+
+  private agentJsonHeaders(credential: {
+    nodeId: string;
+    passwHash: string;
+  }): Record<string, string> {
+    return this.jsonHeaders(this.agentAuthHeaders(credential));
+  }
+
+  private agentJsonHeadersForPlayer(playerId: string): Record<string, string> {
+    return this.jsonHeaders(this.agentAuthHeadersForPlayer(playerId));
   }
 
   private mergeAuthFetch(
@@ -504,7 +573,7 @@ export class RemotePlayWorld {
     init?: RequestInit
   ): Promise<Response> {
     const headers = new Headers(init?.headers);
-    const auth = this.authHeaders();
+    const auth = this.mainAuthHeaders();
     for (const [k, v] of Object.entries(auth)) {
       headers.set(k, v);
     }
@@ -514,6 +583,7 @@ export class RemotePlayWorld {
   private async validateNodeIdentity(options: {
     nodeId: string;
     mainNodeId: string | undefined;
+    auth: { nodeId: string; passwHash: string };
   }): Promise<{ nodeKind?: string }> {
     const body: { nodeId: string; rootKey: string; mainNodeId?: string } = {
       nodeId: options.nodeId,
@@ -524,7 +594,7 @@ export class RemotePlayWorld {
     }
     const res = await fetch(`${this.apiBase}/api/nodes/validate`, {
       method: "POST",
-      headers: this.jsonHeaders(),
+      headers: this.agentJsonHeaders(options.auth),
       body: JSON.stringify(body),
     });
     let json: unknown;
@@ -535,14 +605,18 @@ export class RemotePlayWorld {
     }
     if (!isRecord(json) || json.ok !== true) {
       const reason =
-        isRecord(json) && typeof json.reason === "string" ? json.reason : `HTTP ${String(res.status)}`;
+        isRecord(json) && typeof json.reason === "string"
+          ? json.reason
+          : isRecord(json) && typeof json.error === "string"
+            ? json.error
+            : `HTTP ${String(res.status)}`;
       throw new Error(`node validation failed: ${reason}`);
     }
     const nodeKind =
       isRecord(json) && typeof json.nodeKind === "string" ? json.nodeKind : undefined;
     agentPlayDebug("remote-play-world", "node identity validated", {
       nodeKind,
-      derivedNodeIdPrefix: `${this.derivedNodeId.slice(0, 8)}…`,
+      nodeIdPrefix: `${options.auth.nodeId.slice(0, 8)}…`,
     });
     return nodeKind !== undefined ? { nodeKind } : {};
   }
@@ -554,10 +628,24 @@ export class RemotePlayWorld {
   async connect(options?: RemotePlayWorldConnectOptions): Promise<void> {
     const mainNodeIdOpt = options?.mainNodeId?.trim();
     if (mainNodeIdOpt !== undefined && mainNodeIdOpt.length > 0) {
+      if (mainNodeIdOpt !== this.mainDerivedNodeId) {
+        throw new Error(
+          [
+            "connect: mainNodeId does not match the node id derived from mainNodeCredentials.passw.",
+            `  mainNodeId (option): ${mainNodeIdOpt}`,
+            `  derived node id:     ${this.mainDerivedNodeId}`,
+            "Ensure AGENT_PLAY_MAIN_NODE_ID_* and AGENT_PLAY_MAIN_NODE_ID_*_PASSW are paired from the same create-main-node output.",
+          ].join("\n")
+        );
+      }
       this.configuredMainNodeId = mainNodeIdOpt;
       const validation = await this.validateNodeIdentity({
-        nodeId: mainNodeIdOpt,
+        nodeId: this.mainDerivedNodeId,
         mainNodeId: undefined,
+        auth: {
+          nodeId: this.mainDerivedNodeId,
+          passwHash: this.mainPasswHash,
+        },
       });
       console.info(
         `[agent-play] Node identity validated (${validation.nodeKind ?? "unknown"}).`
@@ -566,7 +654,7 @@ export class RemotePlayWorld {
       this.configuredMainNodeId = null;
     }
     const res = await fetch(`${this.apiBase}/api/agent-play/session`, {
-      headers: this.authHeaders(),
+      headers: this.mainAuthHeaders(),
     });
     if (!res.ok) {
       throw new Error(`session failed: ${res.status}`);
@@ -642,7 +730,7 @@ export class RemotePlayWorld {
   async getWorldSnapshot(): Promise<AgentPlaySnapshot> {
     const res = await fetch(`${this.apiBase}/api/agent-play/sdk/rpc`, {
       method: "POST",
-      headers: this.jsonHeaders(),
+      headers: this.mainJsonHeaders(),
       body: JSON.stringify({ op: "getWorldSnapshot", payload: {} }),
     });
     const text = await res.text();
@@ -671,7 +759,7 @@ export class RemotePlayWorld {
     }
     const res = await fetch(`${this.apiBase}/api/agent-play/sdk/rpc`, {
       method: "POST",
-      headers: this.jsonHeaders(),
+      headers: this.mainJsonHeaders(),
       body: JSON.stringify({
         op: "getPlayerChainNode",
         payload: { stableKey: trimmed },
@@ -803,9 +891,18 @@ export class RemotePlayWorld {
    */
   async addAgent(input: AddAgentInput): Promise<RegisteredPlayer> {
     const sid = this.getSessionId();
+    const agentCredentialInput: {
+      nodeId: string;
+      agentPassphrase?: string;
+    } = { nodeId: input.nodeId };
+    if (input.agentPassphrase !== undefined && input.agentPassphrase.length > 0) {
+      agentCredentialInput.agentPassphrase = input.agentPassphrase;
+    }
+    const agentCredential = this.resolveAgentCredential(agentCredentialInput);
     const validation = await this.validateNodeIdentity({
       nodeId: input.nodeId,
       mainNodeId: input.mainNodeId,
+      auth: agentCredential,
     });
     console.info(
       [
@@ -850,7 +947,7 @@ export class RemotePlayWorld {
       type: input.type,
       agent: input.agent,
       mainNodeId: input.mainNodeId,
-      passwHash: this.passwHash,
+      passwHash: agentCredential.passwHash,
       agentId: input.nodeId,
       connectionId,
       leaseTtlSeconds,
@@ -869,7 +966,7 @@ export class RemotePlayWorld {
     const requestBody = JSON.stringify(requestPayload);
     const res = await fetch(url, {
       method: "POST",
-      headers: this.jsonHeaders(),
+      headers: this.agentJsonHeaders(agentCredential),
       body: requestBody,
     });
     const bodyText = await res.text();
@@ -899,6 +996,7 @@ export class RemotePlayWorld {
       typeof body.leaseTtlSeconds === "number" && Number.isFinite(body.leaseTtlSeconds)
         ? body.leaseTtlSeconds
         : leaseTtlSeconds;
+    this.playerAgentCredentials.set(playerId, agentCredential);
     const existingConnection = this.playerConnectionInfo.get(playerId);
     if (existingConnection !== undefined) {
       clearInterval(existingConnection.timer);
@@ -979,15 +1077,19 @@ export class RemotePlayWorld {
   }
 
   async recordInteraction(input: RecordInteractionInput): Promise<void> {
-    await this.rpc("recordInteraction", {
-      playerId: input.playerId,
-      role: input.role,
-      text: input.text,
-    });
+    await this.rpc(
+      "recordInteraction",
+      {
+        playerId: input.playerId,
+        role: input.role,
+        text: input.text,
+      },
+      input.playerId
+    );
   }
 
   async recordJourney(playerId: string, journey: Journey): Promise<void> {
-    await this.rpc("recordJourney", { playerId, journey });
+    await this.rpc("recordJourney", { playerId, journey }, playerId);
   }
 
   async sendIntercomResponse(payload: IntercomResponsePayload): Promise<void> {
@@ -1009,7 +1111,7 @@ export class RemotePlayWorld {
     });
     const res = await fetch(url, {
       method: "POST",
-      headers: this.jsonHeaders(),
+      headers: this.agentJsonHeadersForPlayer(payload.fromPlayerId),
       body: JSON.stringify({ op: INTERCOM_RESPONSE_OP, payload }),
     });
     const okText = await res.text();
@@ -1239,7 +1341,7 @@ export class RemotePlayWorld {
     }
     const res = await fetch(url, {
       method: "POST",
-      headers: this.jsonHeaders(),
+      headers: this.mainJsonHeaders(),
       body: JSON.stringify(body),
     });
     const text = await res.text();
@@ -1258,12 +1360,12 @@ export class RemotePlayWorld {
     return json.id;
   }
 
-  private async rpc(op: string, payload: unknown): Promise<void> {
+  private async rpc(op: string, payload: unknown, playerId: string): Promise<void> {
     const sid = this.getSessionId();
     const url = `${this.apiBase}/api/agent-play/sdk/rpc?sid=${encodeURIComponent(sid)}`;
     const res = await fetch(url, {
       method: "POST",
-      headers: this.jsonHeaders(),
+      headers: this.agentJsonHeadersForPlayer(playerId),
       body: JSON.stringify({ op, payload }),
     });
     if (!res.ok) {
@@ -1291,7 +1393,7 @@ export class RemotePlayWorld {
       try {
         const res = await fetch(url, {
           method: "POST",
-          headers: this.jsonHeaders(),
+          headers: this.agentJsonHeadersForPlayer(input.playerId),
           body: bodyJson,
         });
         const text = await res.text();
@@ -1358,7 +1460,7 @@ export class RemotePlayWorld {
     const url = `${this.apiBase}/api/agent-play/players/disconnect?sid=${encodeURIComponent(sid)}`;
     await fetch(url, {
       method: "POST",
-      headers: this.jsonHeaders(),
+      headers: this.agentJsonHeadersForPlayer(input.playerId),
       body: JSON.stringify({
         playerId: input.playerId,
         connectionId: input.connectionId,

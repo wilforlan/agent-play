@@ -51,6 +51,16 @@ function expectedNodeAuthHeaders(humanPassphrase: string): Record<string, string
   };
 }
 
+function readFetchHeaders(init?: RequestInit): Record<string, string> {
+  if (init?.headers === undefined) {
+    return {};
+  }
+  if (init.headers instanceof Headers) {
+    return Object.fromEntries(init.headers.entries());
+  }
+  return init.headers as Record<string, string>;
+}
+
 function sampleRegisteredAgent(agentId: string, name: string) {
   return {
     agentId,
@@ -75,7 +85,9 @@ describe("RemotePlayWorld", () => {
       "missing-agent-play-credentials.json"
     );
     try {
-      expect(() => new RemotePlayWorld({ baseUrl: BASE_URL })).toThrow(/nodeCredentials/);
+      expect(() => new RemotePlayWorld({ baseUrl: BASE_URL })).toThrow(
+        /mainNodeCredentials/
+      );
     } finally {
       if (prevPath === undefined) {
         delete process.env.AGENT_PLAY_CREDENTIALS_PATH;
@@ -139,11 +151,10 @@ describe("RemotePlayWorld", () => {
       material,
       rootKey: DEFAULT_NODE_ID,
     });
-    const mainParentId = "main-account-node-1";
     const fetchMock = vi.fn(async (url: string | URL, init?: RequestInit) => {
       const u = String(url);
       if (u.endsWith("/api/nodes/validate") && init?.method === "POST") {
-        const headers = init.headers as Record<string, string>;
+        const headers = readFetchHeaders(init);
         expect(headers["x-node-id"]).toBe(derivedNodeId);
         expect(headers["x-node-passw"]).toBe(material);
         const body = JSON.parse(String(init.body)) as {
@@ -151,7 +162,7 @@ describe("RemotePlayWorld", () => {
           rootKey?: string;
           mainNodeId?: string;
         };
-        expect(body.nodeId).toBe(mainParentId);
+        expect(body.nodeId).toBe(derivedNodeId);
         expect(body.rootKey).toBe(DEFAULT_NODE_ID);
         expect(body.mainNodeId).toBeUndefined();
         return new Response(JSON.stringify({ ok: true, nodeKind: "main" }), { status: 200 });
@@ -164,7 +175,7 @@ describe("RemotePlayWorld", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     const world = playWorld("key");
-    await world.connect({ mainNodeId: mainParentId });
+    await world.connect({ mainNodeId: derivedNodeId });
     expect(world.getSessionId()).toBe("sid-1");
     expect(fetchMock.mock.calls[0]?.[0]).toBe(VALIDATE_URL);
     expect(fetchMock.mock.calls[1]?.[0]).toBe(SESSION_URL);
@@ -198,7 +209,19 @@ describe("RemotePlayWorld", () => {
     await world.close();
   });
 
+  it("connect throws when mainNodeId does not match credential-derived node id", async () => {
+    const world = playWorld("key");
+    await expect(
+      world.connect({ mainNodeId: "wrong-main-node-id" })
+    ).rejects.toThrow(/does not match the node id derived from mainNodeCredentials/);
+  });
+
   it("connect throws when node validation fails with mainNodeId", async () => {
+    const material = nodeCredentialsMaterialFromHumanPassphrase("key");
+    const derivedNodeId = deriveNodeIdFromMaterial({
+      material,
+      rootKey: DEFAULT_NODE_ID,
+    });
     const fetchMock = vi.fn(async (url: string | URL, init?: RequestInit) => {
       const u = String(url);
       if (u.endsWith("/api/nodes/validate") && init?.method === "POST") {
@@ -211,7 +234,7 @@ describe("RemotePlayWorld", () => {
     });
     vi.stubGlobal("fetch", fetchMock);
     const world = playWorld("key");
-    await expect(world.connect({ mainNodeId: "wrong-main" })).rejects.toThrow(
+    await expect(world.connect({ mainNodeId: derivedNodeId })).rejects.toThrow(
       /agent parent mismatch/
     );
   });
@@ -343,6 +366,101 @@ describe("RemotePlayWorld", () => {
     expect(player.previewUrl).toBe(`${BASE_URL}/agent-play/watch`);
     expect(player.registeredAgent.agentId).toBe("aid-1");
     expect(player.enableP2a).toBe("off");
+    await world.close();
+  });
+
+  it("uses main auth on connect and distinct agent auth on addAgent and heartbeat", async () => {
+    const mainPhrase = "amber angle apple arch atlas aura autumn bamboo beacon birch blossom";
+    const agentPhrase = "solar delta echo fox grape harbor iris jade kite lemon maple";
+    const mainMaterial = nodeCredentialsMaterialFromHumanPassphrase(mainPhrase);
+    const mainDerivedNodeId = deriveNodeIdFromMaterial({
+      material: mainMaterial,
+      rootKey: DEFAULT_NODE_ID,
+    });
+    const agentMaterial = nodeCredentialsMaterialFromHumanPassphrase(agentPhrase);
+    const agentNodeId = "agent-node-dual-cred";
+    let heartbeatHeaders: Record<string, string> | undefined;
+
+    const fetchMock = vi.fn(async (url: string | URL, init?: RequestInit) => {
+      const u = String(url);
+      if (u.endsWith("/api/nodes/validate") && init?.method === "POST") {
+        const headers = readFetchHeaders(init);
+        const body = JSON.parse(String(init.body)) as {
+          nodeId?: string;
+          mainNodeId?: string;
+        };
+        if (body.nodeId === mainDerivedNodeId) {
+          expect(headers["x-node-id"]).toBe(mainDerivedNodeId);
+          expect(headers["x-node-passw"]).toBe(mainMaterial);
+          return new Response(JSON.stringify({ ok: true, nodeKind: "main" }), {
+            status: 200,
+          });
+        }
+        expect(body.nodeId).toBe(agentNodeId);
+        expect(body.mainNodeId).toBe(mainDerivedNodeId);
+        expect(headers["x-node-id"]).toBe(agentNodeId);
+        expect(headers["x-node-passw"]).toBe(agentMaterial);
+        return new Response(JSON.stringify({ ok: true, nodeKind: "agent" }), {
+          status: 200,
+        });
+      }
+      if (u.endsWith("/api/agent-play/session")) {
+        const headers = readFetchHeaders(init);
+        expect(headers["x-node-id"]).toBe(mainDerivedNodeId);
+        expect(headers["x-node-passw"]).toBe(mainMaterial);
+        return sessionResponse();
+      }
+      if (u.includes("/api/agent-play/players/heartbeat") && init?.method === "POST") {
+        heartbeatHeaders = readFetchHeaders(init);
+        return new Response(JSON.stringify({ ok: true }), { status: 200 });
+      }
+      if (u.includes("/api/agent-play/players/disconnect") && init?.method === "POST") {
+        return new Response(JSON.stringify({ ok: true }), { status: 200 });
+      }
+      if (u.includes("/api/agent-play/players?") && init?.method === "POST") {
+        const headers = readFetchHeaders(init);
+        const body = JSON.parse(String(init.body)) as {
+          passwHash?: string;
+          agentId?: string;
+        };
+        expect(headers["x-node-id"]).toBe(agentNodeId);
+        expect(headers["x-node-passw"]).toBe(agentMaterial);
+        expect(body.passwHash).toBe(agentMaterial);
+        expect(body.agentId).toBe(agentNodeId);
+        return new Response(
+          JSON.stringify({
+            playerId: agentNodeId,
+            previewUrl: `${BASE_URL}/agent-play/watch`,
+            registeredAgent: sampleRegisteredAgent(agentNodeId, "dual"),
+            connectionId: "conn-dual",
+            leaseTtlSeconds: 45,
+          }),
+          { status: 200 }
+        );
+      }
+      return notFound();
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    vi.useFakeTimers();
+    const world = new RemotePlayWorld({
+      baseUrl: BASE_URL,
+      mainNodeCredentials: nodeCredentialsFromHumanPhrase(mainPhrase),
+    });
+    await world.connect({ mainNodeId: mainDerivedNodeId });
+    await world.addAgent({
+      name: "dual",
+      type: "langchain",
+      agent: { type: "langchain", toolNames: ["chat_tool"] },
+      nodeId: agentNodeId,
+      mainNodeId: mainDerivedNodeId,
+      agentPassphrase: agentPhrase,
+    });
+    await vi.advanceTimersByTimeAsync(12_000);
+    expect(heartbeatHeaders).toBeDefined();
+    expect(heartbeatHeaders?.["x-node-id"]).toBe(agentNodeId);
+    expect(heartbeatHeaders?.["x-node-passw"]).toBe(agentMaterial);
+    vi.useRealTimers();
     await world.close();
   });
 
@@ -923,7 +1041,11 @@ describe("RemotePlayWorld", () => {
   });
 
   it("addAgent validate and players requests use AddAgentInput nodeId and mainNodeId", async () => {
-    const configuredMain = "main-from-connect";
+    const material = nodeCredentialsMaterialFromHumanPassphrase("key");
+    const derivedMain = deriveNodeIdFromMaterial({
+      material,
+      rootKey: DEFAULT_NODE_ID,
+    });
     const agentParentMain = "parent-main-for-agent";
     const fetchMock = vi.fn(async (url: string | URL, init?: RequestInit) => {
       const u = String(url);
@@ -936,7 +1058,7 @@ describe("RemotePlayWorld", () => {
           mainNodeId?: string;
         };
         if (
-          body.nodeId === configuredMain &&
+          body.nodeId === derivedMain &&
           (body.mainNodeId === undefined || body.mainNodeId === "")
         ) {
           return new Response(JSON.stringify({ ok: true, nodeKind: "main" }), {
@@ -965,7 +1087,7 @@ describe("RemotePlayWorld", () => {
     });
     vi.stubGlobal("fetch", fetchMock);
     const world = playWorld("key");
-    await world.connect({ mainNodeId: configuredMain });
+    await world.connect({ mainNodeId: derivedMain });
     await world.addAgent({
       name: "a",
       type: "langchain",
