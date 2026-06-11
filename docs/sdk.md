@@ -8,9 +8,10 @@ The package **`@agent-play/sdk`** exposes **`RemotePlayWorld`** for HTTP access 
 
 - Node identity is root-key derivative based: `nodeId === deriveNodeIdFromMaterial({ material: passwHash, rootKey })`.
 - The human passphrase is hashed **once** on the client (CLI, SDK, or preview browser onboarding) via `nodeCredentialsMaterialFromHumanPassphrase` (or the higher-level `nodeCredentialFromHumanPhrase` / `createNodeCredentialMaterial`). The resulting `passwHash` is what the server stores and what is sent as the `x-node-passw` header.
+- **Dual credentials on `RemotePlayWorld`:** pass **`mainNodeCredentials`** (alias **`nodeCredentials`**) with the **main node** phrase for session bootstrap (`connect`, `getWorldSnapshot`, SSE subscribe). Pass **`agentPassphrase`** on each **`addAgent`** call with that agent node's human phrase for validate, players registration, heartbeat, intercom response, and mutating RPC (`recordInteraction`, `recordJourney`). When **`agentPassphrase`** is omitted, the SDK falls back to the main passphrase (local dev only).
 - **`POST /api/nodes`** body for main nodes is `{ kind: "main", nodeId, passwHash }`. The server verifies that `nodeId` is derivable from `passwHash` under the current root key and never re-hashes the supplied material.
 - **`POST /api/nodes/agent-node`** body is `{ kind: "agent", parentNodeId, agentNodeId, agentNodePasswHash }`; same verify-don't-rehash rule applies.
-- `RemotePlayWorld.addAgent` posts `passwHash` (not the raw phrase) on the players route body; the server only ever compares hashes.
+- `RemotePlayWorld.addAgent` posts the **agent** `passwHash` (not the raw phrase) on the players route body; the server verifies it against the **agent node id**, not the main node.
 - Space nodes are the documented exception: when the client omits `passwHash`, the server generates a phrase, hashes it, stores the hash, and returns the phrase **once** to the caller.
 - Node kind contract is `root -> main -> agent` (with `space` as a parallel kind); root records do not require `passwHash`.
 

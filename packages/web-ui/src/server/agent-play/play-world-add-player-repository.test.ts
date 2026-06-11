@@ -125,7 +125,10 @@ class TestAgentRepository implements AgentRepository {
     });
     const parent = this.nodes.get(input.nodeId);
     if (parent !== undefined) {
-      const next = [...(parent.agentNodeIds ?? []), agentId];
+      const existing = parent.agentNodeIds ?? [];
+      const next = existing.includes(agentId)
+        ? existing
+        : [...existing, agentId];
       this.nodes.set(input.nodeId, { ...parent, agentNodeIds: next });
     }
     return { agentId };
@@ -134,18 +137,23 @@ class TestAgentRepository implements AgentRepository {
   async createAgentNode(
     input: CreateAgentNodeRecordInput
   ): Promise<CreateAgentRecordResult> {
-    const now = new Date().toISOString();
-    this.agents.set(input.agentId, {
-      agentId: input.agentId,
-      nodeId: input.parentNodeId,
-      name: input.agentId,
-      toolNames: [],
-      zoneCount: 0,
-      yieldCount: 0,
-      flagged: false,
-      createdAt: now,
-      updatedAt: now,
+    const parent = this.nodes.get(input.parentNodeId);
+    if (parent === undefined) {
+      throw new Error("createAgentNode: parent main node not found");
+    }
+    if (this.nodes.has(input.agentId)) {
+      throw new Error("createAgentNode: agent node already exists");
+    }
+    this.nodes.set(input.agentId, {
+      nodeId: input.agentId,
+      kind: "agent",
+      parentNodeId: input.parentNodeId,
+      passwHash: input.passwHash,
+      createdAt: new Date().toISOString(),
+      agentNodeIds: [],
     });
+    const nextIds = [...(parent.agentNodeIds ?? []), input.agentId];
+    this.nodes.set(input.parentNodeId, { ...parent, agentNodeIds: nextIds });
     return { agentId: input.agentId };
   }
 
@@ -206,10 +214,33 @@ async function bootstrapMainNode(
   return { nodeId: credential.nodeId, passwHash: credential.passwHash };
 }
 
+async function bootstrapAgentNode(
+  repo: TestAgentRepository,
+  options: {
+    phrase: string;
+    rootKey: string;
+    parentNodeId: string;
+    agentId?: string;
+  }
+): Promise<MainNodeBootstrap> {
+  const credential = nodeCredentialFromHumanPhrase({
+    phrase: options.phrase,
+    rootKey: options.rootKey,
+  });
+  const agentId = options.agentId ?? credential.nodeId;
+  await repo.createAgentNode({
+    parentNodeId: options.parentNodeId,
+    agentId,
+    passwHash: credential.passwHash,
+  });
+  return { nodeId: agentId, passwHash: credential.passwHash };
+}
+
 describe("PlayWorld addPlayer with AgentRepository", () => {
   const TEST_ROOT_KEY = "fixture-root-key";
   const PHRASE_A = "amber angle apple";
   const PHRASE_B = "orchid pearl river";
+  const PHRASE_AGENT = "solar delta echo fox";
 
   it("requires a passwHash when repository is configured", async () => {
     const repo = new TestAgentRepository({ rootKey: TEST_ROOT_KEY });
@@ -246,8 +277,13 @@ describe("PlayWorld addPlayer with AgentRepository", () => {
       phrase: PHRASE_A,
       rootKey: TEST_ROOT_KEY,
     });
-    const { agentId } = await repo.createAgent({
-      agentId: "agent-remote-demo",
+    const agent = await bootstrapAgentNode(repo, {
+      phrase: PHRASE_AGENT,
+      rootKey: TEST_ROOT_KEY,
+      parentNodeId: main.nodeId,
+    });
+    await repo.createAgent({
+      agentId: agent.nodeId,
       name: "remote-demo",
       toolNames: ["chat_tool", "increment"],
       nodeId: main.nodeId,
@@ -262,10 +298,10 @@ describe("PlayWorld addPlayer with AgentRepository", () => {
       name: "remote-demo",
       type: "langchain",
       agent: { type: "langchain", toolNames: ["increment", "chat_tool"] },
-      passwHash: main.passwHash,
-      agentId,
+      passwHash: agent.passwHash,
+      agentId: agent.nodeId,
     });
-    expect(p.id).toBe(agentId);
+    expect(p.id).toBe(agent.nodeId);
   });
 
   it("accepts an existing repository row and session player id matches agentId", async () => {
@@ -274,8 +310,13 @@ describe("PlayWorld addPlayer with AgentRepository", () => {
       phrase: PHRASE_A,
       rootKey: TEST_ROOT_KEY,
     });
-    const { agentId } = await repo.createAgent({
-      agentId: "agent-fresh",
+    const agent = await bootstrapAgentNode(repo, {
+      phrase: PHRASE_AGENT,
+      rootKey: TEST_ROOT_KEY,
+      parentNodeId: main.nodeId,
+    });
+    await repo.createAgent({
+      agentId: agent.nodeId,
       name: "fresh",
       toolNames: ["chat_tool"],
       nodeId: main.nodeId,
@@ -291,8 +332,8 @@ describe("PlayWorld addPlayer with AgentRepository", () => {
       type: "langchain",
       agent: { type: "langchain", toolNames: ["chat_tool"] },
       mainNodeId: main.nodeId,
-      passwHash: main.passwHash,
-      agentId,
+      passwHash: agent.passwHash,
+      agentId: agent.nodeId,
     });
     const stored = await repo.getAgent(p.id);
     expect(stored).not.toBeNull();
@@ -310,8 +351,13 @@ describe("PlayWorld addPlayer with AgentRepository", () => {
       phrase: PHRASE_B,
       rootKey: TEST_ROOT_KEY,
     });
-    const { agentId: otherAgent } = await repo.createAgent({
-      agentId: "agent-other",
+    const otherAgent = await bootstrapAgentNode(repo, {
+      phrase: PHRASE_AGENT,
+      rootKey: TEST_ROOT_KEY,
+      parentNodeId: mainB.nodeId,
+    });
+    await repo.createAgent({
+      agentId: otherAgent.nodeId,
       name: "other",
       toolNames: ["chat_tool"],
       nodeId: mainB.nodeId,
@@ -329,8 +375,8 @@ describe("PlayWorld addPlayer with AgentRepository", () => {
         type: "langchain",
         agent: { type: "langchain", toolNames: ["chat_tool"] },
         mainNodeId: mainA.nodeId,
-        passwHash: mainA.passwHash,
-        agentId: otherAgent,
+        passwHash: otherAgent.passwHash,
+        agentId: otherAgent.nodeId,
       })
     ).rejects.toThrow(/does not belong to mainNodeId/);
   });
@@ -341,8 +387,13 @@ describe("PlayWorld addPlayer with AgentRepository", () => {
       phrase: PHRASE_A,
       rootKey: TEST_ROOT_KEY,
     });
-    const { agentId } = await repo.createAgent({
-      agentId: "agent-ok",
+    const agent = await bootstrapAgentNode(repo, {
+      phrase: PHRASE_AGENT,
+      rootKey: TEST_ROOT_KEY,
+      parentNodeId: main.nodeId,
+    });
+    await repo.createAgent({
+      agentId: agent.nodeId,
       name: "r",
       toolNames: ["chat_tool"],
       nodeId: main.nodeId,
@@ -358,10 +409,70 @@ describe("PlayWorld addPlayer with AgentRepository", () => {
       type: "langchain",
       agent: { type: "langchain", toolNames: ["chat_tool"] },
       mainNodeId: main.nodeId,
-      passwHash: main.passwHash,
-      agentId,
+      passwHash: agent.passwHash,
+      agentId: agent.nodeId,
     });
-    expect(p.id).toBe(agentId);
+    expect(p.id).toBe(agent.nodeId);
+  });
+
+  it("accepts agent passwHash when it differs from the main node passwHash", async () => {
+    const repo = new TestAgentRepository({ rootKey: TEST_ROOT_KEY });
+    const main = await bootstrapMainNode(repo, {
+      phrase: PHRASE_A,
+      rootKey: TEST_ROOT_KEY,
+    });
+    const agent = await bootstrapAgentNode(repo, {
+      phrase: PHRASE_AGENT,
+      rootKey: TEST_ROOT_KEY,
+      parentNodeId: main.nodeId,
+    });
+    expect(agent.passwHash).not.toBe(main.passwHash);
+
+    const w = new PlayWorld({
+      repository: repo,
+      sessionStore: new TestSessionStore(),
+    });
+    await w.start();
+
+    const p = await w.addPlayer({
+      name: "dual-passw",
+      type: "langchain",
+      agent: { type: "langchain", toolNames: ["chat_tool"] },
+      mainNodeId: main.nodeId,
+      passwHash: agent.passwHash,
+      agentId: agent.nodeId,
+    });
+    expect(p.id).toBe(agent.nodeId);
+  });
+
+  it("rejects addPlayer when main node passwHash is supplied for an agent node", async () => {
+    const repo = new TestAgentRepository({ rootKey: TEST_ROOT_KEY });
+    const main = await bootstrapMainNode(repo, {
+      phrase: PHRASE_A,
+      rootKey: TEST_ROOT_KEY,
+    });
+    const agent = await bootstrapAgentNode(repo, {
+      phrase: PHRASE_AGENT,
+      rootKey: TEST_ROOT_KEY,
+      parentNodeId: main.nodeId,
+    });
+
+    const w = new PlayWorld({
+      repository: repo,
+      sessionStore: new TestSessionStore(),
+    });
+    await w.start();
+
+    await expect(
+      w.addPlayer({
+        name: "wrong-passw",
+        type: "langchain",
+        agent: { type: "langchain", toolNames: ["chat_tool"] },
+        mainNodeId: main.nodeId,
+        passwHash: main.passwHash,
+        agentId: agent.nodeId,
+      })
+    ).rejects.toThrow(/invalid passwHash/);
   });
 
   it("uses provided agentId as session player id when repository is not configured", async () => {

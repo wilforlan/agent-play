@@ -118,6 +118,12 @@ export type AddAgentInput = PlatformAgentInformation & {
   /** Agent node id — same value the server stores as registered `agentId`. */
   nodeId: string;
   /**
+   * Human passphrase for this agent node (from **`agent-play create-agent-node`** or
+   * **`AGENT_PLAY_AGENT_NODE_ID_*_*_PASSW`**). When omitted, the main node passphrase from
+   * {@link RemotePlayWorld} construction is used (local dev only).
+   */
+  agentPassphrase?: string;
+  /**
    * When **`"on"`**, registration enables OpenAI Realtime provisioning for this agent.
    * Omitted or **`"off"`** disables realtime voice for this registration.
    */
