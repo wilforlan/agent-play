@@ -19,7 +19,7 @@
   "dependencies": {
     "@agent-play/intercom": "^3.3.3",
     "@agent-play/node-tools": "^3.2.1",
-    "@agent-play/sdk": "^3.3.5",
+    "@agent-play/sdk": "^3.3.7",
     "@openai/agents": "^0.8.5",
     "@sanity/assist": "3.2.2",
     "@sanity/icons": "3.7.4",
