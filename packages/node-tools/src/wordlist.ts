@@ -22,6 +22,8 @@ const NOUNS = [
   "thunder", "tulip", "valley", "violet", "wave", "willow", "wind", "zenith", "orbit", "signal",
   "cipher", "pixel", "matrix", "vector", "kernel", "socket", "thread", "packet", "module", "system",
   "schema", "ledger", "canvas", "engine", "fusion", "radius", "vertex", "bridge", "cluster", "domain",
+  "shield", "sword", "axe", "bow", "crossbow", "spear", "dagger", "katana", "nunchaku", "whip",
+  "chain", "flail", "morningstar", "morning", "sun", "moon", "star", "planet", "galaxy", "universe",
 ] as const;
 
 const buildWordList = (): string[] => {
