@@ -874,6 +874,7 @@ async function execStatement(
     }
     case "IntoStmt": {
       context.outputs.named.set(statement.name, context.outputs.lastResponse);
+      context.vars.set(statement.name, context.outputs.lastResponse);
       return;
     }
     case "ShowStmt": {
