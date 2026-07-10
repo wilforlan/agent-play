@@ -2,6 +2,7 @@
  * @module @agent-play/play-ui/preview-debug-panel
  * preview debug panel — preview canvas module (Pixi + DOM).
  */
+import type { OccupantGroup } from "@agent-play/sdk/browser";
 import type { PreviewViewSettings } from "./preview-view-settings.js";
 
 export type PreviewDebugAgentRow = {
@@ -26,7 +27,7 @@ export type PreviewDebugZoneRow = {
   id: string;
   streetId: string;
   streetLabel: string;
-  primaryGroup: "agent" | "space" | "mcp";
+  primaryGroup: OccupantGroup;
   occupantCount: number;
 };
 

@@ -15,6 +15,11 @@ export type CreatePreviewProximityTouchControlsOptions = {
    */
   getStructureProximityLabel?: () => string | null | undefined;
   /**
+   * Verb shown on the `A` button when near a structure. Defaults to
+   * `"Enter"`; game cabinets should return `"Play"`.
+   */
+  getStructureProximityVerb?: () => string | null | undefined;
+  /**
    * When the human is inside the space yard and walks up to an amenity pad,
    * this returns the amenity's display label (used to relabel the `P`
    * button to "Enter"). Returns `null` / `undefined` when no amenity
@@ -150,11 +155,12 @@ export function createPreviewProximityTouchControls(
         `Enter ${amenityLabel ?? "amenity"}`
       );
     } else if (nearStructure) {
+      const verb = options.getStructureProximityVerb?.() ?? "Enter";
       btnAssist.disabled = false;
-      subA.textContent = "Enter";
+      subA.textContent = verb;
       btnAssist.setAttribute(
         "aria-label",
-        `Enter ${structureLabel ?? "space"}`
+        `${verb} ${structureLabel ?? "space"}`
       );
       btnChat.disabled = true;
       btnPushToTalk.disabled = true;

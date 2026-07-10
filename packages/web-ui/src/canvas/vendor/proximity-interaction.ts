@@ -2,6 +2,8 @@
  * @module @agent-play/play-ui/proximity-interaction
  * proximity interaction — preview canvas module (Pixi + DOM).
  */
+import type { GameId } from "@agent-play/sdk/browser";
+
 export const DEFAULT_PROXIMITY_RADIUS = 0.72;
 
 export function findNearestProximityPartner(options: {
@@ -44,73 +46,63 @@ export function proximityKeyToAction(key: string): ProximityActionKind | null {
   return null;
 }
 
-/**
- * World-cell distance at which the human triggers a structure / space
- * proximity prompt. The detector measures from the player to the
- * **compound centroid** (where the building sprite is drawn), not to any
- * single anchor, so this radius covers "stepping onto the front of the
- * building" rather than "standing on the centroid".
- *
- * @public
- */
 export const DEFAULT_STRUCTURE_PROXIMITY_RADIUS = 2.4;
 
-/**
- * Minimal structure shape consumed by
- * {@link findNearestStructureProximityTarget}. The play canvas's `Structure`
- * row in `main.ts` already satisfies this contract.
- *
- * @public
- */
 export type StructureProximityInput = {
   id: string;
   x: number;
   y: number;
   spaceIds?: readonly string[];
+  gameId?: GameId;
   primaryAmenity?: string;
   label?: string;
   name?: string;
 };
 
-/**
- * Result returned by {@link findNearestStructureProximityTarget}. The
- * centroid is averaged across every structure that shares the matched
- * `spaceId` so the prompt anchors at the visual center of a compound.
- *
- * @public
- */
 export type StructureProximityTarget = {
   structureId: string;
-  spaceId: string;
+  spaceId?: string;
+  gameId?: GameId;
   centroid: { x: number; y: number };
   primaryAmenity?: string;
   label?: string;
 };
 
-/**
- * Find the closest structure / space-compound the player can interact with.
- *
- * @remarks
- * Structures are first **grouped by `spaceId`** (a single space may be
- * anchored by several structures, e.g. a multi-amenity compound), and the
- * centroid of each group is the proximity target. Measuring against the
- * centroid matches how the building is rendered: the on-canvas sprite sits
- * at the average of the underlying anchor points, so the prompt activates
- * exactly when the player visually overlaps the building. Structures with
- * no `spaceId` are ignored — the prompt is for entering a **space**, not a
- * tool stall.
- *
- * @public
- */
 export function findNearestStructureProximityTarget(options: {
   player: { x: number; y: number };
   structures: ReadonlyArray<StructureProximityInput>;
   radius: number;
 }): StructureProximityTarget | null {
+  let bestTarget: StructureProximityTarget | null = null;
+  let bestDist = Infinity;
+
+  const consider = (target: StructureProximityTarget, dist: number): void => {
+    if (dist > options.radius) return;
+    if (dist < bestDist) {
+      bestDist = dist;
+      bestTarget = target;
+    }
+  };
+
+  for (const st of options.structures) {
+    if (st.gameId !== undefined) {
+      const dist = Math.hypot(st.x - options.player.x, st.y - options.player.y);
+      const label = st.label ?? st.name;
+      consider(
+        {
+          structureId: st.id,
+          gameId: st.gameId,
+          centroid: { x: st.x, y: st.y },
+          ...(label !== undefined ? { label } : {}),
+        },
+        dist
+      );
+    }
+  }
+
   const eligible = options.structures.filter(
     (st) => Array.isArray(st.spaceIds) && st.spaceIds.length > 0
   );
-  if (eligible.length === 0) return null;
   const compounds = new Map<string, StructureProximityInput[]>();
   for (const st of eligible) {
     const spaceId = st.spaceIds?.[0];
@@ -119,35 +111,26 @@ export function findNearestStructureProximityTarget(options: {
     arr.push(st);
     compounds.set(spaceId, arr);
   }
-  let best: {
-    spaceId: string;
-    group: StructureProximityInput[];
-    centroid: { x: number; y: number };
-    dist: number;
-  } | null = null;
   for (const [spaceId, group] of compounds) {
     const cx = group.reduce((s, st) => s + st.x, 0) / group.length;
     const cy = group.reduce((s, st) => s + st.y, 0) / group.length;
     const dist = Math.hypot(cx - options.player.x, cy - options.player.y);
-    if (dist > options.radius) continue;
-    if (best === null || dist < best.dist) {
-      best = { spaceId, group, centroid: { x: cx, y: cy }, dist };
-    }
+    const anchor = group[0];
+    if (anchor === undefined) continue;
+    const label = anchor.label ?? anchor.name;
+    consider(
+      {
+        structureId: anchor.id,
+        spaceId,
+        centroid: { x: cx, y: cy },
+        ...(anchor.primaryAmenity !== undefined
+          ? { primaryAmenity: anchor.primaryAmenity }
+          : {}),
+        ...(label !== undefined ? { label } : {}),
+      },
+      dist
+    );
   }
-  if (best === null) return null;
-  const anchor = best.group[0];
-  if (anchor === undefined) return null;
-  const result: StructureProximityTarget = {
-    structureId: anchor.id,
-    spaceId: best.spaceId,
-    centroid: best.centroid,
-  };
-  if (anchor.primaryAmenity !== undefined) {
-    result.primaryAmenity = anchor.primaryAmenity;
-  }
-  const label = anchor.label ?? anchor.name;
-  if (label !== undefined) {
-    result.label = label;
-  }
-  return result;
+
+  return bestTarget;
 }
