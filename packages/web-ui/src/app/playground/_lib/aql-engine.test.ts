@@ -63,7 +63,7 @@ INSPECT AGENT`;
     expect(validated.diagnostics[0]?.message).toContain("USE PLATFORM KEY");
   });
 
-  it("parses CREATE SPACE, USE SPACE NODE, amenities, leases, and REMOVE", () => {
+  it("parses CREATE SPACE, USE SPACE NODE, amenities, and REMOVE", () => {
     const phrase = "one two three four five six seven eight nine ten";
     const source = `CREATE SPACE "n" DESIGN "d" OWNER "o" DESCRIPTION "x" STRUCTURE "sn"
 USE SPACE NODE "nid" PASSPHRASE "${phrase}"
@@ -72,8 +72,7 @@ INSPECT SPACE
 INSPECT AMENITY "shop"
 INSPECT AMENITY
 REMOVE AMENITY "space-id" "shop"
-REMOVE SPACE "space-id"
-CREATE LEASE AMENITY "shop" EMAIL "e@x.co" ADDRESS "1 Rd" MONTHS 12 HUMAN "hid"`;
+REMOVE SPACE "space-id"`;
     const parsed = parseAql(tokenizeAql(source));
     expect(parsed.diagnostics).toHaveLength(0);
     expect(parsed.program.statements.map((s) => s.kind)).toEqual([
@@ -85,18 +84,15 @@ CREATE LEASE AMENITY "shop" EMAIL "e@x.co" ADDRESS "1 Rd" MONTHS 12 HUMAN "hid"`
       "InspectAmenityStmt",
       "RemoveSpaceAmenityStmt",
       "RemoveSpaceStmt",
-      "CreateLeaseStmt",
     ]);
   });
 
-  it("validates CREATE LEASE after USE SPACE NODE", () => {
+  it("rejects CREATE LEASE AMENITY as unsupported", () => {
     const phrase = "one two three four five six seven eight nine ten";
     const source = `USE SPACE NODE "nid" PASSPHRASE "${phrase}"
 CREATE LEASE AMENITY "shop" EMAIL "e@x.co" ADDRESS "a" MONTHS 6`;
     const parsed = parseAql(tokenizeAql(source));
-    expect(parsed.diagnostics).toHaveLength(0);
-    const validated = validateAql(parsed.program);
-    expect(validated.diagnostics).toHaveLength(0);
+    expect(parsed.diagnostics.length).toBeGreaterThan(0);
   });
 
   it("parses macros and variables", () => {
@@ -352,7 +348,7 @@ INSPECT SPACE`;
         sdkCalls += 1;
         expect(input.op).toBe("inspectSpace");
         expect(input.payload).toEqual({ spaceId: "catalog-1" });
-        return { catalog: null, leases: [], logs: [] };
+        return { catalog: null, logs: [] };
       },
       fetchSnapshot: async () => ({ snapshot: {} }),
       fetchSessionDetails: async () => ({ meta: {} }),
@@ -399,7 +395,7 @@ INSPECT SPACE`;
       }),
       sdkRpc: async (input: { extraHeaders?: Record<string, string> }) => {
         lastHeaders = input.extraHeaders ?? {};
-        return { catalog: null, leases: [], logs: [] };
+        return { catalog: null, logs: [] };
       },
       fetchSnapshot: async () => ({ snapshot: {} }),
       fetchSessionDetails: async () => ({ meta: {} }),

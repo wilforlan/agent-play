@@ -53,7 +53,6 @@ const KEYWORD_SUGGESTIONS: AqlSuggestion[] = [
     insertText: "REMOVE AMENITY ITEMS \"\"",
     kind: "keyword",
   },
-  { label: "CREATE LEASE AMENITY", insertText: "CREATE LEASE AMENITY ", kind: "keyword" },
   {
     label: "ADD SHOP ITEM",
     insertText: "ADD SHOP ITEM TYPE \"book\" NAME \"\" DESCRIPTION \"\" PRICE ",

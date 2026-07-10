@@ -36,7 +36,6 @@ const buildRuntimeMock = (): {
         kind: "shop",
         items: [{ id: "shop-1" }],
         logs: [],
-        leases: [],
       };
     }
     if (args.op === "removeAmenityItems") {

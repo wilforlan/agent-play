@@ -95,24 +95,6 @@ export function validateAql(program: AqlProgram): ValidationResult {
           validateExpr(stmt.structureName);
         }
         return;
-      case "CreateLeaseStmt":
-        validateExpr(stmt.amenityKind);
-        validateExpr(stmt.email);
-        validateExpr(stmt.address);
-        validateExpr(stmt.durationMonths);
-        if (stmt.humanPlayerId !== undefined) {
-          validateExpr(stmt.humanPlayerId);
-        }
-        if (!hasSpaceUse) {
-          diagnostics.push({
-            code: "AQL_SEMANTIC_ERROR",
-            severity: "error",
-            message: "CREATE LEASE AMENITY requires USE SPACE NODE first",
-            line: 1,
-            column: 1,
-          });
-        }
-        return;
       case "InspectMainNodeStmt":
       case "InspectAgentNodeStmt":
       case "InspectAgentStmt":
