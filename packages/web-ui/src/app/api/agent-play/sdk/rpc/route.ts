@@ -41,6 +41,7 @@ import {
   CarWashCarSchema,
   ShopItemSchema,
   SupermarketItemSchema,
+  isGameId,
   type CarWashCar,
   type ShopItem,
   type SupermarketItem,
@@ -1125,6 +1126,7 @@ export async function POST(req: NextRequest) {
           typeof p.playerId !== "string" ||
           p.playerId.trim().length === 0 ||
           typeof p.gameId !== "string" ||
+          !isGameId(p.gameId) ||
           typeof p.roundId !== "string" ||
           p.roundId.trim().length === 0 ||
           !Array.isArray(p.events)
