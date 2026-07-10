@@ -1,5 +1,8 @@
 # Payments, wallets, and talk billing
 
+> **Legacy internal wallet (current default):** This page describes the Redis-backed `$70` wallet, atomic `purchase`, power-ups, and talk billing.  
+> **Planned replacement:** [x402 + Solana payments](payments/x402-solana/README.md) — production settlement via HTTP 402 and USDC. See [integration plan](x402-solana-payments-plan.md).
+
 This page describes how **player wallets**, **amenity purchases** (payments for shop / supermarket / car-wash items), and **realtime voice talk billing** work in Agent Play. It complements the amenity and wallet introduction in [Release 3.1.1](releases/agent-play-3.1.1.md) and the P2A voice overview in [P2A realtime hub](p2a/index.md).
 
 ## Who the wallet is for (identity)

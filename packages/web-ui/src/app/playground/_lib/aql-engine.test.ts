@@ -512,4 +512,47 @@ REMOVE SPACE NODE "node:space-1" FORCE`;
     expect(result.diagnostics.length).toBeGreaterThan(0);
     expect(result.diagnostics[0]?.message).toContain("USE PLATFORM KEY");
   });
+
+  it("binds INTO names to variables for dotted field access", async () => {
+    const phrase = "one two three four five six seven eight nine ten";
+    const source = `CREATE SPACE "Bravo Towers" DESIGN "car-wash-v1" OWNER "Marcus Holloway"
+INTO bravoTowers
+SHOW $bravoTowers.nodeId`;
+    const parsed = parseAql(tokenizeAql(source));
+    expect(parsed.diagnostics).toHaveLength(0);
+    const runtimeClient = {
+      ensureSession: async () => ({ sid: "sid-1" }),
+      inspectMainNode: async () => ({ mainNode: { nodeId: "main-1" } }),
+      sdkRpc: async () => ({
+        spaceId: "space-1",
+        nodeId: "node:abc123",
+        phrase,
+        structure: { id: "st-space-1" },
+      }),
+      fetchSnapshot: async () => ({ snapshot: { worldMap: { occupants: [] } } }),
+      fetchSessionDetails: async () => ({ meta: {} }),
+      sendIntercomCommand: async () => ({ ok: false }),
+    };
+    const result = await executeAqlProgram({
+      program: parsed.program,
+      runtimeClient,
+      initialState: {
+        serverUrl: "http://localhost:3000",
+        mainNodeId: "main-1",
+        sid: "sid-1",
+        nodePasswordMaterial: "deadbeef",
+        spaceCatalogId: null,
+        spaceNodeId: null,
+        spacePasswordMaterial: null,
+        targetAmenityKind: null,
+        targetAgentId: null,
+        targetNodeId: null,
+        timeoutMs: 8000,
+        headers: {},
+        platformServiceKey: null,
+      },
+    });
+    expect(result.diagnostics).toHaveLength(0);
+    expect(result.response).toBe("node:abc123");
+  });
 });

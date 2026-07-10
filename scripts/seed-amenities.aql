@@ -3,13 +3,14 @@
 # =============================================================================
 #
 # This is an AQL migration script that seeds the shop, supermarket and
-# car-wash amenities across every space currently configured in the world:
+# car-wash amenities across every space configured in the world:
 #
 #   1. Bravo Towers     — car wash
 #   2. My Plaza         — car wash, shop, supermarket
 #   3. SandMill Circle  — shop, supermarket
 #   4. Apple Store      — shop, supermarket
 #   5. Perraw Lane      — supermarket, car wash
+#   6. Albert Crest     — supermarket
 #   7. Nelson SPA       — shop, supermarket
 #
 # How to run
@@ -17,31 +18,100 @@
 # 1. Open the playground at `/playground` and connect with your main
 #    passphrase. The playground session is reused by the script, so this
 #    file does *not* include a `CONNECT` statement.
-# 2. Replace every <PASSPHRASE> placeholder with the matching space's
-#    passphrase. Replace placeholder space node ids for Apple Store, Perraw
-#    Lane, and Albert Crest (node:000…0001 / 0002 / 0003) with real ids.
-# 3. Paste this entire file into the editor and click Run.
+# 2. Replace `<AGENT_SERVICE_KEY>` below with the same value as the server's
+#    `AGENT_SERVICE_KEY` env var (required for CREATE SPACE, ADD AMENITY, and
+#    all content authoring when that env is set).
+# 3. **Fresh world:** run Phase 0 below — it creates all seven spaces with
+#    random owner names, attaches the required amenities, and captures each
+#    space's `nodeId` + passphrase into `$bravoTowers`, `$myPlaza`, etc.
+# 4. **Existing spaces:** comment out Phase 0 and uncomment the fallback
+#    `USE SPACE NODE` line in each content section (with your real node id
+#    and ten-word passphrase).
+# 5. Paste this entire file into the editor and click Run.
 #
 # The script is safe to re-run for *new* slots — the server auto-assigns
 # free supermarket columns and car-wash slots when omitted. Re-running
 # with the same explicit SLOT/COLUMN values will collide; remove or adjust
 # those rows if you need to top up.
 #
-# Pre-requisites
-# --------------
-# - Each space must already have its amenities attached (you said you do).
-#   If not, run `ADD AMENITY "shop"` (etc.) for the active space first.
-# - Spaces 4–6 use placeholder node ids (all zeros + trailing digit); replace
-#   with the real `node:…` from your layout before running.
+# Notes
+# -----
+# - Phase 0 is idempotent only in the sense that re-running it creates *new*
+#   spaces; do not re-run Phase 0 on a world that already has these venues.
 # - Every player wallet starts at $70 automatically; nothing to seed there.
 # =============================================================================
+
+# =============================================================================
+# Platform key (required when server AGENT_SERVICE_KEY is set)
+# =============================================================================
+
+USE PLATFORM KEY "<AGENT_SERVICE_KEY>"
+
+# =============================================================================
+# Phase 0 — Create spaces, attach amenities (comment out if spaces exist)
+# =============================================================================
+
+# 1. Bravo Towers — car wash
+CREATE SPACE "Bravo Towers" DESIGN "car-wash-v1" OWNER "Marcus Holloway"
+  DESCRIPTION "Premium tower car wash"
+INTO bravoTowers
+USE SPACE NODE $bravoTowers.nodeId PASSPHRASE $bravoTowers.phrase
+ADD AMENITY "car_wash"
+
+# 2. My Plaza — car wash + shop + supermarket
+CREATE SPACE "My Plaza" DESIGN "supermarket-v1" OWNER "Priya Mehta"
+  DESCRIPTION "Mixed-use neighborhood plaza"
+INTO myPlaza
+USE SPACE NODE $myPlaza.nodeId PASSPHRASE $myPlaza.phrase
+ADD AMENITY "car_wash"
+ADD AMENITY "shop"
+ADD AMENITY "supermarket"
+
+# 3. SandMill Circle — shop + supermarket
+CREATE SPACE "SandMill Circle" DESIGN "shop-v1" OWNER "Elena Vasquez"
+  DESCRIPTION "Artisan market circle"
+INTO sandMillCircle
+USE SPACE NODE $sandMillCircle.nodeId PASSPHRASE $sandMillCircle.phrase
+ADD AMENITY "shop"
+ADD AMENITY "supermarket"
+
+# 4. Apple Store — shop + supermarket
+CREATE SPACE "Apple Store" DESIGN "shop-v1" OWNER "Jordan Kim"
+  DESCRIPTION "Flagship accessories and services"
+INTO appleStore
+USE SPACE NODE $appleStore.nodeId PASSPHRASE $appleStore.phrase
+ADD AMENITY "shop"
+ADD AMENITY "supermarket"
+
+# 5. Perraw Lane — supermarket + car wash
+CREATE SPACE "Perraw Lane" DESIGN "supermarket-v1" OWNER "Sofia Lindstrom"
+  DESCRIPTION "Designer retail and prestige marques"
+INTO perrawLane
+USE SPACE NODE $perrawLane.nodeId PASSPHRASE $perrawLane.phrase
+ADD AMENITY "supermarket"
+ADD AMENITY "car_wash"
+
+# 6. Albert Crest — supermarket
+CREATE SPACE "Albert Crest" DESIGN "supermarket-v1" OWNER "David Okonkwo"
+  DESCRIPTION "Global prestige care and apothecary"
+INTO albertCrest
+USE SPACE NODE $albertCrest.nodeId PASSPHRASE $albertCrest.phrase
+ADD AMENITY "supermarket"
+
+# 7. Nelson SPA — shop + supermarket
+CREATE SPACE "Nelson SPA" DESIGN "shop-v1" OWNER "Amara Bennett"
+  DESCRIPTION "Bath, body, treatment and gift lines"
+INTO nelsonSpa
+USE SPACE NODE $nelsonSpa.nodeId PASSPHRASE $nelsonSpa.phrase
+ADD AMENITY "shop"
+ADD AMENITY "supermarket"
 
 # =============================================================================
 # 1. Bravo Towers — car wash (premium lot; wash-tier prices, low to flagship)
 # =============================================================================
 
-USE SPACE NODE "node:9728e8ed094690727a355be63f711dc3e40df3d068dccb3089bc96b7c338c966"
-  PASSPHRASE "<BRAVO_TOWERS_PASSPHRASE>"
+USE SPACE NODE $bravoTowers.nodeId PASSPHRASE $bravoTowers.phrase
+# Fallback (existing space): USE SPACE NODE "node:9728e8ed094690727a355be63f711dc3e40df3d068dccb3089bc96b7c338c966" PASSPHRASE "<BRAVO_TOWERS_PASSPHRASE>"
 
 ADD CARWASH CAR SLOT 1 NAME "Phantom Coupe"   MODEL "Rolls XV"    YEAR 2024 PRICE 25.99  COLOR "#d4af37"
 ADD CARWASH CAR SLOT 2 NAME "Continental GT"  MODEL "Bentley"     YEAR 2023 PRICE 35.50  COLOR "#1a2a4a"
@@ -57,8 +127,8 @@ ADD CARWASH CAR SLOT 9 NAME "Cullinan"        MODEL "Rolls-Royce" YEAR 2024 PRIC
 # 2. My Plaza — car wash + shop + supermarket (everyday mix)
 # =============================================================================
 
-USE SPACE NODE "node:6ae62056cee16358446278a7f69f3d2d81b18d16a3478fc15f69c75103482e91"
-  PASSPHRASE "<MY_PLAZA_PASSPHRASE>"
+USE SPACE NODE $myPlaza.nodeId PASSPHRASE $myPlaza.phrase
+# Fallback (existing space): USE SPACE NODE "node:6ae62056cee16358446278a7f69f3d2d81b18d16a3478fc15f69c75103482e91" PASSPHRASE "<MY_PLAZA_PASSPHRASE>"
 
 # ---- car wash (mid-range, 6 cars; slots 7-9 left open) ----
 
@@ -128,8 +198,8 @@ ADD SUPERMARKET ITEM ROW 4 NAME "Storybook"   DESCRIPTION "Bedtime tales, vol 1"
 # 3. SandMill Circle — shop + supermarket (artisan / local-feel)
 # =============================================================================
 
-USE SPACE NODE "node:b80024b47a7432614329c520010fc98e541c195fb3601d77253f674d539b1917"
-  PASSPHRASE "<SANDMILL_CIRCLE_PASSPHRASE>"
+USE SPACE NODE $sandMillCircle.nodeId PASSPHRASE $sandMillCircle.phrase
+# Fallback (existing space): USE SPACE NODE "node:b80024b47a7432614329c520010fc98e541c195fb3601d77253f674d539b1917" PASSPHRASE "<SANDMILL_CIRCLE_PASSPHRASE>"
 
 # ---- shop (6 items, local artisan feel) ----
 
@@ -179,11 +249,9 @@ ADD SUPERMARKET ITEM ROW 4 NAME "Puzzle Box"  DESCRIPTION "Coastal wildlife, 48 
 # =============================================================================
 # 4. Apple Store — shop + supermarket (accessories & services tier, $29.99–$199.99)
 # =============================================================================
-#
-# Replace the USE SPACE NODE id with your real Apple Store space node id.
 
-USE SPACE NODE "node:0000000000000000000000000000000000000001"
-  PASSPHRASE "<APPLE_STORE_PASSPHRASE>"
+USE SPACE NODE $appleStore.nodeId PASSPHRASE $appleStore.phrase
+# Fallback (existing space): USE SPACE NODE "node:…" PASSPHRASE "<APPLE_STORE_PASSPHRASE>"
 
 # ---- shop (TYPE is book | music | coffee — names skew Apple-retail) ----
 
@@ -242,8 +310,8 @@ ADD SUPERMARKET ITEM ROW 4 NAME "Incase BIONIC Messenger" DESCRIPTION "Recycled 
 # 5. Perraw Lane — supermarket + car wash (designer retail + prestige marques)
 # =============================================================================
 
-USE SPACE NODE "node:0000000000000000000000000000000000000002"
-  PASSPHRASE "<PERRAW_LANE_PASSPHRASE>"
+USE SPACE NODE $perrawLane.nodeId PASSPHRASE $perrawLane.phrase
+# Fallback (existing space): USE SPACE NODE "node:…" PASSPHRASE "<PERRAW_LANE_PASSPHRASE>"
 
 # ---- car wash (detail & care tier; names = flagship models) ----
 
@@ -291,8 +359,8 @@ ADD SUPERMARKET ITEM ROW 4 NAME "Christofle Mood Party Set" DESCRIPTION "24-piec
 # 6. Albert Crest — supermarket (global prestige care & apothecary)
 # =============================================================================
 
-USE SPACE NODE "node:0000000000000000000000000000000000000003"
-  PASSPHRASE "<ALBERT_CREST_PASSPHRASE>"
+USE SPACE NODE $albertCrest.nodeId PASSPHRASE $albertCrest.phrase
+# Fallback (existing space): USE SPACE NODE "node:…" PASSPHRASE "<ALBERT_CREST_PASSPHRASE>"
 
 # ---- supermarket (full 4×5 — dermatologist-grade & global care brands) ----
 
@@ -325,13 +393,11 @@ ADD SUPERMARKET ITEM ROW 4 NAME "Diptyque Philosykos Shower Foam" DESCRIPTION "F
 ADD SUPERMARKET ITEM ROW 4 NAME "Byredo Gypsy Water Body Cream" DESCRIPTION "Bergamot & incense cream" PRICE 99.00 COLUMN 5
 
 # =============================================================================
-# 7. Nelson SPA — supermarket (bath, body, treatment & gift lines)
+# 7. Nelson SPA — shop + supermarket (bath, body, treatment & gift lines)
 # =============================================================================
-#
-# Replace the USE SPACE NODE id and PASSPHRASE with your Nelson SPA space.
 
-USE SPACE NODE "node:0000000000000000000000000000000000000004"
-  PASSPHRASE "<NELSON_SPA_PASSPHRASE>"
+USE SPACE NODE $nelsonSpa.nodeId PASSPHRASE $nelsonSpa.phrase
+# Fallback (existing space): USE SPACE NODE "node:…" PASSPHRASE "<NELSON_SPA_PASSPHRASE>"
 
 # ---- shop (book | music | coffee — Nelson SPA retail lounge) ----
 
@@ -392,7 +458,7 @@ ADD SUPERMARKET ITEM ROW 4 NAME "Nelson SPA Serenity Loose Leaf Tea" DESCRIPTION
 
 # =============================================================================
 # Done. Verify with:
-#   USE SPACE NODE "node:..." PASSPHRASE "<...>"
+#   USE SPACE NODE $myPlaza.nodeId PASSPHRASE $myPlaza.phrase
 #   INSPECT AMENITY "shop"
 #   SHOW RESPONSE
 # =============================================================================

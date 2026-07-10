@@ -11,15 +11,18 @@
 # How to run
 # ----------
 # 1. Open `/playground` and connect with your main passphrase (no CONNECT here).
-# 2. Replace every <*_PASSPHRASE> with that space’s ten-word passphrase.
-# 3. Paste the file and Run.
+# 2. Replace `<AGENT_SERVICE_KEY>` with the server's `AGENT_SERVICE_KEY` value.
+# 3. Replace every <*_PASSPHRASE> with that space’s ten-word passphrase.
+# 4. Paste the file and Run.
 #
 # Re-runs with the same SLOT / COLUMN values collide with existing rows; clear
 # with REMOVE AMENITY ITEMS or adjust slots first if you are topping up.
 #
 # Prerequisites: each space already has the right amenities attached
-# (`ADD SPACE AMENITY "shop"` / `"supermarket"` / `"car_wash"` if needed).
+# (`ADD AMENITY "shop"` / `"supermarket"` / `"car_wash"` if needed).
 # =============================================================================
+
+USE PLATFORM KEY "<AGENT_SERVICE_KEY>"
 
 # =============================================================================
 # 1. Bravo Towers — car wash (first lot: premium)
