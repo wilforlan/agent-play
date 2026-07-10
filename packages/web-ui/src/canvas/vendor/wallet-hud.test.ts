@@ -16,10 +16,11 @@ describe("wallet-hud", () => {
 
   it("setBalance formats USD with two decimals", () => {
     const hud = createWalletHud({ parent: newParent() });
+    const amount = hud.root.querySelector(".agent-play-wallet-strip__amount");
     hud.setBalance(70);
-    expect(hud.root.textContent).toContain("$10.00");
+    expect(amount?.textContent).toBe("$70.00");
     hud.setBalance(12.345);
-    expect(hud.root.textContent).toContain("$12.35");
+    expect(amount?.textContent).toBe("$12.35");
   });
 
   it("setPowerUps renders the diamond count", () => {
