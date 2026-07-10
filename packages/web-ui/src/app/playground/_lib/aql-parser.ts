@@ -204,37 +204,6 @@ class Parser {
 
   private parseCreate(): AqlStatement | null {
     this.advance();
-    const head = this.peek();
-    if (head !== null && head.kind === "keyword" && head.value === "LEASE") {
-      this.advance();
-      if (!this.matchKeyword("AMENITY")) return null;
-      const amenityKind = this.parseExpr();
-      if (amenityKind === null) return null;
-      if (!this.matchKeyword("EMAIL")) return null;
-      const email = this.parseExpr();
-      if (email === null) return null;
-      if (!this.matchKeyword("ADDRESS")) return null;
-      const address = this.parseExpr();
-      if (address === null) return null;
-      if (!this.matchKeyword("MONTHS")) return null;
-      const durationMonths = this.parseExpr();
-      if (durationMonths === null) return null;
-      let humanPlayerId: AqlExpr | undefined;
-      if (this.checkKeyword("HUMAN")) {
-        this.advance();
-        const hid = this.parseExpr();
-        if (hid === null) return null;
-        humanPlayerId = hid;
-      }
-      return {
-        kind: "CreateLeaseStmt",
-        amenityKind,
-        email,
-        address,
-        durationMonths,
-        ...(humanPlayerId !== undefined ? { humanPlayerId } : {}),
-      };
-    }
     if (!this.matchKeyword("SPACE")) return null;
     const name = this.parseExpr();
     if (name === null) return null;

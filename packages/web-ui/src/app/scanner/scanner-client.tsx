@@ -109,6 +109,12 @@ export function ScannerClient() {
     [router]
   );
 
+  useEffect(() => {
+    if (txId !== null && txId.length > 0 && view === "txs") {
+      router.replace(`/scanner/txs/${encodeURIComponent(txId)}`);
+    }
+  }, [txId, view, router]);
+
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -273,7 +279,7 @@ export function ScannerClient() {
     try {
       const result = await searchScanner(searchQ.trim());
       if (result.kind === "tx") {
-        router.push(`/scanner?view=txs&tx=${encodeURIComponent(result.id)}`);
+        router.push(`/scanner/txs/${encodeURIComponent(result.id)}`);
       } else if (result.kind === "node") {
         router.push(`/scanner/nodes/${encodeURIComponent(result.id)}`);
       } else {
@@ -315,7 +321,7 @@ export function ScannerClient() {
           </button>
         </div>
 
-        <nav className={styles.nav} aria-label="Views">
+        <nav className={`${styles.nav} ${styles.navTabs}`} aria-label="Views">
           {VIEWS.map((v) => (
             <button
               key={v}
@@ -348,7 +354,7 @@ export function ScannerClient() {
             </section>
             {txId !== null ? (
               <p>
-                Selected tx: <code>{txId}</code>
+                Opening transaction <code>{txId}</code>…
               </p>
             ) : null}
             <table className={styles.table}>
@@ -360,13 +366,15 @@ export function ScannerClient() {
                   <th>APU</th>
                   <th>Node</th>
                   <th>Sources</th>
+                  <th>Tx</th>
                 </tr>
               </thead>
               <tbody>
                 {txs.map((row) => {
                   const tx = row as Record<string, unknown>;
+                  const id = String(tx.id ?? "");
                   return (
-                    <tr key={String(tx.id)}>
+                    <tr key={id}>
                       <td>{String(tx.at ?? "")}</td>
                       <td>{String(tx.amenityKind ?? "")}</td>
                       <td>
@@ -381,6 +389,15 @@ export function ScannerClient() {
                       <td>
                         {String(tx.debitSource ?? "—")} →{" "}
                         {String(tx.creditSource ?? "—")}
+                      </td>
+                      <td>
+                        {id.length > 0 ? (
+                          <Link href={`/scanner/txs/${encodeURIComponent(id)}`}>
+                            {truncate(id, 10)}
+                          </Link>
+                        ) : (
+                          "—"
+                        )}
                       </td>
                     </tr>
                   );

@@ -62,14 +62,6 @@ export type AqlStatement =
       description?: AqlExpr;
       structureName?: AqlExpr;
     }
-  | {
-      kind: "CreateLeaseStmt";
-      amenityKind: AqlExpr;
-      email: AqlExpr;
-      address: AqlExpr;
-      durationMonths: AqlExpr;
-      humanPlayerId?: AqlExpr;
-    }
   | { kind: "InspectMainNodeStmt" }
   | { kind: "InspectSpaceStmt" }
   | {

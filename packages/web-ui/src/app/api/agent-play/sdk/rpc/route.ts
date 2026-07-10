@@ -80,6 +80,7 @@ import { createNodeAccount } from "@/server/agent-play/create-node-account";
 import { getRepository } from "@/server/get-world";
 import { publishWorldIntercomEvent } from "@/server/agent-play/intercom/fanout";
 import { isSpaceAmenityKind } from "@/server/agent-play/space-amenity";
+import { resolveSpaceOwnerWalletPlayerId } from "@/server/agent-play/resolve-space-owner-wallet";
 import {
   requireAgentServicePlatformKey,
   verifyAgentServicePlatformKey,
@@ -536,9 +537,6 @@ export async function POST(req: NextRequest) {
           ...(kind !== undefined ? { amenityKind: kind } : {}),
           limit: 200,
         });
-        const leases = (await store.listSpaceLeases(spaceId)).filter(
-          (l) => kind === undefined || l.amenityKind === kind
-        );
         let items: unknown;
         if (kind === "shop") {
           items = await store.listShopItems(spaceId);
@@ -558,77 +556,7 @@ export async function POST(req: NextRequest) {
           ...(kind !== undefined ? { kind } : {}),
           items,
           logs,
-          leases,
         });
-      }
-      case "createAmenityLease": {
-        const p = body.payload as {
-          spaceId?: unknown;
-          amenityKind?: unknown;
-          tenantEmail?: unknown;
-          tenantAddress?: unknown;
-          humanPlayerId?: unknown;
-          durationMonths?: unknown;
-        };
-        if (
-          typeof p.spaceId !== "string" ||
-          typeof p.amenityKind !== "string" ||
-          typeof p.tenantEmail !== "string" ||
-          typeof p.tenantAddress !== "string"
-        ) {
-          return Response.json({ error: "invalid payload" }, { status: 400 });
-        }
-        const gate = await verifySpaceNodeHeaders(req, p.spaceId);
-        if (gate !== null) {
-          return gate;
-        }
-        if (!isSpaceAmenityKind(p.amenityKind)) {
-          return Response.json({ error: "invalid amenity kind" }, { status: 400 });
-        }
-        const dmRaw = p.durationMonths;
-        const durationMonths =
-          typeof dmRaw === "number"
-            ? dmRaw
-            : typeof dmRaw === "string"
-              ? Number.parseInt(dmRaw, 10)
-              : NaN;
-        if (
-          !Number.isFinite(durationMonths) ||
-          durationMonths < 1 ||
-          durationMonths > 240 ||
-          !Number.isInteger(durationMonths)
-        ) {
-          return Response.json(
-            { error: "durationMonths must be an integer from 1 to 240" },
-            { status: 400 }
-          );
-        }
-        const lease = await world.createAmenityLease({
-          spaceId: p.spaceId.trim(),
-          amenityKind: p.amenityKind,
-          tenantEmail: p.tenantEmail,
-          tenantAddress: p.tenantAddress,
-          durationMonths,
-          ...(typeof p.humanPlayerId === "string"
-            ? { humanPlayerId: p.humanPlayerId }
-            : {}),
-        });
-        return Response.json({ lease });
-      }
-      case "cancelAmenityLease": {
-        const p = body.payload as { spaceId?: unknown; leaseId?: unknown };
-        if (typeof p.spaceId !== "string" || typeof p.leaseId !== "string") {
-          return Response.json({ error: "invalid payload" }, { status: 400 });
-        }
-        const gate = await verifySpaceNodeHeaders(req, p.spaceId);
-        if (gate !== null) {
-          return gate;
-        }
-        await world.cancelAmenityLease({
-          spaceId: p.spaceId.trim(),
-          leaseId: p.leaseId.trim(),
-        });
-        return Response.json({ ok: true });
       }
       case "addShopItem": {
         const p = body.payload as {
@@ -1058,6 +986,29 @@ export async function POST(req: NextRequest) {
         });
         return Response.json({ wallet });
       }
+      case "setSpaceWalletBalance": {
+        const p = body.payload as { spaceId?: unknown; balanceUsd?: unknown };
+        if (typeof p.spaceId !== "string") {
+          return Response.json({ error: "invalid payload" }, { status: 400 });
+        }
+        const gate = await verifySpaceNodeHeaders(req, p.spaceId);
+        if (gate !== null) return gate;
+        const platformGate = verifyAgentServicePlatformKey(req);
+        if (platformGate !== null) return platformGate;
+        const balance = Number(p.balanceUsd);
+        if (!Number.isFinite(balance) || balance < 0) {
+          return Response.json(
+            { error: "balanceUsd must be a non-negative number" },
+            { status: 400 }
+          );
+        }
+        const nodeId = req.headers.get("x-node-id")?.trim() ?? "";
+        const wallet = await store.setPlayerWalletBalance({
+          playerId: nodeId,
+          balanceUsd: balance,
+        });
+        return Response.json({ wallet });
+      }
       case "purchase": {
         const p = body.payload as {
           playerId?: unknown;
@@ -1099,6 +1050,11 @@ export async function POST(req: NextRequest) {
           kind: "shop" | "supermarket" | "carwash";
           id: string;
         } = { kind: refKind, id: p.itemRef.id.trim() };
+        const snap = await world.getSnapshotJson();
+        const spaceOwnerWalletPlayerId = resolveSpaceOwnerWalletPlayerId(
+          snap,
+          p.spaceId.trim()
+        );
         const result = await store.executePurchase({
           spaceId: p.spaceId.trim(),
           amenityKind,
@@ -1106,6 +1062,9 @@ export async function POST(req: NextRequest) {
           playerId: p.playerId.trim(),
           now: new Date().toISOString(),
           recordId: `pur-${randomUUID()}`,
+          ...(spaceOwnerWalletPlayerId !== null
+            ? { spaceOwnerWalletPlayerId }
+            : {}),
         });
         if (!result.ok) {
           return Response.json({ error: result.error }, { status: 409 });

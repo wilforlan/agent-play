@@ -69,7 +69,6 @@ function buildStoreMock(overrides?: {
     listShopItems: vi.fn(async () => overrides?.shopItems ?? []),
     listSupermarketItems: vi.fn(async () => overrides?.supermarketItems ?? []),
     listCarWashCars: vi.fn(async () => overrides?.carWashCars ?? []),
-    listSpaceLeases: vi.fn(async () => []),
     listSpaceAmenityLogs: vi.fn(async () => []),
     removeShopItem: vi.fn(async () => true),
     removeSupermarketItem: vi.fn(async () => true),
@@ -120,12 +119,10 @@ describe("POST /api/agent-play/sdk/rpc — inspectAmenity returns items", () => 
       kind?: string;
       items: Array<{ id: string }>;
       logs: unknown[];
-      leases: unknown[];
     };
     expect(body.kind).toBe("shop");
     expect(body.items.map((i) => i.id)).toEqual(["shop-1", "shop-2"]);
     expect(body.logs).toEqual([]);
-    expect(body.leases).toEqual([]);
   });
 
   it("returns grouped items when no kind is specified", async () => {

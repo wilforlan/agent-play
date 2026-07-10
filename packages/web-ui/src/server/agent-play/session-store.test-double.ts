@@ -57,7 +57,6 @@ import type {
   PublishedSessionMetadata,
   SessionStore,
   SpaceAmenityLogEntry,
-  SpaceLeaseRecord,
   WorldChatMessage,
   WorldFanoutOptions,
 } from "./session-store.js";
@@ -86,7 +85,6 @@ export class TestSessionStore implements SessionStore {
     PresenceLease & { expiresAtMs: number }
   >();
   private readonly spaceAmenityLogs = new Map<string, SpaceAmenityLogEntry[]>();
-  private readonly spaceLeases = new Map<string, SpaceLeaseRecord[]>();
   private readonly shopItems = new Map<string, Map<string, ShopItem>>();
   private readonly supermarketItems = new Map<
     string,
@@ -476,35 +474,7 @@ export class TestSessionStore implements SessionStore {
     return merged.slice(0, lim);
   }
 
-  async upsertSpaceLease(record: SpaceLeaseRecord): Promise<void> {
-    const list = this.spaceLeases.get(record.spaceId) ?? [];
-    const next = list.filter((l) => l.leaseId !== record.leaseId);
-    next.push(record);
-    this.spaceLeases.set(record.spaceId, next);
-  }
-
-  async listSpaceLeases(spaceId: string): Promise<SpaceLeaseRecord[]> {
-    return [...(this.spaceLeases.get(spaceId) ?? [])];
-  }
-
-  async deleteSpaceLease(input: {
-    spaceId: string;
-    leaseId: string;
-  }): Promise<boolean> {
-    const list = this.spaceLeases.get(input.spaceId);
-    if (list === undefined) {
-      return false;
-    }
-    const next = list.filter((l) => l.leaseId !== input.leaseId);
-    if (next.length === list.length) {
-      return false;
-    }
-    this.spaceLeases.set(input.spaceId, next);
-    return true;
-  }
-
   async deleteSpaceSidecar(spaceId: string): Promise<void> {
-    this.spaceLeases.delete(spaceId);
     for (const key of [...this.spaceAmenityLogs.keys()]) {
       if (key.startsWith(`${spaceId}\u0000`)) {
         this.spaceAmenityLogs.delete(key);
@@ -671,6 +641,7 @@ export class TestSessionStore implements SessionStore {
     playerId: string;
     now: string;
     recordId: string;
+    spaceOwnerWalletPlayerId?: string;
   }): Promise<ExecutePurchaseResult> {
     const expectedKind: typeof input.itemRef.kind =
       input.amenityKind === "car_wash" ? "carwash" : input.amenityKind;
@@ -727,6 +698,19 @@ export class TestSessionStore implements SessionStore {
     };
     this.playerWallets.set(input.playerId, nextWallet);
     mirrorWalletBalance(this.scannerMirror, nextWallet);
+
+    const ownerId = input.spaceOwnerWalletPlayerId?.trim() ?? "";
+    if (ownerId.length > 0 && ownerId !== input.playerId) {
+      const ownerWallet = await this.getPlayerWallet(ownerId);
+      const creditedOwner: PlayerWallet = {
+        ...ownerWallet,
+        balanceUsd: ownerWallet.balanceUsd + item.priceUsd,
+        updatedAt: input.now,
+      };
+      this.playerWallets.set(ownerId, creditedOwner);
+      mirrorWalletBalance(this.scannerMirror, creditedOwner);
+    }
+
     const record: PurchaseRecord = {
       id: input.recordId,
       playerId: input.playerId,

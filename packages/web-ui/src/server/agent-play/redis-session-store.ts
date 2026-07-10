@@ -80,7 +80,6 @@ import type {
   PublishedSessionMetadata,
   SessionStore,
   SpaceAmenityLogEntry,
-  SpaceLeaseRecord,
   WorldChatMessage,
   WorldFanoutOptions,
 } from "./session-store.js";
@@ -853,34 +852,6 @@ export class RedisSessionStore implements SessionStore {
     return merged.slice(0, lim);
   }
 
-  async upsertSpaceLease(record: SpaceLeaseRecord): Promise<void> {
-    const key = spaceLeasesHashKey(this.hostId, record.spaceId);
-    await this.redis.hset(key, record.leaseId, JSON.stringify(record));
-  }
-
-  async listSpaceLeases(spaceId: string): Promise<SpaceLeaseRecord[]> {
-    const key = spaceLeasesHashKey(this.hostId, spaceId);
-    const raw = await this.redis.hgetall(key);
-    const out: SpaceLeaseRecord[] = [];
-    for (const value of Object.values(raw)) {
-      try {
-        out.push(JSON.parse(value) as SpaceLeaseRecord);
-      } catch {
-        continue;
-      }
-    }
-    return out.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
-  }
-
-  async deleteSpaceLease(input: {
-    spaceId: string;
-    leaseId: string;
-  }): Promise<boolean> {
-    const key = spaceLeasesHashKey(this.hostId, input.spaceId);
-    const removed = await this.redis.hdel(key, input.leaseId);
-    return removed === 1;
-  }
-
   async deleteSpaceSidecar(spaceId: string): Promise<void> {
     await this.redis.del(spaceLeasesHashKey(this.hostId, spaceId));
     for (const kind of ["supermarket", "shop", "car_wash"] as const) {
@@ -1194,6 +1165,7 @@ export class RedisSessionStore implements SessionStore {
     playerId: string;
     now: string;
     recordId: string;
+    spaceOwnerWalletPlayerId?: string;
   }): Promise<ExecutePurchaseResult> {
     const expectedKind: typeof input.itemRef.kind =
       input.amenityKind === "car_wash" ? "carwash" : input.amenityKind;
@@ -1208,12 +1180,23 @@ export class RedisSessionStore implements SessionStore {
           : spaceCarWashCarsHashKey(this.hostId, input.spaceId);
     const walletKey = playerWalletKey(this.hostId, input.playerId);
     const purchasesKeyName = playerPurchasesKey(this.hostId, input.playerId);
+    const ownerId = input.spaceOwnerWalletPlayerId?.trim() ?? "";
+    const creditOwner =
+      ownerId.length > 0 && ownerId !== input.playerId.trim();
+    const ownerWalletKey = creditOwner
+      ? playerWalletKey(this.hostId, ownerId)
+      : null;
 
     await this.getPlayerWallet(input.playerId);
+    if (creditOwner && ownerWalletKey !== null) {
+      await this.getPlayerWallet(ownerId);
+    }
 
     const maxAttempts = 5;
     for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
-      await this.redis.watch(itemKey, walletKey);
+      const watchKeys =
+        ownerWalletKey !== null ? [itemKey, walletKey, ownerWalletKey] : [itemKey, walletKey];
+      await this.redis.watch(...watchKeys);
       const rawItem = await this.redis.hget(itemKey, input.itemRef.id);
       if (rawItem === null) {
         await this.redis.unwatch();
@@ -1268,6 +1251,26 @@ export class RedisSessionStore implements SessionStore {
         powerUps: (wallet.powerUps ?? 0) + earnedPowerUps,
         updatedAt: input.now,
       };
+      let updatedOwnerWallet: PlayerWallet | null = null;
+      if (creditOwner && ownerWalletKey !== null) {
+        const rawOwnerWallet = await this.redis.get(ownerWalletKey);
+        if (rawOwnerWallet === null) {
+          await this.redis.unwatch();
+          return { ok: false, error: "INSUFFICIENT_FUNDS" };
+        }
+        let ownerWallet: PlayerWallet;
+        try {
+          ownerWallet = PlayerWalletSchema.parse(JSON.parse(rawOwnerWallet));
+        } catch {
+          await this.redis.unwatch();
+          return { ok: false, error: "INSUFFICIENT_FUNDS" };
+        }
+        updatedOwnerWallet = {
+          ...ownerWallet,
+          balanceUsd: ownerWallet.balanceUsd + item.priceUsd,
+          updatedAt: input.now,
+        };
+      }
       const record: PurchaseRecord = {
         id: input.recordId,
         playerId: input.playerId,
@@ -1285,6 +1288,9 @@ export class RedisSessionStore implements SessionStore {
       const multi = this.redis.multi();
       multi.hset(itemKey, input.itemRef.id, JSON.stringify(updatedItem));
       multi.set(walletKey, JSON.stringify(updatedWallet));
+      if (updatedOwnerWallet !== null && ownerWalletKey !== null) {
+        multi.set(ownerWalletKey, JSON.stringify(updatedOwnerWallet));
+      }
       multi.lpush(purchasesKeyName, JSON.stringify(record));
       multi.ltrim(purchasesKeyName, 0, PURCHASES_MAX - 1);
       const exec = await multi.exec();
@@ -1300,6 +1306,13 @@ export class RedisSessionStore implements SessionStore {
           hostId: this.hostId,
           wallet: updatedWallet,
         });
+        if (updatedOwnerWallet !== null) {
+          safeIndexWallet({
+            redis: this.redis,
+            hostId: this.hostId,
+            wallet: updatedOwnerWallet,
+          });
+        }
         return {
           ok: true,
           record,

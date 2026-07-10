@@ -11,6 +11,8 @@ Agent Play Scanner is a public, read-only observability terminal at [`/scanner`]
 - **Analytics** — Segment-style in-platform events and property breakdowns
 - **Spatial economy** — space GMV, talk billing, arcade APU stats
 
+Space operators can reconcile purchase GMV on [`/platform`](../platform/README.md) (overview + purchases routes use the same scanner tx indexes).
+
 ## Views
 
 Use query params on the single `/scanner` route:

@@ -39,6 +39,10 @@
   gap: 0.5rem;
 }
 
+.navTabs {
+  margin-bottom: 1.25rem;
+}
+
 .navBtn {
   background: #0f172a;
   border: 1px solid #334155;

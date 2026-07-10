@@ -23,7 +23,6 @@ Every priced operation in Agent Play x402 mode: resource ids, payees, amounts, a
 | `talk.tick` | `talkSessionTick` | `agent-play://talk/{agentId}/viewer/{viewerNodeId}/tick/{seq}` | Agent operator main node | `costForSeconds(TALK_TICK_SECONDS)` |
 | `talk.start` | `talkSessionStart` (optional deposit) | `agent-play://talk/{agentId}/viewer/{viewerNodeId}/deposit` | Agent operator | Configurable deposit |
 | `space.create` | `createSpace` | `agent-play://space/create/{requestId}` | Platform treasury | Platform fee table |
-| `amenity.lease` | `createAmenityLease` | `agent-play://space/{spaceId}/lease/{kind}/{termMonths}` | Space owner | Lease fee table |
 
 `kind` ∈ `shop` | `supermarket` | `car_wash`.
 

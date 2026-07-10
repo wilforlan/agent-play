@@ -81,19 +81,6 @@ export type SpaceAmenityLogEntry = {
   detail?: unknown;
 };
 
-export type SpaceLeaseRecord = {
-  leaseId: string;
-  spaceId: string;
-  amenityKind: string;
-  tenantEmail: string;
-  tenantAddress: string;
-  humanPlayerId?: string;
-  durationMonths?: number;
-  status: "pending" | "active" | "terminated";
-  createdAt: string;
-  updatedAt: string;
-};
-
 export type SessionStore = {
   readonly fanoutDelivery: "redis" | "local";
   readonly playerChainGenesis: string;
@@ -166,12 +153,6 @@ export type SessionStore = {
     amenityKind?: string;
     limit: number;
   }): Promise<SpaceAmenityLogEntry[]>;
-  upsertSpaceLease(record: SpaceLeaseRecord): Promise<void>;
-  listSpaceLeases(spaceId: string): Promise<SpaceLeaseRecord[]>;
-  deleteSpaceLease(input: {
-    spaceId: string;
-    leaseId: string;
-  }): Promise<boolean>;
   deleteSpaceSidecar(spaceId: string): Promise<void>;
   /**
    * Persist a shop item under its space-scoped hash. Overwrites by id.
@@ -232,6 +213,7 @@ export type SessionStore = {
     playerId: string;
     now: string;
     recordId: string;
+    spaceOwnerWalletPlayerId?: string;
   }): Promise<ExecutePurchaseResult>;
   addPowerUps(input: {
     playerId: string;

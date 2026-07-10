@@ -118,19 +118,7 @@ stateDiagram-v2
 - `owner.nodeId` set to your main node id at registration.
 - Optional `owner.displayName` for map labels.
 
-Revenue from **your** amenity sales routes to your linked wallet automatically.
-
----
-
-## Amenity leases
-
-Tenancy on an amenity slot (`CREATE LEASE AMENITY`) may require x402 `amenity.lease` payment:
-
-1. Select space + amenity kind + term.
-2. Pay lease fee (→ space owner or escrow policy).
-3. Lease row appears in `inspectSpace` / platform UI.
-
-See [Payment catalog — amenity.lease](03-payment-catalog.md).
+Revenue from **your** amenity sales routes to your linked wallet automatically. Monitor purchases on `/platform` and reconcile with the Scanner.
 
 ---
 
