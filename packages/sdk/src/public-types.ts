@@ -332,7 +332,9 @@ export type AgentPlaySpaceCatalogEntry = {
   activityObjectIds?: string[];
 };
 
-/** Map anchor linking one or more authored spaces (see {@link AgentPlaySpaceCatalogEntry}). */
+import type { GameId } from "./lib/game-catalog.js";
+
+/** Map anchor linking one or more authored spaces or an arcade game cabinet. */
 export type AgentPlayWorldMapStructureOccupant = {
   kind: "structure";
   id: string;
@@ -341,6 +343,8 @@ export type AgentPlayWorldMapStructureOccupant = {
   y: number;
   worldId: string;
   spaceIds: string[];
+  /** When set, this structure is an arcade cabinet door on Maple Ave. */
+  gameId?: GameId;
   /** When true, the anchor is fixed map furniture (e.g. authored spaces). */
   stationary?: boolean;
   primaryAmenity?: AgentPlaySpaceAmenityKind;
@@ -364,8 +368,8 @@ export type AgentPlayWorldLayoutZone = {
   streetId: string;
   streetLabel: string;
   rect: AgentPlayWorldMapBounds;
-  primaryGroup: "agent" | "space" | "mcp";
-  allowedGroups: readonly ("agent" | "space" | "mcp")[];
+  primaryGroup: "agent" | "space" | "arcade";
+  allowedGroups: readonly ("agent" | "space" | "arcade")[];
 };
 
 export type AgentPlayWorldLayout = {
