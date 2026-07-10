@@ -15,6 +15,11 @@ export type CreatePreviewProximityTouchControlsOptions = {
    */
   getStructureProximityLabel?: () => string | null | undefined;
   /**
+   * Verb shown on the `A` button when near a structure. Defaults to
+   * `"Enter"`; game cabinets should return `"Play"`.
+   */
+  getStructureProximityVerb?: () => string | null | undefined;
+  /**
    * When the human is inside the space yard and walks up to an amenity pad,
    * this returns the amenity's display label (used to relabel the `P`
    * button to "Enter"). Returns `null` / `undefined` when no amenity
@@ -32,6 +37,20 @@ export type CreatePreviewProximityTouchControlsOptions = {
    * other proximity labels.
    */
   getAmenityItemActionLabel?: () => string | null | undefined;
+  /**
+   * When the human is inside an arcade game stage and near an interactable,
+   * returns the object's display label for the `A` button.
+   */
+  getGameStageProximityLabel?: () => string | null | undefined;
+  /**
+   * Verb shown on the `A` button when near a game-stage interactable.
+   */
+  getGameStageProximityVerb?: () => string | null | undefined;
+  /**
+   * Whether the current game-stage proximity target can be activated with `A`.
+   * Defaults to `true` when omitted.
+   */
+  getGameStageProximityActivatable?: () => boolean;
   onAssist: () => void;
   onChat: () => void;
   onPushToTalk: () => void;
@@ -124,6 +143,9 @@ export function createPreviewProximityTouchControls(
     const amenityLabel = options.getAmenityProximityLabel?.() ?? null;
     const nearAmenity =
       typeof amenityLabel === "string" && amenityLabel.length > 0;
+    const gameStageLabel = options.getGameStageProximityLabel?.() ?? null;
+    const nearGameStage =
+      typeof gameStageLabel === "string" && gameStageLabel.length > 0;
     const structureLabel = options.getStructureProximityLabel?.() ?? null;
     const nearStructure =
       typeof structureLabel === "string" && structureLabel.length > 0;
@@ -149,12 +171,26 @@ export function createPreviewProximityTouchControls(
         "aria-label",
         `Enter ${amenityLabel ?? "amenity"}`
       );
-    } else if (nearStructure) {
-      btnAssist.disabled = false;
-      subA.textContent = "Enter";
+    } else if (nearGameStage) {
+      const verb = options.getGameStageProximityVerb?.() ?? "Use";
+      const activatable = options.getGameStageProximityActivatable?.() ?? true;
+      btnAssist.disabled = !activatable;
+      subA.textContent = verb;
       btnAssist.setAttribute(
         "aria-label",
-        `Enter ${structureLabel ?? "space"}`
+        `${verb} ${gameStageLabel ?? "object"}`
+      );
+      btnChat.disabled = true;
+      btnPushToTalk.disabled = true;
+      subP.textContent = "Push";
+      btnPushToTalk.removeAttribute("aria-label");
+    } else if (nearStructure) {
+      const verb = options.getStructureProximityVerb?.() ?? "Enter";
+      btnAssist.disabled = false;
+      subA.textContent = verb;
+      btnAssist.setAttribute(
+        "aria-label",
+        `${verb} ${structureLabel ?? "space"}`
       );
       btnChat.disabled = true;
       btnPushToTalk.disabled = true;

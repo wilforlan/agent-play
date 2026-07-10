@@ -28,11 +28,9 @@ type GridPoint = OccupancyGridPoint;
 const DEFAULT_MIN_OCCUPANT_DISTANCE = DEFAULT_AGENT_SPAWN_MIN_DISTANCE;
 
 function occupantGroupForSpawn(
-  kind: "agent" | "mcp" | "unknown" | undefined
+  kind: "agent" | "unknown" | undefined
 ): OccupantGroup {
-  if (kind === "mcp") {
-    return "mcp";
-  }
+  void kind;
   return "agent";
 }
 
@@ -47,7 +45,7 @@ export function computeRandomFreeMapCellInZone(
     structureMinDistance?: number;
     occupantInfo?: {
       id: string;
-      kind: "agent" | "mcp" | "unknown";
+      kind: "agent" | "unknown";
       name?: string;
     };
   }
@@ -110,7 +108,7 @@ export function computeRandomFreeMapCellInSpatialZone(
     structureMinDistance?: number;
     occupantInfo?: {
       id: string;
-      kind: "agent" | "mcp" | "unknown";
+      kind: "agent" | "unknown";
       name?: string;
     };
     worldLayout?: WorldLayout;
@@ -196,7 +194,7 @@ export function computeRandomFreeMapCellInQuartile(
     structureMinDistance?: number;
     occupantInfo?: {
       id: string;
-      kind: "agent" | "mcp" | "unknown";
+      kind: "agent" | "unknown";
       name?: string;
     };
   }
@@ -303,9 +301,63 @@ function pickStructureAnchorWithProximityTiers(input: {
   return null;
 }
 
+function isArcadeCabinetStructure(
+  row: PreviewWorldMapStructureOccupantJson
+): boolean {
+  return typeof row.gameId === "string" && row.gameId.length > 0;
+}
+
+function reanchorStructuresInZone(input: {
+  structures: PreviewWorldMapStructureOccupantJson[];
+  zone: Zone;
+  occupied: Set<string>;
+  fixedOccupantPositions: ReadonlyArray<{ x: number; y: number }>;
+}): PreviewWorldMapStructureOccupantJson[] {
+  const rankedCandidates = buildRankedOccupancyPointsForZone(input.zone);
+  const reanchored: PreviewWorldMapStructureOccupantJson[] = [];
+  const structureAnchors: Array<{ x: number; y: number }> = [];
+  for (const row of input.structures) {
+    const pos = pickStructureAnchorWithProximityTiers({
+      zone: input.zone,
+      rankedCandidates,
+      occupied: input.occupied,
+      fixedOccupantPositions: input.fixedOccupantPositions,
+      structureAnchors,
+    });
+    if (pos !== null) {
+      reanchored.push({ ...row, x: pos.x, y: pos.y });
+      input.occupied.add(occupancyKeyForPosition(pos.x, pos.y));
+      structureAnchors.push({ x: pos.x, y: pos.y });
+      continue;
+    }
+    const persistedKey = occupancyKeyForPosition(row.x, row.y);
+    if (!input.occupied.has(persistedKey)) {
+      reanchored.push(row);
+      input.occupied.add(persistedKey);
+      structureAnchors.push({ x: row.x, y: row.y });
+    } else {
+      reanchored.push(row);
+    }
+  }
+  return reanchored;
+}
+
+export function computeArcadeCabinetAnchor(input: {
+  occupied: ReadonlySet<string>;
+  existingOccupants: ReadonlyArray<{ x: number; y: number }>;
+  structureAnchors: ReadonlyArray<{ x: number; y: number }>;
+  worldLayout: WorldLayout;
+}): { x: number; y: number } {
+  const zone = pickZoneForGroup(input.worldLayout, "arcade");
+  return computeRandomFreeMapCellInZone(input.occupied, zone, "spaceAnchor", {
+    existingOccupants: input.existingOccupants,
+    structureAnchors: input.structureAnchors,
+  });
+}
+
 /**
- * Re-anchors every structure occupant inside the current worldLayout space zone
- * deterministically (sorted by structure id, packed from zone center outward).
+ * Re-anchors structure occupants inside their zone: space-linked structures in
+ * the space zone, arcade cabinets (gameId) in the arcade zone on Maple Ave.
  *
  * @remarks Persisted x,y on structure rows is treated as advisory; the canonical
  * position is derived from `snapshot.worldLayout` at read time. Non-structure
@@ -325,18 +377,18 @@ export function resolveStructureAnchorsAtRuntime(
   snapshot: PreviewSnapshotJson
 ): PreviewSnapshotJson {
   const layout = snapshot.worldLayout;
-  const spaceZone = layout.zones.find((z) => z.primaryGroup === "space");
-  if (spaceZone === undefined) {
+  const spaceZoneRaw = layout.zones.find((z) => z.primaryGroup === "space");
+  const arcadeZoneRaw =
+    layout.zones.find((z) => z.primaryGroup === "arcade") ??
+    layout.zones.find(
+      (z) =>
+        z.id === "zone-arcade-strip" ||
+        z.id === "zone-mcp-strip" ||
+        (z.primaryGroup as string) === "mcp"
+    );
+  if (spaceZoneRaw === undefined && arcadeZoneRaw === undefined) {
     return snapshot;
   }
-  const zone: Zone = {
-    id: spaceZone.id,
-    streetId: spaceZone.streetId,
-    streetLabel: spaceZone.streetLabel,
-    primaryGroup: spaceZone.primaryGroup,
-    allowedGroups: spaceZone.allowedGroups,
-    rect: { ...spaceZone.rect },
-  };
   const fixedOccupants = snapshot.worldMap.occupants.filter(
     (o) => !isStructureOccupant(o)
   );
@@ -357,35 +409,59 @@ export function resolveStructureAnchorsAtRuntime(
   const occupied = new Set(
     fixedOccupantPositions.map((p) => occupancyKeyForPosition(p.x, p.y))
   );
-  const structures = snapshot.worldMap.occupants
+  const allStructures = snapshot.worldMap.occupants
     .filter(isStructureOccupant)
     .slice()
     .sort((a, b) => a.id.localeCompare(b.id));
-  const rankedCandidates = buildRankedOccupancyPointsForZone(zone);
+  const spaceStructures = allStructures.filter(
+    (row) => !isArcadeCabinetStructure(row)
+  );
+  const arcadeStructures = allStructures.filter(isArcadeCabinetStructure);
   const reanchored: PreviewWorldMapStructureOccupantJson[] = [];
-  const structureAnchors: Array<{ x: number; y: number }> = [];
-  for (const row of structures) {
-    const pos = pickStructureAnchorWithProximityTiers({
-      zone,
-      rankedCandidates,
-      occupied,
-      fixedOccupantPositions,
-      structureAnchors,
-    });
-    if (pos !== null) {
-      reanchored.push({ ...row, x: pos.x, y: pos.y });
-      occupied.add(occupancyKeyForPosition(pos.x, pos.y));
-      structureAnchors.push({ x: pos.x, y: pos.y });
-      continue;
-    }
-    const persistedKey = occupancyKeyForPosition(row.x, row.y);
-    if (!occupied.has(persistedKey)) {
-      reanchored.push(row);
-      occupied.add(persistedKey);
-      structureAnchors.push({ x: row.x, y: row.y });
-    } else {
-      reanchored.push(row);
-    }
+  if (spaceZoneRaw !== undefined) {
+    const spaceZone: Zone = {
+      id: spaceZoneRaw.id,
+      streetId: spaceZoneRaw.streetId,
+      streetLabel: spaceZoneRaw.streetLabel,
+      primaryGroup: spaceZoneRaw.primaryGroup,
+      allowedGroups: spaceZoneRaw.allowedGroups,
+      rect: { ...spaceZoneRaw.rect },
+    };
+    reanchored.push(
+      ...reanchorStructuresInZone({
+        structures: spaceStructures,
+        zone: spaceZone,
+        occupied,
+        fixedOccupantPositions,
+      })
+    );
+  } else {
+    reanchored.push(...spaceStructures);
+  }
+  if (arcadeZoneRaw !== undefined) {
+    const arcadeZone: Zone = {
+      id:
+        arcadeZoneRaw.id === "zone-mcp-strip"
+          ? "zone-arcade-strip"
+          : arcadeZoneRaw.id,
+      streetId: arcadeZoneRaw.streetId,
+      streetLabel: arcadeZoneRaw.streetLabel,
+      primaryGroup: "arcade",
+      allowedGroups: arcadeZoneRaw.allowedGroups.includes("arcade")
+        ? arcadeZoneRaw.allowedGroups
+        : ["arcade"],
+      rect: { ...arcadeZoneRaw.rect },
+    };
+    reanchored.push(
+      ...reanchorStructuresInZone({
+        structures: arcadeStructures,
+        zone: arcadeZone,
+        occupied,
+        fixedOccupantPositions,
+      })
+    );
+  } else {
+    reanchored.push(...arcadeStructures);
   }
   const byId = new Map(reanchored.map((s) => [s.id, s]));
   const nextOccupants: PreviewWorldMapOccupantJson[] =
@@ -407,7 +483,7 @@ export function computeRandomFreeMapCell(
     minDistance?: number;
     occupantInfo?: {
       id: string;
-      kind: "agent" | "mcp" | "unknown";
+      kind: "agent" | "unknown";
       name?: string;
     };
     worldLayout: WorldLayout;

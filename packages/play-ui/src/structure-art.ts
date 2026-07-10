@@ -90,6 +90,35 @@ export function drawVendorStall(
   g.rect(ox, oy, w, h * 0.62).stroke({ width: 1, color: colors.trim });
 }
 
+export function drawArcadeCabinet(
+  g: Graphics,
+  box: number,
+  colors: {
+    body: number;
+    screen: number;
+    accent: number;
+    trim: number;
+  }
+): void {
+  g.clear();
+  const w = box * 0.95;
+  const h = box * 1.05;
+  const ox = -w * 0.5;
+  const oy = -h * 0.72;
+  g.roundRect(ox, oy, w, h, 4).fill({ color: colors.body });
+  g.roundRect(ox + w * 0.12, oy + h * 0.1, w * 0.76, h * 0.38, 3).fill({
+    color: colors.screen,
+  });
+  g.roundRect(ox + w * 0.12, oy + h * 0.1, w * 0.76, h * 0.38, 3).stroke({
+    width: 1,
+    color: colors.accent,
+  });
+  g.rect(ox + w * 0.28, oy + h * 0.58, w * 0.44, h * 0.1).fill({
+    color: colors.accent,
+  });
+  g.roundRect(ox, oy, w, h, 4).stroke({ width: 1.5, color: colors.trim });
+}
+
 export function drawMcpStore(
   g: Graphics,
   box: number,

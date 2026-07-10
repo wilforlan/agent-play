@@ -28,7 +28,14 @@ export type StageId =
   | "spaceYard"
   | "amenityShop"
   | "amenitySupermarket"
-  | "amenityCarWash";
+  | "amenityCarWash"
+  | "gameHiddenGems"
+  | "gameMapRecall"
+  | "gamePriceCheck"
+  | "gameSignalHunt"
+  | "gameDeliveryDash"
+  | "gameLeaseLocker"
+  | "gameTalkTimer";
 
 /**
  * Minimal display-object contract the controller animates.
