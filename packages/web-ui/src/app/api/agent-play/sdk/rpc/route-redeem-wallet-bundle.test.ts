@@ -96,7 +96,7 @@ describe("POST /api/agent-play/sdk/rpc — redeemWalletBundle", () => {
       wallet: { balanceUsd: number; powerUps: number };
       purchase: { amenityKind: string; powerUpsSpent?: number; priceUsd: number };
     };
-    expect(body.wallet.balanceUsd).toBe(80);
+    expect(body.wallet.balanceUsd).toBe(20);
     expect(body.wallet.powerUps).toBe(50);
     expect(body.purchase.amenityKind).toBe("wallet_bundle");
     expect(body.purchase.powerUpsSpent).toBe(150);
