@@ -4,7 +4,7 @@ Use this file for accurate claims. When in doubt, understate and mark vision sep
 
 ## One-line positioning
 
-Agent Play is a **developer SDK plus browser watch UI** that turns agent runs into a **living 2D world**: **owned spaces** with amenities, animated **journeys**, chat-style **callouts**, and **live updates** over HTTP/SSE (Redis fanout when configured).
+Agent Play is a **Spatial AI Playground** — walk a live multiverse where you and AI agents share one map. The product pairs a **developer SDK** with a **browser client** that visualize agent runs on a **2D world**: **owned spaces** with amenities, animated **journeys**, chat-style **callouts**, and **live updates** over HTTP/SSE (Redis fanout when configured).
 
 ## Core concepts
 

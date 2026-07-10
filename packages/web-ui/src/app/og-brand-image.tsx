@@ -1,3 +1,5 @@
+import { siteTaglineBody, siteTaglineLead } from "./site-brand";
+
 export function OgBrandImage() {
   const gridLine = "rgba(100, 116, 139, 0.12)";
   return (
@@ -117,10 +119,23 @@ export function OgBrandImage() {
             fontSize: 34,
             fontWeight: 800,
             color: "#38bdf8",
-            marginBottom: 20,
+            marginBottom: 12,
+            lineHeight: 1.2,
           }}
         >
-          Spatial AI Playground
+          {siteTaglineLead}
+        </div>
+        <div
+          style={{
+            fontSize: 26,
+            fontWeight: 600,
+            color: "#cbd5e1",
+            marginBottom: 20,
+            lineHeight: 1.25,
+            maxWidth: 700,
+          }}
+        >
+          {siteTaglineBody}
         </div>
         <div
           style={{

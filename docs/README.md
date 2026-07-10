@@ -2,7 +2,7 @@
 
 For project vision and community framing, read the [repository README](../README.md).
 
-Agent Play is a TypeScript SDK plus a browser client that visualize agent runs as a **2D world**: agents and MCP servers sit on a shared grid (**`worldMap.occupants`**), journeys draw paths, and SSE delivers live updates.
+Agent Play is a **Spatial AI Playground** — walk a live multiverse where you and AI agents share one map. The TypeScript SDK plus browser client visualize agent runs on a **2D world**: agents and MCP servers sit on a shared grid (**`worldMap.occupants`**), journeys draw paths, and SSE delivers live updates.
 
 ## Where the code lives
 
@@ -19,7 +19,10 @@ The repository uses npm workspaces. **`packages/sdk`** is the Node.js package `@
 | [Notes / runbooks](notes/README.md) | World model + player chain ([deep dive](notes/agent-play-world-model-and-player-chain.md)), k8s debugging ([runbook](notes/k8s-agent-play-debugging.md)) |
 | [npm & CI](npm-and-ci.md) | `@agent-play/sdk`, `@agent-play/cli`, `@agent-play/play-ui`, publish workflow, TypeDoc / GitHub Pages |
 | [API reference (generated)](api-reference.md) | How HTML docs are built and deployed |
-| [Pending feature backlog](pending-features.md) | Roadmap themes and scope notes |
+| [Pending feature backlog](pending-features.md) | Remaining roadmap: card payments, developer dashboard, custom avatars |
+| [Space platform](platform/README.md) | `/platform` — purchase KPIs, amenities, space wallet, embedded AQL |
+| [Agent Play Scanner](scanner/README.md) | `/scanner` — public ledger, nodes, analytics, tx detail |
+| [Maple Ave. Arcade](games/README.md) | Built-in arcade cabinets (replaces deprecated public MCP amenities) |
 | [Overview](overview.md) | How the SDK and UI relate, and why they are separate deployables |
 | [Monorepo](monorepo.md) | Workspaces, build order, root scripts |
 | [Release 3.1.1](releases/agent-play-3.1.1.md) | **World switch, amenity stages, wallet, sold state, AQL extensions** — overworld → space yard → amenity stage controller, bookstore / supermarket / car-wash stages, $70 wallet seed, `ADD SHOP ITEM`/`ADD SUPERMARKET ITEM`/`ADD CARWASH CAR`, `Esc` + exit-door exits |

@@ -1,8 +1,8 @@
 # Agent Play
 
-![Work in progress](https://img.shields.io/badge/status-work%20in%20progress-F59E0B?style=flat-square)
+![Beta](https://img.shields.io/badge/status-Beta-3B82F6?style=flat-square)
 
-**A platform to watch agent workflows and interact with them in a living 2D world—in real time.**
+**Spatial AI Playground — Walk a live multiverse where you and AI agents share one map.**
 
 ## Watch UI (current)
 
@@ -12,24 +12,59 @@ Screenshot of the live watch experience: grid, structures, avatars, path, and ch
 
 ---
 
+## What's live today
+
+Agent Play is a **monorepo** (`@agent-play/sdk`, `@agent-play/play-ui`, `@agent-play/web-ui`, `@agent-play/cli`) that turns agent runs into a spatial runtime: owned **spaces**, walk-in **amenities**, a **Maple Ave. arcade**, wallets and purchases, operator tooling, and a public **scanner** for the ledger.
+
+### World & play canvas
+
+| Area | What you get |
+|------|----------------|
+| **World map v3** | Shared grid with **agents**, **structure anchors**, and **spaces** — not tool-derived pads. Snapshots and SSE keep every viewer in sync. |
+| **World switch** | Overworld → **space yard** → **amenity stage** with eased transitions; **Esc** and exit doors return to the overworld. |
+| **Owned spaces** | Catalog entities with owner metadata, amenities, and inventory — authored via **AQL** or `registerSpaceNode`. |
+| **Amenities** | **Shop** (books, music, coffee), **supermarket** (4×5 grid), **car wash** (nine-slot lot) with atomic **purchase**, **sold** state, and multiplayer snapshot fanout. |
+| **Maple Ave. Arcade** | Eight cabinet doors on `zone-arcade-strip` — mini-games, daily PU caps, streaks, and featured rotator. Replaces the deprecated **public MCP as amenities** model. |
+| **Wallets & economy** | Per-player wallets (seed **$10** on first read), amenity purchases, **APU** earn/burn, talk billing, and wallet bundle redemption. |
+| **Multiplayer UX** | Human movement, proximity prompts, mobile/iPad layout (slide-over panels, touch pad), agent journeys and callouts. |
+| **P2A / intercom** | Peer-to-agent audio and addressing (`intercom-address://…`) for realtime assist flows. |
+
+### Operator & observability surfaces
+
+| Surface | Route | Purpose |
+|---------|-------|---------|
+| **Space platform** | `/platform` | Space-owner admin: login/resume, **overview** KPIs, **purchases** ledger, **amenities** item management, **activity** logs, **space settlement wallet**, embedded **AQL**. |
+| **Agent Play Scanner** | `/scanner` | Public read-only terminal: chain head, USD + **APU** txs, node profiles, blocks, space GMV, analytics stream, talk summary. Tx detail at `/scanner/txs/:id`. |
+| **AQL playground** | `/playground` | Interactive AQL runner against a live session. |
+| **Stats** | `/stats` | Deployment analytics dashboard. |
+| **In-app docs** | `/doc` | Browsable copy of `docs/` from the web UI. |
+
+Purchases-first: **amenity tenancy leases** (`CREATE LEASE AMENITY`) are removed; operators manage catalog items and reconcile revenue via platform + scanner indexes.
+
+### Authoring & integration
+
+- **AQL** — declarative ops for spaces, amenities, and inventory (`ADD SHOP ITEM`, `INSPECT SPACE`, …). See [AQL docs](docs/aql/README.md) and [Agent Play 4.0 narrative](docs/blog/agent-play-4.0-spaces-amenities-aql.md).
+- **SDK** — `RemotePlayWorld`, LangChain registration, player-chain sync, journey/interaction recording. Package: `@agent-play/sdk`.
+- **CLI** — `agent-play` for main/agent nodes, validation, and initialize flows.
+- **Kubernetes** — documented deployment paths under [docs/k8s/](docs/k8s/README.md).
+
+---
+
 ## Pending backlog
 
-High-level themes on the roadmap and detail in **[Pending feature backlog](docs/pending-features.md)**:
+Three themes remain on the roadmap. Detail and scope notes live in **[Pending feature backlog](docs/pending-features.md)**.
 
 | Theme | Summary | Status |
 |-------|---------|--------|
-| **Agents on the map** | Present each agent as a clear **landmark** on the world view, alongside **owned spaces** (not tool-derived pads). | Pending |
-| **Public MCP as amenities** | First-class **public MCP** registration and **amenity** rendering (distinct from per-agent tools). | Pending |
-| **Peer communication** | A **faster, more reliable** sync engine (delivery guarantees, backoff, observability) over today’s HTTP + SSE + Redis fanout. | Pending |
-| **Kubernetes production** | **Deployment playbooks** for reliable releases: health, scaling, secrets, ingress, multi-replica semantics. | Completed |
-| **Redis scale** | **Performance and resilience** work: pooling, pipelining, retention, sharding/replicas as load grows. | Pending |
 | **Card payments** | **Payment APIs** as structured **amenities** with PCI-aware flows—not ad hoc secrets in chat. | Pending |
-| **Wallet sign-in** | **Crypto wallet** identity and settlement options for agent-related payments. | Pending |
 | **Developer dashboard** | **Account dashboard** for keys, agents, usage, and ops—beyond the CLI alone. | Pending |
-| **Mobile & iPad support** | **Responsive watch UI**: full-screen canvas on small screens, side panels as slide-over sheets with a single panel open at a time, touch-friendly tool grid, safe-area aware layout. | Completed |
-| **Custom avatars & genders** | Let players or integrators choose **avatar appearance** and **gender / presentation** metadata, reflected in the watch canvas and session model. | Pending |
+| **Custom avatars & genders** | Let players or integrators choose **avatar appearance** and **gender / presentation** metadata on the watch canvas and in session model. | Pending |
 
 Nothing here is a dated promise; see the backlog doc for nuance and scope.
+
+### Superseded direction
+
+**Public MCP as amenities** is **deprecated**. `PlayWorld.registerMCP` is a no-op; new work uses **Arcade on Maple Ave.** — built-in cabinets and game stages instead of external MCP storefronts. See [Maple Ave. Arcade](docs/games/README.md) and [MCP registration (deprecated)](docs/mcp.md).
 
 ---
 
@@ -54,7 +89,7 @@ Maintainers may convert requests into the [pending backlog](docs/pending-feature
 
 ## Why this might matter for the AI agent community
 
-Most agent tooling today is optimized for *text*: logs, traces, token counts. That is necessary work, but it is not how humans naturally reason about *systems*. Agent Play asks a different question: **what if you could see your agents move through a space**—past tools, APIs, and “home”—the way you’d walk a floor plan or a game map?
+Most agent tooling today is optimized for *text*: logs, traces, token counts. That is necessary work, but it is not how humans naturally reason about *systems*. Agent Play asks a different question: **what if you could see your agents move through a space**—past structures, amenities, and “home”—the way you’d walk a floor plan or a game map?
 
 This repository is an early, opinionated answer: a **developer SDK** plus a **browser preview** that turns LangChain-style runs into **owned spaces**, **journeys**, and **motion** on a canvas. It is new, it will keep evolving, and it is meant to grow *with* the community’s ideas—not against them.
 
@@ -64,9 +99,9 @@ This repository is an early, opinionated answer: a **developer SDK** plus a **br
 
 The long-term picture is a **World View** that feels a bit like a neighborhood server rack made friendly: objects stand in for databases, third-party APIs, model endpoints, and other “amenities.” **Players** are the agents connected to the system—they move, pause, and return home. The full scene is where an agent *visibly* lives and travels.
 
-That metaphor is ambitious. The codebase today implements a **credible slice**: authored **spaces** with ownership and amenities, journey paths, chat callouts, themes, and live updates over SSE. The rest is **direction**, not a promise with a fixed date—honesty keeps the project healthy as it grows.
+That metaphor is ambitious. The codebase today implements a **credible slice**: authored **spaces** with ownership and amenities, **Maple Ave. arcade** cabinets, journey paths, chat callouts, wallets and purchases, operator **platform** and **scanner** surfaces, themes, and live updates over SSE. The rest is **direction**, not a promise with a fixed date—honesty keeps the project healthy as it grows.
 
-> **@deprecated:** “Tool-derived structures” described an older layout model removed in [world map v3](docs/updates-world-map-v3.md). LangChain tool names now feed assist/chat UI only; **spaces are acquired** via AQL or `registerSpaceNode` with explicit **owner** metadata.
+> **@deprecated:** “Tool-derived structures” described an older layout model removed in [world map v3](docs/updates-world-map-v3.md). LangChain tool names now feed assist/chat UI only; **spaces are acquired** via AQL or `registerSpaceNode` with explicit **owner** metadata. **Public MCP as amenities** is likewise deprecated in favor of the arcade strip.
 
 ---
 
@@ -77,6 +112,7 @@ That metaphor is ambitious. The codebase today implements a **credible slice**: 
 | **Single-agent center** | One place to see what one agent is doing, live | Preview + journey animation + interaction callouts for registered players |
 | **Multi-agent interactions** | Surfaces for how connected agents relate | Multiple players and separate journeys; richer “between-agent” UI is still open design space |
 | **Watch-only** | Admins observe without steering the run | Preview is watch-oriented; debug/joystick are dev affordances, not production admin UX |
+| **Spatial economy** | Purchases, wallets, and operator reconciliation | Amenity purchases, space settlement wallet, platform KPIs, scanner ledger |
 | **Callouts** | Thoughts, links, expandable metadata | Chat-style panels above agents; room to grow into richer cards and actions |
 | **Live tracks** | Move structure → structure → home with replayable paths | Waypoints and journey paths; full playback UX is not the focus yet |
 
@@ -92,18 +128,23 @@ The **SDK** (`packages/sdk`, npm name `@agent-play/sdk`) exposes `RemotePlayWorl
 
 **Browse the generated API docs on GitHub Pages:** **[https://wilforlan.github.io/agent-play/](https://wilforlan.github.io/agent-play/)** (TypeDoc for `@agent-play/sdk` and the CLI; same output as `npm run docs:api` locally).
 
-**What's new:** [agent-play 3.1.1](docs/releases/agent-play-3.1.1.md) introduces the **world-switch stage controller** (overworld → space yard → amenity stage), the **bookstore / supermarket / car-wash** game stages with sold-state semantics, a **per-player wallet** seeded at $70, **`ADD SHOP ITEM`** / **`ADD SUPERMARKET ITEM`** / **`ADD CARWASH CAR`** in AQL, and **`Esc`** + **exit-door** stage exits.
-
 | Resource | What you get |
 |----------|----------------|
 | **[Development guide](docs/development.md)** | Install, env templates, run web UI + Redis + examples, troubleshooting |
 | **[Documentation index](docs/README.md)** | Overview, monorepo, SDK, play UI, Redis, CLI, API keys |
+| **[Agent Play 4.0 — Spaces, Amenities, AQL](docs/blog/agent-play-4.0-spaces-amenities-aql.md)** | Product narrative for the spatial economy release line |
 | **[Release notes — 3.1.1](docs/releases/agent-play-3.1.1.md)** | World switch, amenity stages, wallet, sold state, AQL extensions |
+| **[Space platform](docs/platform/README.md)** | `/platform` routes, purchase KPIs, amenity item management |
+| **[Agent Play Scanner](docs/scanner/README.md)** | `/scanner` views, APIs, APU semantics, incremental tail |
+| **[Maple Ave. Arcade](docs/games/README.md)** | Cabinet games, PU rules, `applyGameOutcome` RPC |
+| **[AQL](docs/aql/README.md)** | Language reference, playground, integration |
 | **[Occupant Model v1](docs/occupant-model-v1.md)** | How `human` / `agent` / `mcp` occupancy becomes reliable communication infrastructure via fanout + player-chain sync |
+| **[Payments & wallets](docs/payments-wallets-and-talk-billing.md)** | Purchase atomicity, talk billing, power-ups |
+| **[x402 + Solana payments](docs/payments/x402-solana/README.md)** | Planned production payment series (design docs) |
 | **[API reference](docs/api-reference.md)** | TypeDoc HTML locally or on **[GitHub Pages](https://wilforlan.github.io/agent-play/)** — SDK and CLI |
 | **[Kubernetes deployment](docs/kubernetes-deployment.md)** | Index; [docs/k8s/](docs/k8s/README.md) for startup, Redis, web server |
 | **[npm & CI](docs/npm-and-ci.md)** | Publishing `@agent-play/*`, workflows |
-| **[Pending feature backlog](docs/pending-features.md)** | Long-form roadmap themes |
+| **[Pending feature backlog](docs/pending-features.md)** | Remaining roadmap themes |
 | **[Examples](packages/sdk/examples/README.md)** | Scripts: one player and two players against the running web UI |
 
 **Environment templates**
@@ -122,7 +163,7 @@ npm run example         # SDK example 01 (needs web-ui running and env configure
 npm test
 ```
 
-For **`npm run dev`**, open the URL printed for **`@agent-play/web-ui`** (often `http://127.0.0.1:3000`) and use **`/agent-play/watch`**. Run **`npm run example`** in another terminal after configuring **`packages/sdk/.env`** (see [Development guide](docs/development.md)).
+For **`npm run dev`**, open the URL printed for **`@agent-play/web-ui`** (often `http://127.0.0.1:3000`) and use **`/agent-play/watch`**. Space operators use **`/platform`**; the public ledger is at **`/scanner`**. Run **`npm run example`** in another terminal after configuring **`packages/sdk/.env`** (see [Development guide](docs/development.md)).
 
 ---
 

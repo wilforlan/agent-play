@@ -1,5 +1,6 @@
-export const ogImageAlt =
-  "Agent Play — Spatial AI Playground";
+import { siteOgImageAlt } from "./site-brand";
+
+export const ogImageAlt = siteOgImageAlt;
 
 export const ogImageSize = {
   width: 1200,
