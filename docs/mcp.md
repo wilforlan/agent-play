@@ -1,7 +1,7 @@
-# MCP registration (Node)
+# MCP registration (deprecated)
 
-From Node, call **`await PlayWorld.registerMCP({ name, url? })`**. It returns a stable id and appends a **`kind: "mcp"`** occupant to the session snapshot in the configured session store (Redis or **`MemorySessionStore`**).
+> **Deprecation:** MCP strip registration is deprecated. Arcade cabinets on **Maple Ave.** (`zone-arcade-strip`) replace MCP doors. See [games/README.md](./games/README.md).
 
-**Snapshot:** MCP servers appear in **`worldMap.occupants`** with **`kind: "mcp"`**. The optional top-level **`mcpServers`** field may still be present in older snapshots or when merged by the SDK from HTTP responses; new server writes use occupants only.
+`PlayWorld.registerMCP` is a no-op that logs once. New integrations should use built-in arcade cabinets and game stages instead of external MCP tools.
 
-Persistence of MCP metadata through a repository layer is optional for future work; registrations are tied to the session snapshot in the store.
+Legacy snapshots may still contain `kind: "mcp"` occupants for one release; new writes use `kind: "structure"` with `gameId` on the arcade zone.

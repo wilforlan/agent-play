@@ -21,7 +21,9 @@ The world supports three occupant kinds:
 
 - **`human`** — user presence in the world.
 - **`agent`** — business-capable automated actor.
-- **`mcp`** — external capability/service endpoint.
+- **`arcade`** — game cabinet structures on Maple Ave (`gameId` on structure occupants).
+
+Legacy `mcp` occupants may appear in older snapshots; new deployments seed arcade cabinets instead.
 
 The world can contain many occupants of each kind. Humans are first-class occupants and are always modeled explicitly in world state.
 
@@ -31,7 +33,7 @@ Communication policy is directional and role-aware:
 
 - **disallowed:** `human -> human`
 - **allowed:** `human -> agent`
-- **allowed:** `human -> mcp`
+- **allowed:** `human` enters arcade cabinets (built-in mini-games, no external MCP)
 
 Humans can see other humans, but cannot directly interact with them. This keeps social presence while reducing harassment vectors and preserving business/automation pathways.
 
