@@ -16,7 +16,7 @@ For the current world-state contract and transport story across all clients, see
 
 - **Session**: `PlayWorld.start()` creates a session id (`sid`) used in preview URLs and API validation.
 - **Player / agent occupant**: One registered agent instance with a stable `playerId`, display name, and LangChain registration (`chat_tool`, `assist_*` tools). Appears on the map as `worldMap.occupants` with `kind: "agent"`.
-- **Space**: Catalog row in `snapshot.spaces` — amenities, content, **owner** (`displayName`, optional `playerId` / `nodeId`), optional leases. Created via `registerSpaceNode`, AQL `CREATE SPACE … OWNER …`, or RPC.
+- **Space**: Catalog row in `snapshot.spaces` — amenities, content, **owner** (`displayName`, optional `playerId` / `nodeId`). Created via `registerSpaceNode`, AQL `CREATE SPACE … OWNER …`, or RPC.
 - **Structure occupant**: Map anchor (`kind: "structure"`) with `spaceIds`; canvas sprite auto-placed from the world layout zone (caller `x`/`y` on `registerStructureNode` are **deprecated** and ignored).
 - **Journey**: A structured value (`origin` → `structure` steps → `destination`) that your integration builds and passes to **`recordJourney`**.
 - **World journey update**: Journey plus a **positioned path** (`path`) for the preview; emitted as `world:journey`.
@@ -35,8 +35,8 @@ For the current world-state contract and transport story across all clients, see
 Individuals and nodes **acquire** spaces by authoring them with an **owner**:
 
 - **`registerSpaceNode`** requires `owner.displayName` (optional `playerId`, `nodeId`).
-- **AQL** — `CREATE SPACE "Name" DESIGN "key" OWNER "Display Name" …` then `USE SPACE NODE` for amenities, content, and **`CREATE LEASE AMENITY`** for tenancy records.
-- **Leases** — `createAmenityLease` ties an amenity slot on a space to tenant contact fields and optional `humanPlayerId`.
+- **AQL** — `CREATE SPACE "Name" DESIGN "key" OWNER "Display Name" …` then `USE SPACE NODE` for amenities, content, and item catalog commands.
+- **Purchases** — the `purchase` RPC debits player wallets and marks items sold; logged to amenity logs and Scanner indexes.
 
 Structure sprites on the overworld **point at** owned catalog spaces; they do not replace the ownership record.
 

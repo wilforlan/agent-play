@@ -1,6 +1,6 @@
 # Structures and Spaces World Model
 
-This note describes how outer-world **structure anchors** attach to authored **spaces**, how **ownership** and leases work, how metadata and amenities are represented, and how snapshots, the player chain, and the preview canvas stay aligned.
+This note describes how outer-world **structure anchors** attach to authored **spaces**, how **ownership** works, how metadata and amenities are represented, and how snapshots, the player chain, and the preview canvas stay aligned.
 
 ## Deprecated: tool-derived map layout
 
@@ -19,7 +19,7 @@ Canonical metadata for each space, deduped by `id`. Defined as `SpaceCatalogEntr
 - `id`, `name`, `description`, `designKey`
 - **`owner`**: `{ displayName, playerId?, nodeId? }` — **required for acquisition**; declares who holds the space
 - `amenities`: ordered array of `supermarket` | `shop` | `car_wash` (see `space-amenity.ts`)
-- Optional `activityObjectIds`, `amenityContent`, lease sidecar data
+- Optional `activityObjectIds`, `amenityContent`, purchase sidecar data
 
 Normalized with `normalizePreviewSnapshot`: missing `spaces` is treated as `[]`.
 
@@ -40,7 +40,8 @@ Spaces are **acquired** when an individual or node authors them with owner metad
 |------|----------------------|
 | **`registerSpaceNode`** | `owner.displayName` required; optional `playerId`, `nodeId` |
 | **AQL `CREATE SPACE`** | `OWNER "Display Name"` (and optional structure name) after `CONNECT` |
-| **`CREATE LEASE AMENITY`** | Tenancy on an amenity slot: tenant email/address, duration, optional `humanPlayerId` |
+
+In-amenity **purchases** (`purchase` RPC) are the primary commerce action on amenity slots.
 
 Structure sprites are **visual entry points** into owned catalog rows—they do not themselves confer ownership without a matching `snapshot.spaces` entry.
 
@@ -60,7 +61,6 @@ In `packages/web-ui/src/server/agent-play/player-chain/index.ts`:
 - `registerSpaceNode` / `registerStructureNode` persist via `runStoredWorldMutation` into `snapshot.spaces` and structure occupants.
 - `listSpaceNodes` / `listStructureNodes` read from the snapshot (async).
 - `enterStructureSpace` resolves the structure from snapshot occupants and emits `world:space_transition`.
-- `createAmenityLease` / `cancelAmenityLease` manage amenity tenancy records.
 - Player location remains tracked in-memory (`locationsByPlayerId`) for transitions.
 
 Registration requires at least one amenity per space.

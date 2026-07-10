@@ -12,11 +12,11 @@ Agent Play is a **developer SDK plus browser watch UI** that turns agent runs in
 |------|---------|
 | **Session** | `PlayWorld.start()` issues a `sid` tying snapshot, SSE, and preview URLs together |
 | **Player / agent occupant** | One registered agent with `playerId`, journey history, interaction log; appears on the map as `kind: "agent"` |
-| **Space** | Catalog entity (`snapshot.spaces`) with `owner`, amenities, content, leases — **authored and acquired**, not inferred from tool names |
+| **Space** | Catalog entity (`snapshot.spaces`) with `owner`, amenities, content — **authored and acquired**, not inferred from tool names |
 | **Structure occupant** | Canvas anchor (`kind: "structure"`) linking a building sprite to one or more `spaceIds`; auto-placed in the world layout zone |
 | **Journey** | Origin → structure/tool steps → destination; rendered as a positioned path |
 | **Amenity** | Interactive stage inside a space (shop, supermarket, car wash in 4.x) |
-| **Lease** | `CREATE LEASE AMENITY` — tenancy record tying an amenity slot to an individual (email, address, optional human player) |
+| **Purchase** | `purchase` RPC — debits player wallet and marks amenity items sold; indexed in Scanner |
 | **AQL** | Agent Query Language — declarative authoring for spaces, ownership, amenities, inventory, wallets |
 | **Snapshot** | Server-authoritative world state fanning out to all connected clients |
 | **Watch UI** | Browser preview at `/agent-play/watch`; observe runs without steering production agents |

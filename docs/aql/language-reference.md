@@ -122,14 +122,13 @@ INSPECT AMENITY "supermarket"
 INSPECT AGENT
 ```
 
-- `INSPECT SPACE` calls `inspectSpace` and returns `{ catalog, leases, logs }`.
+- `INSPECT SPACE` calls `inspectSpace` and returns `{ catalog, logs }`.
 - `INSPECT AMENITY` calls `inspectAmenity`. With an explicit kind string
   (`"shop"`, `"supermarket"`, or `"car_wash"`), the response includes
-  `kind`, `items` (array for that kind), `logs`, and `leases`. With **no**
+  `kind`, `items` (array for that kind), and `logs`. With **no**
   kind argument, the executor sends no `kind` filter; the server returns
-  `items` as `{ shopItems, supermarketItems, carWashCars }` plus `logs` and
-  `leases`. If you omit the kind expression but have run `USE AMENITY
-  "<kind>"`, the executor supplies that kind so `INSPECT AMENITY` alone
+  `items` as `{ shopItems, supermarketItems, carWashCars }` plus `logs`.
+  If you omit the kind expression but have run `USE AMENITY "<kind>"`, the executor supplies that kind so `INSPECT AMENITY` alone
   inspects the scoped amenity.
 - `INSPECT AGENT` reads the active agent context.
 
@@ -173,14 +172,13 @@ REMOVE SPACE "space-sandmill-circle"
 ```
 
 `REMOVE SPACE NODE` deletes a **space node** by `node:…` id: catalog entry,
-amenity sidecar data (shop / supermarket / car wash rows, leases, logs), and the
+amenity sidecar data (shop / supermarket / car wash rows, logs), and the
 Redis node auth record. Requires `USE PLATFORM KEY` in the script (server must
-have `AGENT_SERVICE_KEY` set). Optional `FORCE` skips active-lease checks.
+have `AGENT_SERVICE_KEY` set).
 
 ```aql
 USE PLATFORM KEY "<AGENT_SERVICE_KEY>"
 REMOVE SPACE NODE "node:…"
-REMOVE SPACE NODE "node:…" FORCE
 ```
 
 ### `ADD SPACE AMENITY` / `REMOVE SPACE AMENITY`
@@ -193,14 +191,11 @@ REMOVE SPACE AMENITY "shop"
 Mutates the amenity set on the active space. Both require
 `USE SPACE NODE`.
 
-### `CREATE LEASE`
+### Amenity purchases
 
-```aql
-CREATE LEASE "shop"
-```
-
-Records an amenity lease; see the session-store implementation in
-[`session-store.ts`](../../packages/web-ui/src/server/agent-play/session-store.ts).
+In-world purchases use the `purchase` RPC (shop, supermarket, car wash). Space
+operators manage catalog items via `ADD SHOP ITEM`, `ADD SUPERMARKET ITEM`, and
+`ADD CARWASH CAR`, and monitor revenue on `/platform` or the Scanner.
 
 ## Amenity content (new)
 
@@ -443,5 +438,5 @@ SHOW RESPONSE
 ```
 
 The `inspectAmenity` response includes `items` (the cars when scoped), plus
-`logs` and `leases`. Sold cars in `items` have `sale.status: "sold"` and a
+`logs`. Sold cars in `items` have `sale.status: "sold"` and a
 `sale.soldToPlayerId`.
