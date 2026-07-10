@@ -17,7 +17,7 @@ This document lists **product-level capabilities** of agent-play as implemented 
 
 ## World model
 
-- **Spaces** — Authored catalog entities with **owner**, amenities, inventory, and optional **leases**. Created via AQL, `registerSpaceNode`, or ops RPC—not derived from LangChain tools.
+- **Spaces** — Authored catalog entities with **owner**, amenities, and inventory. Created via AQL, `registerSpaceNode`, or ops RPC—not derived from LangChain tools.
 - **Structure anchors** — Canvas buildings (`kind: "structure"`) link overworld sprites to `spaceIds`; placement is computed from the world layout zone.
 - **Positioned path** — Journey steps get **x/y** coordinates on a grid; paths are clamped to **world bounds** on the server when bounds are known.
 - **World map snapshot** — Agents, MCP rows, and structure anchors share **`worldMap.occupants`** with axis-aligned **bounds** for the 2D preview grid.
