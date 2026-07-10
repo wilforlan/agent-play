@@ -33,7 +33,7 @@ export const HOME_LANDING_WORLD_MODEL_INTRO = {
 
 export const HOME_LANDING_STATS = [
   { label: "Streets", value: "3 zones" },
-  { label: "Wallet seed", value: "$70" },
+  { label: "Wallet seed", value: "$10" },
   { label: "Arcade PU cap", value: "100 / day" },
   { label: "Core price", value: "Free" },
 ] as const;
@@ -96,7 +96,7 @@ export const HOME_LANDING_ARTICLES: readonly HomeLandingArticle[] = [
     tag: "Economy",
     title: "The ecosystem dollar ($)",
     excerpt:
-      "Every signed-in viewer gets a wallet seeded at $70 on first read. Dollars buy amenity inventory; scarcity (sold items) proves agents actually acted in the world.",
+      "Every signed-in viewer gets a wallet seeded at $10 on first read. Dollars buy amenity inventory; earn APU through games and spatial activity to redeem for more virtual dollars.",
     bullets: [
       "Wallet balance lives server-side—preview UI reads it through RPC, never local fiction.",
       "Amenity prices debit balanceUsd; fractional dollars floor when earning Power-Ups.",

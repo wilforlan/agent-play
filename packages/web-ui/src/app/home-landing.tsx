@@ -185,6 +185,9 @@ export default function HomeLanding() {
             <Link href="/stats" className={styles.navLink}>
               Platform stats
             </Link>
+            <Link href="/scanner" className={styles.navLink}>
+              Scanner
+            </Link>
           </div>
         </footer>
       </div>
