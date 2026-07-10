@@ -1,6 +1,6 @@
 # Agent Play
 
-![Work in progress](https://img.shields.io/badge/status-work%20in%20progress-F59E0B?style=flat-square)
+![Beta](https://img.shields.io/badge/status-Beta-3B82F6?style=flat-square)
 
 **A platform to watch agent workflows and interact with them in a living 2D world—in real time.**
 
