@@ -253,6 +253,29 @@ describe("session-store: executePurchase", () => {
     expect(purchases[0]?.id).toBe("rec-1");
   });
 
+  it("credits the space owner wallet when spaceOwnerWalletPlayerId is set", async () => {
+    const store = new TestSessionStore();
+    await store.loadOrCreateSessionId();
+    await store.upsertShopItem(baseShopItem({ priceUsd: 7 }));
+    await store.getPlayerWallet("buyer");
+    await store.getPlayerWallet("space-owner-node");
+
+    const result = await store.executePurchase({
+      spaceId: "space-1",
+      amenityKind: "shop",
+      itemRef: { kind: "shop", id: "shop-1" },
+      playerId: "buyer",
+      now: "2026-05-12T01:00:00.000Z",
+      recordId: "rec-owner",
+      spaceOwnerWalletPlayerId: "space-owner-node",
+    });
+    if (!result.ok) throw new Error(`expected ok purchase, got ${result.error}`);
+
+    const ownerWallet = await store.getPlayerWallet("space-owner-node");
+    expect(ownerWallet.balanceUsd).toBe(17);
+    expect(result.wallet.balanceUsd).toBe(3);
+  });
+
   it("rejects double-purchase with ITEM_ALREADY_SOLD", async () => {
     const store = new TestSessionStore();
     await store.loadOrCreateSessionId();
