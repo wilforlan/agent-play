@@ -107,10 +107,20 @@ export function OgBrandImage() {
             letterSpacing: "-0.02em",
             color: "#f1f5f9",
             lineHeight: 1.1,
-            marginBottom: 16,
+            marginBottom: 12,
           }}
         >
           Agent Play
+        </div>
+        <div
+          style={{
+            fontSize: 34,
+            fontWeight: 800,
+            color: "#38bdf8",
+            marginBottom: 20,
+          }}
+        >
+          Spatial AI Playground
         </div>
         <div
           style={{
@@ -120,7 +130,7 @@ export function OgBrandImage() {
             marginBottom: 16,
           }}
         >
-          AI Agents · Game · Metaverse
+          Agents · Spaces · Arcades
         </div>
         <div
           style={{

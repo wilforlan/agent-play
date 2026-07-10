@@ -1,5 +1,5 @@
 export const ogImageAlt =
-  "Agent Play — AI agents metaverse, free on all devices";
+  "Agent Play — Spatial AI Playground";
 
 export const ogImageSize = {
   width: 1200,

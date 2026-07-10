@@ -10,20 +10,20 @@ const siteOrigin =
 
 export const metadata: Metadata = {
   metadataBase: new URL(siteOrigin),
-  title: "Agent Play - AI Agents Game Metaverse free",
+  title: "Agent Play — Spatial AI Playground",
   description:
-    "A free metaverse for playing with AI agents—explore, chat, and assist on desktop, tablet, and phone. Jump in from any device; no paywall on the core playground.",
+    "Spatial AI Playground: a free multiverse for playing with AI agents—explore streets, spaces, and arcades on desktop, tablet, and phone.",
   openGraph: {
-    title: "Agent Play - AI Agents Game Metaverse free",
+    title: "Agent Play — Spatial AI Playground",
     description:
-      "A free metaverse for playing with AI agents on any device. Explore, chat, and assist with AI agents for free.",
+      "Spatial AI Playground: explore, chat, and assist with AI agents in a live snapshot-driven world. Free on every device.",
     type: "website",
   },
   twitter: {
     card: "summary_large_image",
-    title: "Agent Play - AI Agents Game Metaverse free",
+    title: "Agent Play — Spatial AI Playground",
     description:
-      "A free metaverse for playing with AI agents on any device.",
+      "Spatial AI Playground: a free multiverse for playing with AI agents on any device.",
   },
 };
 
