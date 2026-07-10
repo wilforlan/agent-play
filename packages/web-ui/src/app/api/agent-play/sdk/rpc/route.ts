@@ -42,6 +42,7 @@ import {
   ShopItemSchema,
   SupermarketItemSchema,
   isGameId,
+  ANALYTICS_EVENT_NAMES,
   type CarWashCar,
   type ShopItem,
   type SupermarketItem,
@@ -54,7 +55,8 @@ import { logAgentPlayApi } from "@/server/agent-play/log-agent-play-api";
 import type { Journey } from "@/server/agent-play/@types/world";
 import { readResolvedSnapshot } from "@/server/agent-play/read-resolved-snapshot";
 import { readPlayerChainNode } from "@/server/agent-play/read-player-chain-node";
-import { getPlayWorld, getSessionStore } from "@/server/get-world";
+import { getPlayWorld, getSessionStore, getSharedRedisClient } from "@/server/get-world";
+import { safeTrackAnalyticsEvent } from "@/server/scanner/scanner-hooks";
 import { validateAgentPlaySession } from "@/server/agent-play/session-validation";
 import { handleIntercomCommand } from "@/server/agent-play/intercom/intercom-router";
 import { handleIntercomResponse } from "@/server/agent-play/intercom/handle-intercom-response";
@@ -127,6 +129,29 @@ async function assertSpaceHasAmenity(
   }
   return null;
 }
+
+const trackRpcAnalyticsEvent = (input: {
+  distinctId: string;
+  event: string;
+  properties: Record<string, string | number | boolean | null>;
+}): void => {
+  const redis = getSharedRedisClient();
+  if (redis === null) return;
+  const hostId = process.env.AGENT_PLAY_HOST_ID ?? "default";
+  const now = new Date().toISOString();
+  safeTrackAnalyticsEvent({
+    redis,
+    hostId,
+    event: {
+      messageId: `rpc-${randomUUID()}`,
+      event: input.event,
+      distinctId: input.distinctId,
+      timestamp: now,
+      properties: input.properties,
+      context: { hostId, library: "agent-play-server" },
+    },
+  });
+};
 
 async function fanoutAmenityContentUpdated(input: {
   store: ReturnType<typeof getSessionStore>;
@@ -343,6 +368,11 @@ export async function POST(req: NextRequest) {
           role: riRole,
           text: riText,
         });
+        trackRpcAnalyticsEvent({
+          distinctId: riPlayerId,
+          event: ANALYTICS_EVENT_NAMES.worldInteractionRecorded,
+          properties: { role: riRole, textLength: riText.length },
+        });
         return Response.json({ ok: true });
       }
       case "recordJourney": {
@@ -356,6 +386,15 @@ export async function POST(req: NextRequest) {
         const rjPlayerId = p.playerId;
         const rjJourney = p.journey as Journey;
         await world.recordJourney(rjPlayerId, rjJourney);
+        trackRpcAnalyticsEvent({
+          distinctId: rjPlayerId,
+          event: ANALYTICS_EVENT_NAMES.worldJourneyRecorded,
+          properties: {
+            stepCount: Array.isArray(rjJourney.steps)
+              ? rjJourney.steps.length
+              : 0,
+          },
+        });
         return Response.json({ ok: true });
       }
       case "createSpace": {
@@ -905,6 +944,17 @@ export async function POST(req: NextRequest) {
           structureId: p.structureId,
           ...(typeof p.spaceId === "string" ? { spaceId: p.spaceId } : {}),
         });
+        trackRpcAnalyticsEvent({
+          distinctId: p.playerId,
+          event: ANALYTICS_EVENT_NAMES.spaceEntered,
+          properties: {
+            structureId: p.structureId,
+            spaceId:
+              typeof p.spaceId === "string"
+                ? p.spaceId
+                : (transition.to.spaceId ?? ""),
+          },
+        });
         return Response.json({ transition });
       }
       case "enterAmenity": {
@@ -930,6 +980,14 @@ export async function POST(req: NextRequest) {
             at: new Date().toISOString(),
             action: "amenity_entered",
             detail: { playerId: p.playerId },
+          },
+        });
+        trackRpcAnalyticsEvent({
+          distinctId: p.playerId,
+          event: ANALYTICS_EVENT_NAMES.amenityEntered,
+          properties: {
+            spaceId: p.spaceId,
+            amenityKind: p.amenityKind,
           },
         });
         return Response.json({ ok: true });
