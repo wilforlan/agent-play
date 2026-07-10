@@ -64,29 +64,6 @@ export function ScannerNodeClient() {
 
         {!loading && profile !== null ? (
           <>
-            <section className={styles.grid} aria-label="Wallet">
-              <article className={styles.card}>
-                <div className={styles.cardLabel}>USD balance</div>
-                <div className={styles.cardValue}>
-                  {profile.wallet !== null
-                    ? `$${profile.wallet.balanceUsd}`
-                    : "—"}
-                </div>
-              </article>
-              <article className={styles.card}>
-                <div className={styles.cardLabel}>APU balance</div>
-                <div className={styles.cardValue}>
-                  {profile.wallet !== null ? profile.wallet.powerUps : "—"}
-                </div>
-              </article>
-              <article className={styles.card}>
-                <div className={styles.cardLabel}>Wallet updated</div>
-                <div className={styles.cardValue}>
-                  {profile.wallet?.updatedAt ?? "—"}
-                </div>
-              </article>
-            </section>
-
             <section className={styles.grid} aria-label="Ledger KPIs">
               <article className={styles.card}>
                 <div className={styles.cardLabel}>Transactions</div>

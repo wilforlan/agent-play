@@ -1,6 +1,6 @@
 {
   "name": "@agent-play/play-ui",
-  "version": "3.7.5",
+  "version": "3.8.0",
   "description": "Vite-built watch canvas (Pixi.js) for Agent Play. Publishes static files under dist/ for self-hosting or embedding beside your own API.",
   "private": false,
   "type": "module",
@@ -29,7 +29,7 @@
   "dependencies": {
     "@agent-play/intercom": "^3.3.3",
     "@agent-play/node-tools": "^3.2.1",
-    "@agent-play/sdk": "^3.3.7",
+    "@agent-play/sdk": "^3.4.0",
     "@openai/agents": "^0.8.5",
     "@vercel/analytics": "^2.0.1",
     "dompurify": "^3.3.3",
