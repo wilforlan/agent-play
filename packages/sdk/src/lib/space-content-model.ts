@@ -11,7 +11,7 @@
  * - {@link ShopItemSchema}, {@link SupermarketItemSchema}, {@link CarWashCarSchema}:
  *   the three amenity-content kinds. Each carries a `sale` block.
  * - {@link PlayerWalletSchema} + {@link createInitialPlayerWallet}: every player
- *   starts with **`$70`** ({@link DEFAULT_PLAYER_WALLET_BALANCE_USD}); the wallet
+ *   starts with **`$10`** ({@link DEFAULT_PLAYER_WALLET_BALANCE_USD}); the wallet
  *   is seeded lazily on first read by the server.
  * - {@link PurchaseRecordSchema}: append-only audit row stored per player.
  * - {@link isItemAvailableForPurchase}: pure helper consumed by the `purchase`
@@ -210,12 +210,12 @@ export type CarWashCar = z.infer<typeof CarWashCarSchema>;
  * @remarks
  * The session store seeds the wallet lazily on first read via
  * {@link createInitialPlayerWallet} inside an atomic `MULTI`, so two
- * simultaneous first reads still leave the balance at exactly `$70`.
+ * simultaneous first reads still leave the balance at exactly `$10`.
  *
- * @defaultValue 70
+ * @defaultValue 10
  * @public
  */
-export const DEFAULT_PLAYER_WALLET_BALANCE_USD = 70;
+export const DEFAULT_PLAYER_WALLET_BALANCE_USD = 10;
 
 /**
  * Per-player wallet.
@@ -248,7 +248,7 @@ export type PlayerWallet = z.infer<typeof PlayerWalletSchema>;
  *   playerId: "player-42",
  *   now: new Date().toISOString(),
  * });
- * // → { playerId: "player-42", balanceUsd: 70, currency: "USD", updatedAt: ... }
+ * // → { playerId: "player-42", balanceUsd: 10, currency: "USD", updatedAt: ... }
  * ```
  *
  * @public
