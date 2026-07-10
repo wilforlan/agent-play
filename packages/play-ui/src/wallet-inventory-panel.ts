@@ -825,6 +825,13 @@ export const createWalletInventoryPanel = (
 
     const actions = document.createElement("div");
     actions.className = `${PANEL_CLASS}__detail-actions`;
+    const scannerLink = document.createElement("a");
+    scannerLink.className = `${PANEL_CLASS}__open`;
+    scannerLink.href = `/scanner?view=txs&tx=${encodeURIComponent(record.id)}`;
+    scannerLink.target = "_blank";
+    scannerLink.rel = "noopener noreferrer";
+    scannerLink.textContent = "View in Scanner";
+    actions.appendChild(scannerLink);
     const closeAction = document.createElement("button");
     closeAction.type = "button";
     closeAction.className = `${PANEL_CLASS}__open`;

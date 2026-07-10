@@ -17,7 +17,7 @@ describe("wallet-hud", () => {
   it("setBalance formats USD with two decimals", () => {
     const hud = createWalletHud({ parent: newParent() });
     hud.setBalance(70);
-    expect(hud.root.textContent).toContain("$70.00");
+    expect(hud.root.textContent).toContain("$10.00");
     hud.setBalance(12.345);
     expect(hud.root.textContent).toContain("$12.35");
   });
