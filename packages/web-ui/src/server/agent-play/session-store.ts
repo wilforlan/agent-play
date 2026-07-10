@@ -10,7 +10,7 @@
  * **Amenity content and wallets** (added in 3.1.1):
  * - Shop / supermarket / car-wash CRUD: per-space hashes keyed by `id`.
  * - Per-player wallet: lazily seeded at
- *   {@link @agent-play/sdk!DEFAULT_PLAYER_WALLET_BALANCE_USD | $70} on first
+ *   {@link @agent-play/sdk!DEFAULT_PLAYER_WALLET_BALANCE_USD | $10} on first
  *   read; mutations use `WATCH`/`MULTI` to prevent double-spend.
  * - Purchase records: append-only audit list per player.
  *

@@ -39,9 +39,17 @@ import {
 import type { PreviewSnapshotJson } from "./preview-serialize.js";
 import type { SessionEventLogEntry } from "./redis-session-store.js";
 import { getPlayerChainGenesisSync } from "./load-player-chain-genesis.js";
-import { buildPlayerChainFromSnapshot } from "./player-chain/index.js";
+import { buildPlayerChainFromSnapshot, diffPlayerChainLeaves } from "./player-chain/index.js";
 import { dispatchWorldFanoutLocal } from "./world-fanout-subscriber.js";
 import type { GeographyHumanState } from "./world-geography.js";
+import {
+  createTestDoubleScannerMirror,
+  mirrorBlock,
+  mirrorEventLogEntry,
+  mirrorPurchaseRecord,
+  mirrorWalletBalance,
+  type TestDoubleScannerMirror,
+} from "./test-double-scanner-mirror.js";
 import type {
   ExecutePurchaseResult,
   PresenceLease,
@@ -98,6 +106,8 @@ export class TestSessionStore implements SessionStore {
     }
   >();
   private readonly gamePlayerState = new Map<string, GamePlayerState>();
+  readonly scannerMirror: TestDoubleScannerMirror =
+    createTestDoubleScannerMirror();
 
   constructor(options: TestSessionStoreOptions = {}) {
     this.playerChainGenesis =
@@ -205,6 +215,7 @@ export class TestSessionStore implements SessionStore {
   async persistSnapshotReturningRev(
     snapshot: PreviewSnapshotJson
   ): Promise<PersistSnapshotRev> {
+    const prevSnapshot = this.snapshot;
     this.snapshot = snapshot;
     this.rev += 1;
     const chain = buildPlayerChainFromSnapshot(
@@ -213,6 +224,22 @@ export class TestSessionStore implements SessionStore {
     );
     this.merkleRootHex = chain.merkleRootHex;
     this.merkleLeafCount = chain.merkleLeafCount;
+    const leafDiff = diffPlayerChainLeaves(
+      prevSnapshot,
+      snapshot,
+      this.playerChainGenesis
+    );
+    const leafDeltaCount =
+      leafDiff.removedKeys.length + leafDiff.updates.length;
+    const at = new Date().toISOString();
+    mirrorBlock(this.scannerMirror, {
+      rev: this.rev,
+      merkleRootHex: chain.merkleRootHex,
+      merkleLeafCount: chain.merkleLeafCount,
+      at,
+      occupantCount: snapshot.worldMap?.occupants?.length,
+      leafDeltaCount,
+    });
     return {
       rev: this.rev,
       merkleRootHex: chain.merkleRootHex,
@@ -296,6 +323,11 @@ export class TestSessionStore implements SessionStore {
     while (this.eventLog.length > EVENT_LOG_MAX) {
       this.eventLog.pop();
     }
+    mirrorEventLogEntry(
+      this.scannerMirror,
+      entry,
+      `log:${entry.at}:${entry.type}`
+    );
   }
 
   async getPublishedMetadata(): Promise<PublishedSessionMetadata> {
@@ -559,6 +591,7 @@ export class TestSessionStore implements SessionStore {
       now: new Date().toISOString(),
     });
     this.playerWallets.set(playerId, seeded);
+    mirrorWalletBalance(this.scannerMirror, seeded);
     return { ...seeded };
   }
 
@@ -619,6 +652,7 @@ export class TestSessionStore implements SessionStore {
     const list = this.playerPurchases.get(record.playerId) ?? [];
     list.unshift({ ...record });
     this.playerPurchases.set(record.playerId, list);
+    mirrorPurchaseRecord(this.scannerMirror, record);
   }
 
   async listPurchases(input: {
@@ -692,6 +726,7 @@ export class TestSessionStore implements SessionStore {
       updatedAt: input.now,
     };
     this.playerWallets.set(input.playerId, nextWallet);
+    mirrorWalletBalance(this.scannerMirror, nextWallet);
     const record: PurchaseRecord = {
       id: input.recordId,
       playerId: input.playerId,

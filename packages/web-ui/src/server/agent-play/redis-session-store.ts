@@ -12,7 +12,7 @@
  * `adjustPlayerWalletBalance`, and `purchase` all use `WATCH`/`MULTI` so
  * concurrent first-reads / purchases cannot race past each other. First-time
  * wallet reads atomically seed the balance to
- * {@link @agent-play/sdk!DEFAULT_PLAYER_WALLET_BALANCE_USD | $70}.
+ * {@link @agent-play/sdk!DEFAULT_PLAYER_WALLET_BALANCE_USD | $10}.
  *
  * @see ./session-store.test-double.ts for the in-memory mirror used in tests.
  */
@@ -41,6 +41,7 @@ import {
   buildAmenityPurchaseApuFields,
   buildApuWalletTransaction,
   buildWalletBundleApuFields,
+  ANALYTICS_EVENT_NAMES,
 } from "@agent-play/sdk";
 import {
   applyGameOutcomeToState,
@@ -52,10 +53,18 @@ import {
 import { agentPlayVerbose } from "./agent-play-debug.js";
 import { finiteOccupantPosition } from "./agent-journey-cell.js";
 import type { PreviewSnapshotJson } from "./preview-serialize.js";
+import {
+  safeIndexBlock,
+  safeIndexPurchaseRecord,
+  safeIndexWallet,
+  safeTrackAnalyticsEvent,
+} from "../scanner/scanner-hooks.js";
+import { sessionEventTypeToAnalyticsEvent } from "../analytics/analytics-catalog.js";
 import { getPlayerChainGenesisSync } from "./load-player-chain-genesis.js";
 import {
   buildLeafFieldMapFromSnapshot,
   buildPlayerChainFromSnapshot,
+  diffPlayerChainLeaves,
   playerChainLeavesKey,
 } from "./player-chain/index.js";
 import { worldFanoutChannel } from "./redis-world-fanout.js";
@@ -468,11 +477,19 @@ export class RedisSessionStore implements SessionStore {
   async persistSnapshotReturningRev(
     snapshot: PreviewSnapshotJson
   ): Promise<PersistSnapshotRev> {
+    const prevSnapshot = await this.getSnapshotJson();
     const raw = JSON.stringify(snapshot);
     const { merkleRootHex, merkleLeafCount } = buildPlayerChainFromSnapshot(
       snapshot,
       this.playerChainGenesis
     );
+    const leafDiff = diffPlayerChainLeaves(
+      prevSnapshot,
+      snapshot,
+      this.playerChainGenesis
+    );
+    const leafDeltaCount =
+      leafDiff.removedKeys.length + leafDiff.updates.length;
     const sess = sessionHashKey(this.hostId);
     const chain = this.redis.multi();
     this.appendSnapshotAndGridToMulti(chain, snapshot, raw);
@@ -489,6 +506,18 @@ export class RedisSessionStore implements SessionStore {
       throw new Error("redis persistSnapshot: transaction aborted");
     }
     const rev = await this.getSnapshotRev();
+    safeIndexBlock({
+      redis: this.redis,
+      hostId: this.hostId,
+      block: {
+        rev,
+        merkleRootHex,
+        merkleLeafCount,
+        at: new Date().toISOString(),
+        occupantCount: snapshot.worldMap?.occupants?.length,
+        leafDeltaCount,
+      },
+    });
     return { rev, merkleRootHex, merkleLeafCount };
   }
 
@@ -542,6 +571,21 @@ export class RedisSessionStore implements SessionStore {
       "lastEventAt",
       entry.at
     );
+    const analyticsEvent = sessionEventTypeToAnalyticsEvent({
+      hostId: this.hostId,
+      type: entry.type,
+      at: entry.at,
+      summary: entry.summary,
+      messageId: `log:${entry.at}:${entry.type}`,
+      backfilled: false,
+    });
+    if (analyticsEvent !== null) {
+      safeTrackAnalyticsEvent({
+        redis: this.redis,
+        hostId: this.hostId,
+        event: analyticsEvent,
+      });
+    }
   }
 
   async mergeSettings(partial: Record<string, string>): Promise<void> {
@@ -973,9 +1017,33 @@ export class RedisSessionStore implements SessionStore {
         try {
           return PlayerWalletSchema.parse(JSON.parse(winnerRaw));
         } catch {
-          // fall through and return our seed value; the winner wrote $70 too.
+          // fall through and return our seed value; the winner wrote $10 too.
         }
       }
+    } else {
+      safeIndexWallet({
+        redis: this.redis,
+        hostId: this.hostId,
+        wallet: seeded,
+      });
+      safeTrackAnalyticsEvent({
+        redis: this.redis,
+        hostId: this.hostId,
+        event: {
+          messageId: `wallet-seed:${playerId}`,
+          event: ANALYTICS_EVENT_NAMES.walletSeeded,
+          distinctId: playerId,
+          timestamp: seeded.updatedAt,
+          properties: {
+            balanceUsd: seeded.balanceUsd,
+            powerUps: seeded.powerUps,
+          },
+          context: {
+            hostId: this.hostId,
+            library: "agent-play-server",
+          },
+        },
+      });
     }
     return seeded;
   }
@@ -1086,6 +1154,11 @@ export class RedisSessionStore implements SessionStore {
     const key = playerPurchasesKey(this.hostId, record.playerId);
     await this.redis.lpush(key, JSON.stringify(record));
     await this.redis.ltrim(key, 0, PURCHASES_MAX - 1);
+    safeIndexPurchaseRecord({
+      redis: this.redis,
+      hostId: this.hostId,
+      record,
+    });
   }
 
   async listPurchases(input: {
@@ -1216,6 +1289,17 @@ export class RedisSessionStore implements SessionStore {
       multi.ltrim(purchasesKeyName, 0, PURCHASES_MAX - 1);
       const exec = await multi.exec();
       if (exec !== null) {
+        safeIndexPurchaseRecord({
+          redis: this.redis,
+          hostId: this.hostId,
+          record,
+          op: "purchase",
+        });
+        safeIndexWallet({
+          redis: this.redis,
+          hostId: this.hostId,
+          wallet: updatedWallet,
+        });
         return {
           ok: true,
           record,
@@ -1341,6 +1425,17 @@ export class RedisSessionStore implements SessionStore {
       multi.ltrim(purchasesKeyName, 0, PURCHASES_MAX - 1);
       const exec = await multi.exec();
       if (exec !== null) {
+        safeIndexPurchaseRecord({
+          redis: this.redis,
+          hostId: this.hostId,
+          record,
+          op: "redeemWalletBundle",
+        });
+        safeIndexWallet({
+          redis: this.redis,
+          hostId: this.hostId,
+          wallet: updatedWallet,
+        });
         return { ok: true, wallet: updatedWallet, record };
       }
     }
@@ -1444,6 +1539,11 @@ export class RedisSessionStore implements SessionStore {
           });
           await this.appendPurchaseRecord(apuRecord);
         }
+        safeIndexWallet({
+          redis: this.redis,
+          hostId: this.hostId,
+          wallet: applied.wallet,
+        });
         return applied.result;
       }
     }
