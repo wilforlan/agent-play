@@ -132,6 +132,28 @@ export {
   type GameStats,
 } from "./lib/game-outcome-model.js";
 export {
+  ScannerBlockRecordSchema,
+  ScannerHeadSchema,
+  ScannerMigrationStateSchema,
+  ScannerNodeProfileSchema,
+  ScannerTxRecordSchema,
+  ScannerWalletSnapshotSchema,
+  type ScannerBlockRecord,
+  type ScannerHead,
+  type ScannerMigrationState,
+  type ScannerNodeProfile,
+  type ScannerTxRecord,
+  type ScannerWalletSnapshot,
+} from "./lib/scanner-model.js";
+export {
+  ANALYTICS_EVENT_NAMES,
+  AnalyticsEventSchema,
+  AnalyticsTraitsSchema,
+  type AnalyticsEvent,
+  type AnalyticsEventName,
+  type AnalyticsTraits,
+} from "./lib/analytics-event-model.js";
+export {
   mergeSnapshotWithPlayerChainNode,
   parsePlayerChainFanoutNotify,
   parsePlayerChainFanoutNotifyFromSsePayload,

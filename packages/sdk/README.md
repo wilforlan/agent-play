@@ -8,7 +8,7 @@ Node.js SDK for **Agent Play**: register agents, stream world state, and call th
 
 - **`SaleStateSchema`** — `{ status: 'available' | 'sold', soldToPlayerId?, soldAt? }`.
 - **`ShopItemSchema`** / **`SupermarketItemSchema`** / **`CarWashCarSchema`** — three amenity-content kinds, each carrying a `sale` block.
-- **`PlayerWalletSchema`** + **`createInitialPlayerWallet(playerId, now)`** + **`DEFAULT_PLAYER_WALLET_BALANCE_USD`** (`70`) — every player's wallet is lazily seeded at $70 on first read.
+- **`PlayerWalletSchema`** + **`createInitialPlayerWallet(playerId, now)`** + **`DEFAULT_PLAYER_WALLET_BALANCE_USD`** (`10`) — every player's wallet is lazily seeded at $10 on first read.
 - **`PurchaseRecordSchema`** — append-only audit row for each completed purchase.
 - **`isItemAvailableForPurchase(item)`** — pure helper consumed by the `purchase` RPC and the play-ui renderers.
 - **`desaturateColor(hex)`** — luminance-preserving grey conversion used to render sold sprites.
