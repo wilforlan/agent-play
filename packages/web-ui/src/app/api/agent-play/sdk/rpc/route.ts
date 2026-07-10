@@ -1102,6 +1102,54 @@ export async function POST(req: NextRequest) {
           purchase: result.record,
         });
       }
+      case "getGameStats": {
+        const p = body.payload as { playerId?: unknown };
+        if (typeof p.playerId !== "string" || p.playerId.trim().length === 0) {
+          return Response.json({ error: "invalid payload" }, { status: 400 });
+        }
+        const now = new Date().toISOString();
+        const stats = await store.getGameStats({
+          playerId: p.playerId.trim(),
+          now,
+        });
+        return Response.json({ stats });
+      }
+      case "applyGameOutcome": {
+        const p = body.payload as {
+          playerId?: unknown;
+          gameId?: unknown;
+          roundId?: unknown;
+          events?: unknown;
+        };
+        if (
+          typeof p.playerId !== "string" ||
+          p.playerId.trim().length === 0 ||
+          typeof p.gameId !== "string" ||
+          typeof p.roundId !== "string" ||
+          p.roundId.trim().length === 0 ||
+          !Array.isArray(p.events)
+        ) {
+          return Response.json({ error: "invalid payload" }, { status: 400 });
+        }
+        const now = new Date().toISOString();
+        const result = await store.applyGameOutcome({
+          playerId: p.playerId.trim(),
+          outcome: {
+            gameId: p.gameId,
+            roundId: p.roundId.trim(),
+            events: p.events,
+          },
+          now,
+        });
+        if (!result.ok) {
+          return Response.json({ error: result.error }, { status: 409 });
+        }
+        return Response.json({
+          stats: result.stats,
+          wallet: result.wallet,
+          netPu: result.netPu,
+        });
+      }
       case "talkSessionStart": {
         const p = body.payload as {
           viewerNodeId?: unknown;

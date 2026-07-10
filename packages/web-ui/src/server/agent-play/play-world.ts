@@ -71,6 +71,7 @@ import {
   resolveAgentMapCellForJourney,
 } from "./agent-journey-cell.js";
 import {
+  computeArcadeCabinetAnchor,
   computeRandomFreeMapCell,
   computeSpaceStructureAnchor,
   occupiedKeysFromSnapshot,
@@ -92,7 +93,20 @@ import {
   bootstrapWorldLayoutIfNeeded,
   createDefaultSeededPlayLayout,
 } from "./world-layout-bootstrap.js";
+import { ensureArcadeCabinetsInSnapshot, buildArcadeCabinetRow } from "./arcade-cabinet-bootstrap.js";
+import type { GameId } from "@agent-play/sdk";
 import type { WorldLayoutRepository } from "./world-layout-repository.js";
+
+function hasArcadeCabinetAtOrigin(snapshot: PreviewSnapshotJson): boolean {
+  return snapshot.worldMap.occupants.some(
+    (occupant) =>
+      occupant.kind === "structure" &&
+      typeof occupant.gameId === "string" &&
+      occupant.gameId.length > 0 &&
+      occupant.x === 0 &&
+      occupant.y === 0
+  );
+}
 
 function clampPathToBounds(
   path: PositionedStep[],
@@ -360,6 +374,12 @@ export type RegisterStructureNodeInput = {
   stationary?: boolean;
 };
 
+export type RegisterArcadeCabinetInput = {
+  id?: string;
+  name: string;
+  gameId: GameId;
+};
+
 export type EnterStructureSpaceInput = {
   playerId: string;
   structureId: string;
@@ -478,14 +498,35 @@ export class PlayWorld {
     const genesis = this.sessionStore.playerChainGenesis;
     if (existingSnapshot === null) {
       const initialSnapshot = emptySnapshot(genesis, layoutWire);
-      await this.sessionStore.persistSnapshot(initialSnapshot);
+      const withCabinets = ensureArcadeCabinetsInSnapshot({
+        snapshot: initialSnapshot,
+        worldLayout: this.getWorldLayout(),
+      });
+      await this.sessionStore.persistSnapshot(withCabinets);
     } else {
       const legacy = existingSnapshot as { worldLayout?: unknown };
-      if (legacy.worldLayout === undefined) {
-        await this.sessionStore.persistSnapshot({
-          ...normalizePreviewSnapshot(existingSnapshot),
-          worldLayout: layoutWire,
-        });
+      const normalized = normalizePreviewSnapshot(existingSnapshot);
+      const withLayout = { ...normalized, worldLayout: layoutWire };
+      const withCabinets = ensureArcadeCabinetsInSnapshot({
+        snapshot: withLayout,
+        worldLayout: this.getWorldLayout(),
+      });
+      const resolved = resolveStructureAnchorsAtRuntime({
+        ...withCabinets,
+        worldMap: snapshotWorldMapWithResolvedAgents(
+          withCabinets.worldMap,
+          withCabinets.worldLayout
+        ),
+      });
+      const shouldPersist =
+        legacy.worldLayout === undefined ||
+        withCabinets.worldMap.occupants.length !==
+          normalized.worldMap.occupants.length ||
+        JSON.stringify(resolved.worldLayout) !==
+          JSON.stringify(normalized.worldLayout) ||
+        hasArcadeCabinetAtOrigin(resolved);
+      if (shouldPersist) {
+        await this.sessionStore.persistSnapshot(resolved);
       }
     }
     if (this.presenceSweepTimer === null) {
@@ -1865,6 +1906,65 @@ export class PlayWorld {
     return created;
   }
 
+  async registerArcadeCabinet(
+    input: RegisterArcadeCabinetInput
+  ): Promise<StructureNode> {
+    let created: StructureNode | undefined;
+    await runStoredWorldMutation({
+      store: this.sessionStore,
+      mutate: async (cached) => {
+        const base = ensureWorldSnapshot(
+          cached,
+          this.sessionStore.playerChainGenesis
+        );
+        const normalized = normalizePreviewSnapshot(base);
+        const occupantList = normalized.worldMap.occupants;
+        const id = input.id?.trim() ?? `arcade-${input.gameId}`;
+        const name = input.name.trim();
+        if (id.length === 0 || name.length === 0) {
+          throw new Error("registerArcadeCabinet: id and name required");
+        }
+        const structureAnchors = occupantList
+          .filter(
+            (o): o is PreviewWorldMapStructureOccupantJson =>
+              o.kind === "structure" && o.id !== id
+          )
+          .map((o) => ({ x: o.x, y: o.y }));
+        const existingOccupants = finiteOccupantPositions(
+          occupantList.filter((o) => !(o.kind === "structure" && o.id === id))
+        );
+        const anchor = computeArcadeCabinetAnchor({
+          occupied: occupiedKeysFromSnapshot(normalized),
+          existingOccupants,
+          structureAnchors,
+          worldLayout: this.getWorldLayout(),
+        });
+        const row = buildArcadeCabinetRow({
+          id,
+          name,
+          gameId: input.gameId,
+          x: anchor.x,
+          y: anchor.y,
+        });
+        const nextOccupants = upsertStructureOccupant(occupantList, row);
+        const next = snapshotWithOccupants(normalized, nextOccupants);
+        created = {
+          id,
+          name,
+          x: row.x,
+          y: row.y,
+          worldId: row.worldId,
+          spaceIds: [],
+        };
+        return { next, fanout: this.metadataFanout() };
+      },
+    });
+    if (created === undefined) {
+      throw new Error("registerArcadeCabinet failed");
+    }
+    return created;
+  }
+
   async listStructureNodes(): Promise<readonly StructureNode[]> {
     const snap = await this.getSnapshotJson();
     return snap.worldMap.occupants
@@ -1951,48 +2051,9 @@ export class PlayWorld {
     return payload;
   }
 
-  async registerMCP(options: { name: string; url?: string }): Promise<string> {
-    let id = "";
-    await runStoredWorldMutation({
-      store: this.sessionStore,
-      mutate: async (cached) => {
-        const base = ensureWorldSnapshot(
-          cached,
-          this.sessionStore.playerChainGenesis
-        );
-        if (base.worldMap.occupants.length >= MAX_WORLD_OCCUPANTS) {
-          throw new Error(
-            `registerMCP: world occupant limit reached (${MAX_WORLD_OCCUPANTS})`
-          );
-        }
-        id = randomUUID();
-        const existingOccupants = finiteOccupantPositions(
-          base.worldMap.occupants
-        );
-        const pos = computeRandomFreeMapCell(occupiedKeysFromSnapshot(base), {
-          existingOccupants,
-          occupantInfo: {
-            id,
-            kind: "mcp",
-            name: options.name,
-          },
-          worldLayout: this.getWorldLayout(),
-        });
-        const mcpOcc = {
-          kind: "mcp" as const,
-          id,
-          name: options.name,
-          x: pos.x,
-          y: pos.y,
-          ...(options.url !== undefined ? { url: options.url } : {}),
-        };
-        const nextOccupants = [...base.worldMap.occupants, mcpOcc];
-        const next = snapshotWithOccupants(base, nextOccupants);
-        agentPlayDebug("play-world", "registerMCP", { name: options.name });
-        return { next, fanout: this.metadataFanout() };
-      },
-    });
-    return id;
+  async registerMCP(_options: { name: string; url?: string }): Promise<string> {
+    agentPlayDebug("play-world", "registerMCP:deprecated", {});
+    return "";
   }
 
   async listMcpRegistrations(): Promise<
