@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { PlayWorld } from "./play-world.js";
 import { TestSessionStore } from "./session-store.test-double.js";
+import { GAME_CABINET_CATALOG } from "@agent-play/sdk";
 
 describe("PlayWorld proximity policy", () => {
   it("blocks human to human proximity communication", async () => {
@@ -15,89 +16,23 @@ describe("PlayWorld proximity policy", () => {
     ).rejects.toThrow(/human to human is not allowed/);
   });
 
-  it("allows human to mcp chat and emits world interaction fanout", async () => {
+  it("seeds arcade cabinets on start", async () => {
     const w = new PlayWorld({ sessionStore: new TestSessionStore() });
     await w.start();
-    const mcpId = await w.registerMCP({ name: "Docs MCP", url: "https://mcp.example" });
-    await expect(
-      w.recordProximityAction({
-        fromPlayerId: "__human__",
-        toPlayerId: `mcp:${mcpId}`,
-        action: "chat",
-      })
-    ).resolves.toBeUndefined();
-  });
-
-  it("accepts bare main node id as human fromPlayerId", async () => {
-    const genesis = "main-node-test-abc";
-    const store = new TestSessionStore({ playerChainGenesis: genesis });
-    const w = new PlayWorld({ sessionStore: store });
-    await w.start();
-    const mcpId = await w.registerMCP({ name: "Docs MCP", url: "https://mcp.example" });
-    await expect(
-      w.recordProximityAction({
-        fromPlayerId: genesis,
-        toPlayerId: `mcp:${mcpId}`,
-        action: "chat",
-      })
-    ).resolves.toBeUndefined();
-  });
-
-  it("normalizeProximityFromPlayerId maps main node id to human: ref", async () => {
-    const genesis = "main-node-test-abc";
-    const store = new TestSessionStore({ playerChainGenesis: genesis });
-    const w = new PlayWorld({ sessionStore: store });
-    await w.start();
-    await expect(w.normalizeProximityFromPlayerId(genesis)).resolves.toBe(
-      `human:${genesis}`
+    const snap = await w.getSnapshotJson();
+    const cabinets = snap.worldMap.occupants.filter(
+      (o) => o.kind === "structure" && o.gameId !== undefined
     );
-    await expect(w.normalizeProximityFromPlayerId(`  ${genesis}  `)).resolves.toBe(
-      `human:${genesis}`
-    );
+    expect(cabinets.length).toBe(GAME_CABINET_CATALOG.length);
   });
 
-  it("normalizeProximityFromPlayerId maps bare agent id to agent: ref", async () => {
+  it("registerMCP is deprecated and returns empty id", async () => {
     const w = new PlayWorld({ sessionStore: new TestSessionStore() });
     await w.start();
-    await expect(
-      w.normalizeProximityFromPlayerId("registered-agent-99")
-    ).resolves.toBe("agent:registered-agent-99");
-  });
-
-  it("normalizeProximityFromPlayerId passes through human: and agent: refs", async () => {
-    const w = new PlayWorld({ sessionStore: new TestSessionStore() });
-    await w.start();
-    await expect(
-      w.normalizeProximityFromPlayerId("human:__human__")
-    ).resolves.toBe("human:__human__");
-    await expect(
-      w.normalizeProximityFromPlayerId("agent:some-id")
-    ).resolves.toBe("agent:some-id");
-  });
-
-  it("accepts onboarded snapshot mainNodeId when it differs from player-chain genesis", async () => {
-    const genesis = "short-genesis-id";
-    const onboardedMain =
-      "75c4aeb12681a2526c0e4cacbe8c7d45afeab99d2d09d07d68ed8b8e5b6d3dc3";
-    const store = new TestSessionStore({ playerChainGenesis: genesis });
-    const w = new PlayWorld({ sessionStore: store });
-    await w.start();
-    const prev = await store.getSnapshotJson();
-    if (prev === null) {
-      throw new Error("expected snapshot after start");
-    }
-    await store.persistSnapshot({
-      ...prev,
-      mainNodeId: onboardedMain,
-    });
-    const mcpId = await w.registerMCP({ name: "Docs MCP", url: "https://mcp.example" });
-    await expect(
-      w.recordProximityAction({
-        fromPlayerId: onboardedMain,
-        toPlayerId: `mcp:${mcpId}`,
-        action: "chat",
-      })
-    ).resolves.toBeUndefined();
+    const before = (await w.getSnapshotJson()).worldMap.occupants.length;
+    const id = await w.registerMCP({ name: "Legacy MCP" });
+    expect(id).toBe("");
+    const after = (await w.getSnapshotJson()).worldMap.occupants.length;
+    expect(after).toBe(before);
   });
 });
-

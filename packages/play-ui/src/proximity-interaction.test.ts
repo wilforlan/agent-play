@@ -192,6 +192,31 @@ describe("findNearestStructureProximityTarget", () => {
     });
     expect(result?.primaryAmenity).toBe("shop");
   });
+  it("detects nearest arcade cabinet by gameId", () => {
+    const result = findNearestStructureProximityTarget({
+      player: { x: 0, y: 0 },
+      structures: [
+        { id: "arcade-far", x: 8, y: 8, gameId: "map-recall" },
+        { id: "arcade-near", x: 1, y: 0, gameId: "hidden-gems", name: "Gem Chest" },
+      ],
+      radius: DEFAULT_STRUCTURE_PROXIMITY_RADIUS,
+    });
+    expect(result?.structureId).toBe("arcade-near");
+    expect(result?.gameId).toBe("hidden-gems");
+    expect(result?.label).toBe("Gem Chest");
+  });
+
+  it("prefers closer arcade cabinet over farther space structure", () => {
+    const result = findNearestStructureProximityTarget({
+      player: { x: 0, y: 0 },
+      structures: [
+        { id: "space-1", x: 2, y: 0, spaceIds: ["sp-1"] },
+        { id: "arcade-1", x: 0.8, y: 0, gameId: "price-check" },
+      ],
+      radius: DEFAULT_STRUCTURE_PROXIMITY_RADIUS,
+    });
+    expect(result?.gameId).toBe("price-check");
+  });
 });
 
 describe("proximityKeyToAction", () => {

@@ -7,8 +7,10 @@ import {
 import { resolveStructureAnchorsAtRuntime } from "./grid-allocate.js";
 import {
   createVerticalStripSeedLayout,
+  GAME_CABINET_CATALOG,
   pointCellInZone,
   primaryZoneForGroup,
+  type GameId,
   type WorldBounds,
   type WorldLayout,
 } from "@agent-play/sdk";
@@ -20,7 +22,7 @@ const STREET_TRIPLET: readonly [
 ] = [
   { id: "st-agent", label: "Agent St." },
   { id: "st-space", label: "Space Ave." },
-  { id: "st-mcp", label: "MCP Way." },
+  { id: "st-arcade", label: "Maple Ave." },
 ];
 
 function makeLayout(bounds: WorldBounds): WorldLayout {
@@ -43,6 +45,25 @@ function makeStructure(
   };
 }
 
+function makeArcadeCabinet(
+  id: string,
+  gameId: GameId,
+  x: number,
+  y: number
+): PreviewWorldMapStructureOccupantJson {
+  return {
+    kind: "structure",
+    id,
+    name: id,
+    x,
+    y,
+    worldId: "overworld",
+    spaceIds: [],
+    gameId,
+    stationary: true,
+  };
+}
+
 function snapshotWithStructures(
   layout: WorldLayout,
   structures: PreviewWorldMapStructureOccupantJson[]
@@ -56,14 +77,16 @@ function snapshotWithStructures(
       occupants: [...structures],
     },
     worldLayout: buildSnapshotWorldLayout(layout),
-    spaces: structures.map((s) => ({
-      id: `sp-${s.id}`,
-      name: s.name,
-      description: "",
-      designKey: "supermarket-v1",
-      owner: { displayName: "owner" },
-      amenities: ["supermarket"],
-    })),
+    spaces: structures
+      .filter((s) => s.spaceIds.length > 0)
+      .map((s) => ({
+        id: `sp-${s.id}`,
+        name: s.name,
+        description: "",
+        designKey: "supermarket-v1",
+        owner: { displayName: "owner" },
+        amenities: ["supermarket" as const],
+      })),
   };
 }
 
@@ -152,5 +175,25 @@ describe("resolveStructureAnchorsAtRuntime — proximity bugs", () => {
     );
     const keys = resolvedStructures.map(structureKey);
     expect(new Set(keys).size).toBe(keys.length);
+  });
+
+  it("anchors eight arcade cabinets uniquely inside the arcade zone", () => {
+    const layout = makeLayout({ minX: 0, minY: 0, maxX: 19, maxY: 19 });
+    const arcadeZone = primaryZoneForGroup(layout, "arcade");
+    expect(arcadeZone).toBeDefined();
+    const cabinets = GAME_CABINET_CATALOG.map((entry) =>
+      makeArcadeCabinet(entry.id, entry.gameId, 0, 0)
+    );
+    const resolvedStructures = resolveAndListStructures(
+      snapshotWithStructures(layout, cabinets)
+    );
+    expect(resolvedStructures).toHaveLength(8);
+    const keys = resolvedStructures.map(structureKey);
+    expect(new Set(keys).size).toBe(8);
+    if (arcadeZone !== undefined) {
+      for (const s of resolvedStructures) {
+        expect(pointCellInZone(s.x, s.y, arcadeZone)).toBe(true);
+      }
+    }
   });
 });

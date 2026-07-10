@@ -96,17 +96,25 @@ describe("world-layout-model", () => {
     const layout = getMinimumSeedLayout();
     expect(primaryZoneForGroup(layout, "agent")?.primaryGroup).toBe("agent");
     expect(primaryZoneForGroup(layout, "space")?.primaryGroup).toBe("space");
-    expect(primaryZoneForGroup(layout, "mcp")?.primaryGroup).toBe("mcp");
+    expect(primaryZoneForGroup(layout, "arcade")?.primaryGroup).toBe("arcade");
     expect(zonesForGroup(layout, "agent").length).toBe(1);
+  });
+
+  it("assigns arcade zone on Maple Ave with zone-arcade-strip id", () => {
+    const layout = getMinimumSeedLayout();
+    const arcade = pickZoneForGroup(layout, "arcade");
+    expect(arcade.id).toBe("zone-arcade-strip");
+    expect(arcade.streetId).toBe("maple");
+    expect(arcade.streetLabel).toBe("Maple Ave.");
   });
 
   it("classifies floor cells into zones", () => {
     const layout = getMinimumSeedLayout();
     const agent = pickZoneForGroup(layout, "agent");
-    const mcp = pickZoneForGroup(layout, "mcp");
+    const arcade = pickZoneForGroup(layout, "arcade");
     expect(pointCellInZone(3.5, 1.5, agent)).toBe(true);
     expect(pointCellInZone(10.5, 1.5, agent)).toBe(false);
-    expect(pointCellInZone(16.5, 1.5, mcp)).toBe(true);
+    expect(pointCellInZone(16.5, 1.5, arcade)).toBe(true);
   });
 
   it("returns next unused street from the canonical pool", () => {
@@ -139,7 +147,7 @@ describe("world-layout-model", () => {
     const layout = getMinimumSeedLayout();
     const agentStreet = pickZoneForGroup(layout, "agent");
     const spaceStreet = pickZoneForGroup(layout, "space");
-    const mcpStreet = pickZoneForGroup(layout, "mcp");
+    const arcadeStreet = pickZoneForGroup(layout, "arcade");
     const next = migrateWorldLayoutBounds({
       layout,
       bounds: { minX: 0, minY: 0, maxX: 11, maxY: 9 },
@@ -148,9 +156,9 @@ describe("world-layout-model", () => {
     expect(next.rev).toBe(layout.rev + 1);
     expect(pickZoneForGroup(next, "agent").streetId).toBe(agentStreet.streetId);
     expect(pickZoneForGroup(next, "space").streetId).toBe(spaceStreet.streetId);
-    expect(pickZoneForGroup(next, "mcp").streetId).toBe(mcpStreet.streetId);
+    expect(pickZoneForGroup(next, "arcade").streetId).toBe(arcadeStreet.streetId);
     expect(pickZoneForGroup(next, "agent").rect.maxY).toBe(9);
-    expect(pickZoneForGroup(next, "mcp").rect.maxX).toBe(11);
+    expect(pickZoneForGroup(next, "arcade").rect.maxX).toBe(11);
   });
 
   it("partitions migrated zones to exactly cover the new bounds", () => {

@@ -110,7 +110,7 @@ describe("buildPlatformAnalyticsPayload", () => {
     expect(payload.playerChain.occupantKinds).toEqual({
       human: 1,
       agent: 1,
-      mcp: 0,
+      arcadeCabinets: 0,
     });
     expect(payload.agentsPerMainHistogram.mainsWithZeroAgentNodes).toBe(1);
     expect(payload.agentsPerMainHistogram.mainsWithOneAgentNode).toBe(0);

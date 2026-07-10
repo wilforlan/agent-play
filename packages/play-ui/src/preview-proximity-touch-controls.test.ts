@@ -337,4 +337,75 @@ describe("createPreviewProximityTouchControls", () => {
     expect(assistBtn.disabled).toBe(true);
     expect(pttBtn.disabled).toBe(false);
   });
+
+  it("relabels A for game-stage proximity and invokes onAssist when activatable", () => {
+    let label: string | null = null;
+    let verb: string | null = null;
+    const { root, refresh } = createPreviewProximityTouchControls({
+      parent,
+      getBoundsElement: () => parent,
+      getCanAct: () => false,
+      getGameStageProximityLabel: () => label,
+      getGameStageProximityVerb: () => verb,
+      getGameStageProximityActivatable: () => true,
+      onAssist,
+      onChat,
+      onPushToTalk,
+    });
+    const assistBtn = root.querySelector(
+      ".preview-proximity-touch-pad__key--assist"
+    ) as HTMLButtonElement;
+    const subA = root.querySelector(
+      ".preview-proximity-touch-pad__key--assist .preview-proximity-touch-pad__key-sub"
+    ) as HTMLElement;
+    expect(assistBtn.disabled).toBe(true);
+    label = "Chest 1";
+    verb = "Open";
+    refresh();
+    expect(assistBtn.disabled).toBe(false);
+    expect(subA.textContent).toBe("Open");
+    assistBtn.click();
+    expect(onAssist).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows game-stage verb on A but keeps it disabled when not activatable", () => {
+    const { root } = createPreviewProximityTouchControls({
+      parent,
+      getBoundsElement: () => parent,
+      getCanAct: () => false,
+      getGameStageProximityLabel: () => "Timer bar",
+      getGameStageProximityVerb: () => "Hold Space",
+      getGameStageProximityActivatable: () => false,
+      onAssist,
+      onChat,
+      onPushToTalk,
+    });
+    const assistBtn = root.querySelector(
+      ".preview-proximity-touch-pad__key--assist"
+    ) as HTMLButtonElement;
+    const subA = root.querySelector(
+      ".preview-proximity-touch-pad__key--assist .preview-proximity-touch-pad__key-sub"
+    ) as HTMLElement;
+    expect(assistBtn.disabled).toBe(true);
+    expect(subA.textContent).toBe("Hold Space");
+  });
+
+  it("game-stage proximity takes precedence over structure proximity", () => {
+    const { root } = createPreviewProximityTouchControls({
+      parent,
+      getBoundsElement: () => parent,
+      getCanAct: () => false,
+      getStructureProximityLabel: () => "Arcade",
+      getGameStageProximityLabel: () => "Chest 1",
+      getGameStageProximityVerb: () => "Open",
+      getGameStageProximityActivatable: () => true,
+      onAssist,
+      onChat,
+      onPushToTalk,
+    });
+    const assistBtn = root.querySelector(
+      ".preview-proximity-touch-pad__key--assist"
+    ) as HTMLButtonElement;
+    expect(assistBtn.disabled).toBe(false);
+  });
 });
