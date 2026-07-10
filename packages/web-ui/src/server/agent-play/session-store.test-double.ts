@@ -18,6 +18,7 @@ import type {
   SupermarketItem,
 } from "@agent-play/sdk";
 import {
+  ApplyGameOutcomeInputSchema,
   PurchaseRecordSchema,
   computeTalkAgentPowerUpsEarned,
   createInitialAgentRewardWallet,
@@ -26,6 +27,12 @@ import {
   getWalletBundleById,
   TALK_PRICE_PER_SECOND_USD,
 } from "@agent-play/sdk";
+import {
+  applyGameOutcomeToState,
+  createInitialGamePlayerState,
+  getGameStatsFromState,
+  type GamePlayerState,
+} from "./game-outcome-store.js";
 import type { PreviewSnapshotJson } from "./preview-serialize.js";
 import type { SessionEventLogEntry } from "./redis-session-store.js";
 import { getPlayerChainGenesisSync } from "./load-player-chain-genesis.js";
@@ -87,6 +94,7 @@ export class TestSessionStore implements SessionStore {
       totalChargedUsd: number;
     }
   >();
+  private readonly gamePlayerState = new Map<string, GamePlayerState>();
 
   constructor(options: TestSessionStoreOptions = {}) {
     this.playerChainGenesis =
@@ -956,5 +964,55 @@ export class TestSessionStore implements SessionStore {
       secondsBilledTotal: session.totalBilledSeconds + billSeconds,
       wallet: { ...nextWallet },
     };
+  }
+
+  async getGameStats(input: {
+    playerId: string;
+    now: string;
+  }): Promise<import("@agent-play/sdk").GameStats> {
+    const now = new Date(input.now);
+    const state =
+      this.gamePlayerState.get(input.playerId) ??
+      createInitialGamePlayerState(now);
+    return getGameStatsFromState({ state, now });
+  }
+
+  async applyGameOutcome(input: {
+    playerId: string;
+    outcome: import("@agent-play/sdk").ApplyGameOutcomeInput;
+    now: string;
+  }): Promise<
+    | {
+        ok: true;
+        stats: import("@agent-play/sdk").GameStats;
+        wallet: PlayerWallet;
+        netPu: number;
+      }
+    | {
+        ok: false;
+        error: "DUPLICATE_ROUND" | "INVALID_EVENTS" | "CAP_EXCEEDED";
+      }
+  > {
+    const parsed = ApplyGameOutcomeInputSchema.safeParse(input.outcome);
+    if (!parsed.success) {
+      return { ok: false, error: "INVALID_EVENTS" };
+    }
+    const now = new Date(input.now);
+    const state =
+      this.gamePlayerState.get(input.playerId) ??
+      createInitialGamePlayerState(now);
+    const wallet = await this.getPlayerWallet(input.playerId);
+    const applied = applyGameOutcomeToState({
+      state,
+      wallet,
+      outcome: parsed.data,
+      now,
+    });
+    if (!applied.result.ok) {
+      return applied.result;
+    }
+    this.gamePlayerState.set(input.playerId, applied.state);
+    this.playerWallets.set(input.playerId, applied.wallet);
+    return applied.result;
   }
 }

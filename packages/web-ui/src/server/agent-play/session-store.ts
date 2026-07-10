@@ -25,6 +25,8 @@ import type {
   PurchaseRecord,
   ShopItem,
   SupermarketItem,
+  ApplyGameOutcomeInput,
+  GameStats,
 } from "@agent-play/sdk";
 import type { PlayerChainFanoutNotify } from "./player-chain/index.js";
 import type { PreviewSnapshotJson } from "./preview-serialize.js";
@@ -244,6 +246,18 @@ export type SessionStore = {
   }): Promise<
     | { ok: true; wallet: PlayerWallet; record: PurchaseRecord }
     | { ok: false; error: "INVALID_BUNDLE" | "INSUFFICIENT_POWER_UPS" }
+  >;
+  getGameStats(input: { playerId: string; now: string }): Promise<GameStats>;
+  applyGameOutcome(input: {
+    playerId: string;
+    outcome: ApplyGameOutcomeInput;
+    now: string;
+  }): Promise<
+    | { ok: true; stats: GameStats; wallet: PlayerWallet; netPu: number }
+    | {
+        ok: false;
+        error: "DUPLICATE_ROUND" | "INVALID_EVENTS" | "CAP_EXCEEDED";
+      }
   >;
   startTalkSession(input: {
     viewerNodeId: string;

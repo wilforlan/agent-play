@@ -26,6 +26,7 @@ import type {
   SupermarketItem,
 } from "@agent-play/sdk";
 import {
+  ApplyGameOutcomeInputSchema,
   CarWashCarSchema,
   PlayerWalletSchema,
   PurchaseRecordSchema,
@@ -38,6 +39,13 @@ import {
   costForSeconds,
   getWalletBundleById,
 } from "@agent-play/sdk";
+import {
+  applyGameOutcomeToState,
+  createInitialGamePlayerState,
+  deserializeGamePlayerState,
+  getGameStatsFromState,
+  serializeGamePlayerState,
+} from "./game-outcome-store.js";
 import { agentPlayVerbose } from "./agent-play-debug.js";
 import { finiteOccupantPosition } from "./agent-journey-cell.js";
 import type { PreviewSnapshotJson } from "./preview-serialize.js";
@@ -129,6 +137,10 @@ function spaceCarWashCarsHashKey(hostId: string, spaceId: string): string {
 
 function playerWalletKey(hostId: string, playerId: string): string {
   return `agent-play:${hostId}:player:${playerId}:wallet`;
+}
+
+function playerGameStateKey(hostId: string, playerId: string): string {
+  return `agent-play:${hostId}:player:${playerId}:game-state`;
 }
 
 function talkSessionKey(
@@ -1323,6 +1335,88 @@ export class RedisSessionStore implements SessionStore {
     }
     throw new Error(
       `redeemWalletBundle: lost ${String(maxAttempts)} CAS retries for player ${input.playerId}`
+    );
+  }
+
+  private async loadGamePlayerState(
+    playerId: string,
+    now: Date
+  ): Promise<import("./game-outcome-store.js").GamePlayerState> {
+    const key = playerGameStateKey(this.hostId, playerId);
+    const raw = await this.redis.get(key);
+    if (raw === null || raw.length === 0) {
+      return createInitialGamePlayerState(now);
+    }
+    try {
+      const parsed: unknown = JSON.parse(raw);
+      if (typeof parsed !== "object" || parsed === null) {
+        return createInitialGamePlayerState(now);
+      }
+      return deserializeGamePlayerState(
+        parsed as import("./game-outcome-store.js").SerializedGamePlayerState
+      );
+    } catch {
+      return createInitialGamePlayerState(now);
+    }
+  }
+
+  async getGameStats(input: {
+    playerId: string;
+    now: string;
+  }): Promise<import("@agent-play/sdk").GameStats> {
+    const now = new Date(input.now);
+    const state = await this.loadGamePlayerState(input.playerId, now);
+    return getGameStatsFromState({ state, now });
+  }
+
+  async applyGameOutcome(input: {
+    playerId: string;
+    outcome: import("@agent-play/sdk").ApplyGameOutcomeInput;
+    now: string;
+  }): Promise<
+    | {
+        ok: true;
+        stats: import("@agent-play/sdk").GameStats;
+        wallet: PlayerWallet;
+        netPu: number;
+      }
+    | {
+        ok: false;
+        error: "DUPLICATE_ROUND" | "INVALID_EVENTS" | "CAP_EXCEEDED";
+      }
+  > {
+    const parsed = ApplyGameOutcomeInputSchema.safeParse(input.outcome);
+    if (!parsed.success) {
+      return { ok: false, error: "INVALID_EVENTS" };
+    }
+    const now = new Date(input.now);
+    const stateKey = playerGameStateKey(this.hostId, input.playerId);
+    const walletKey = playerWalletKey(this.hostId, input.playerId);
+    const maxAttempts = 5;
+    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+      await this.redis.watch(stateKey, walletKey);
+      const state = await this.loadGamePlayerState(input.playerId, now);
+      const wallet = await this.getPlayerWallet(input.playerId);
+      const applied = applyGameOutcomeToState({
+        state,
+        wallet,
+        outcome: parsed.data,
+        now,
+      });
+      if (!applied.result.ok) {
+        await this.redis.unwatch();
+        return applied.result;
+      }
+      const multi = this.redis.multi();
+      multi.set(stateKey, JSON.stringify(serializeGamePlayerState(applied.state)));
+      multi.set(walletKey, JSON.stringify(applied.wallet));
+      const exec = await multi.exec();
+      if (exec !== null) {
+        return applied.result;
+      }
+    }
+    throw new Error(
+      `applyGameOutcome: lost ${String(maxAttempts)} CAS retries for player ${input.playerId}`
     );
   }
 
