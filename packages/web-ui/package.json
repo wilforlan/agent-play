@@ -1,6 +1,6 @@
 {
   "name": "@agent-play/web-ui",
-  "version": "3.4.2",
+  "version": "3.5.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -19,7 +19,7 @@
   "dependencies": {
     "@agent-play/intercom": "^3.3.3",
     "@agent-play/node-tools": "^3.2.1",
-    "@agent-play/sdk": "^3.3.7",
+    "@agent-play/sdk": "^3.4.0",
     "@openai/agents": "^0.8.5",
     "@sanity/assist": "3.2.2",
     "@sanity/icons": "3.7.4",

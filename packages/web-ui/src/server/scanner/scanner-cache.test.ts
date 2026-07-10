@@ -7,7 +7,7 @@ import {
   scannerApuMintHourKey,
   scannerHeadCacheKey,
   scannerTxHourKey,
-} from "./scanner-cache.js";
+} from "./scanner-cache";
 
 type Stored = {
   strings: Map<string, string>;
@@ -103,7 +103,7 @@ describe("scanner-cache", () => {
         playerId: "p1",
         spaceId: "s1",
         amenityKind: "wallet_bundle",
-        itemRef: { kind: "wallet_bundle", id: "b1" },
+        itemRef: { kind: "bundle", id: "b1" },
         powerUpsDelta: -100,
         at,
         hostId,
