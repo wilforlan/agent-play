@@ -84,6 +84,12 @@ export {
   type SupermarketItem,
 } from "./lib/space-content-model.js";
 export {
+  APU_TOKEN,
+  buildAmenityPurchaseApuFields,
+  buildApuWalletTransaction,
+  buildWalletBundleApuFields,
+} from "./lib/wallet-apu-transaction.js";
+export {
   TALK_PRICE_PER_60S_USD,
   TALK_PRICE_PER_SECOND_USD,
   TALK_TICK_SECONDS,
@@ -101,6 +107,52 @@ export {
   type WalletBundleId,
   type WalletBundleOffer,
 } from "./lib/wallet-bundle-catalog.js";
+export {
+  GAME_CABINET_CATALOG,
+  PLAYABLE_GAME_IDS,
+  featuredGameIdForUtcDate,
+  getGameCabinetByGameId,
+  getGameCabinetById,
+  isGameId,
+  type GameCabinetEntry,
+  type GameId,
+} from "./lib/game-catalog.js";
+export {
+  ApplyGameOutcomeInputSchema,
+  DAILY_GAME_PU_CAP,
+  GameEventSchema,
+  GamePerTitleStatsSchema,
+  GameStatsSchema,
+  computeRoundPuDelta,
+  createEmptyGameStats,
+  utcDateKey,
+  type ApplyGameOutcomeInput,
+  type GameEvent,
+  type GamePerTitleStats,
+  type GameStats,
+} from "./lib/game-outcome-model.js";
+export {
+  ScannerBlockRecordSchema,
+  ScannerHeadSchema,
+  ScannerMigrationStateSchema,
+  ScannerNodeProfileSchema,
+  ScannerTxRecordSchema,
+  ScannerWalletSnapshotSchema,
+  type ScannerBlockRecord,
+  type ScannerHead,
+  type ScannerMigrationState,
+  type ScannerNodeProfile,
+  type ScannerTxRecord,
+  type ScannerWalletSnapshot,
+} from "./lib/scanner-model.js";
+export {
+  ANALYTICS_EVENT_NAMES,
+  AnalyticsEventSchema,
+  AnalyticsTraitsSchema,
+  type AnalyticsEvent,
+  type AnalyticsEventName,
+  type AnalyticsTraits,
+} from "./lib/analytics-event-model.js";
 export {
   mergeSnapshotWithPlayerChainNode,
   parsePlayerChainFanoutNotify,

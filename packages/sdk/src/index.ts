@@ -163,6 +163,12 @@ export {
   type SupermarketItem,
 } from "./lib/space-content-model.js";
 export {
+  APU_TOKEN,
+  buildAmenityPurchaseApuFields,
+  buildApuWalletTransaction,
+  buildWalletBundleApuFields,
+} from "./lib/wallet-apu-transaction.js";
+export {
   TALK_PRICE_PER_60S_USD,
   TALK_PRICE_PER_SECOND_USD,
   TALK_TICK_SECONDS,
@@ -180,6 +186,65 @@ export {
   type WalletBundleId,
   type WalletBundleOffer,
 } from "./lib/wallet-bundle-catalog.js";
+export {
+  GAME_CABINET_CATALOG,
+  PLAYABLE_GAME_IDS,
+  featuredGameIdForUtcDate,
+  getGameCabinetByGameId,
+  getGameCabinetById,
+  isGameId,
+  type GameCabinetEntry,
+  type GameId,
+} from "./lib/game-catalog.js";
+export {
+  ApplyGameOutcomeInputSchema,
+  DAILY_GAME_PU_CAP,
+  GameEventSchema,
+  GamePerTitleStatsSchema,
+  GameStatsSchema,
+  STREAK_BONUS_PU,
+  STREAK_BONUS_THRESHOLD_DAYS,
+  computeEventPuDelta,
+  computeRoundPuDelta,
+  createEmptyGameStats,
+  utcDateKey,
+  type ApplyGameOutcomeInput,
+  type GameEvent,
+  type GamePerTitleStats,
+  type GameStats,
+} from "./lib/game-outcome-model.js";
+export {
+  ScannerBlockRecordSchema,
+  ScannerHeadSchema,
+  ScannerMigrationStateSchema,
+  ScannerMigrationStatusSchema,
+  ScannerNodeProfileSchema,
+  ScannerTxOpSchema,
+  ScannerTxRecordSchema,
+  ScannerWalletSnapshotSchema,
+  type ScannerBlockRecord,
+  type ScannerHead,
+  type ScannerMigrationState,
+  type ScannerMigrationStatus,
+  type ScannerNodeProfile,
+  type ScannerTxOp,
+  type ScannerTxRecord,
+  type ScannerWalletSnapshot,
+} from "./lib/scanner-model.js";
+export {
+  ANALYTICS_EVENT_NAMES,
+  AnalyticsContextSchema,
+  AnalyticsEventSchema,
+  AnalyticsMigrationStateSchema,
+  AnalyticsPropertyValueSchema,
+  AnalyticsTraitsSchema,
+  type AnalyticsContext,
+  type AnalyticsEvent,
+  type AnalyticsEventName,
+  type AnalyticsMigrationState,
+  type AnalyticsPropertyValue,
+  type AnalyticsTraits,
+} from "./lib/analytics-event-model.js";
 export { langchainRegistration } from "./platforms/langchain.js";
 export {
   RemotePlayWorld,

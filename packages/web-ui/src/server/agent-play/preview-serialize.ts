@@ -108,6 +108,7 @@ export type PreviewWorldMapStructureOccupantJson = {
   y: number;
   worldId: string;
   spaceIds: string[];
+  gameId?: string;
   /** Fixed map anchor (space-backed structures use true). */
   stationary?: boolean;
   primaryAmenity?: SpaceAmenityKind;
@@ -162,8 +163,8 @@ export type WorldLayoutZoneJson = {
   streetId: string;
   streetLabel: string;
   rect: { minX: number; minY: number; maxX: number; maxY: number };
-  primaryGroup: "agent" | "space" | "mcp";
-  allowedGroups: readonly ("agent" | "space" | "mcp")[];
+  primaryGroup: "agent" | "space" | "arcade";
+  allowedGroups: readonly ("agent" | "space" | "arcade")[];
 };
 
 export type WorldLayoutStreetJson = {
@@ -229,12 +230,112 @@ export function buildSnapshotWorldLayout(layout: WorldLayout): WorldLayoutJson {
   };
 }
 
+const LEGACY_MCP_PRIMARY_GROUP = "mcp";
+
+type WorldLayoutZoneJsonWire = {
+  id: string;
+  streetId: string;
+  streetLabel: string;
+  rect: { minX: number; minY: number; maxX: number; maxY: number };
+  primaryGroup: string;
+  allowedGroups: readonly string[];
+};
+
+function normalizeWorldLayoutZoneGroup(
+  value: string
+): WorldLayoutZoneJson["primaryGroup"] {
+  if (value === LEGACY_MCP_PRIMARY_GROUP) {
+    return "arcade";
+  }
+  if (value === "agent" || value === "space" || value === "arcade") {
+    return value;
+  }
+  throw new Error(
+    `normalizeWorldLayoutJson: unknown primaryGroup ${value}`
+  );
+}
+
+function migrateWorldLayoutZone(zone: WorldLayoutZoneJson): WorldLayoutZoneJson {
+  const wire = zone as WorldLayoutZoneJson & WorldLayoutZoneJsonWire;
+  const primaryGroup = normalizeWorldLayoutZoneGroup(String(wire.primaryGroup));
+  const id =
+    wire.id === "zone-mcp-strip" ||
+    String(wire.primaryGroup) === LEGACY_MCP_PRIMARY_GROUP
+      ? "zone-arcade-strip"
+      : wire.id;
+  const allowedGroups = [
+    ...new Set(
+      wire.allowedGroups.map((group) =>
+        normalizeWorldLayoutZoneGroup(String(group))
+      )
+    ),
+  ];
+  return {
+    ...zone,
+    id,
+    primaryGroup,
+    allowedGroups,
+  };
+}
+
+function ensureArcadeZoneInWorldLayout(layout: WorldLayoutJson): WorldLayoutJson {
+  const migratedZones = layout.zones.map(migrateWorldLayoutZone);
+  if (migratedZones.some((zone) => zone.primaryGroup === "arcade")) {
+    return { ...layout, zones: migratedZones };
+  }
+  const s0 = STREET_NAME_POOL[0];
+  const s1 = STREET_NAME_POOL[1];
+  const s2 = STREET_NAME_POOL[2];
+  if (s0 === undefined || s1 === undefined || s2 === undefined) {
+    throw new Error("ensureArcadeZoneInWorldLayout: STREET_NAME_POOL too small");
+  }
+  const streets: readonly [
+    { id: string; label: string },
+    { id: string; label: string },
+    { id: string; label: string },
+  ] =
+    layout.streets.length >= 3
+      ? (() => {
+          const s0Street = layout.streets[0];
+          const s1Street = layout.streets[1];
+          const s2Street = layout.streets[2];
+          if (
+            s0Street === undefined ||
+            s1Street === undefined ||
+            s2Street === undefined
+          ) {
+            throw new Error(
+              "ensureArcadeZoneInWorldLayout: expected three streets"
+            );
+          }
+          return [
+            { id: s0Street.id, label: s0Street.label },
+            { id: s1Street.id, label: s1Street.label },
+            { id: s2Street.id, label: s2Street.label },
+          ];
+        })()
+      : [s0, s1, s2];
+  const rebuilt = createVerticalStripSeedLayout({
+    bounds: layout.bounds,
+    streets,
+  });
+  return {
+    ...buildSnapshotWorldLayout(rebuilt),
+    rev: layout.rev,
+  };
+}
+
+export function normalizeWorldLayoutJson(layout: WorldLayoutJson): WorldLayoutJson {
+  return ensureArcadeZoneInWorldLayout(layout);
+}
+
 export function normalizePreviewSnapshot(
   snapshot: PreviewSnapshotJson | Omit<PreviewSnapshotJson, "worldLayout"> & {
     worldLayout?: WorldLayoutJson;
   }
 ): PreviewSnapshotJson {
-  const worldLayout = snapshot.worldLayout ?? getDefaultPreviewWorldLayoutJson();
+  const rawLayout = snapshot.worldLayout ?? getDefaultPreviewWorldLayoutJson();
+  const worldLayout = normalizeWorldLayoutJson(rawLayout);
   return {
     ...snapshot,
     spaces: snapshot.spaces ?? [],

@@ -276,7 +276,7 @@ describe("POST /api/agent-play/sdk/rpc — getPlayerWallet", () => {
       getPlayerWallet: ReturnType<typeof vi.fn>;
     }).getPlayerWallet = vi.fn(async () => ({
       playerId: "p1",
-      balanceUsd: 70,
+      balanceUsd: 10,
       currency: "USD",
       updatedAt: "2026-05-12T00:00:00.000Z",
     }));
@@ -296,6 +296,6 @@ describe("POST /api/agent-play/sdk/rpc — getPlayerWallet", () => {
     );
     expect(res.status).toBe(200);
     const body = (await res.json()) as { wallet: { balanceUsd: number } };
-    expect(body.wallet.balanceUsd).toBe(70);
+    expect(body.wallet.balanceUsd).toBe(10);
   });
 });

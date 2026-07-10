@@ -6,7 +6,7 @@
  *
  * @remarks
  * Delegates to {@link SessionStore.getPlayerWallet}, which lazily seeds a fresh
- * wallet at {@link DEFAULT_PLAYER_WALLET_BALANCE_USD} ($70) on first read. The
+ * wallet at {@link DEFAULT_PLAYER_WALLET_BALANCE_USD} ($10) on first read. The
  * route is sid-gated like the other agent-play APIs.
  *
  * @see ../../../../../../server/agent-play/redis-session-store.ts for the

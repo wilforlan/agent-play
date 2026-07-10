@@ -42,11 +42,13 @@ describe("PlayWorld.updateLayoutBoundsField", () => {
     const beforeSpaceStreet = before.zones.find(
       (z) => z.primaryGroup === "space"
     );
-    const beforeMcpStreet = before.zones.find((z) => z.primaryGroup === "mcp");
+    const beforeArcadeStreet = before.zones.find(
+      (z) => z.primaryGroup === "arcade"
+    );
     if (
       beforeAgentStreet === undefined ||
       beforeSpaceStreet === undefined ||
-      beforeMcpStreet === undefined
+      beforeArcadeStreet === undefined
     ) {
       throw new Error("expected three primary zones");
     }
@@ -57,8 +59,8 @@ describe("PlayWorld.updateLayoutBoundsField", () => {
     expect(next.zones.find((z) => z.primaryGroup === "space")?.streetId).toBe(
       beforeSpaceStreet.streetId
     );
-    expect(next.zones.find((z) => z.primaryGroup === "mcp")?.streetId).toBe(
-      beforeMcpStreet.streetId
+    expect(next.zones.find((z) => z.primaryGroup === "arcade")?.streetId).toBe(
+      beforeArcadeStreet.streetId
     );
   });
 

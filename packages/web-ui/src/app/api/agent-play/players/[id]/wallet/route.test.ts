@@ -27,7 +27,7 @@ describe("GET /api/agent-play/players/[id]/wallet", () => {
     getSessionStore.mockReturnValue({
       getPlayerWallet: vi.fn(async () => ({
         playerId: "p1",
-        balanceUsd: 70,
+        balanceUsd: 10,
         currency: "USD",
         updatedAt: "2026-05-12T00:00:00.000Z",
       })),
@@ -43,7 +43,7 @@ describe("GET /api/agent-play/players/[id]/wallet", () => {
     const body = (await res.json()) as {
       wallet: { playerId: string; balanceUsd: number };
     };
-    expect(body.wallet.balanceUsd).toBe(70);
+    expect(body.wallet.balanceUsd).toBe(10);
     expect(body.wallet.playerId).toBe("p1");
   });
 

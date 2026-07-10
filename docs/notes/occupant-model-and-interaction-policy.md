@@ -10,7 +10,9 @@ Every world snapshot should model visible entities through occupants with one of
 
 - **`__human__`** — Human user presence on the map.
 - **`__agent__`** — Business-capable agent occupant.
-- **`__mcp__`** — MCP service occupant.
+- **`arcade`** — Game cabinet structures on Maple Ave (`gameId` on `kind: "structure"` occupants in `zone-arcade-strip`).
+
+Legacy snapshots may still list deprecated `mcp` occupants; new worlds use arcade cabinets instead.
 
 These kinds are intended to be always represented in the world model.
 
@@ -27,7 +29,7 @@ These kinds are intended to be always represented in the world model.
 
 - **Disallowed:** `__human__ -> __human__` direct communication.
 - **Allowed:** `__human__ -> __agent__` communication.
-- **Allowed:** `__human__ -> __mcp__` communication.
+- **Allowed:** `__human__` enters arcade game cabinets on Maple Ave (no external MCP required).
 - `__human__` occupants can observe other humans, but cannot directly interact with them.
 
 Rationale:
@@ -39,8 +41,7 @@ Rationale:
 ## Transaction and capability posture
 
 - **`__agent__`** is the business/transaction-facing occupant kind.
-- **`__mcp__`** access is free and request-driven.
-  - Minimal invocation shape expectation: server URL, headers, request body.
+- **Arcade cabinets** are entered via proximity (**A**) and settle PU through built-in session RPC (`applyGameOutcome`).
 - `__human__` does not become a transaction endpoint for other humans.
 
 ## Modeling guidance for contributors
@@ -48,7 +49,7 @@ Rationale:
 - Prefer naming and docs that say **occupant** (not peer).
 - Keep interaction validation at API boundaries:
   - reject/disallow `__human__ -> __human__` interaction attempts,
-  - permit `__human__ -> (__agent__ | __mcp__)`.
+  - permit `__human__ -> __agent__` and arcade cabinet entry on Maple Ave.
 - Keep map presence independent from interaction capability:
   - visibility of occupants is broader than allowed communication paths.
 
@@ -57,7 +58,7 @@ Rationale:
 When touching docs, comments, logs, or API docs:
 
 - Replace generic **peer** wording with occupant-specific wording where practical.
-- Use occupant kind language explicitly (`__human__`, `__agent__`, `__mcp__`).
+- Use occupant kind language explicitly (`__human__`, `__agent__`, arcade cabinets).
 - Call out interaction direction (`source -> target`) when describing policy.
 
 ## Status and scope

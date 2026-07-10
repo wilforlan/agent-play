@@ -41,6 +41,8 @@ import {
   CarWashCarSchema,
   ShopItemSchema,
   SupermarketItemSchema,
+  isGameId,
+  ANALYTICS_EVENT_NAMES,
   type CarWashCar,
   type ShopItem,
   type SupermarketItem,
@@ -53,7 +55,8 @@ import { logAgentPlayApi } from "@/server/agent-play/log-agent-play-api";
 import type { Journey } from "@/server/agent-play/@types/world";
 import { readResolvedSnapshot } from "@/server/agent-play/read-resolved-snapshot";
 import { readPlayerChainNode } from "@/server/agent-play/read-player-chain-node";
-import { getPlayWorld, getSessionStore } from "@/server/get-world";
+import { getPlayWorld, getSessionStore, getSharedRedisClient } from "@/server/get-world";
+import { safeTrackAnalyticsEvent } from "@/server/scanner/scanner-hooks";
 import { validateAgentPlaySession } from "@/server/agent-play/session-validation";
 import { handleIntercomCommand } from "@/server/agent-play/intercom/intercom-router";
 import { handleIntercomResponse } from "@/server/agent-play/intercom/handle-intercom-response";
@@ -126,6 +129,29 @@ async function assertSpaceHasAmenity(
   }
   return null;
 }
+
+const trackRpcAnalyticsEvent = (input: {
+  distinctId: string;
+  event: string;
+  properties: Record<string, string | number | boolean | null>;
+}): void => {
+  const redis = getSharedRedisClient();
+  if (redis === null) return;
+  const hostId = process.env.AGENT_PLAY_HOST_ID ?? "default";
+  const now = new Date().toISOString();
+  safeTrackAnalyticsEvent({
+    redis,
+    hostId,
+    event: {
+      messageId: `rpc-${randomUUID()}`,
+      event: input.event,
+      distinctId: input.distinctId,
+      timestamp: now,
+      properties: input.properties,
+      context: { hostId, library: "agent-play-server" },
+    },
+  });
+};
 
 async function fanoutAmenityContentUpdated(input: {
   store: ReturnType<typeof getSessionStore>;
@@ -342,6 +368,11 @@ export async function POST(req: NextRequest) {
           role: riRole,
           text: riText,
         });
+        trackRpcAnalyticsEvent({
+          distinctId: riPlayerId,
+          event: ANALYTICS_EVENT_NAMES.worldInteractionRecorded,
+          properties: { role: riRole, textLength: riText.length },
+        });
         return Response.json({ ok: true });
       }
       case "recordJourney": {
@@ -355,6 +386,15 @@ export async function POST(req: NextRequest) {
         const rjPlayerId = p.playerId;
         const rjJourney = p.journey as Journey;
         await world.recordJourney(rjPlayerId, rjJourney);
+        trackRpcAnalyticsEvent({
+          distinctId: rjPlayerId,
+          event: ANALYTICS_EVENT_NAMES.worldJourneyRecorded,
+          properties: {
+            stepCount: Array.isArray(rjJourney.steps)
+              ? rjJourney.steps.length
+              : 0,
+          },
+        });
         return Response.json({ ok: true });
       }
       case "createSpace": {
@@ -904,6 +944,17 @@ export async function POST(req: NextRequest) {
           structureId: p.structureId,
           ...(typeof p.spaceId === "string" ? { spaceId: p.spaceId } : {}),
         });
+        trackRpcAnalyticsEvent({
+          distinctId: p.playerId,
+          event: ANALYTICS_EVENT_NAMES.spaceEntered,
+          properties: {
+            structureId: p.structureId,
+            spaceId:
+              typeof p.spaceId === "string"
+                ? p.spaceId
+                : (transition.to.spaceId ?? ""),
+          },
+        });
         return Response.json({ transition });
       }
       case "enterAmenity": {
@@ -929,6 +980,14 @@ export async function POST(req: NextRequest) {
             at: new Date().toISOString(),
             action: "amenity_entered",
             detail: { playerId: p.playerId },
+          },
+        });
+        trackRpcAnalyticsEvent({
+          distinctId: p.playerId,
+          event: ANALYTICS_EVENT_NAMES.amenityEntered,
+          properties: {
+            spaceId: p.spaceId,
+            amenityKind: p.amenityKind,
           },
         });
         return Response.json({ ok: true });
@@ -1036,10 +1095,14 @@ export async function POST(req: NextRequest) {
         ) {
           return Response.json({ error: "invalid itemRef.kind" }, { status: 400 });
         }
+        const purchaseItemRef: {
+          kind: "shop" | "supermarket" | "carwash";
+          id: string;
+        } = { kind: refKind, id: p.itemRef.id.trim() };
         const result = await store.executePurchase({
           spaceId: p.spaceId.trim(),
           amenityKind,
-          itemRef: { kind: refKind, id: p.itemRef.id.trim() },
+          itemRef: purchaseItemRef,
           playerId: p.playerId.trim(),
           now: new Date().toISOString(),
           recordId: `pur-${randomUUID()}`,
@@ -1055,7 +1118,7 @@ export async function POST(req: NextRequest) {
             action: "purchase",
             detail: {
               playerId: result.record.playerId,
-              itemRef: result.record.itemRef,
+              itemRef: purchaseItemRef,
               priceUsd: result.record.priceUsd,
             },
           },
@@ -1066,7 +1129,7 @@ export async function POST(req: NextRequest) {
           spaceId: p.spaceId.trim(),
           amenityKind,
           reason: "sold",
-          itemRef: result.record.itemRef,
+          itemRef: purchaseItemRef,
         });
         return Response.json({
           purchase: result.record,
@@ -1100,6 +1163,55 @@ export async function POST(req: NextRequest) {
         return Response.json({
           wallet: result.wallet,
           purchase: result.record,
+        });
+      }
+      case "getGameStats": {
+        const p = body.payload as { playerId?: unknown };
+        if (typeof p.playerId !== "string" || p.playerId.trim().length === 0) {
+          return Response.json({ error: "invalid payload" }, { status: 400 });
+        }
+        const now = new Date().toISOString();
+        const stats = await store.getGameStats({
+          playerId: p.playerId.trim(),
+          now,
+        });
+        return Response.json({ stats });
+      }
+      case "applyGameOutcome": {
+        const p = body.payload as {
+          playerId?: unknown;
+          gameId?: unknown;
+          roundId?: unknown;
+          events?: unknown;
+        };
+        if (
+          typeof p.playerId !== "string" ||
+          p.playerId.trim().length === 0 ||
+          typeof p.gameId !== "string" ||
+          !isGameId(p.gameId) ||
+          typeof p.roundId !== "string" ||
+          p.roundId.trim().length === 0 ||
+          !Array.isArray(p.events)
+        ) {
+          return Response.json({ error: "invalid payload" }, { status: 400 });
+        }
+        const now = new Date().toISOString();
+        const result = await store.applyGameOutcome({
+          playerId: p.playerId.trim(),
+          outcome: {
+            gameId: p.gameId,
+            roundId: p.roundId.trim(),
+            events: p.events,
+          },
+          now,
+        });
+        if (!result.ok) {
+          return Response.json({ error: result.error }, { status: 409 });
+        }
+        return Response.json({
+          stats: result.stats,
+          wallet: result.wallet,
+          netPu: result.netPu,
         });
       }
       case "talkSessionStart": {

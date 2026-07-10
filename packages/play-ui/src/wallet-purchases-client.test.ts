@@ -34,6 +34,15 @@ describe("wallet-purchases-client: buildPurchaseItemKey", () => {
       })
     );
   });
+
+  it("returns null for non-amenity item refs such as arcade games", () => {
+    expect(
+      buildPurchaseItemKey({
+        itemRef: { kind: "game", id: "hidden-gems" },
+        spaceId: "__arcade__",
+      })
+    ).toBeNull();
+  });
 });
 
 describe("wallet-purchases-client: fetchPurchases", () => {

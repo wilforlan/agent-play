@@ -6,6 +6,7 @@ import type {
   AgentPlayWorldMapMcpOccupant,
   AgentPlayWorldMapStructureOccupant,
 } from "../public-types.js";
+import { isGameId } from "./game-catalog.js";
 
 const SPACE_AMENITY_KINDS: readonly AgentPlaySpaceAmenityKind[] = [
   "supermarket",
@@ -213,15 +214,21 @@ export function parseStructureOccupantRow(
     throw new Error("occupant: structure needs worldId");
   }
   const spaceIdsRaw = raw.spaceIds;
-  if (!Array.isArray(spaceIdsRaw) || spaceIdsRaw.length === 0) {
-    throw new Error("occupant: structure needs non-empty spaceIds");
-  }
+  const gameIdRaw = raw.gameId;
   const spaceIds: string[] = [];
-  for (const s of spaceIdsRaw) {
-    if (typeof s !== "string") {
-      throw new Error("occupant: structure spaceIds must be strings");
+  if (Array.isArray(spaceIdsRaw)) {
+    for (const s of spaceIdsRaw) {
+      if (typeof s !== "string") {
+        throw new Error("occupant: structure spaceIds must be strings");
+      }
+      spaceIds.push(s);
     }
-    spaceIds.push(s);
+  }
+  const hasGameId = typeof gameIdRaw === "string" && isGameId(gameIdRaw);
+  if (spaceIds.length === 0 && !hasGameId) {
+    throw new Error(
+      "occupant: structure needs non-empty spaceIds or a valid gameId"
+    );
   }
   const base: AgentPlayWorldMapStructureOccupant = {
     kind: "structure",
@@ -232,6 +239,9 @@ export function parseStructureOccupantRow(
     worldId: raw.worldId,
     spaceIds,
   };
+  if (hasGameId) {
+    base.gameId = gameIdRaw;
+  }
   if (raw.stationary === true) {
     base.stationary = true;
   }

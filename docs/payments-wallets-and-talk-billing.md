@@ -1,6 +1,6 @@
 # Payments, wallets, and talk billing
 
-> **Legacy internal wallet (current default):** This page describes the Redis-backed `$70` wallet, atomic `purchase`, power-ups, and talk billing.  
+> **Legacy internal wallet (current default):** This page describes the Redis-backed `$10` wallet, atomic `purchase`, power-ups, and talk billing.  
 > **Planned replacement:** [x402 + Solana payments](payments/x402-solana/README.md) — production settlement via HTTP 402 and USDC. See [integration plan](x402-solana-payments-plan.md).
 
 This page describes how **player wallets**, **amenity purchases** (payments for shop / supermarket / car-wash items), and **realtime voice talk billing** work in Agent Play. It complements the amenity and wallet introduction in [Release 3.1.1](releases/agent-play-3.1.1.md) and the P2A voice overview in [P2A realtime hub](p2a/index.md).
@@ -29,7 +29,7 @@ Each wallet is a small JSON document stored per session host and player id. It i
 | `currency` | Currently always `"USD"`. |
 | `updatedAt` | ISO timestamp of last mutation. |
 
-**Lazy seeding:** the first read for a player id seeds a new wallet at the default balance (`DEFAULT_PLAYER_WALLET_BALANCE_USD`, currently **$70**), using `WATCH`/`MULTI` so concurrent first reads do not double-seed.
+**Lazy seeding:** the first read for a player id seeds a new wallet at the default balance (`DEFAULT_PLAYER_WALLET_BALANCE_USD`, currently **$10**), using `WATCH`/`MULTI` so concurrent first reads do not double-seed.
 
 **Agent talk-reward wallets:** agents that receive PU from voice billing use a **$0 USD / 0 PU** shell created by `getOrCreateAgentWalletForTalkRewards` (see `createInitialAgentRewardWallet` in the SDK) so hosts do not receive the human lazy-seed grant.
 
@@ -121,7 +121,7 @@ Stored fields include start time, last billed time, cumulative billed seconds, a
 - the **viewer** wallet (`balanceUsd` debit),
 - the **agent** wallet (`powerUps` credit from `computeTalkAgentPowerUpsEarned` when `costUsd > 0`).
 
-All three keys are watched so the debit, session advance, and host reward succeed or fail together (CAS retries match the existing purchase pattern). Before the transaction, `getOrCreateAgentWalletForTalkRewards` ensures the agent wallet exists with **$0** balance (not the human `$70` lazy seed).
+All three keys are watched so the debit, session advance, and host reward succeed or fail together (CAS retries match the existing purchase pattern). Before the transaction, `getOrCreateAgentWalletForTalkRewards` ensures the agent wallet exists with **$0** balance (not the human `$10` lazy seed).
 
 On **insufficient funds** the session is cleared and the RPC returns an error so the client can stop voice. After a successful charge, the viewer’s **`talk_time`** purchase row is appended as today; optional agent-side audit rows are not required for MVP.
 

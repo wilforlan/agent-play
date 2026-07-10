@@ -9,7 +9,7 @@ import {
 import type { StreetPoolEntry } from "./world-streets-pool.js";
 import { STREET_NAME_POOL } from "./world-streets-pool.js";
 
-export type OccupantGroup = "agent" | "space" | "mcp";
+export type OccupantGroup = "agent" | "space" | "arcade";
 
 export type Street = {
   id: string;
@@ -207,7 +207,7 @@ function assertValidLayoutBounds(bounds: WorldBounds): void {
   }
 }
 
-const PRIMARY_GROUP_ORDER: readonly OccupantGroup[] = ["agent", "space", "mcp"];
+const PRIMARY_GROUP_ORDER: readonly OccupantGroup[] = ["agent", "space", "arcade"];
 
 function streetsFromLayoutPrimaryGroups(
   layout: WorldLayout
@@ -308,12 +308,12 @@ export function createVerticalStripSeedLayout(input: {
       allowedGroups: ["space"],
     },
     {
-      id: "zone-mcp-strip",
+      id: "zone-arcade-strip",
       streetId: s2.id,
       streetLabel: s2.label,
       rect: { minX: x2, maxX: x2Max, minY, maxY },
-      primaryGroup: "mcp",
-      allowedGroups: ["mcp"],
+      primaryGroup: "arcade",
+      allowedGroups: ["arcade"],
     },
   ];
   const streets: Street[] = [

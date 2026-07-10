@@ -209,16 +209,16 @@ describe("space-content-model: CarWashCarSchema", () => {
 });
 
 describe("space-content-model: PlayerWalletSchema + factory", () => {
-  it("DEFAULT_PLAYER_WALLET_BALANCE_USD is exactly 70", () => {
-    expect(DEFAULT_PLAYER_WALLET_BALANCE_USD).toBe(70);
+  it("DEFAULT_PLAYER_WALLET_BALANCE_USD is exactly 10", () => {
+    expect(DEFAULT_PLAYER_WALLET_BALANCE_USD).toBe(10);
   });
 
-  it("createInitialPlayerWallet returns balance 70 in USD", () => {
+  it("createInitialPlayerWallet returns balance 10 in USD", () => {
     const now = "2026-05-12T00:00:00.000Z";
     const wallet = createInitialPlayerWallet({ playerId: "p1", now });
     expect(wallet.playerId).toBe("p1");
     expect(wallet.balanceUsd).toBe(DEFAULT_PLAYER_WALLET_BALANCE_USD);
-    expect(wallet.balanceUsd).toBe(70);
+    expect(wallet.balanceUsd).toBe(10);
     expect(wallet.currency).toBe("USD");
     expect(wallet.updatedAt).toBe(now);
     expect(wallet.powerUps).toBe(0);
@@ -227,7 +227,7 @@ describe("space-content-model: PlayerWalletSchema + factory", () => {
   it("PlayerWalletSchema defaults powerUps to 0 when omitted (legacy JSON)", () => {
     const parsed = PlayerWalletSchema.parse({
       playerId: "p-legacy",
-      balanceUsd: 70,
+      balanceUsd: 10,
       currency: "USD",
       updatedAt: "2026-05-12T00:00:00.000Z",
     });
@@ -320,6 +320,25 @@ describe("space-content-model: PurchaseRecordSchema", () => {
       at: "2026-05-12T00:00:00.000Z",
     });
     expect(parsed.powerUpsSpent).toBeUndefined();
+  });
+
+  it("accepts an apu_credit transaction without priceUsd", () => {
+    const parsed = PurchaseRecordSchema.parse({
+      id: "apu-1",
+      playerId: "node-1",
+      spaceId: "__arcade__",
+      amenityKind: "apu_credit",
+      itemRef: { kind: "game", id: "hidden-gems" },
+      at: "2026-05-12T00:00:00.000Z",
+      powerUpsEarned: 12,
+      powerUpsDelta: 12,
+      creditSource: "game:hidden-gems",
+      token: "APU",
+      detail: "Arcade round",
+    });
+    expect(parsed.amenityKind).toBe("apu_credit");
+    expect(parsed.token).toBe("APU");
+    expect(parsed.priceUsd).toBeUndefined();
   });
 
   it("rejects mismatched amenityKind enum", () => {

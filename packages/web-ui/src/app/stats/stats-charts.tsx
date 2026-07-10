@@ -140,7 +140,7 @@ export function StatsCharts({ data }: StatsChartsProps) {
                 <li style={{ marginBottom: 8 }}>
                   <strong style={{ color: "#f1f5f9" }}>Occupants in snapshot:</strong>{" "}
                   {pc.occupantKinds.human} human, {pc.occupantKinds.agent} agent,{" "}
-                  {pc.occupantKinds.mcp} MCP
+                  {pc.occupantKinds.arcadeCabinets} arcade cabinets
                 </li>
               ) : null}
             </ul>

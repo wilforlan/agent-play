@@ -1,3 +1,4 @@
+import { GAME_CABINET_CATALOG } from "@agent-play/sdk";
 import { describe, expect, it } from "vitest";
 import { PlayWorld } from "./play-world.js";
 import { TestSessionStore } from "./session-store.test-double.js";
@@ -79,7 +80,9 @@ describe("PlayWorld snapshot via shared session store", () => {
     expect(
       snapshot.worldMap.occupants.filter((o) => o.kind === "agent").length
     ).toBe(1);
-    expect(snapshot.worldMap.occupants.length).toBe(1);
+    expect(snapshot.worldMap.occupants.length).toBe(
+      1 + GAME_CABINET_CATALOG.length
+    );
     expect(snapshot.worldLayout.zones.length).toBe(3);
   });
 });

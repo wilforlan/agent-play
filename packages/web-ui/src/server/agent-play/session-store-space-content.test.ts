@@ -127,26 +127,26 @@ describe("session-store: carwash cars", () => {
 });
 
 describe("session-store: wallet auto-seed", () => {
-  it("first getPlayerWallet seeds at $70", async () => {
+  it("first getPlayerWallet seeds at $10", async () => {
     const store = new TestSessionStore();
     await store.loadOrCreateSessionId();
     const wallet = await store.getPlayerWallet("p1");
-    expect(wallet.balanceUsd).toBe(70);
+    expect(wallet.balanceUsd).toBe(10);
     expect(wallet.currency).toBe("USD");
     expect(wallet.powerUps).toBe(0);
   });
 
-  it("concurrent first reads still leave balance at exactly 70", async () => {
+  it("concurrent first reads still leave balance at exactly 10", async () => {
     const store = new TestSessionStore();
     await store.loadOrCreateSessionId();
     const [w1, w2] = await Promise.all([
       store.getPlayerWallet("p2"),
       store.getPlayerWallet("p2"),
     ]);
-    expect(w1.balanceUsd).toBe(70);
-    expect(w2.balanceUsd).toBe(70);
+    expect(w1.balanceUsd).toBe(10);
+    expect(w2.balanceUsd).toBe(10);
     const final = await store.getPlayerWallet("p2");
-    expect(final.balanceUsd).toBe(70);
+    expect(final.balanceUsd).toBe(10);
   });
 
   it("setPlayerWalletBalance overwrites the balance", async () => {
@@ -179,14 +179,14 @@ describe("session-store: wallet auto-seed", () => {
     await store.getPlayerWallet("p1");
     const after = await store.adjustPlayerWalletBalance({
       playerId: "p1",
-      deltaUsd: -20,
+      deltaUsd: -5,
     });
-    expect(after.balanceUsd).toBe(50);
+    expect(after.balanceUsd).toBe(5);
     const after2 = await store.adjustPlayerWalletBalance({
       playerId: "p1",
-      deltaUsd: 5,
+      deltaUsd: 3,
     });
-    expect(after2.balanceUsd).toBe(55);
+    expect(after2.balanceUsd).toBe(8);
   });
 
   it("adjustPlayerWalletBalance refuses to go below zero", async () => {
@@ -231,7 +231,7 @@ describe("session-store: executePurchase", () => {
   it("decrements wallet, marks item sold, and appends a purchase record", async () => {
     const store = new TestSessionStore();
     await store.loadOrCreateSessionId();
-    await store.upsertShopItem(baseShopItem({ priceUsd: 20 }));
+    await store.upsertShopItem(baseShopItem({ priceUsd: 5 }));
     await store.getPlayerWallet("p1");
 
     const result = await store.executePurchase({
@@ -243,8 +243,8 @@ describe("session-store: executePurchase", () => {
       recordId: "rec-1",
     });
     if (!result.ok) throw new Error(`expected ok purchase, got ${result.error}`);
-    expect(result.wallet.balanceUsd).toBe(50);
-    expect(result.wallet.powerUps).toBe(60);
+    expect(result.wallet.balanceUsd).toBe(5);
+    expect(result.wallet.powerUps).toBe(15);
     const items = await store.listShopItems("space-1");
     expect(items[0]?.sale.status).toBe("sold");
     expect(items[0]?.sale.soldToPlayerId).toBe("p1");
@@ -256,7 +256,7 @@ describe("session-store: executePurchase", () => {
   it("rejects double-purchase with ITEM_ALREADY_SOLD", async () => {
     const store = new TestSessionStore();
     await store.loadOrCreateSessionId();
-    await store.upsertShopItem(baseShopItem({ priceUsd: 20 }));
+    await store.upsertShopItem(baseShopItem({ priceUsd: 5 }));
     await store.getPlayerWallet("p1");
     await store.getPlayerWallet("p2");
     await store.executePurchase({
@@ -301,14 +301,14 @@ describe("session-store: executePurchase", () => {
     const items = await store.listShopItems("space-1");
     expect(items[0]?.sale.status).toBe("available");
     const wallet = await store.getPlayerWallet("p1");
-    expect(wallet.balanceUsd).toBe(70);
+    expect(wallet.balanceUsd).toBe(10);
   });
 
   it("supports supermarket and carwash kinds", async () => {
     const store = new TestSessionStore();
     await store.loadOrCreateSessionId();
-    await store.upsertSupermarketItem(baseSupermarketItem({ priceUsd: 5 }));
-    await store.upsertCarWashCar(baseCar({ priceUsd: 10 }));
+    await store.upsertSupermarketItem(baseSupermarketItem({ priceUsd: 3 }));
+    await store.upsertCarWashCar(baseCar({ priceUsd: 4 }));
     await store.getPlayerWallet("p1");
     const r1 = await store.executePurchase({
       spaceId: "space-1",
@@ -332,8 +332,8 @@ describe("session-store: executePurchase", () => {
     );
     expect((await store.listCarWashCars("space-1"))[0]?.sale.status).toBe("sold");
     const wallet = await store.getPlayerWallet("p1");
-    expect(wallet.balanceUsd).toBe(55);
-    expect(wallet.powerUps).toBe(45);
+    expect(wallet.balanceUsd).toBe(3);
+    expect(wallet.powerUps).toBe(21);
   });
 });
 

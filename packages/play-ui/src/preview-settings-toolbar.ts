@@ -434,6 +434,29 @@ body > .preview-shell {
   opacity: 0.38;
   cursor: not-allowed;
 }
+.preview-proximity-touch-pad__key--ptt.preview-proximity-touch-pad__key--proximity-active:not(:disabled) {
+  border-color: rgba(52, 211, 153, 0.9);
+  background: rgba(6, 78, 59, 0.96);
+  box-shadow:
+    0 0 14px rgba(52, 211, 153, 0.42),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+}
+.preview-proximity-touch-pad__key--ptt.preview-proximity-touch-pad__key--proximity-active:not(:disabled)
+  .preview-proximity-touch-pad__key-letter {
+  color: #6ee7b7;
+}
+.preview-proximity-touch-pad__key--ptt.preview-proximity-touch-pad__key--proximity-active:not(:disabled)
+  .preview-proximity-touch-pad__key-sub {
+  color: #a7f3d0;
+}
+.preview-proximity-touch-pad__key--ptt.preview-proximity-touch-pad__key--proximity-hint:disabled {
+  opacity: 0.72;
+  border-color: rgba(148, 163, 184, 0.55);
+}
+.preview-proximity-touch-pad__key--ptt.preview-proximity-touch-pad__key--proximity-hint:disabled
+  .preview-proximity-touch-pad__key-sub {
+  color: #cbd5e1;
+}
 .preview-proximity-touch-pad__key--assist:focus-visible,
 .preview-proximity-touch-pad__key--chat:focus-visible,
 .preview-proximity-touch-pad__key--ptt:focus-visible,

@@ -12,7 +12,7 @@
  * `adjustPlayerWalletBalance`, and `purchase` all use `WATCH`/`MULTI` so
  * concurrent first-reads / purchases cannot race past each other. First-time
  * wallet reads atomically seed the balance to
- * {@link @agent-play/sdk!DEFAULT_PLAYER_WALLET_BALANCE_USD | $70}.
+ * {@link @agent-play/sdk!DEFAULT_PLAYER_WALLET_BALANCE_USD | $10}.
  *
  * @see ./session-store.test-double.ts for the in-memory mirror used in tests.
  */
@@ -26,6 +26,7 @@ import type {
   SupermarketItem,
 } from "@agent-play/sdk";
 import {
+  ApplyGameOutcomeInputSchema,
   CarWashCarSchema,
   PlayerWalletSchema,
   PurchaseRecordSchema,
@@ -37,14 +38,33 @@ import {
   createInitialPlayerWallet,
   costForSeconds,
   getWalletBundleById,
+  buildAmenityPurchaseApuFields,
+  buildApuWalletTransaction,
+  buildWalletBundleApuFields,
+  ANALYTICS_EVENT_NAMES,
 } from "@agent-play/sdk";
+import {
+  applyGameOutcomeToState,
+  createInitialGamePlayerState,
+  deserializeGamePlayerState,
+  getGameStatsFromState,
+  serializeGamePlayerState,
+} from "./game-outcome-store.js";
 import { agentPlayVerbose } from "./agent-play-debug.js";
 import { finiteOccupantPosition } from "./agent-journey-cell.js";
 import type { PreviewSnapshotJson } from "./preview-serialize.js";
+import {
+  safeIndexBlock,
+  safeIndexPurchaseRecord,
+  safeIndexWallet,
+  safeTrackAnalyticsEvent,
+} from "../scanner/scanner-hooks.js";
+import { sessionEventTypeToAnalyticsEvent } from "../analytics/analytics-catalog.js";
 import { getPlayerChainGenesisSync } from "./load-player-chain-genesis.js";
 import {
   buildLeafFieldMapFromSnapshot,
   buildPlayerChainFromSnapshot,
+  diffPlayerChainLeaves,
   playerChainLeavesKey,
 } from "./player-chain/index.js";
 import { worldFanoutChannel } from "./redis-world-fanout.js";
@@ -129,6 +149,10 @@ function spaceCarWashCarsHashKey(hostId: string, spaceId: string): string {
 
 function playerWalletKey(hostId: string, playerId: string): string {
   return `agent-play:${hostId}:player:${playerId}:wallet`;
+}
+
+function playerGameStateKey(hostId: string, playerId: string): string {
+  return `agent-play:${hostId}:player:${playerId}:game-state`;
 }
 
 function talkSessionKey(
@@ -453,11 +477,19 @@ export class RedisSessionStore implements SessionStore {
   async persistSnapshotReturningRev(
     snapshot: PreviewSnapshotJson
   ): Promise<PersistSnapshotRev> {
+    const prevSnapshot = await this.getSnapshotJson();
     const raw = JSON.stringify(snapshot);
     const { merkleRootHex, merkleLeafCount } = buildPlayerChainFromSnapshot(
       snapshot,
       this.playerChainGenesis
     );
+    const leafDiff = diffPlayerChainLeaves(
+      prevSnapshot,
+      snapshot,
+      this.playerChainGenesis
+    );
+    const leafDeltaCount =
+      leafDiff.removedKeys.length + leafDiff.updates.length;
     const sess = sessionHashKey(this.hostId);
     const chain = this.redis.multi();
     this.appendSnapshotAndGridToMulti(chain, snapshot, raw);
@@ -474,6 +506,18 @@ export class RedisSessionStore implements SessionStore {
       throw new Error("redis persistSnapshot: transaction aborted");
     }
     const rev = await this.getSnapshotRev();
+    safeIndexBlock({
+      redis: this.redis,
+      hostId: this.hostId,
+      block: {
+        rev,
+        merkleRootHex,
+        merkleLeafCount,
+        at: new Date().toISOString(),
+        occupantCount: snapshot.worldMap?.occupants?.length,
+        leafDeltaCount,
+      },
+    });
     return { rev, merkleRootHex, merkleLeafCount };
   }
 
@@ -527,6 +571,21 @@ export class RedisSessionStore implements SessionStore {
       "lastEventAt",
       entry.at
     );
+    const analyticsEvent = sessionEventTypeToAnalyticsEvent({
+      hostId: this.hostId,
+      type: entry.type,
+      at: entry.at,
+      summary: entry.summary,
+      messageId: `log:${entry.at}:${entry.type}`,
+      backfilled: false,
+    });
+    if (analyticsEvent !== null) {
+      safeTrackAnalyticsEvent({
+        redis: this.redis,
+        hostId: this.hostId,
+        event: analyticsEvent,
+      });
+    }
   }
 
   async mergeSettings(partial: Record<string, string>): Promise<void> {
@@ -958,9 +1017,33 @@ export class RedisSessionStore implements SessionStore {
         try {
           return PlayerWalletSchema.parse(JSON.parse(winnerRaw));
         } catch {
-          // fall through and return our seed value; the winner wrote $70 too.
+          // fall through and return our seed value; the winner wrote $10 too.
         }
       }
+    } else {
+      safeIndexWallet({
+        redis: this.redis,
+        hostId: this.hostId,
+        wallet: seeded,
+      });
+      safeTrackAnalyticsEvent({
+        redis: this.redis,
+        hostId: this.hostId,
+        event: {
+          messageId: `wallet-seed:${playerId}`,
+          event: ANALYTICS_EVENT_NAMES.walletSeeded,
+          distinctId: playerId,
+          timestamp: seeded.updatedAt,
+          properties: {
+            balanceUsd: seeded.balanceUsd,
+            powerUps: seeded.powerUps,
+          },
+          context: {
+            hostId: this.hostId,
+            library: "agent-play-server",
+          },
+        },
+      });
     }
     return seeded;
   }
@@ -1071,6 +1154,11 @@ export class RedisSessionStore implements SessionStore {
     const key = playerPurchasesKey(this.hostId, record.playerId);
     await this.redis.lpush(key, JSON.stringify(record));
     await this.redis.ltrim(key, 0, PURCHASES_MAX - 1);
+    safeIndexPurchaseRecord({
+      redis: this.redis,
+      hostId: this.hostId,
+      record,
+    });
   }
 
   async listPurchases(input: {
@@ -1188,6 +1276,11 @@ export class RedisSessionStore implements SessionStore {
         itemRef: input.itemRef,
         priceUsd: item.priceUsd,
         at: input.now,
+        ...buildAmenityPurchaseApuFields({
+          amenityKind: input.amenityKind,
+          spaceId: input.spaceId,
+          earnedPowerUps,
+        }),
       };
       const multi = this.redis.multi();
       multi.hset(itemKey, input.itemRef.id, JSON.stringify(updatedItem));
@@ -1196,6 +1289,17 @@ export class RedisSessionStore implements SessionStore {
       multi.ltrim(purchasesKeyName, 0, PURCHASES_MAX - 1);
       const exec = await multi.exec();
       if (exec !== null) {
+        safeIndexPurchaseRecord({
+          redis: this.redis,
+          hostId: this.hostId,
+          record,
+          op: "purchase",
+        });
+        safeIndexWallet({
+          redis: this.redis,
+          hostId: this.hostId,
+          wallet: updatedWallet,
+        });
         return {
           ok: true,
           record,
@@ -1306,11 +1410,14 @@ export class RedisSessionStore implements SessionStore {
         playerId: input.playerId,
         spaceId: "__wallet__",
         amenityKind: "wallet_bundle",
-        itemRef: { kind: "shop", id: bundle.id },
+        itemRef: { kind: "bundle", id: bundle.id },
         priceUsd: bundle.creditUsd,
         at: input.now,
-        detail: `Exchanged ${String(bundle.powerUpsCost)} power-ups for $${String(bundle.creditUsd)} balance`,
-        powerUpsSpent: bundle.powerUpsCost,
+        detail: `Exchanged ${String(bundle.powerUpsCost)} APU for $${String(bundle.creditUsd)} balance`,
+        ...buildWalletBundleApuFields({
+          bundleId: bundle.id,
+          powerUpsCost: bundle.powerUpsCost,
+        }),
       });
       const multi = this.redis.multi();
       multi.set(walletKey, JSON.stringify(updatedWallet));
@@ -1318,11 +1425,130 @@ export class RedisSessionStore implements SessionStore {
       multi.ltrim(purchasesKeyName, 0, PURCHASES_MAX - 1);
       const exec = await multi.exec();
       if (exec !== null) {
+        safeIndexPurchaseRecord({
+          redis: this.redis,
+          hostId: this.hostId,
+          record,
+          op: "redeemWalletBundle",
+        });
+        safeIndexWallet({
+          redis: this.redis,
+          hostId: this.hostId,
+          wallet: updatedWallet,
+        });
         return { ok: true, wallet: updatedWallet, record };
       }
     }
     throw new Error(
       `redeemWalletBundle: lost ${String(maxAttempts)} CAS retries for player ${input.playerId}`
+    );
+  }
+
+  private async loadGamePlayerState(
+    playerId: string,
+    now: Date
+  ): Promise<import("./game-outcome-store.js").GamePlayerState> {
+    const key = playerGameStateKey(this.hostId, playerId);
+    const raw = await this.redis.get(key);
+    if (raw === null || raw.length === 0) {
+      return createInitialGamePlayerState(now);
+    }
+    try {
+      const parsed: unknown = JSON.parse(raw);
+      if (typeof parsed !== "object" || parsed === null) {
+        return createInitialGamePlayerState(now);
+      }
+      return deserializeGamePlayerState(
+        parsed as import("./game-outcome-store.js").SerializedGamePlayerState
+      );
+    } catch {
+      return createInitialGamePlayerState(now);
+    }
+  }
+
+  async getGameStats(input: {
+    playerId: string;
+    now: string;
+  }): Promise<import("@agent-play/sdk").GameStats> {
+    const now = new Date(input.now);
+    const state = await this.loadGamePlayerState(input.playerId, now);
+    return getGameStatsFromState({ state, now });
+  }
+
+  async applyGameOutcome(input: {
+    playerId: string;
+    outcome: import("@agent-play/sdk").ApplyGameOutcomeInput;
+    now: string;
+  }): Promise<
+    | {
+        ok: true;
+        stats: import("@agent-play/sdk").GameStats;
+        wallet: PlayerWallet;
+        netPu: number;
+      }
+    | {
+        ok: false;
+        error: "DUPLICATE_ROUND" | "INVALID_EVENTS" | "CAP_EXCEEDED";
+      }
+  > {
+    const parsed = ApplyGameOutcomeInputSchema.safeParse(input.outcome);
+    if (!parsed.success) {
+      return { ok: false, error: "INVALID_EVENTS" };
+    }
+    const now = new Date(input.now);
+    const stateKey = playerGameStateKey(this.hostId, input.playerId);
+    const walletKey = playerWalletKey(this.hostId, input.playerId);
+    const maxAttempts = 5;
+    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+      await this.redis.watch(stateKey, walletKey);
+      const state = await this.loadGamePlayerState(input.playerId, now);
+      const wallet = await this.getPlayerWallet(input.playerId);
+      const applied = applyGameOutcomeToState({
+        state,
+        wallet,
+        outcome: parsed.data,
+        now,
+      });
+      if (!applied.result.ok) {
+        await this.redis.unwatch();
+        return applied.result;
+      }
+      const multi = this.redis.multi();
+      multi.set(stateKey, JSON.stringify(serializeGamePlayerState(applied.state)));
+      multi.set(walletKey, JSON.stringify(applied.wallet));
+      const exec = await multi.exec();
+      if (exec !== null) {
+        if (applied.result.ok && applied.result.netPu !== 0) {
+          const netPu = applied.result.netPu;
+          const apuRecord = buildApuWalletTransaction({
+            id: `apu-${randomUUID()}`,
+            playerId: input.playerId,
+            spaceId: "__arcade__",
+            delta: netPu,
+            at: input.now,
+            creditSource:
+              netPu > 0
+                ? `game:${parsed.data.gameId}`
+                : undefined,
+            debitSource:
+              netPu < 0
+                ? `game:${parsed.data.gameId}`
+                : undefined,
+            itemRef: { kind: "game", id: parsed.data.gameId },
+            detail: `Arcade round ${parsed.data.roundId}`,
+          });
+          await this.appendPurchaseRecord(apuRecord);
+        }
+        safeIndexWallet({
+          redis: this.redis,
+          hostId: this.hostId,
+          wallet: applied.wallet,
+        });
+        return applied.result;
+      }
+    }
+    throw new Error(
+      `applyGameOutcome: lost ${String(maxAttempts)} CAS retries for player ${input.playerId}`
     );
   }
 
@@ -1386,6 +1612,28 @@ export class RedisSessionStore implements SessionStore {
       priceUsd: input.priceUsd,
       at: input.at,
       detail: `Realtime voice · ${String(input.billedSeconds)}s · agent ${input.agentId}`,
+    });
+    await this.appendPurchaseRecord(record);
+  }
+
+  private async appendTalkAgentApuRecord(input: {
+    agentId: string;
+    viewerNodeId: string;
+    powerUpsEarned: number;
+    billedSeconds: number;
+    at: string;
+  }): Promise<void> {
+    if (input.powerUpsEarned <= 0) return;
+    const record = buildApuWalletTransaction({
+      id: `apu-${randomUUID()}`,
+      playerId: input.agentId,
+      spaceId: "__talk__",
+      delta: input.powerUpsEarned,
+      at: input.at,
+      creditSource: `talk:agent:${input.agentId}`,
+      counterpartyNodeId: input.viewerNodeId,
+      itemRef: { kind: "talk", id: "openai-realtime" },
+      detail: `Voice session APU reward · ${String(input.billedSeconds)}s · viewer ${input.viewerNodeId}`,
     });
     await this.appendPurchaseRecord(record);
   }
@@ -1501,6 +1749,15 @@ export class RedisSessionStore implements SessionStore {
             playerId: input.viewerNodeId,
             agentId: input.agentId,
             priceUsd: costUsd,
+            billedSeconds: billSeconds,
+            at: input.now,
+          });
+        }
+        if (agentPuEarned > 0) {
+          await this.appendTalkAgentApuRecord({
+            agentId: input.agentId,
+            viewerNodeId: input.viewerNodeId,
+            powerUpsEarned: agentPuEarned,
             billedSeconds: billSeconds,
             at: input.now,
           });
@@ -1638,6 +1895,15 @@ export class RedisSessionStore implements SessionStore {
             playerId: input.viewerNodeId,
             agentId: input.agentId,
             priceUsd: finalCostUsd,
+            billedSeconds: billSeconds,
+            at: input.now,
+          });
+        }
+        if (agentPuEarned > 0) {
+          await this.appendTalkAgentApuRecord({
+            agentId: input.agentId,
+            viewerNodeId: input.viewerNodeId,
+            powerUpsEarned: agentPuEarned,
             billedSeconds: billSeconds,
             at: input.now,
           });

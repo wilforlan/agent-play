@@ -54,20 +54,37 @@ describe("buildPurchaseSubtitle", () => {
     expect(subtitle).toContain("Bought");
   });
 
-  it("formats wallet bundle rows with PU spent when present", () => {
+  it("formats wallet bundle rows with APU spent when present", () => {
     const subtitle = buildPurchaseSubtitle({
       record: carPurchase({
         amenityKind: "wallet_bundle",
         spaceId: "__wallet__",
-        itemRef: { kind: "shop", id: "bundle-10" },
+        itemRef: { kind: "bundle", id: "bundle-10" },
         priceUsd: 10,
         powerUpsSpent: 25,
         detail: "$10 balance",
       }),
       fields: {},
     });
-    expect(subtitle).toContain("25 PU exchanged");
+    expect(subtitle).toContain("25 APU redeemed");
     expect(subtitle).toContain("$10 balance");
+  });
+
+  it("formats APU credit rows with credit source", () => {
+    const subtitle = buildPurchaseSubtitle({
+      record: carPurchase({
+        amenityKind: "apu_credit",
+        spaceId: "__arcade__",
+        itemRef: { kind: "game", id: "hidden-gems" },
+        creditSource: "game:hidden-gems",
+        powerUpsEarned: 12,
+        powerUpsDelta: 12,
+        detail: "Arcade round round-1",
+      }),
+      fields: {},
+    });
+    expect(subtitle).toContain("game:hidden-gems");
+    expect(subtitle).toContain("Arcade round round-1");
   });
 });
 
@@ -202,7 +219,7 @@ describe("createWalletInventoryPanel", () => {
       onRedeemBundle: async () => {},
     });
     panel.open();
-    panel.setData({ balanceUsd: 70, powerUps: 500, purchases: [], items: {} });
+    panel.setData({ balanceUsd: 10, powerUps: 500, purchases: [], items: {} });
     expect(parent.textContent).toContain("Exchange power-ups");
     expect(parent.textContent).toContain("Redeem");
   });
@@ -230,7 +247,7 @@ describe("createWalletInventoryPanel", () => {
       items: {},
     });
     expect(parent.textContent).toContain("$2.50");
-    expect(parent.textContent).toContain("Pu");
+    expect(parent.textContent).toContain("Activity");
   });
 
   it("renders an empty-state when there are no purchases", () => {
@@ -240,7 +257,7 @@ describe("createWalletInventoryPanel", () => {
       onRefresh: () => {},
     });
     panel.open();
-    panel.setData({ balanceUsd: 70, powerUps: 0, purchases: [], items: {} });
-    expect(parent.textContent).toContain("haven't bought anything");
+    panel.setData({ balanceUsd: 10, powerUps: 0, purchases: [], items: {} });
+    expect(parent.textContent).toContain("No wallet activity yet");
   });
 });

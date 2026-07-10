@@ -19,7 +19,7 @@ describe("wallet-client: fetchPlayerWallet", () => {
       body: {
         wallet: {
           playerId: "p1",
-          balanceUsd: 70,
+          balanceUsd: 10,
           currency: "USD",
           updatedAt: "2026-05-12T00:00:00.000Z",
         },

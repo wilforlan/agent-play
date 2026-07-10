@@ -104,7 +104,9 @@ describe("PlayWorld space placement uses the worldLayout space zone", () => {
     await w.updateLayoutBoundsField({ field: "maxY", value: 4 });
     const snap = await w.getSnapshotJson();
     const structures = snap.worldMap.occupants.filter(
-      (o) => o.kind === "structure"
+      (o): o is typeof o & { kind: "structure" } =>
+        o.kind === "structure" &&
+        !("gameId" in o && typeof o.gameId === "string")
     );
     expect(structures.length).toBe(ids.length);
     const keys = structures.map((s) => `${String(s.x)},${String(s.y)}`);

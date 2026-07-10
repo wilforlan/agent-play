@@ -35,7 +35,7 @@ const makeStubParent = () => {
 const mockRpc = (): WorldRpcSurface => ({
   getWallet: vi.fn(async (_playerId: string) => ({
     playerId: "p1",
-    balanceUsd: 70,
+    balanceUsd: 10,
     currency: "USD" as const,
     updatedAt: "now",
   })),
@@ -48,7 +48,7 @@ const mockRpc = (): WorldRpcSurface => ({
   adjustWallet: vi.fn(
     async (input: { playerId: string; deltaUsd: number }) => ({
       playerId: input.playerId,
-      balanceUsd: 70 + input.deltaUsd,
+      balanceUsd: 10 + input.deltaUsd,
       currency: "USD" as const,
       updatedAt: "now",
     })

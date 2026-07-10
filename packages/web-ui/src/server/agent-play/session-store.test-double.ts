@@ -18,6 +18,7 @@ import type {
   SupermarketItem,
 } from "@agent-play/sdk";
 import {
+  ApplyGameOutcomeInputSchema,
   PurchaseRecordSchema,
   computeTalkAgentPowerUpsEarned,
   createInitialAgentRewardWallet,
@@ -25,13 +26,30 @@ import {
   costForSeconds,
   getWalletBundleById,
   TALK_PRICE_PER_SECOND_USD,
+  buildAmenityPurchaseApuFields,
+  buildApuWalletTransaction,
+  buildWalletBundleApuFields,
 } from "@agent-play/sdk";
+import {
+  applyGameOutcomeToState,
+  createInitialGamePlayerState,
+  getGameStatsFromState,
+  type GamePlayerState,
+} from "./game-outcome-store.js";
 import type { PreviewSnapshotJson } from "./preview-serialize.js";
 import type { SessionEventLogEntry } from "./redis-session-store.js";
 import { getPlayerChainGenesisSync } from "./load-player-chain-genesis.js";
-import { buildPlayerChainFromSnapshot } from "./player-chain/index.js";
+import { buildPlayerChainFromSnapshot, diffPlayerChainLeaves } from "./player-chain/index.js";
 import { dispatchWorldFanoutLocal } from "./world-fanout-subscriber.js";
 import type { GeographyHumanState } from "./world-geography.js";
+import {
+  createTestDoubleScannerMirror,
+  mirrorBlock,
+  mirrorEventLogEntry,
+  mirrorPurchaseRecord,
+  mirrorWalletBalance,
+  type TestDoubleScannerMirror,
+} from "./test-double-scanner-mirror.js";
 import type {
   ExecutePurchaseResult,
   PresenceLease,
@@ -87,6 +105,9 @@ export class TestSessionStore implements SessionStore {
       totalChargedUsd: number;
     }
   >();
+  private readonly gamePlayerState = new Map<string, GamePlayerState>();
+  readonly scannerMirror: TestDoubleScannerMirror =
+    createTestDoubleScannerMirror();
 
   constructor(options: TestSessionStoreOptions = {}) {
     this.playerChainGenesis =
@@ -194,6 +215,7 @@ export class TestSessionStore implements SessionStore {
   async persistSnapshotReturningRev(
     snapshot: PreviewSnapshotJson
   ): Promise<PersistSnapshotRev> {
+    const prevSnapshot = this.snapshot;
     this.snapshot = snapshot;
     this.rev += 1;
     const chain = buildPlayerChainFromSnapshot(
@@ -202,6 +224,22 @@ export class TestSessionStore implements SessionStore {
     );
     this.merkleRootHex = chain.merkleRootHex;
     this.merkleLeafCount = chain.merkleLeafCount;
+    const leafDiff = diffPlayerChainLeaves(
+      prevSnapshot,
+      snapshot,
+      this.playerChainGenesis
+    );
+    const leafDeltaCount =
+      leafDiff.removedKeys.length + leafDiff.updates.length;
+    const at = new Date().toISOString();
+    mirrorBlock(this.scannerMirror, {
+      rev: this.rev,
+      merkleRootHex: chain.merkleRootHex,
+      merkleLeafCount: chain.merkleLeafCount,
+      at,
+      occupantCount: snapshot.worldMap?.occupants?.length,
+      leafDeltaCount,
+    });
     return {
       rev: this.rev,
       merkleRootHex: chain.merkleRootHex,
@@ -285,6 +323,11 @@ export class TestSessionStore implements SessionStore {
     while (this.eventLog.length > EVENT_LOG_MAX) {
       this.eventLog.pop();
     }
+    mirrorEventLogEntry(
+      this.scannerMirror,
+      entry,
+      `log:${entry.at}:${entry.type}`
+    );
   }
 
   async getPublishedMetadata(): Promise<PublishedSessionMetadata> {
@@ -548,6 +591,7 @@ export class TestSessionStore implements SessionStore {
       now: new Date().toISOString(),
     });
     this.playerWallets.set(playerId, seeded);
+    mirrorWalletBalance(this.scannerMirror, seeded);
     return { ...seeded };
   }
 
@@ -608,6 +652,7 @@ export class TestSessionStore implements SessionStore {
     const list = this.playerPurchases.get(record.playerId) ?? [];
     list.unshift({ ...record });
     this.playerPurchases.set(record.playerId, list);
+    mirrorPurchaseRecord(this.scannerMirror, record);
   }
 
   async listPurchases(input: {
@@ -681,6 +726,7 @@ export class TestSessionStore implements SessionStore {
       updatedAt: input.now,
     };
     this.playerWallets.set(input.playerId, nextWallet);
+    mirrorWalletBalance(this.scannerMirror, nextWallet);
     const record: PurchaseRecord = {
       id: input.recordId,
       playerId: input.playerId,
@@ -689,6 +735,11 @@ export class TestSessionStore implements SessionStore {
       itemRef: input.itemRef,
       priceUsd: item.priceUsd,
       at: input.now,
+      ...buildAmenityPurchaseApuFields({
+        amenityKind: input.amenityKind,
+        spaceId: input.spaceId,
+        earnedPowerUps,
+      }),
     };
     await this.appendPurchaseRecord(record);
     return {
@@ -761,11 +812,14 @@ export class TestSessionStore implements SessionStore {
       playerId: input.playerId,
       spaceId: "__wallet__",
       amenityKind: "wallet_bundle",
-      itemRef: { kind: "shop", id: bundle.id },
+      itemRef: { kind: "bundle", id: bundle.id },
       priceUsd: bundle.creditUsd,
       at: input.now,
-      detail: `Exchanged ${String(bundle.powerUpsCost)} power-ups for $${String(bundle.creditUsd)} balance`,
-      powerUpsSpent: bundle.powerUpsCost,
+      detail: `Exchanged ${String(bundle.powerUpsCost)} APU for $${String(bundle.creditUsd)} balance`,
+      ...buildWalletBundleApuFields({
+        bundleId: bundle.id,
+        powerUpsCost: bundle.powerUpsCost,
+      }),
     });
     await this.appendPurchaseRecord(record);
     return { ok: true, wallet: updatedWallet, record };
@@ -875,6 +929,21 @@ export class TestSessionStore implements SessionStore {
       });
       await this.appendPurchaseRecord(record);
     }
+    if (agentPuEarned > 0) {
+      await this.appendPurchaseRecord(
+        buildApuWalletTransaction({
+          id: `apu-${randomUUID()}`,
+          playerId: input.agentId,
+          spaceId: "__talk__",
+          delta: agentPuEarned,
+          at: input.now,
+          creditSource: `talk:agent:${input.agentId}`,
+          counterpartyNodeId: input.viewerNodeId,
+          itemRef: { kind: "talk", id: "openai-realtime" },
+          detail: `Voice session APU reward · ${String(billSeconds)}s · viewer ${input.viewerNodeId}`,
+        })
+      );
+    }
     return {
       ok: true,
       secondsBilledThisTick: billSeconds,
@@ -950,11 +1019,96 @@ export class TestSessionStore implements SessionStore {
       });
       await this.appendPurchaseRecord(record);
     }
+    if (agentPuEarned > 0) {
+      await this.appendPurchaseRecord(
+        buildApuWalletTransaction({
+          id: `apu-${randomUUID()}`,
+          playerId: input.agentId,
+          spaceId: "__talk__",
+          delta: agentPuEarned,
+          at: input.now,
+          creditSource: `talk:agent:${input.agentId}`,
+          counterpartyNodeId: input.viewerNodeId,
+          itemRef: { kind: "talk", id: "openai-realtime" },
+          detail: `Voice session APU reward · ${String(billSeconds)}s · viewer ${input.viewerNodeId}`,
+        })
+      );
+    }
     return {
       ok: true,
       totalCostUsd: session.totalChargedUsd + finalCostUsd,
       secondsBilledTotal: session.totalBilledSeconds + billSeconds,
       wallet: { ...nextWallet },
     };
+  }
+
+  async getGameStats(input: {
+    playerId: string;
+    now: string;
+  }): Promise<import("@agent-play/sdk").GameStats> {
+    const now = new Date(input.now);
+    const state =
+      this.gamePlayerState.get(input.playerId) ??
+      createInitialGamePlayerState(now);
+    return getGameStatsFromState({ state, now });
+  }
+
+  async applyGameOutcome(input: {
+    playerId: string;
+    outcome: import("@agent-play/sdk").ApplyGameOutcomeInput;
+    now: string;
+  }): Promise<
+    | {
+        ok: true;
+        stats: import("@agent-play/sdk").GameStats;
+        wallet: PlayerWallet;
+        netPu: number;
+      }
+    | {
+        ok: false;
+        error: "DUPLICATE_ROUND" | "INVALID_EVENTS" | "CAP_EXCEEDED";
+      }
+  > {
+    const parsed = ApplyGameOutcomeInputSchema.safeParse(input.outcome);
+    if (!parsed.success) {
+      return { ok: false, error: "INVALID_EVENTS" };
+    }
+    const now = new Date(input.now);
+    const state =
+      this.gamePlayerState.get(input.playerId) ??
+      createInitialGamePlayerState(now);
+    const wallet = await this.getPlayerWallet(input.playerId);
+    const applied = applyGameOutcomeToState({
+      state,
+      wallet,
+      outcome: parsed.data,
+      now,
+    });
+    if (!applied.result.ok) {
+      return applied.result;
+    }
+    this.gamePlayerState.set(input.playerId, applied.state);
+    this.playerWallets.set(input.playerId, applied.wallet);
+    if (applied.result.ok && applied.result.netPu !== 0) {
+      const apuRecord = buildApuWalletTransaction({
+        id: `apu-${randomUUID()}`,
+        playerId: input.playerId,
+        spaceId: "__arcade__",
+        delta: applied.result.netPu,
+        at: input.now,
+        creditSource:
+          applied.result.netPu > 0
+            ? `game:${parsed.data.gameId}`
+            : undefined,
+        debitSource:
+          applied.result.netPu < 0
+            ? `game:${parsed.data.gameId}`
+            : undefined,
+        itemRef: { kind: "game", id: parsed.data.gameId },
+        detail: `Arcade round ${parsed.data.roundId}`,
+      });
+      await this.appendPurchaseRecord(apuRecord);
+    }
+    return applied.result;
   }
 }
