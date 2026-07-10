@@ -18,3 +18,6 @@ Informal **runbooks and context** that do not replace the main docs under [`docs
 | [human-agent-interaction-ux-2026-04-10.md](human-agent-interaction-ux-2026-04-10.md) | Play UI interaction runbook: full-name/proximity prompt UX, session panel Assist+Chat workflow, mobile auto-open behavior, API payload contracts, and flow diagram. |
 | [agent-human-intercom.md](agent-human-intercom.md) | Intercom runtime in `packages/intercom`, forwarding-only web adapter, human node onboarding, channel keys, `requestId` correlation, SDK `subscribeIntercomCommands` / `intercomResponse`, and troubleshooting. |
 | [structures-and-spaces-world-model.md](structures-and-spaces-world-model.md) | Structure occupant (`kind: "structure"`), space catalog, amenities, player-chain `structure:` / `space:` leaves, Pixi sprites, SDK snapshot types. |
+| [agent-play-scanner-architecture.md](agent-play-scanner-architecture.md) | Scanner indexer Redis keys, write-through hooks, backfill, contributor checklist. |
+| [in-platform-analytics.md](in-platform-analytics.md) | Segment-style events + properties, analytics Redis layout, catalog, funnels. |
+| [spatial-economy-investment-note.md](spatial-economy-investment-note.md) | $10 wallet seed policy, APU-centric flywheel, $10k investment strategies, Scanner KPIs. |

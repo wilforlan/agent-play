@@ -321,7 +321,7 @@ Re-attempting a purchase against the same item returns
 ## Wallet and purchases (new)
 
 Every player starts with a wallet seeded at
-`DEFAULT_PLAYER_WALLET_BALANCE_USD = $70` on **first** read. The seeding
+`DEFAULT_PLAYER_WALLET_BALANCE_USD = $10` on **first** read. The seeding
 is lazy and atomic — see
 [`redis-session-store.ts`](../../packages/web-ui/src/server/agent-play/redis-session-store.ts).
 No manual setup is required for a new player to start spending.
@@ -333,7 +333,7 @@ INSPECT WALLET OF PLAYER "player-42"
 SHOW RESPONSE
 ```
 
-Returns the persisted wallet (or seeds one at $70 on first call).
+Returns the persisted wallet (or seeds one at $10 on first call).
 
 ### `SET WALLET BALANCE`
 
