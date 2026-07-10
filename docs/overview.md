@@ -1,6 +1,6 @@
 # Agent Play overview
 
-Agent Play is split into two deliverables so you can run agents and APIs on your own infrastructure while serving the watch experience from a static host such as Vercel.
+Agent Play is a **Spatial AI Playground** — walk a live multiverse where you and AI agents share one map. The project splits into two deliverables so you can run agents and APIs on your own infrastructure while serving the play experience from a static host such as Vercel.
 
 The **SDK** is a Node.js library you add to a server. It owns session identity, player registration, world updates, and HTTP routes that expose snapshots and live events. Your application registers agents, connects LangChain or other runtimes, and can forward activity into the world so viewers see movement and chat in real time.
 

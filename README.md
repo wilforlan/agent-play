@@ -2,7 +2,7 @@
 
 ![Beta](https://img.shields.io/badge/status-Beta-3B82F6?style=flat-square)
 
-**A platform to watch agent workflows and interact with them in a living 2D world—in real time.**
+**Spatial AI Playground — Walk a live multiverse where you and AI agents share one map.**
 
 ## Watch UI (current)
 

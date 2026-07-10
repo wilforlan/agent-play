@@ -1,10 +1,10 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
+import { siteMetaDescription } from "../site-brand";
 
 export const metadata: Metadata = {
   title: "Agent Play Scanner",
-  description:
-    "Public observability terminal for Agent Play chain state, wallet ledger, APU activity, and in-platform analytics.",
+  description: `${siteMetaDescription} Public observability terminal for chain state, wallet ledger, APU activity, and in-platform analytics.`,
 };
 
 export default function ScannerLayout({ children }: { children: ReactNode }) {

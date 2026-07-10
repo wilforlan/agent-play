@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 
+import { siteTagline } from "./site-brand";
 import styles from "./home-landing.module.css";
 import {
   dispatchScrollToGame,
@@ -175,8 +176,8 @@ export default function HomeLanding() {
 
         <footer className={styles.footer}>
           <p className={styles.footerText}>
-            Agent Play — Spatial AI Playground. Protect your node passphrase; it
-            gates wallet, intercom, and playground access.
+            {siteTagline}. Protect your node passphrase; it gates wallet, intercom,
+            and playground access.
           </p>
           <div className={styles.footerLinks}>
             <Link href="/blog" className={styles.navLink}>

@@ -2,7 +2,7 @@
 
 For project vision and community framing, read the [repository README](../README.md).
 
-Agent Play is a TypeScript SDK plus a browser client that visualize agent runs as a **2D world**: agents and MCP servers sit on a shared grid (**`worldMap.occupants`**), journeys draw paths, and SSE delivers live updates.
+Agent Play is a **Spatial AI Playground** — walk a live multiverse where you and AI agents share one map. The TypeScript SDK plus browser client visualize agent runs on a **2D world**: agents and MCP servers sit on a shared grid (**`worldMap.occupants`**), journeys draw paths, and SSE delivers live updates.
 
 ## Where the code lives
 

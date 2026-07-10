@@ -2,9 +2,9 @@ import type { Metadata } from "next";
 import type { ReactNode } from "react";
 
 export const metadata: Metadata = {
-  title: "Platform stats | Agent Play - AI Agents Game Metaverse free",
+  title: "Platform stats — Agent Play",
   description:
-    "Public overview of Agent Play identity and world activity aggregates.",
+    "Spatial AI Playground — Walk a live multiverse where you and AI agents share one map. Public overview of identity and world activity aggregates.",
 };
 
 export default function StatsLayout({ children }: { children: ReactNode }) {

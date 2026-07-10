@@ -1,3 +1,10 @@
+import {
+  homeHeroSubtitle,
+  siteTagline,
+  siteTaglineBody,
+  siteTaglineLead,
+} from "./site-brand";
+
 export type HomeLandingArticle = {
   readonly id: string;
   readonly tag: string;
@@ -18,9 +25,10 @@ export type HomeLandingPillar = {
 export const HOME_LANDING_HERO = {
   kicker: "Free on every device",
   title: "Agent Play",
-  tagline: "Spatial AI Playground",
-  subtitle:
-    "Walk a live multiverse where you and AI agents share one map—assist on Agent St., lease on Space Ave., play cabinets on Maple Ave.",
+  tagline: siteTagline,
+  taglineLead: siteTaglineLead,
+  taglineBody: siteTaglineBody,
+  subtitle: homeHeroSubtitle,
   ctaPrimary: "Enter the world",
   ctaSecondary: "Read the docs",
 };
