@@ -219,7 +219,7 @@ describe("createWalletInventoryPanel", () => {
       onRedeemBundle: async () => {},
     });
     panel.open();
-    panel.setData({ balanceUsd: 70, powerUps: 500, purchases: [], items: {} });
+    panel.setData({ balanceUsd: 10, powerUps: 500, purchases: [], items: {} });
     expect(parent.textContent).toContain("Exchange power-ups");
     expect(parent.textContent).toContain("Redeem");
   });
@@ -257,7 +257,7 @@ describe("createWalletInventoryPanel", () => {
       onRefresh: () => {},
     });
     panel.open();
-    panel.setData({ balanceUsd: 70, powerUps: 0, purchases: [], items: {} });
+    panel.setData({ balanceUsd: 10, powerUps: 0, purchases: [], items: {} });
     expect(parent.textContent).toContain("No wallet activity yet");
   });
 });

@@ -8,7 +8,7 @@
  *
  * The route is `sid`-gated, so callers must pass the current preview
  * session id. The first call for a player both reads and seeds the
- * server-side wallet at `$70`.
+ * server-side wallet at `$10`.
  *
  * @see ../../web-ui/src/app/api/agent-play/players/[id]/wallet/route.ts —
  *      the corresponding server handler.
@@ -29,7 +29,7 @@ export type WalletDto = {
 
 /**
  * Fetch a player's wallet. The first read seeds the wallet to
- * `$70` server-side.
+ * `$10` server-side.
  *
  * @example
  * ```ts
