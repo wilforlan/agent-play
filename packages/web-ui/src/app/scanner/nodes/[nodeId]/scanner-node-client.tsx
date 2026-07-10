@@ -131,7 +131,9 @@ export function ScannerNodeClient() {
               <tbody>
                 {profile.txs.map((tx) => (
                   <tr key={tx.id}>
-                    <td>{tx.at}</td>
+                    <td>
+                      <Link href={`/scanner/txs/${encodeURIComponent(tx.id)}`}>{tx.at}</Link>
+                    </td>
                     <td>{tx.amenityKind}</td>
                     <td>
                       {tx.priceUsd !== undefined ? `$${tx.priceUsd}` : "—"}
