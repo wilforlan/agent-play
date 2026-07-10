@@ -1275,6 +1275,16 @@ function onDocumentKeyDown(e: KeyboardEvent): void {
   }
   if (
     e.key.toLowerCase() === "p" &&
+    activeGameStage !== null &&
+    lastGameStageProximityTarget !== null &&
+    lastGameStageProximityTarget.activatable !== false
+  ) {
+    e.preventDefault();
+    activateGameStageProximityTarget();
+    return;
+  }
+  if (
+    e.key.toLowerCase() === "p" &&
     lastYardAmenityPadTarget !== null &&
     stageController?.current()?.id === "spaceYard"
   ) {
@@ -1282,7 +1292,10 @@ function onDocumentKeyDown(e: KeyboardEvent): void {
     void enterAmenityFromYardPad(lastYardAmenityPadTarget);
     return;
   }
-  if (e.key.toLowerCase() === "p" && activeAmenityStage !== null) {
+  if (
+    e.key.toLowerCase() === "p" &&
+    activeAmenityStage !== null
+  ) {
     const stage = activeAmenityStage;
     const buyable = stage.nearestBuyable;
     if (buyable !== null) {
@@ -1290,15 +1303,6 @@ function onDocumentKeyDown(e: KeyboardEvent): void {
       cycleAmenityItemAction(stage, buyable);
       return;
     }
-  }
-  if (
-    e.key.toLowerCase() === "a" &&
-    activeGameStage !== null &&
-    lastGameStageProximityTarget !== null
-  ) {
-    e.preventDefault();
-    activateGameStageProximityTarget();
-    return;
   }
   const partner = registeredAgentPartnerForProximityOrNull(
     lastProximityPartnerId
@@ -3629,7 +3633,7 @@ function onFrame(): void {
         proximityLegendEl.textContent =
           gameTarget.activatable === false
             ? `Near ${gameTarget.label}. ${gameTarget.verb}`
-            : `Near ${gameTarget.label}. A: ${gameTarget.verb.toLowerCase()}`;
+            : `Near ${gameTarget.label}. P: ${gameTarget.verb.toLowerCase()}`;
       } else {
         proximityLegendEl.textContent =
           "Joystick or arrows to move · Walk to exit door to leave";
@@ -3674,7 +3678,7 @@ function onFrame(): void {
         proximityPromptEl.textContent =
           target.activatable === false
             ? target.verb
-            : `A: ${target.verb} ${target.label}`;
+            : `P: ${target.verb} ${target.label}`;
         proximityPromptEl.style.display = "block";
         proximityPromptEl.style.left = `${screen.x}px`;
         proximityPromptEl.style.top = `${screen.y}px`;
@@ -4105,13 +4109,6 @@ export function bootstrap(): void {
       },
       onAssist: () => {
         if (
-          activeGameStage !== null &&
-          lastGameStageProximityTarget !== null
-        ) {
-          activateGameStageProximityTarget();
-          return;
-        }
-        if (
           lastProximityPartnerId === null &&
           lastStructureProximityTarget !== null
         ) {
@@ -4129,6 +4126,14 @@ export function bootstrap(): void {
         triggerProximityAssistOrChat("chat");
       },
       onPushToTalk: () => {
+        if (
+          activeGameStage !== null &&
+          lastGameStageProximityTarget !== null &&
+          lastGameStageProximityTarget.activatable !== false
+        ) {
+          activateGameStageProximityTarget();
+          return;
+        }
         if (activeAmenityStage !== null) {
           const stage = activeAmenityStage;
           const buyable = stage.nearestBuyable;

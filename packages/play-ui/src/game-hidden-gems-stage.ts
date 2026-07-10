@@ -141,7 +141,7 @@ export const buildGameHiddenGemsStage = (
           id: `chest-${index}`,
           x: startX + index * spacing + 0.45,
           y: rowY + 0.36,
-          label: `Chest ${index + 1}`,
+          label: "Chest",
           verb: "Open",
         });
       }

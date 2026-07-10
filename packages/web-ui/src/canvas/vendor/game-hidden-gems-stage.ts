@@ -17,6 +17,10 @@ import {
   type BuildGameStageOptions,
   type GameStageHandle,
 } from "./game-stage-base.js";
+import {
+  buildGameStageExitProximityTarget,
+  GAME_STAGE_EXIT_TARGET_ID,
+} from "./game-stage-proximity.js";
 
 const CHEST_COUNT = 6;
 const CHEST_CORRECT_PATTERN = [true, true, false, true, false, true];
@@ -116,6 +120,7 @@ export const buildGameHiddenGemsStage = (
   }
 
   const exitDoorAnchor = mountExitDoor({ root, cellScale: options.cellScale });
+  const exitTarget = buildGameStageExitProximityTarget(exitDoorAnchor);
 
   return {
     id: "gameHiddenGems",
@@ -128,5 +133,29 @@ export const buildGameHiddenGemsStage = (
     completeRound: () => ({ events: [...events] }),
     clampPosition: (pos) => clampToBounds(pos, GAME_STAGE_BOUNDS),
     exitDoorAnchor,
+    listProximityTargets: () => {
+      const targets = [];
+      if (!roundComplete && openedCount < CHEST_COUNT) {
+        const index = openedCount;
+        targets.push({
+          id: `chest-${index}`,
+          x: startX + index * spacing + 0.45,
+          y: rowY + 0.36,
+          label: "Chest",
+          verb: "Open",
+        });
+      }
+      targets.push(exitTarget);
+      return targets;
+    },
+    activateProximityTarget: (id) => {
+      if (id === GAME_STAGE_EXIT_TARGET_ID) return false;
+      const match = /^chest-(\d+)$/.exec(id);
+      if (match === null) return false;
+      const index = Number(match[1]);
+      if (!Number.isFinite(index)) return false;
+      openChest(index);
+      return true;
+    },
   };
 };

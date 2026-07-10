@@ -108,6 +108,8 @@ export const wrapGameStageForViewport = (input: {
   const wrappedHandle: GameStageHandle = {
     ...input.handle,
     root: viewportRoot,
+    listProximityTargets: input.handle.listProximityTargets,
+    activateProximityTarget: input.handle.activateProximityTarget,
     attach: () => {
       input.handle.attach();
     },

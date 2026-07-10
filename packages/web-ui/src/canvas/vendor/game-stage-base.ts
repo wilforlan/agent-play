@@ -12,6 +12,7 @@ import {
 } from "./amenity-stage-base.js";
 import type { StageHandle } from "./stage-controller.js";
 import type { GameEvent } from "@agent-play/sdk/browser";
+import type { GameStageProximityTarget } from "./game-stage-proximity.js";
 
 export { clampToBounds, mountExitDoor };
 
@@ -59,6 +60,8 @@ export type GameStageHandle = StageHandle & {
   completeRound(): { events: ReadonlyArray<GameEvent> };
   clampPosition(pos: { x: number; y: number }): { x: number; y: number };
   exitDoorAnchor: { x: number; y: number };
+  listProximityTargets?: () => ReadonlyArray<GameStageProximityTarget>;
+  activateProximityTarget?: (id: string) => boolean;
 };
 
 /**

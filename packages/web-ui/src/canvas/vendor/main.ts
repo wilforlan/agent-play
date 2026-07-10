@@ -202,6 +202,12 @@ import {
   wrapGameStageForViewport,
 } from "./game-stage-runtime.js";
 import {
+  DEFAULT_GAME_STAGE_PROXIMITY_RADIUS,
+  findNearestGameStageProximityTarget,
+  GAME_STAGE_EXIT_TARGET_ID,
+  type GameStageProximityTarget,
+} from "./game-stage-proximity.js";
+import {
   createGameHowToPlayPanel,
   type GameHowToPlayHandle,
 } from "./game-how-to-play.js";
@@ -767,7 +773,62 @@ const arrowKeys = {
 
 let lastProximityPartnerId: string | null = null;
 let lastStructureProximityTarget: StructureProximityTarget | null = null;
+let lastGameStageProximityTarget: GameStageProximityTarget | null = null;
 let proximityPromptEl: HTMLDivElement | null = null;
+
+function activateGameStageProximityTarget(): void {
+  const stage = activeGameStage;
+  const target = lastGameStageProximityTarget;
+  if (stage === null || target === null) return;
+  if (target.activatable === false) return;
+  if (target.id === GAME_STAGE_EXIT_TARGET_ID) {
+    gameExitDebounceMs = 400;
+    leaveCurrentEnclosedStageToPrevious();
+    return;
+  }
+  const activate = stage.handle.activateProximityTarget;
+  if (activate !== undefined) {
+    activate(target.id);
+  }
+}
+
+function refreshGameStageProximityTarget(): void {
+  const stage = activeGameStage;
+  if (stage === null) {
+    lastGameStageProximityTarget = null;
+    return;
+  }
+  const list = stage.handle.listProximityTargets;
+  if (list === undefined) {
+    lastGameStageProximityTarget = null;
+    return;
+  }
+  lastGameStageProximityTarget = findNearestGameStageProximityTarget({
+    player: gamePlayerState.pos,
+    targets: list(),
+    radius: DEFAULT_GAME_STAGE_PROXIMITY_RADIUS,
+  });
+}
+
+function gameStageProximityPromptScreenPosition(input: {
+  stage: ActiveGameStage;
+  target: GameStageProximityTarget;
+}): { x: number; y: number } | null {
+  const host = canvasHostRef;
+  const localX = input.stage.offsetX + input.target.x * input.stage.cellScale;
+  const localY = input.stage.offsetY + input.target.y * input.stage.cellScale;
+  if (host === null) {
+    return { x: localX, y: localY };
+  }
+  const hostRect = host.getBoundingClientRect();
+  const scaleX = hostRect.width / VIEW_W;
+  const scaleY = hostRect.height / VIEW_H;
+  return {
+    x: hostRect.left + localX * scaleX,
+    y: hostRect.top + (localY - 32) * scaleY,
+  };
+}
+
 let proximityLegendEl: HTMLDivElement | null = null;
 let proximityTouchPadHandle: { refresh: () => void } | null = null;
 
@@ -1214,6 +1275,16 @@ function onDocumentKeyDown(e: KeyboardEvent): void {
   }
   if (
     e.key.toLowerCase() === "p" &&
+    activeGameStage !== null &&
+    lastGameStageProximityTarget !== null &&
+    lastGameStageProximityTarget.activatable !== false
+  ) {
+    e.preventDefault();
+    activateGameStageProximityTarget();
+    return;
+  }
+  if (
+    e.key.toLowerCase() === "p" &&
     lastYardAmenityPadTarget !== null &&
     stageController?.current()?.id === "spaceYard"
   ) {
@@ -1221,7 +1292,10 @@ function onDocumentKeyDown(e: KeyboardEvent): void {
     void enterAmenityFromYardPad(lastYardAmenityPadTarget);
     return;
   }
-  if (e.key.toLowerCase() === "p" && activeAmenityStage !== null) {
+  if (
+    e.key.toLowerCase() === "p" &&
+    activeAmenityStage !== null
+  ) {
     const stage = activeAmenityStage;
     const buyable = stage.nearestBuyable;
     if (buyable !== null) {
@@ -3544,13 +3618,26 @@ function onFrame(): void {
   } else {
     lastStructureProximityTarget = null;
   }
+  if (activeGameStage !== null) {
+    refreshGameStageProximityTarget();
+  } else {
+    lastGameStageProximityTarget = null;
+  }
   if (stageController?.current()?.id !== "spaceYard") {
     lastYardAmenityPadTarget = null;
   }
   if (proximityLegendEl !== null) {
     if (activeGameStage !== null) {
-      proximityLegendEl.textContent =
-        "Joystick or arrows to move · Walk to exit door to leave";
+      const gameTarget = lastGameStageProximityTarget;
+      if (gameTarget !== null) {
+        proximityLegendEl.textContent =
+          gameTarget.activatable === false
+            ? `Near ${gameTarget.label}. ${gameTarget.verb}`
+            : `Near ${gameTarget.label}. P: ${gameTarget.verb.toLowerCase()}`;
+      } else {
+        proximityLegendEl.textContent =
+          "Joystick or arrows to move · Walk to exit door to leave";
+      }
     } else if (
       activeAmenityStage !== null &&
       activeAmenityStage.nearestBuyable !== null
@@ -3580,7 +3667,25 @@ function onFrame(): void {
     }
   }
   if (proximityPromptEl !== null) {
-    if (lastProximityPartnerId !== null) {
+    if (
+      activeGameStage !== null &&
+      lastGameStageProximityTarget !== null
+    ) {
+      const stage = activeGameStage;
+      const target = lastGameStageProximityTarget;
+      const screen = gameStageProximityPromptScreenPosition({ stage, target });
+      if (screen !== null) {
+        proximityPromptEl.textContent =
+          target.activatable === false
+            ? target.verb
+            : `P: ${target.verb} ${target.label}`;
+        proximityPromptEl.style.display = "block";
+        proximityPromptEl.style.left = `${screen.x}px`;
+        proximityPromptEl.style.top = `${screen.y}px`;
+      } else {
+        proximityPromptEl.style.display = "none";
+      }
+    } else if (lastProximityPartnerId !== null) {
       const pos = playerWorldPos.get(lastProximityPartnerId);
       if (pos !== undefined) {
         const { cx, cy } = getAgentHeroAnchorScreen(lastProximityPartnerId, pos, box);
@@ -3988,6 +4093,20 @@ export function bootstrap(): void {
         if (buyable === null) return null;
         return buyable.tooltipModel.sale.status === "sold" ? "View" : "Buy";
       },
+      getGameStageProximityLabel: () => {
+        if (activeGameStage === null) return null;
+        return lastGameStageProximityTarget?.label ?? null;
+      },
+      getGameStageProximityVerb: () => {
+        if (activeGameStage === null) return null;
+        return lastGameStageProximityTarget?.verb ?? null;
+      },
+      getGameStageProximityActivatable: () => {
+        if (activeGameStage === null) return false;
+        const target = lastGameStageProximityTarget;
+        if (target === null) return false;
+        return target.activatable !== false;
+      },
       onAssist: () => {
         if (
           lastProximityPartnerId === null &&
@@ -4007,6 +4126,14 @@ export function bootstrap(): void {
         triggerProximityAssistOrChat("chat");
       },
       onPushToTalk: () => {
+        if (
+          activeGameStage !== null &&
+          lastGameStageProximityTarget !== null &&
+          lastGameStageProximityTarget.activatable !== false
+        ) {
+          activateGameStageProximityTarget();
+          return;
+        }
         if (activeAmenityStage !== null) {
           const stage = activeAmenityStage;
           const buyable = stage.nearestBuyable;

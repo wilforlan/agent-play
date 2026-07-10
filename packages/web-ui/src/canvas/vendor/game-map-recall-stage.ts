@@ -18,6 +18,11 @@ import {
   type BuildGameStageOptions,
   type GameStageHandle,
 } from "./game-stage-base.js";
+import {
+  buildGameStageExitProximityTarget,
+  buildGameTapButtonProximityTarget,
+  GAME_STAGE_EXIT_TARGET_ID,
+} from "./game-stage-proximity.js";
 
 const SEQUENCE = ["Library", "Market", "Garage"] as const;
 const BUTTON_LABELS = ["Library", "Market", "Garage"] as const;
@@ -85,6 +90,18 @@ export const buildGameMapRecallStage = (
   }
 
   const exitDoorAnchor = mountExitDoor({ root, cellScale: options.cellScale });
+  const exitTarget = buildGameStageExitProximityTarget(exitDoorAnchor);
+  const buttonTargets = BUTTON_LABELS.map((label, index) =>
+    buildGameTapButtonProximityTarget({
+      id: `pick-${label}`,
+      label,
+      verb: "Pick",
+      x: startX + index * spacing,
+      y: rowY,
+      widthCells: 2.2,
+      heightCells: 1.1,
+    })
+  );
 
   return {
     id: "gameMapRecall",
@@ -97,5 +114,14 @@ export const buildGameMapRecallStage = (
     completeRound: () => ({ events: [...events] }),
     clampPosition: (pos) => clampToBounds(pos, GAME_STAGE_BOUNDS),
     exitDoorAnchor,
+    listProximityTargets: () =>
+      roundComplete ? [exitTarget] : [...buttonTargets, exitTarget],
+    activateProximityTarget: (id) => {
+      if (id === GAME_STAGE_EXIT_TARGET_ID) return false;
+      const label = id.startsWith("pick-") ? id.slice("pick-".length) : null;
+      if (label === null) return false;
+      onPick(label);
+      return true;
+    },
   };
 };

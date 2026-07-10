@@ -337,4 +337,90 @@ describe("createPreviewProximityTouchControls", () => {
     expect(assistBtn.disabled).toBe(true);
     expect(pttBtn.disabled).toBe(false);
   });
+
+  it("relabels P for game-stage proximity and invokes onPushToTalk when activatable", () => {
+    let label: string | null = null;
+    let verb: string | null = null;
+    const { root, refresh } = createPreviewProximityTouchControls({
+      parent,
+      getBoundsElement: () => parent,
+      getCanAct: () => false,
+      getGameStageProximityLabel: () => label,
+      getGameStageProximityVerb: () => verb,
+      getGameStageProximityActivatable: () => true,
+      onAssist,
+      onChat,
+      onPushToTalk,
+    });
+    const assistBtn = root.querySelector(
+      ".preview-proximity-touch-pad__key--assist"
+    ) as HTMLButtonElement;
+    const pttBtn = root.querySelector(
+      ".preview-proximity-touch-pad__key--ptt"
+    ) as HTMLButtonElement;
+    const subP = root.querySelector(
+      ".preview-proximity-touch-pad__key--ptt .preview-proximity-touch-pad__key-sub"
+    ) as HTMLElement;
+    expect(assistBtn.disabled).toBe(true);
+    expect(pttBtn.disabled).toBe(true);
+    label = "Chest";
+    verb = "Open";
+    refresh();
+    expect(pttBtn.disabled).toBe(false);
+    expect(subP.textContent).toBe("Open");
+    expect(
+      pttBtn.classList.contains("preview-proximity-touch-pad__key--proximity-active")
+    ).toBe(true);
+    pttBtn.click();
+    expect(onPushToTalk).toHaveBeenCalledTimes(1);
+    expect(onAssist).not.toHaveBeenCalled();
+  });
+
+  it("shows game-stage verb on P but keeps it disabled when not activatable", () => {
+    const { root } = createPreviewProximityTouchControls({
+      parent,
+      getBoundsElement: () => parent,
+      getCanAct: () => false,
+      getGameStageProximityLabel: () => "Timer bar",
+      getGameStageProximityVerb: () => "Hold Space",
+      getGameStageProximityActivatable: () => false,
+      onAssist,
+      onChat,
+      onPushToTalk,
+    });
+    const pttBtn = root.querySelector(
+      ".preview-proximity-touch-pad__key--ptt"
+    ) as HTMLButtonElement;
+    const subP = root.querySelector(
+      ".preview-proximity-touch-pad__key--ptt .preview-proximity-touch-pad__key-sub"
+    ) as HTMLElement;
+    expect(pttBtn.disabled).toBe(true);
+    expect(subP.textContent).toBe("Hold Space");
+    expect(
+      pttBtn.classList.contains("preview-proximity-touch-pad__key--proximity-hint")
+    ).toBe(true);
+  });
+
+  it("game-stage proximity takes precedence over structure proximity", () => {
+    const { root } = createPreviewProximityTouchControls({
+      parent,
+      getBoundsElement: () => parent,
+      getCanAct: () => false,
+      getStructureProximityLabel: () => "Arcade",
+      getGameStageProximityLabel: () => "Chest",
+      getGameStageProximityVerb: () => "Open",
+      getGameStageProximityActivatable: () => true,
+      onAssist,
+      onChat,
+      onPushToTalk,
+    });
+    const assistBtn = root.querySelector(
+      ".preview-proximity-touch-pad__key--assist"
+    ) as HTMLButtonElement;
+    const pttBtn = root.querySelector(
+      ".preview-proximity-touch-pad__key--ptt"
+    ) as HTMLButtonElement;
+    expect(assistBtn.disabled).toBe(true);
+    expect(pttBtn.disabled).toBe(false);
+  });
 });

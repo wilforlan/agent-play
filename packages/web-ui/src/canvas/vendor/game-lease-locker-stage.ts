@@ -18,6 +18,11 @@ import {
   type BuildGameStageOptions,
   type GameStageHandle,
 } from "./game-stage-base.js";
+import {
+  buildGameStageExitProximityTarget,
+  buildGameTapButtonProximityTarget,
+  GAME_STAGE_EXIT_TARGET_ID,
+} from "./game-stage-proximity.js";
 
 const DOORS = [
   { label: "Shop", correct: false, fill: 0xb45309 },
@@ -77,6 +82,18 @@ export const buildGameLeaseLockerStage = (
   }
 
   const exitDoorAnchor = mountExitDoor({ root, cellScale: options.cellScale });
+  const exitTarget = buildGameStageExitProximityTarget(exitDoorAnchor);
+  const doorTargets = DOORS.map((door, index) =>
+    buildGameTapButtonProximityTarget({
+      id: `door-${door.label}`,
+      label: door.label,
+      verb: "Pick",
+      x: startX + index * spacing,
+      y: rowY,
+      widthCells: 2.2,
+      heightCells: 1.4,
+    })
+  );
 
   return {
     id: "gameLeaseLocker",
@@ -89,5 +106,16 @@ export const buildGameLeaseLockerStage = (
     completeRound: () => ({ events: [...events] }),
     clampPosition: (pos) => clampToBounds(pos, GAME_STAGE_BOUNDS),
     exitDoorAnchor,
+    listProximityTargets: () =>
+      roundComplete ? [exitTarget] : [...doorTargets, exitTarget],
+    activateProximityTarget: (id) => {
+      if (id === GAME_STAGE_EXIT_TARGET_ID) return false;
+      const label = id.startsWith("door-") ? id.slice("door-".length) : null;
+      if (label === null) return false;
+      const door = DOORS.find((entry) => entry.label === label);
+      if (door === undefined) return false;
+      onPick(door.correct);
+      return true;
+    },
   };
 };

@@ -17,11 +17,24 @@ import {
   type BuildGameStageOptions,
   type GameStageHandle,
 } from "./game-stage-base.js";
+import { buildGameStageExitProximityTarget } from "./game-stage-proximity.js";
 
 const GRID_COLS = 8;
 const GRID_ROWS = 4;
 const START = { x: 1, y: 4 };
 const GOAL = { x: 8, y: 4 };
+
+const GRID_CELL = 0.85;
+const GRID_ORIGIN_X = 1;
+const GRID_ORIGIN_Y = 2.2;
+
+const gridPosToStageCell = (gridPos: {
+  x: number;
+  y: number;
+}): { x: number; y: number } => ({
+  x: GRID_ORIGIN_X + (gridPos.x - 1) * GRID_CELL + GRID_CELL / 2,
+  y: GRID_ORIGIN_Y + (gridPos.y - 3) * GRID_CELL + GRID_CELL / 2,
+});
 
 const drawGrid = (input: {
   layer: Container;
@@ -128,6 +141,38 @@ export const buildGameDeliveryDashStage = (
   };
 
   const exitDoorAnchor = mountExitDoor({ root, cellScale: options.cellScale });
+  const exitTarget = buildGameStageExitProximityTarget(exitDoorAnchor);
+
+  const courierTarget = (): {
+    id: string;
+    x: number;
+    y: number;
+    label: string;
+    verb: string;
+  } => {
+    const cell = gridPosToStageCell(pos);
+    return {
+      id: "courier",
+      x: cell.x,
+      y: cell.y,
+      label: "Courier",
+      verb: "Move",
+    };
+  };
+
+  const advanceCourier = (): void => {
+    if (pos.x < GOAL.x) {
+      move(1, 0);
+      return;
+    }
+    if (pos.y > 3) {
+      move(0, -1);
+      return;
+    }
+    if (pos.y < GOAL.y) {
+      move(0, 1);
+    }
+  };
 
   return {
     id: "gameDeliveryDash",
@@ -156,5 +201,14 @@ export const buildGameDeliveryDashStage = (
     completeRound: () => ({ events: [...events] }),
     clampPosition: (posIn) => clampToBounds(posIn, GAME_STAGE_BOUNDS),
     exitDoorAnchor,
+    listProximityTargets: () =>
+      roundComplete ? [exitTarget] : [courierTarget(), exitTarget],
+    activateProximityTarget: (id) => {
+      if (id === "courier") {
+        advanceCourier();
+        return true;
+      }
+      return false;
+    },
   };
 };

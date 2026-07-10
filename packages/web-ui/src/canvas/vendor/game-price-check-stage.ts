@@ -18,6 +18,11 @@ import {
   type BuildGameStageOptions,
   type GameStageHandle,
 } from "./game-stage-base.js";
+import {
+  buildGameStageExitProximityTarget,
+  buildGameTapButtonProximityTarget,
+  GAME_STAGE_EXIT_TARGET_ID,
+} from "./game-stage-proximity.js";
 
 const PRICE_SEQUENCE = [12, 8, 15] as const;
 const DIRECTION_SEQUENCE: ReadonlyArray<"higher" | "lower"> = [
@@ -123,6 +128,25 @@ export const buildGamePriceCheckStage = (
   uiLayer.addChild(lower);
 
   const exitDoorAnchor = mountExitDoor({ root, cellScale: options.cellScale });
+  const exitTarget = buildGameStageExitProximityTarget(exitDoorAnchor);
+  const higherTarget = buildGameTapButtonProximityTarget({
+    id: "higher",
+    label: "Higher",
+    verb: "Guess",
+    x: 1.5,
+    y: btnY,
+    widthCells: 3,
+    heightCells: 1.1,
+  });
+  const lowerTarget = buildGameTapButtonProximityTarget({
+    id: "lower",
+    label: "Lower",
+    verb: "Guess",
+    x: 5.5,
+    y: btnY,
+    widthCells: 3,
+    heightCells: 1.1,
+  });
 
   return {
     id: "gamePriceCheck",
@@ -135,5 +159,19 @@ export const buildGamePriceCheckStage = (
     completeRound: () => ({ events: [...events] }),
     clampPosition: (pos) => clampToBounds(pos, GAME_STAGE_BOUNDS),
     exitDoorAnchor,
+    listProximityTargets: () =>
+      roundComplete ? [exitTarget] : [higherTarget, lowerTarget, exitTarget],
+    activateProximityTarget: (id) => {
+      if (id === GAME_STAGE_EXIT_TARGET_ID) return false;
+      if (id === "higher") {
+        onGuess("higher");
+        return true;
+      }
+      if (id === "lower") {
+        onGuess("lower");
+        return true;
+      }
+      return false;
+    },
   };
 };

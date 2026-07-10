@@ -37,6 +37,20 @@ export type CreatePreviewProximityTouchControlsOptions = {
    * other proximity labels.
    */
   getAmenityItemActionLabel?: () => string | null | undefined;
+  /**
+   * When the human is inside an arcade game stage and near an interactable,
+   * returns the object's display label for the `P` button.
+   */
+  getGameStageProximityLabel?: () => string | null | undefined;
+  /**
+   * Verb shown on the `P` button when near a game-stage interactable.
+   */
+  getGameStageProximityVerb?: () => string | null | undefined;
+  /**
+   * Whether the current game-stage proximity target can be activated with `P`.
+   * Defaults to `true` when omitted.
+   */
+  getGameStageProximityActivatable?: () => boolean;
   onAssist: () => void;
   onChat: () => void;
   onPushToTalk: () => void;
@@ -129,6 +143,9 @@ export function createPreviewProximityTouchControls(
     const amenityLabel = options.getAmenityProximityLabel?.() ?? null;
     const nearAmenity =
       typeof amenityLabel === "string" && amenityLabel.length > 0;
+    const gameStageLabel = options.getGameStageProximityLabel?.() ?? null;
+    const nearGameStage =
+      typeof gameStageLabel === "string" && gameStageLabel.length > 0;
     const structureLabel = options.getStructureProximityLabel?.() ?? null;
     const nearStructure =
       typeof structureLabel === "string" && structureLabel.length > 0;
@@ -139,6 +156,8 @@ export function createPreviewProximityTouchControls(
       btnChat.disabled = true;
       btnPushToTalk.disabled = false;
       subP.textContent = itemActionLabel ?? "Buy";
+      btnPushToTalk.classList.add("preview-proximity-touch-pad__key--proximity-active");
+      btnPushToTalk.classList.remove("preview-proximity-touch-pad__key--proximity-hint");
       btnPushToTalk.setAttribute(
         "aria-label",
         `${itemActionLabel ?? "Buy"} amenity item`
@@ -150,10 +169,37 @@ export function createPreviewProximityTouchControls(
       btnChat.disabled = true;
       btnPushToTalk.disabled = false;
       subP.textContent = "Enter";
+      btnPushToTalk.classList.add("preview-proximity-touch-pad__key--proximity-active");
+      btnPushToTalk.classList.remove("preview-proximity-touch-pad__key--proximity-hint");
       btnPushToTalk.setAttribute(
         "aria-label",
         `Enter ${amenityLabel ?? "amenity"}`
       );
+    } else if (nearGameStage) {
+      const verb = options.getGameStageProximityVerb?.() ?? "Use";
+      const activatable = options.getGameStageProximityActivatable?.() ?? true;
+      btnAssist.disabled = true;
+      subA.textContent = "Assist";
+      btnAssist.removeAttribute("aria-label");
+      btnChat.disabled = true;
+      btnPushToTalk.disabled = !activatable;
+      subP.textContent = verb;
+      btnPushToTalk.classList.toggle(
+        "preview-proximity-touch-pad__key--proximity-active",
+        activatable
+      );
+      btnPushToTalk.classList.toggle(
+        "preview-proximity-touch-pad__key--proximity-hint",
+        !activatable
+      );
+      if (activatable) {
+        btnPushToTalk.setAttribute(
+          "aria-label",
+          `${verb} ${gameStageLabel ?? "object"}`
+        );
+      } else {
+        btnPushToTalk.setAttribute("aria-label", verb);
+      }
     } else if (nearStructure) {
       const verb = options.getStructureProximityVerb?.() ?? "Enter";
       btnAssist.disabled = false;
@@ -165,6 +211,10 @@ export function createPreviewProximityTouchControls(
       btnChat.disabled = true;
       btnPushToTalk.disabled = true;
       subP.textContent = "Push";
+      btnPushToTalk.classList.remove(
+        "preview-proximity-touch-pad__key--proximity-active",
+        "preview-proximity-touch-pad__key--proximity-hint"
+      );
       btnPushToTalk.removeAttribute("aria-label");
     } else {
       btnAssist.disabled = !can;
@@ -173,6 +223,10 @@ export function createPreviewProximityTouchControls(
       btnChat.disabled = !can;
       btnPushToTalk.disabled = !can;
       subP.textContent = "Push";
+      btnPushToTalk.classList.remove(
+        "preview-proximity-touch-pad__key--proximity-active",
+        "preview-proximity-touch-pad__key--proximity-hint"
+      );
       btnPushToTalk.removeAttribute("aria-label");
     }
   };

@@ -18,6 +18,11 @@ import {
   type BuildGameStageOptions,
   type GameStageHandle,
 } from "./game-stage-base.js";
+import {
+  buildGameStageExitProximityTarget,
+  buildGameTapButtonProximityTarget,
+  GAME_STAGE_EXIT_TARGET_ID,
+} from "./game-stage-proximity.js";
 
 const CHOICES = ["Alpha", "Bravo", "Charlie", "Delta"] as const;
 const CORRECT_CHOICE = "Bravo";
@@ -77,6 +82,20 @@ export const buildGameSignalHuntStage = (
   }
 
   const exitDoorAnchor = mountExitDoor({ root, cellScale: options.cellScale });
+  const exitTarget = buildGameStageExitProximityTarget(exitDoorAnchor);
+  const choiceTargets = CHOICES.map((label, index) => {
+    const col = index % 2;
+    const row = Math.floor(index / 2);
+    return buildGameTapButtonProximityTarget({
+      id: `signal-${label}`,
+      label,
+      verb: "Pick",
+      x: startX + col * 4.2,
+      y: rowY + row * 1.5,
+      widthCells: colW,
+      heightCells: rowH,
+    });
+  });
 
   return {
     id: "gameSignalHunt",
@@ -89,5 +108,14 @@ export const buildGameSignalHuntStage = (
     completeRound: () => ({ events: [...events] }),
     clampPosition: (pos) => clampToBounds(pos, GAME_STAGE_BOUNDS),
     exitDoorAnchor,
+    listProximityTargets: () =>
+      roundComplete ? [exitTarget] : [...choiceTargets, exitTarget],
+    activateProximityTarget: (id) => {
+      if (id === GAME_STAGE_EXIT_TARGET_ID) return false;
+      const label = id.startsWith("signal-") ? id.slice("signal-".length) : null;
+      if (label === null) return false;
+      onPick(label);
+      return true;
+    },
   };
 };

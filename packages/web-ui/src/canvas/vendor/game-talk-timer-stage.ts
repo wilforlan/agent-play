@@ -17,6 +17,10 @@ import {
   type BuildGameStageOptions,
   type GameStageHandle,
 } from "./game-stage-base.js";
+import {
+  buildGameStageExitProximityTarget,
+  type GameStageProximityTarget,
+} from "./game-stage-proximity.js";
 
 const TARGET_MIN = 0.42;
 const TARGET_MAX = 0.58;
@@ -137,6 +141,15 @@ export const buildGameTalkTimerStage = (
   };
 
   const exitDoorAnchor = mountExitDoor({ root, cellScale: options.cellScale });
+  const exitTarget = buildGameStageExitProximityTarget(exitDoorAnchor);
+  const barTarget: GameStageProximityTarget = {
+    id: "talk-bar",
+    x: GAME_STAGE_BOUNDS.maxX / 2,
+    y: (barY + barHeight / 2) / options.cellScale,
+    label: "Timer bar",
+    verb: "Hold Space",
+    activatable: false,
+  };
 
   return {
     id: "gameTalkTimer",
@@ -182,5 +195,8 @@ export const buildGameTalkTimerStage = (
     completeRound: () => ({ events: [...events] }),
     clampPosition: (pos) => clampToBounds(pos, GAME_STAGE_BOUNDS),
     exitDoorAnchor,
+    listProximityTargets: () =>
+      roundComplete ? [exitTarget] : [barTarget, exitTarget],
+    activateProximityTarget: () => false,
   };
 };

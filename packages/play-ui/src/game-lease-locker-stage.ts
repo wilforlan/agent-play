@@ -87,7 +87,7 @@ export const buildGameLeaseLockerStage = (
     buildGameTapButtonProximityTarget({
       id: `door-${door.label}`,
       label: door.label,
-      verb: "Enter",
+      verb: "Pick",
       x: startX + index * spacing,
       y: rowY,
       widthCells: 2.2,
