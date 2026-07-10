@@ -69,11 +69,6 @@ export default async function StatsPage() {
               <p className={styles.cardValue}>{data.cards.agentNodeCredentials}</p>
               <p className={styles.cardHint}>{data.definitions.agentNodeCredentials}</p>
             </article>
-            <article className={styles.card}>
-              <h3 className={styles.cardTitle}>In-world agents</h3>
-              <p className={styles.cardValue}>{data.cards.inWorldAgentRecords}</p>
-              <p className={styles.cardHint}>{data.definitions.inWorldAgents}</p>
-            </article>
           </div>
         </section>
 
