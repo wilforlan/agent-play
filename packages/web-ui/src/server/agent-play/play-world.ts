@@ -35,7 +35,6 @@ import type { AgentRepository } from "./agent-repository.js";
 import type {
   SessionStore,
   SpaceAmenityLogEntry,
-  SpaceLeaseRecord,
 } from "./session-store.js";
 import {
   assertAgentToolContract,
@@ -1634,15 +1633,6 @@ export class PlayWorld {
     spaceId: string,
     options?: { force?: boolean; ownerNodeId?: string }
   ): Promise<void> {
-    const leases = await this.sessionStore.listSpaceLeases(spaceId);
-    if (
-      !options?.force &&
-      leases.some((l) => l.status === "active" || l.status === "pending")
-    ) {
-      throw new Error(
-        "removeSpaceNode: pending or active leases exist (pass force to override)"
-      );
-    }
     const snapBefore = await this.getSnapshotJson();
     const ownerFromCatalog =
       snapBefore?.spaces?.find((s) => s.id === spaceId)?.owner.nodeId?.trim() ??
@@ -1704,102 +1694,18 @@ export class PlayWorld {
 
   async getSpaceDetail(spaceId: string): Promise<{
     catalog: SpaceNode | null;
-    leases: SpaceLeaseRecord[];
     logs: SpaceAmenityLogEntry[];
   }> {
     const snap = await this.getSnapshotJson();
     const row = snap.spaces?.find((s) => s.id === spaceId);
-    const leases = await this.sessionStore.listSpaceLeases(spaceId);
     const logs = await this.sessionStore.listSpaceAmenityLogs({
       spaceId,
       limit: 200,
     });
     return {
       catalog: row !== undefined ? spaceNodeFromCatalog(row) : null,
-      leases,
       logs,
     };
-  }
-
-  async createAmenityLease(input: {
-    spaceId: string;
-    amenityKind: SpaceAmenityKind;
-    tenantEmail: string;
-    tenantAddress: string;
-    humanPlayerId?: string;
-    durationMonths: number;
-  }): Promise<SpaceLeaseRecord> {
-    const snap = await this.getSnapshotJson();
-    if (snap === null) {
-      throw new Error("createAmenityLease: snapshot unavailable");
-    }
-    const catalogRow = snap.spaces?.find((s) => s.id === input.spaceId);
-    if (catalogRow === undefined) {
-      throw new Error("createAmenityLease: unknown space");
-    }
-    if (!catalogRow.amenities.includes(input.amenityKind)) {
-      throw new Error(
-        "createAmenityLease: this amenity is not on the space; add it before creating a lease"
-      );
-    }
-    const leaseId = randomUUID();
-    const now = new Date().toISOString();
-    const record: SpaceLeaseRecord = {
-      leaseId,
-      spaceId: input.spaceId,
-      amenityKind: input.amenityKind,
-      tenantEmail: input.tenantEmail.trim(),
-      tenantAddress: input.tenantAddress.trim(),
-      durationMonths: input.durationMonths,
-      ...(input.humanPlayerId !== undefined &&
-      input.humanPlayerId.trim().length > 0
-        ? { humanPlayerId: input.humanPlayerId.trim() }
-        : {}),
-      status: "active",
-      createdAt: now,
-      updatedAt: now,
-    };
-    await this.sessionStore.upsertSpaceLease(record);
-    await this.sessionStore.appendSpaceAmenityLog({
-      spaceId: input.spaceId,
-      amenityKind: input.amenityKind,
-      entry: {
-        at: now,
-        action: "lease_created",
-        detail: { leaseId, durationMonths: input.durationMonths },
-      },
-    });
-    return record;
-  }
-
-  async cancelAmenityLease(input: {
-    spaceId: string;
-    leaseId: string;
-  }): Promise<void> {
-    const leases = await this.sessionStore.listSpaceLeases(input.spaceId);
-    const existing = leases.find((l) => l.leaseId === input.leaseId);
-    if (existing === undefined) {
-      throw new Error("cancelAmenityLease: lease not found");
-    }
-    if (existing.status === "terminated") {
-      return;
-    }
-    const now = new Date().toISOString();
-    const updated: SpaceLeaseRecord = {
-      ...existing,
-      status: "terminated",
-      updatedAt: now,
-    };
-    await this.sessionStore.upsertSpaceLease(updated);
-    await this.sessionStore.appendSpaceAmenityLog({
-      spaceId: input.spaceId,
-      amenityKind: existing.amenityKind,
-      entry: {
-        at: now,
-        action: "lease_cancelled",
-        detail: { leaseId: input.leaseId },
-      },
-    });
   }
 
   async registerStructureNode(
