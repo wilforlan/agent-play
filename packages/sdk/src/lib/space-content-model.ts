@@ -298,15 +298,31 @@ export const PurchaseRecordSchema = z.object({
     "car_wash",
     "talk_time",
     "wallet_bundle",
+    "apu_credit",
+    "apu_debit",
   ]),
   itemRef: z.object({
-    kind: z.enum(["shop", "supermarket", "carwash"]),
+    kind: z.enum([
+      "shop",
+      "supermarket",
+      "carwash",
+      "game",
+      "apu",
+      "talk",
+      "bundle",
+    ]),
     id: NonEmpty,
   }),
-  priceUsd: PositivePrice,
+  priceUsd: PositivePrice.optional(),
   at: IsoTimestamp,
   detail: z.string().optional(),
   powerUpsSpent: z.number().int().positive().optional(),
+  powerUpsEarned: z.number().int().positive().optional(),
+  powerUpsDelta: z.number().int().optional(),
+  debitSource: z.string().optional(),
+  creditSource: z.string().optional(),
+  counterpartyNodeId: z.string().optional(),
+  token: z.literal("APU").optional(),
 });
 
 /** Runtime type for {@link PurchaseRecordSchema}. @public */

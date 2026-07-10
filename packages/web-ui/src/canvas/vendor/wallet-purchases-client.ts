@@ -30,15 +30,30 @@ export type PurchaseRecordDto = {
     | "supermarket"
     | "car_wash"
     | "talk_time"
-    | "wallet_bundle";
+    | "wallet_bundle"
+    | "apu_credit"
+    | "apu_debit";
   readonly itemRef: {
-    readonly kind: "shop" | "supermarket" | "carwash";
+    readonly kind:
+      | "shop"
+      | "supermarket"
+      | "carwash"
+      | "game"
+      | "apu"
+      | "talk"
+      | "bundle";
     readonly id: string;
   };
-  readonly priceUsd: number;
+  readonly priceUsd?: number;
   readonly at: string;
   readonly detail?: string;
   readonly powerUpsSpent?: number;
+  readonly powerUpsEarned?: number;
+  readonly powerUpsDelta?: number;
+  readonly debitSource?: string;
+  readonly creditSource?: string;
+  readonly counterpartyNodeId?: string;
+  readonly token?: "APU";
 };
 
 /**
@@ -59,9 +74,18 @@ export type ListPurchasesResult = {
  * @public
  */
 export const buildPurchaseItemKey = (input: {
-  itemRef: { kind: "shop" | "supermarket" | "carwash"; id: string };
+  itemRef: PurchaseRecordDto["itemRef"];
   spaceId: string;
-}): string => `${input.itemRef.kind}:${input.spaceId}:${input.itemRef.id}`;
+}): string | null => {
+  if (
+    input.itemRef.kind !== "shop" &&
+    input.itemRef.kind !== "supermarket" &&
+    input.itemRef.kind !== "carwash"
+  ) {
+    return null;
+  }
+  return `${input.itemRef.kind}:${input.spaceId}:${input.itemRef.id}`;
+};
 
 /**
  * Fetch the player's purchases.

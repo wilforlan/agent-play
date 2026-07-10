@@ -327,6 +327,45 @@ const ensureStyles = (): void => {
 const formatUsd = (price: number): string =>
   `$${(Math.round(price * 100) / 100).toFixed(2)}`;
 
+const formatApuAmount = (delta: number): string => {
+  const amount = Math.abs(Math.trunc(delta));
+  return delta >= 0 ? `+${String(amount)} APU` : `-${String(amount)} APU`;
+};
+
+const formatTransactionAmount = (record: PurchaseRecordDto): string => {
+  if (
+    record.amenityKind === "apu_credit" ||
+    record.amenityKind === "apu_debit"
+  ) {
+    const delta =
+      typeof record.powerUpsDelta === "number"
+        ? record.powerUpsDelta
+        : typeof record.powerUpsEarned === "number"
+          ? record.powerUpsEarned
+          : typeof record.powerUpsSpent === "number"
+            ? -record.powerUpsSpent
+            : 0;
+    return formatApuAmount(delta);
+  }
+  if (
+    typeof record.powerUpsEarned === "number" &&
+    Number.isFinite(record.powerUpsEarned) &&
+    typeof record.priceUsd === "number"
+  ) {
+    return `${formatUsd(record.priceUsd)} · +${String(record.powerUpsEarned)} APU`;
+  }
+  if (typeof record.priceUsd === "number" && Number.isFinite(record.priceUsd)) {
+    return formatUsd(record.priceUsd);
+  }
+  if (
+    typeof record.powerUpsSpent === "number" &&
+    Number.isFinite(record.powerUpsSpent)
+  ) {
+    return `-${String(record.powerUpsSpent)} APU`;
+  }
+  return "—";
+};
+
 const formatTimestamp = (iso: string): string => {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return iso;
@@ -339,25 +378,21 @@ const formatTimestamp = (iso: string): string => {
   });
 };
 
-const AMENITY_LABEL: Record<PurchaseRecordDto["amenityKind"], string> = {
+const AMENITY_LABEL: Record<string, string> = {
   shop: "Shop",
   supermarket: "Supermarket",
   car_wash: "Car Wash",
   talk_time: "Voice",
   wallet_bundle: "Bundle",
+  apu_credit: "APU Credit",
+  apu_debit: "APU Debit",
 };
 
 const amenityLabelForDisplay = (kind: string): string => {
-  if (
-    kind === "shop" ||
-    kind === "supermarket" ||
-    kind === "car_wash" ||
-    kind === "talk_time" ||
-    kind === "wallet_bundle"
-  ) {
-    return AMENITY_LABEL[kind];
+  if (kind in AMENITY_LABEL) {
+    return AMENITY_LABEL[kind] ?? "Activity";
   }
-  return "Purchase";
+  return "Activity";
 };
 
 const pickItemFields = (raw: unknown): InventoryItemFields => {
@@ -395,13 +430,37 @@ export const buildPurchaseSubtitle = (input: {
     const spent = input.record.powerUpsSpent;
     const puPart =
       typeof spent === "number" && Number.isFinite(spent)
-        ? `${String(Math.max(0, Math.floor(spent)))} PU exchanged · `
+        ? `${String(Math.max(0, Math.floor(spent)))} APU redeemed · `
         : "";
     const detail =
       typeof input.record.detail === "string" && input.record.detail.length > 0
         ? input.record.detail
         : "Wallet bundle";
     return `${puPart}${detail} · ${at}`;
+  }
+  if (
+    input.record.amenityKind === "apu_credit" ||
+    input.record.amenityKind === "apu_debit"
+  ) {
+    const detail =
+      typeof input.record.detail === "string" && input.record.detail.length > 0
+        ? input.record.detail
+        : input.record.amenityKind === "apu_credit"
+          ? "APU credit"
+          : "APU debit";
+    const source =
+      input.record.amenityKind === "apu_credit"
+        ? input.record.creditSource
+        : input.record.debitSource;
+    const sourcePart =
+      typeof source === "string" && source.length > 0 ? `${source} · ` : "";
+    return `${sourcePart}${detail} · ${at}`;
+  }
+  if (
+    typeof input.record.powerUpsEarned === "number" &&
+    Number.isFinite(input.record.powerUpsEarned)
+  ) {
+    return `+${String(input.record.powerUpsEarned)} APU earned · Bought ${at}`;
   }
   if (input.record.amenityKind === "car_wash") {
     const model = input.fields.model ?? "";
@@ -440,7 +499,7 @@ export const createWalletInventoryPanel = (
   header.className = `${PANEL_CLASS}__header`;
   const titleEl = document.createElement("div");
   titleEl.className = `${PANEL_CLASS}__title`;
-  titleEl.textContent = "Wallet & Inventory";
+  titleEl.textContent = "Wallet & Activity";
   const headerRight = document.createElement("div");
   headerRight.style.display = "flex";
   headerRight.style.alignItems = "center";
@@ -527,7 +586,7 @@ export const createWalletInventoryPanel = (
     if (purchases.length === 0) {
       const empty = document.createElement("div");
       empty.className = `${PANEL_CLASS}__empty`;
-      empty.textContent = "You haven't bought anything yet.";
+      empty.textContent = "No wallet activity yet.";
       parent.appendChild(empty);
       return;
     }
@@ -538,7 +597,7 @@ export const createWalletInventoryPanel = (
         itemRef: record.itemRef,
         spaceId: record.spaceId,
       });
-      const fields = pickItemFields(items[key]);
+      const fields = key !== null ? pickItemFields(items[key]) : {};
       const row = document.createElement("div");
       row.className = `${PANEL_CLASS}__row`;
 
@@ -561,8 +620,14 @@ export const createWalletInventoryPanel = (
         record.amenityKind === "talk_time"
           ? "Realtime voice"
           : record.amenityKind === "wallet_bundle"
-            ? `+${formatUsd(record.priceUsd)} balance`
-            : fields.name ?? amenityLabelForDisplay(record.amenityKind) + " item";
+            ? `+${formatUsd(record.priceUsd ?? 0)} balance`
+            : record.amenityKind === "apu_credit" ||
+                record.amenityKind === "apu_debit"
+              ? record.detail ??
+                (record.amenityKind === "apu_credit"
+                  ? "APU credit"
+                  : "APU debit")
+              : fields.name ?? amenityLabelForDisplay(record.amenityKind) + " item";
       const subEl = document.createElement("div");
       subEl.className = `${PANEL_CLASS}__sub`;
       subEl.textContent = buildPurchaseSubtitle({ record, fields });
@@ -571,7 +636,7 @@ export const createWalletInventoryPanel = (
 
       const price = document.createElement("div");
       price.className = `${PANEL_CLASS}__price`;
-      price.textContent = formatUsd(record.priceUsd);
+      price.textContent = formatTransactionAmount(record);
       row.appendChild(price);
 
       const openBtn = document.createElement("button");
@@ -585,7 +650,9 @@ export const createWalletInventoryPanel = (
       });
       if (
         record.amenityKind !== "talk_time" &&
-        record.amenityKind !== "wallet_bundle"
+        record.amenityKind !== "wallet_bundle" &&
+        record.amenityKind !== "apu_credit" &&
+        record.amenityKind !== "apu_debit"
       ) {
         row.appendChild(openBtn);
       }
@@ -620,8 +687,12 @@ export const createWalletInventoryPanel = (
       record.amenityKind === "talk_time"
         ? "Realtime voice"
         : record.amenityKind === "wallet_bundle"
-          ? `+${formatUsd(record.priceUsd)} balance`
-          : fields.name ?? amenityLabelForDisplay(record.amenityKind) + " item";
+          ? `+${formatUsd(record.priceUsd ?? 0)} balance`
+          : record.amenityKind === "apu_credit" ||
+              record.amenityKind === "apu_debit"
+            ? record.detail ??
+              (record.amenityKind === "apu_credit" ? "APU credit" : "APU debit")
+            : fields.name ?? amenityLabelForDisplay(record.amenityKind) + " item";
     headerRow.append(back, name);
     card.appendChild(headerRow);
 
@@ -632,18 +703,25 @@ export const createWalletInventoryPanel = (
         ? "#334155"
         : record.amenityKind === "wallet_bundle"
           ? "#047857"
-          : record.amenityKind === "car_wash" && typeof fields.colorHex === "string"
-            ? fields.colorHex
-            : record.amenityKind === "shop"
-              ? "#b45309"
-              : "#0f766e";
+          : record.amenityKind === "apu_credit"
+            ? "#1d4ed8"
+            : record.amenityKind === "apu_debit"
+              ? "#7c2d12"
+              : record.amenityKind === "car_wash" && typeof fields.colorHex === "string"
+                ? fields.colorHex
+                : record.amenityKind === "shop"
+                  ? "#b45309"
+                  : "#0f766e";
     hero.style.background = heroColor;
     hero.textContent =
       record.amenityKind === "talk_time"
         ? "VOICE"
         : record.amenityKind === "wallet_bundle"
           ? "BUNDLE"
-          : fields.name ?? amenityLabelForDisplay(record.amenityKind).toUpperCase();
+          : record.amenityKind === "apu_credit" ||
+              record.amenityKind === "apu_debit"
+            ? "APU"
+            : fields.name ?? amenityLabelForDisplay(record.amenityKind).toUpperCase();
     card.appendChild(hero);
 
     const meta = document.createElement("div");
@@ -676,7 +754,40 @@ export const createWalletInventoryPanel = (
         typeof record.powerUpsSpent === "number" &&
         Number.isFinite(record.powerUpsSpent)
       ) {
-        pushMeta("Power-ups spent", String(Math.max(0, Math.floor(record.powerUpsSpent))));
+        pushMeta("APU spent", String(Math.max(0, Math.floor(record.powerUpsSpent))));
+      }
+      if (typeof record.debitSource === "string") {
+        pushMeta("Debit source", record.debitSource);
+      }
+      if (typeof record.creditSource === "string") {
+        pushMeta("Credit source", record.creditSource);
+      }
+    }
+    if (
+      record.amenityKind === "apu_credit" ||
+      record.amenityKind === "apu_debit"
+    ) {
+      if (typeof record.token === "string") pushMeta("Token", record.token);
+      if (
+        typeof record.powerUpsDelta === "number" &&
+        Number.isFinite(record.powerUpsDelta)
+      ) {
+        pushMeta("APU change", formatApuAmount(record.powerUpsDelta));
+      }
+      if (typeof record.creditSource === "string") {
+        pushMeta("Credit source", record.creditSource);
+      }
+      if (typeof record.debitSource === "string") {
+        pushMeta("Debit source", record.debitSource);
+      }
+      if (typeof record.counterpartyNodeId === "string") {
+        pushMeta("Counterparty node", record.counterpartyNodeId);
+      }
+      if (
+        typeof record.detail === "string" &&
+        record.detail.trim().length > 0
+      ) {
+        pushMeta("Detail", record.detail);
       }
     }
     if (record.amenityKind === "car_wash") {
@@ -685,12 +796,28 @@ export const createWalletInventoryPanel = (
         pushMeta("Year", String(fields.year));
     }
     if (typeof fields.type === "string") pushMeta("Kind", fields.type);
+    pushMeta("Node", record.playerId);
     if (record.amenityKind === "wallet_bundle") {
-      pushMeta("Balance credited", formatUsd(record.priceUsd));
-    } else {
+      pushMeta("Balance credited", formatUsd(record.priceUsd ?? 0));
+    } else if (
+      typeof record.priceUsd === "number" &&
+      Number.isFinite(record.priceUsd)
+    ) {
       pushMeta("Price paid", formatUsd(record.priceUsd));
     }
-    pushMeta("Bought", formatTimestamp(record.at));
+    if (
+      typeof record.powerUpsEarned === "number" &&
+      Number.isFinite(record.powerUpsEarned)
+    ) {
+      pushMeta("APU earned", `+${String(record.powerUpsEarned)}`);
+    }
+    if (typeof record.debitSource === "string" && record.amenityKind !== "wallet_bundle" && record.amenityKind !== "apu_credit" && record.amenityKind !== "apu_debit") {
+      pushMeta("Debit source", record.debitSource);
+    }
+    if (typeof record.creditSource === "string" && record.amenityKind !== "wallet_bundle" && record.amenityKind !== "apu_credit" && record.amenityKind !== "apu_debit") {
+      pushMeta("Credit source", record.creditSource);
+    }
+    pushMeta("When", formatTimestamp(record.at));
     pushMeta("Space", record.spaceId);
     if (typeof fields.description === "string" && fields.description.length > 0)
       pushMeta("Notes", fields.description);
@@ -737,14 +864,12 @@ export const createWalletInventoryPanel = (
       const selectedId = data.selectedId;
       const record = data.purchases.find((p) => p.id === selectedId);
       if (record !== undefined) {
-        const fields = pickItemFields(
-          data.items[
-            buildPurchaseItemKey({
-              itemRef: record.itemRef,
-              spaceId: record.spaceId,
-            })
-          ]
-        );
+        const itemKey = buildPurchaseItemKey({
+          itemRef: record.itemRef,
+          spaceId: record.spaceId,
+        });
+        const fields =
+          itemKey !== null ? pickItemFields(data.items[itemKey]) : {};
         renderDetail(record, fields);
         return;
       }

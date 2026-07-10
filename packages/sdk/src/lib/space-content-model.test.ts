@@ -322,6 +322,25 @@ describe("space-content-model: PurchaseRecordSchema", () => {
     expect(parsed.powerUpsSpent).toBeUndefined();
   });
 
+  it("accepts an apu_credit transaction without priceUsd", () => {
+    const parsed = PurchaseRecordSchema.parse({
+      id: "apu-1",
+      playerId: "node-1",
+      spaceId: "__arcade__",
+      amenityKind: "apu_credit",
+      itemRef: { kind: "game", id: "hidden-gems" },
+      at: "2026-05-12T00:00:00.000Z",
+      powerUpsEarned: 12,
+      powerUpsDelta: 12,
+      creditSource: "game:hidden-gems",
+      token: "APU",
+      detail: "Arcade round",
+    });
+    expect(parsed.amenityKind).toBe("apu_credit");
+    expect(parsed.token).toBe("APU");
+    expect(parsed.priceUsd).toBeUndefined();
+  });
+
   it("rejects mismatched amenityKind enum", () => {
     expect(
       PurchaseRecordSchema.safeParse({

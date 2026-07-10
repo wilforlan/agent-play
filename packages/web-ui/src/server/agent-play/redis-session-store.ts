@@ -38,6 +38,9 @@ import {
   createInitialPlayerWallet,
   costForSeconds,
   getWalletBundleById,
+  buildAmenityPurchaseApuFields,
+  buildApuWalletTransaction,
+  buildWalletBundleApuFields,
 } from "@agent-play/sdk";
 import {
   applyGameOutcomeToState,
@@ -1200,6 +1203,11 @@ export class RedisSessionStore implements SessionStore {
         itemRef: input.itemRef,
         priceUsd: item.priceUsd,
         at: input.now,
+        ...buildAmenityPurchaseApuFields({
+          amenityKind: input.amenityKind,
+          spaceId: input.spaceId,
+          earnedPowerUps,
+        }),
       };
       const multi = this.redis.multi();
       multi.hset(itemKey, input.itemRef.id, JSON.stringify(updatedItem));
@@ -1318,11 +1326,14 @@ export class RedisSessionStore implements SessionStore {
         playerId: input.playerId,
         spaceId: "__wallet__",
         amenityKind: "wallet_bundle",
-        itemRef: { kind: "shop", id: bundle.id },
+        itemRef: { kind: "bundle", id: bundle.id },
         priceUsd: bundle.creditUsd,
         at: input.now,
-        detail: `Exchanged ${String(bundle.powerUpsCost)} power-ups for $${String(bundle.creditUsd)} balance`,
-        powerUpsSpent: bundle.powerUpsCost,
+        detail: `Exchanged ${String(bundle.powerUpsCost)} APU for $${String(bundle.creditUsd)} balance`,
+        ...buildWalletBundleApuFields({
+          bundleId: bundle.id,
+          powerUpsCost: bundle.powerUpsCost,
+        }),
       });
       const multi = this.redis.multi();
       multi.set(walletKey, JSON.stringify(updatedWallet));
@@ -1412,6 +1423,27 @@ export class RedisSessionStore implements SessionStore {
       multi.set(walletKey, JSON.stringify(applied.wallet));
       const exec = await multi.exec();
       if (exec !== null) {
+        if (applied.result.ok && applied.result.netPu !== 0) {
+          const netPu = applied.result.netPu;
+          const apuRecord = buildApuWalletTransaction({
+            id: `apu-${randomUUID()}`,
+            playerId: input.playerId,
+            spaceId: "__arcade__",
+            delta: netPu,
+            at: input.now,
+            creditSource:
+              netPu > 0
+                ? `game:${parsed.data.gameId}`
+                : undefined,
+            debitSource:
+              netPu < 0
+                ? `game:${parsed.data.gameId}`
+                : undefined,
+            itemRef: { kind: "game", id: parsed.data.gameId },
+            detail: `Arcade round ${parsed.data.roundId}`,
+          });
+          await this.appendPurchaseRecord(apuRecord);
+        }
         return applied.result;
       }
     }
@@ -1480,6 +1512,28 @@ export class RedisSessionStore implements SessionStore {
       priceUsd: input.priceUsd,
       at: input.at,
       detail: `Realtime voice · ${String(input.billedSeconds)}s · agent ${input.agentId}`,
+    });
+    await this.appendPurchaseRecord(record);
+  }
+
+  private async appendTalkAgentApuRecord(input: {
+    agentId: string;
+    viewerNodeId: string;
+    powerUpsEarned: number;
+    billedSeconds: number;
+    at: string;
+  }): Promise<void> {
+    if (input.powerUpsEarned <= 0) return;
+    const record = buildApuWalletTransaction({
+      id: `apu-${randomUUID()}`,
+      playerId: input.agentId,
+      spaceId: "__talk__",
+      delta: input.powerUpsEarned,
+      at: input.at,
+      creditSource: `talk:agent:${input.agentId}`,
+      counterpartyNodeId: input.viewerNodeId,
+      itemRef: { kind: "talk", id: "openai-realtime" },
+      detail: `Voice session APU reward · ${String(input.billedSeconds)}s · viewer ${input.viewerNodeId}`,
     });
     await this.appendPurchaseRecord(record);
   }
@@ -1595,6 +1649,15 @@ export class RedisSessionStore implements SessionStore {
             playerId: input.viewerNodeId,
             agentId: input.agentId,
             priceUsd: costUsd,
+            billedSeconds: billSeconds,
+            at: input.now,
+          });
+        }
+        if (agentPuEarned > 0) {
+          await this.appendTalkAgentApuRecord({
+            agentId: input.agentId,
+            viewerNodeId: input.viewerNodeId,
+            powerUpsEarned: agentPuEarned,
             billedSeconds: billSeconds,
             at: input.now,
           });
@@ -1732,6 +1795,15 @@ export class RedisSessionStore implements SessionStore {
             playerId: input.viewerNodeId,
             agentId: input.agentId,
             priceUsd: finalCostUsd,
+            billedSeconds: billSeconds,
+            at: input.now,
+          });
+        }
+        if (agentPuEarned > 0) {
+          await this.appendTalkAgentApuRecord({
+            agentId: input.agentId,
+            viewerNodeId: input.viewerNodeId,
+            powerUpsEarned: agentPuEarned,
             billedSeconds: billSeconds,
             at: input.now,
           });

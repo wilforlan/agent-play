@@ -26,6 +26,9 @@ import {
   costForSeconds,
   getWalletBundleById,
   TALK_PRICE_PER_SECOND_USD,
+  buildAmenityPurchaseApuFields,
+  buildApuWalletTransaction,
+  buildWalletBundleApuFields,
 } from "@agent-play/sdk";
 import {
   applyGameOutcomeToState,
@@ -697,6 +700,11 @@ export class TestSessionStore implements SessionStore {
       itemRef: input.itemRef,
       priceUsd: item.priceUsd,
       at: input.now,
+      ...buildAmenityPurchaseApuFields({
+        amenityKind: input.amenityKind,
+        spaceId: input.spaceId,
+        earnedPowerUps,
+      }),
     };
     await this.appendPurchaseRecord(record);
     return {
@@ -769,11 +777,14 @@ export class TestSessionStore implements SessionStore {
       playerId: input.playerId,
       spaceId: "__wallet__",
       amenityKind: "wallet_bundle",
-      itemRef: { kind: "shop", id: bundle.id },
+      itemRef: { kind: "bundle", id: bundle.id },
       priceUsd: bundle.creditUsd,
       at: input.now,
-      detail: `Exchanged ${String(bundle.powerUpsCost)} power-ups for $${String(bundle.creditUsd)} balance`,
-      powerUpsSpent: bundle.powerUpsCost,
+      detail: `Exchanged ${String(bundle.powerUpsCost)} APU for $${String(bundle.creditUsd)} balance`,
+      ...buildWalletBundleApuFields({
+        bundleId: bundle.id,
+        powerUpsCost: bundle.powerUpsCost,
+      }),
     });
     await this.appendPurchaseRecord(record);
     return { ok: true, wallet: updatedWallet, record };
@@ -883,6 +894,21 @@ export class TestSessionStore implements SessionStore {
       });
       await this.appendPurchaseRecord(record);
     }
+    if (agentPuEarned > 0) {
+      await this.appendPurchaseRecord(
+        buildApuWalletTransaction({
+          id: `apu-${randomUUID()}`,
+          playerId: input.agentId,
+          spaceId: "__talk__",
+          delta: agentPuEarned,
+          at: input.now,
+          creditSource: `talk:agent:${input.agentId}`,
+          counterpartyNodeId: input.viewerNodeId,
+          itemRef: { kind: "talk", id: "openai-realtime" },
+          detail: `Voice session APU reward · ${String(billSeconds)}s · viewer ${input.viewerNodeId}`,
+        })
+      );
+    }
     return {
       ok: true,
       secondsBilledThisTick: billSeconds,
@@ -958,6 +984,21 @@ export class TestSessionStore implements SessionStore {
       });
       await this.appendPurchaseRecord(record);
     }
+    if (agentPuEarned > 0) {
+      await this.appendPurchaseRecord(
+        buildApuWalletTransaction({
+          id: `apu-${randomUUID()}`,
+          playerId: input.agentId,
+          spaceId: "__talk__",
+          delta: agentPuEarned,
+          at: input.now,
+          creditSource: `talk:agent:${input.agentId}`,
+          counterpartyNodeId: input.viewerNodeId,
+          itemRef: { kind: "talk", id: "openai-realtime" },
+          detail: `Voice session APU reward · ${String(billSeconds)}s · viewer ${input.viewerNodeId}`,
+        })
+      );
+    }
     return {
       ok: true,
       totalCostUsd: session.totalChargedUsd + finalCostUsd,
@@ -1013,6 +1054,26 @@ export class TestSessionStore implements SessionStore {
     }
     this.gamePlayerState.set(input.playerId, applied.state);
     this.playerWallets.set(input.playerId, applied.wallet);
+    if (applied.result.ok && applied.result.netPu !== 0) {
+      const apuRecord = buildApuWalletTransaction({
+        id: `apu-${randomUUID()}`,
+        playerId: input.playerId,
+        spaceId: "__arcade__",
+        delta: applied.result.netPu,
+        at: input.now,
+        creditSource:
+          applied.result.netPu > 0
+            ? `game:${parsed.data.gameId}`
+            : undefined,
+        debitSource:
+          applied.result.netPu < 0
+            ? `game:${parsed.data.gameId}`
+            : undefined,
+        itemRef: { kind: "game", id: parsed.data.gameId },
+        detail: `Arcade round ${parsed.data.roundId}`,
+      });
+      await this.appendPurchaseRecord(apuRecord);
+    }
     return applied.result;
   }
 }

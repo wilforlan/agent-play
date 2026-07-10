@@ -27,6 +27,30 @@ describe("session store game outcomes", () => {
     expect(stats.gamesPlayedToday).toBe(1);
   });
 
+  it("appends an APU credit transaction when a game round earns power-ups", async () => {
+    const store = new TestSessionStore();
+    await store.loadOrCreateSessionId();
+    const playerId = "player-apu";
+    await store.getPlayerWallet(playerId);
+    const result = await store.applyGameOutcome({
+      playerId,
+      now: new Date("2026-06-10T12:00:00Z").toISOString(),
+      outcome: {
+        gameId: "hidden-gems",
+        roundId: "round-apu",
+        events: [{ type: "chest_open", correct: true, tutorial: true }],
+      },
+    });
+    expect(result.ok).toBe(true);
+    const purchases = await store.listPurchases({ playerId, limit: 10 });
+    const apuRow = purchases.find((row) => row.amenityKind === "apu_credit");
+    expect(apuRow).toBeDefined();
+    expect(apuRow?.token).toBe("APU");
+    expect(apuRow?.creditSource).toBe("game:hidden-gems");
+    expect(apuRow?.playerId).toBe(playerId);
+    expect((apuRow?.powerUpsEarned ?? 0) > 0).toBe(true);
+  });
+
   it("rejects duplicate round ids", async () => {
     const store = new TestSessionStore();
     await store.loadOrCreateSessionId();

@@ -84,6 +84,12 @@ export {
   type SupermarketItem,
 } from "./lib/space-content-model.js";
 export {
+  APU_TOKEN,
+  buildAmenityPurchaseApuFields,
+  buildApuWalletTransaction,
+  buildWalletBundleApuFields,
+} from "./lib/wallet-apu-transaction.js";
+export {
   TALK_PRICE_PER_60S_USD,
   TALK_PRICE_PER_SECOND_USD,
   TALK_TICK_SECONDS,

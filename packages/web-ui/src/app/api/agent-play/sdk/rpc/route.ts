@@ -1037,10 +1037,14 @@ export async function POST(req: NextRequest) {
         ) {
           return Response.json({ error: "invalid itemRef.kind" }, { status: 400 });
         }
+        const purchaseItemRef: {
+          kind: "shop" | "supermarket" | "carwash";
+          id: string;
+        } = { kind: refKind, id: p.itemRef.id.trim() };
         const result = await store.executePurchase({
           spaceId: p.spaceId.trim(),
           amenityKind,
-          itemRef: { kind: refKind, id: p.itemRef.id.trim() },
+          itemRef: purchaseItemRef,
           playerId: p.playerId.trim(),
           now: new Date().toISOString(),
           recordId: `pur-${randomUUID()}`,
@@ -1056,7 +1060,7 @@ export async function POST(req: NextRequest) {
             action: "purchase",
             detail: {
               playerId: result.record.playerId,
-              itemRef: result.record.itemRef,
+              itemRef: purchaseItemRef,
               priceUsd: result.record.priceUsd,
             },
           },
@@ -1067,7 +1071,7 @@ export async function POST(req: NextRequest) {
           spaceId: p.spaceId.trim(),
           amenityKind,
           reason: "sold",
-          itemRef: result.record.itemRef,
+          itemRef: purchaseItemRef,
         });
         return Response.json({
           purchase: result.record,
