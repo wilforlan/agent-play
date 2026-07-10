@@ -20,6 +20,7 @@ import { nextAvatarMotion } from "./avatar-anim.js";
 import {
   createStageController,
   type StageController,
+  type StageId,
 } from "./stage-controller.js";
 import { createOverworldStage } from "./overworld-stage.js";
 import {
@@ -100,7 +101,11 @@ import {
   SPACE_STRUCTURE_ANCHOR_MIN_DISTANCE,
   sortNodeRefsForSerializedFetch,
   STREET_NAME_POOL,
+  featuredGameIdForUtcDate,
+  isGameId,
   type AgentPlaySnapshot,
+  type GameEvent,
+  type GameId,
   type OccupantGroup,
   type WorldBounds,
   type WorldLayout,
@@ -175,6 +180,7 @@ import { reportP2aToggleIfChanged } from "./presentation-analytics.js";
 import { createSkyDecorLayer } from "./sky-decor.js";
 import { ENABLE_CROWD_LAYER, getActiveSceneTheme } from "./scene-theme.js";
 import {
+  drawArcadeCabinet,
   drawCarWashStructure,
   drawHomeStructure,
   drawMcpStore,
@@ -183,6 +189,37 @@ import {
   drawVendorStall,
   type AmenityBuildingPalette,
 } from "./structure-art.js";
+import { arcadeCabinetPaletteForGame } from "./arcade-cabinet-palette.js";
+import {
+  buildGameStage,
+  resolvePlayableGameId,
+} from "./game-stage-registry.js";
+import type { GameStageHandle } from "./game-stage-base.js";
+import { GAME_STAGE_BOUNDS } from "./game-stage-base.js";
+import {
+  computeGameStageLayout,
+  gameStageSpawnPosition,
+  wrapGameStageForViewport,
+} from "./game-stage-runtime.js";
+import {
+  DEFAULT_GAME_STAGE_PROXIMITY_RADIUS,
+  findNearestGameStageProximityTarget,
+  GAME_STAGE_EXIT_TARGET_ID,
+  type GameStageProximityTarget,
+} from "./game-stage-proximity.js";
+import {
+  createGameHowToPlayPanel,
+  type GameHowToPlayHandle,
+} from "./game-how-to-play.js";
+import { createGameResultPanel, type GameResultPanelHandle } from "./game-result-panel.js";
+import {
+  createGameStreakPanel,
+  markGameStreakAutoPeeked,
+  shouldAutoPeekGameStreak,
+  type GameStreakPanelHandle,
+} from "./game-streak-panel.js";
+import { fetchGameStats } from "./game-stats-client.js";
+import { applyGameOutcome } from "./apply-game-outcome-client.js";
 import { buildParkWorldBackdrop } from "./scene-backgrounds.js";
 import {
   clampCameraToWorldRect,
@@ -322,6 +359,7 @@ type Structure = {
   primaryAmenity?: string;
   amenities?: string[];
   spaceIds?: readonly string[];
+  gameId?: GameId;
 };
 
 type PathStep = {
@@ -420,6 +458,7 @@ type SnapshotStructureOccupant = {
   y: number;
   worldId: string;
   spaceIds: string[];
+  gameId?: string;
   primaryAmenity?: string;
   amenities?: string[];
 };
@@ -734,7 +773,62 @@ const arrowKeys = {
 
 let lastProximityPartnerId: string | null = null;
 let lastStructureProximityTarget: StructureProximityTarget | null = null;
+let lastGameStageProximityTarget: GameStageProximityTarget | null = null;
 let proximityPromptEl: HTMLDivElement | null = null;
+
+function activateGameStageProximityTarget(): void {
+  const stage = activeGameStage;
+  const target = lastGameStageProximityTarget;
+  if (stage === null || target === null) return;
+  if (target.activatable === false) return;
+  if (target.id === GAME_STAGE_EXIT_TARGET_ID) {
+    gameExitDebounceMs = 400;
+    leaveCurrentEnclosedStageToPrevious();
+    return;
+  }
+  const activate = stage.handle.activateProximityTarget;
+  if (activate !== undefined) {
+    activate(target.id);
+  }
+}
+
+function refreshGameStageProximityTarget(): void {
+  const stage = activeGameStage;
+  if (stage === null) {
+    lastGameStageProximityTarget = null;
+    return;
+  }
+  const list = stage.handle.listProximityTargets;
+  if (list === undefined) {
+    lastGameStageProximityTarget = null;
+    return;
+  }
+  lastGameStageProximityTarget = findNearestGameStageProximityTarget({
+    player: gamePlayerState.pos,
+    targets: list(),
+    radius: DEFAULT_GAME_STAGE_PROXIMITY_RADIUS,
+  });
+}
+
+function gameStageProximityPromptScreenPosition(input: {
+  stage: ActiveGameStage;
+  target: GameStageProximityTarget;
+}): { x: number; y: number } | null {
+  const host = canvasHostRef;
+  const localX = input.stage.offsetX + input.target.x * input.stage.cellScale;
+  const localY = input.stage.offsetY + input.target.y * input.stage.cellScale;
+  if (host === null) {
+    return { x: localX, y: localY };
+  }
+  const hostRect = host.getBoundingClientRect();
+  const scaleX = hostRect.width / VIEW_W;
+  const scaleY = hostRect.height / VIEW_H;
+  return {
+    x: hostRect.left + localX * scaleX,
+    y: hostRect.top + (localY - 32) * scaleY,
+  };
+}
+
 let proximityLegendEl: HTMLDivElement | null = null;
 let proximityTouchPadHandle: { refresh: () => void } | null = null;
 
@@ -792,6 +886,9 @@ function zoneDebugStroke(primary: OccupantGroup): {
   }
   if (primary === "space") {
     return { width: 3, color: 0x2563eb, alpha: 0.95 };
+  }
+  if (primary === "arcade") {
+    return { width: 3, color: 0xf472b6, alpha: 0.95 };
   }
   return { width: 3, color: 0xa855f7, alpha: 0.95 };
 }
@@ -1149,6 +1246,16 @@ function onDocumentKeyDown(e: KeyboardEvent): void {
       walletInventoryPanel.close();
       return;
     }
+    if (gameResultPanel !== null && gameResultPanel.isOpen()) {
+      e.preventDefault();
+      gameResultPanel.close();
+      return;
+    }
+    if (gameStreakPanel !== null && gameStreakPanel.isOpen()) {
+      e.preventDefault();
+      gameStreakPanel.close();
+      return;
+    }
     const stage = stageController?.current();
     if (stage !== null && stage !== undefined && stage.id !== "overworld") {
       e.preventDefault();
@@ -1159,6 +1266,11 @@ function onDocumentKeyDown(e: KeyboardEvent): void {
   if (e.key.toLowerCase() === "w") {
     e.preventDefault();
     openWalletInventoryPanel();
+    return;
+  }
+  if (e.key.toLowerCase() === "g") {
+    e.preventDefault();
+    openGameStreakPanel();
     return;
   }
   if (
@@ -1179,6 +1291,15 @@ function onDocumentKeyDown(e: KeyboardEvent): void {
       return;
     }
   }
+  if (
+    e.key.toLowerCase() === "a" &&
+    activeGameStage !== null &&
+    lastGameStageProximityTarget !== null
+  ) {
+    e.preventDefault();
+    activateGameStageProximityTarget();
+    return;
+  }
   const partner = registeredAgentPartnerForProximityOrNull(
     lastProximityPartnerId
   );
@@ -1188,7 +1309,12 @@ function onDocumentKeyDown(e: KeyboardEvent): void {
       lastStructureProximityTarget !== null
     ) {
       e.preventDefault();
-      void enterStructureSpaceFromProximity(lastStructureProximityTarget);
+      const target = lastStructureProximityTarget;
+      if (target.gameId !== undefined) {
+        void enterGameFromProximity(target);
+      } else if (target.spaceId !== undefined) {
+        void enterStructureSpaceFromProximity(target);
+      }
     }
     return;
   }
@@ -1296,6 +1422,148 @@ function openWalletInventoryPanel(): void {
   walletInventoryPanel.open();
 }
 
+function featuredGameIdFromStats(value: string): GameId {
+  return isGameId(value) ? value : featuredGameIdForUtcDate(new Date());
+}
+
+async function refreshGameStreakPanel(): Promise<void> {
+  if (gameStreakPanel === null) return;
+  const sid = getSid();
+  const playerId = getViewerWalletPlayerId();
+  if (sid === null || playerId === null) {
+    gameStreakPanel.setLoading();
+    return;
+  }
+  gameStreakPanel.setLoading();
+  try {
+    const [{ stats }, wallet] = await Promise.all([
+      fetchGameStats({ sid, playerId }),
+      fetchPlayerWallet({ playerId, sid }),
+    ]);
+    cachedFeaturedGameId = featuredGameIdFromStats(stats.featuredGameId);
+    cachedGameStatsPowerUps = wallet.powerUps;
+    gameStreakPanel.setStats(stats, wallet.powerUps);
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "game stats fetch failed";
+    gameStreakPanel.setError(message);
+  }
+}
+
+function openGameStreakPanel(): void {
+  if (gameStreakPanel === null) return;
+  gameStreakPanel.open();
+}
+
+async function handleGameRoundComplete(
+  gameId: ReturnType<typeof resolvePlayableGameId>,
+  events: ReadonlyArray<GameEvent>
+): Promise<void> {
+  const sid = getSid();
+  const playerId = getViewerWalletPlayerId();
+  if (sid === null || playerId === null) return;
+  const roundId = crypto.randomUUID();
+  try {
+    const result = await applyGameOutcome({
+      sid,
+      playerId,
+      gameId,
+      roundId,
+      events,
+    });
+    walletBalanceCached = result.wallet.balanceUsd;
+    walletHud?.setBalance(result.wallet.balanceUsd);
+    walletHud?.setPowerUps(result.wallet.powerUps);
+    cachedGameStatsPowerUps = result.wallet.powerUps;
+    cachedFeaturedGameId = featuredGameIdFromStats(result.stats.featuredGameId);
+    gameStreakPanel?.setStats(result.stats, result.wallet.powerUps);
+    gameResultPanel?.show({
+      netPu: result.netPu,
+      totalPu: result.wallet.powerUps,
+      onPlayAgain: () => {
+        const target = lastStructureProximityTarget;
+        leaveCurrentEnclosedStageToPrevious();
+        if (target?.gameId !== undefined) {
+          void enterGameFromProximity(target);
+        }
+      },
+      onWallet: () => openWalletInventoryPanel(),
+      onBack: () => leaveCurrentEnclosedStageToPrevious(),
+    });
+    if (shouldAutoPeekGameStreak()) {
+      gameStreakPanel?.open();
+      markGameStreakAutoPeeked();
+    }
+  } catch (error) {
+    console.warn("[agent-play:world] apply game outcome failed", error);
+  }
+}
+
+async function enterGameFromProximity(
+  target: StructureProximityTarget
+): Promise<void> {
+  if (target.gameId === undefined || stageController === null) return;
+  const current = stageController.current();
+  if (current !== null && current.id !== "overworld") return;
+  const featured =
+    cachedFeaturedGameId ?? featuredGameIdForUtcDate(new Date());
+  const playableGameId = resolvePlayableGameId(target.gameId, featured);
+  const cabinetLabel = target.label ?? playableGameId;
+  const layout = computeGameStageLayout({
+    viewport: { width: VIEW_W, height: VIEW_H },
+    bounds: GAME_STAGE_BOUNDS,
+  });
+  const built = buildGameStage(playableGameId, {
+    cellScale: layout.cellScale,
+    onComplete: (result) => {
+      void handleGameRoundComplete(playableGameId, result.events);
+    },
+  });
+  const wrapped = wrapGameStageForViewport({
+    handle: built,
+    title: cabinetLabel,
+    viewport: { width: VIEW_W, height: VIEW_H },
+    bounds: GAME_STAGE_BOUNDS,
+  });
+  const playerLayer = wrapped.playerLayer;
+  const heroGraphic = new Graphics();
+  playerLayer.addChild(heroGraphic);
+  gamePlayerState.pos = gameStageSpawnPosition(GAME_STAGE_BOUNDS);
+  const overworldFacing =
+    getHumanPlayerId() !== null
+      ? facingByPlayer.get(getHumanPlayerId() as string) ?? "right"
+      : "right";
+  gamePlayerState.facing = overworldFacing;
+  gamePlayerState.walkPhase = 0;
+  gamePlayerState.isMoving = false;
+  activeGameStage = {
+    cabinetGameId: target.gameId,
+    playableGameId,
+    handle: wrapped.handle,
+    cabinetLabel,
+    cellScale: wrapped.cellScale,
+    offsetX: wrapped.offsetX,
+    offsetY: wrapped.offsetY,
+    playerLayer,
+    heroGraphic,
+  };
+  renderGamePlayer(activeGameStage);
+  gameExitDebounceMs = 250;
+  gameHowToPlayPanel?.showForGame(playableGameId);
+  try {
+    await stageController.enter(wrapped.handle);
+    void refreshWalletHud();
+    deepLogText("stage:enter:game", {
+      cabinetGameId: target.gameId,
+      playableGameId,
+    });
+  } catch (error) {
+    console.warn("[agent-play:world] enter game failed", error);
+    activeGameStage = null;
+    gameHowToPlayPanel?.hide();
+  }
+}
+
 const STRUCTURE_AMENITY_KIND_MAP: Record<string, "shop" | "supermarket" | "car_wash"> = {
   shop: "shop",
   supermarket: "supermarket",
@@ -1361,6 +1629,37 @@ type ActiveAmenityStage = {
 let activeAmenityStage: ActiveAmenityStage | null = null;
 let amenityItemTooltip: ItemTooltipHandle | null = null;
 
+type ActiveGameStage = {
+  cabinetGameId: GameId;
+  playableGameId: ReturnType<typeof resolvePlayableGameId>;
+  handle: GameStageHandle;
+  cabinetLabel: string;
+  cellScale: number;
+  offsetX: number;
+  offsetY: number;
+  playerLayer: Container;
+  heroGraphic: Graphics;
+};
+
+const GAME_STAGE_IDS: ReadonlySet<StageId> = new Set([
+  "gameHiddenGems",
+  "gameMapRecall",
+  "gamePriceCheck",
+  "gameSignalHunt",
+  "gameDeliveryDash",
+  "gameLeaseLocker",
+  "gameTalkTimer",
+]);
+
+const isGameStageId = (stageId: StageId): boolean => GAME_STAGE_IDS.has(stageId);
+
+let activeGameStage: ActiveGameStage | null = null;
+let gameResultPanel: GameResultPanelHandle | null = null;
+let gameStreakPanel: GameStreakPanelHandle | null = null;
+let gameHowToPlayPanel: GameHowToPlayHandle | null = null;
+let cachedFeaturedGameId: GameId | null = null;
+let cachedGameStatsPowerUps = 0;
+
 /**
  * Trigger `stageController.back()` and clear the active enclosed-stage
  * reference once the transition resolves. Centralised so both the Esc path
@@ -1371,11 +1670,16 @@ let amenityItemTooltip: ItemTooltipHandle | null = null;
 function leaveCurrentEnclosedStageToPrevious(): void {
   const controller = stageController;
   if (controller === null) return;
+  const wasGame = activeGameStage !== null;
   const wasAmenity = activeAmenityStage !== null;
   void controller
     .back()
     .then(() => {
-      if (wasAmenity) {
+      if (wasGame) {
+        activeGameStage = null;
+        gameHowToPlayPanel?.hide();
+        gameResultPanel?.close();
+      } else if (wasAmenity) {
         activeAmenityStage = null;
         amenityItemTooltip?.hide();
       } else {
@@ -1530,6 +1834,72 @@ function renderAmenityPlayer(stage: ActiveAmenityStage): void {
   });
 }
 
+const gamePlayerState: {
+  pos: { x: number; y: number };
+  facing: "left" | "right";
+  walkPhase: number;
+  isMoving: boolean;
+} = {
+  pos: gameStageSpawnPosition(GAME_STAGE_BOUNDS),
+  facing: "right",
+  walkPhase: 0,
+  isMoving: false,
+};
+let gameExitDebounceMs = 0;
+const GAME_PLAYER_SPEED_CELLS_PER_SEC = 3.2;
+
+function renderGamePlayer(stage: ActiveGameStage): void {
+  stage.playerLayer.position.set(
+    gamePlayerState.pos.x * stage.cellScale,
+    gamePlayerState.pos.y * stage.cellScale
+  );
+  const playerScale = Math.max(0.5, Math.min(1.1, stage.cellScale / 48));
+  drawPlatformHero(stage.heroGraphic, {
+    scale: playerScale,
+    facing: gamePlayerState.facing,
+    walkPhase: gamePlayerState.walkPhase,
+    isMoving: gamePlayerState.isMoving,
+  });
+}
+
+function tickGamePlayer(dtSec: number): void {
+  const stage = activeGameStage;
+  if (stage === null) return;
+  const direction = nextEnclosedStageInputDirection({
+    joystickEnabled: getPreviewViewSettings().joystickEnabled,
+    joystickVector: getJoystickVector(),
+    arrowKeys,
+  });
+  const { dx, dy, source } = direction;
+  const isMoving = source !== "idle";
+  if (isMoving) {
+    const step = GAME_PLAYER_SPEED_CELLS_PER_SEC * dtSec;
+    gamePlayerState.pos.x = gamePlayerState.pos.x + dx * step;
+    gamePlayerState.pos.y = gamePlayerState.pos.y + dy * step;
+    gamePlayerState.pos = stage.handle.clampPosition(gamePlayerState.pos);
+    if (dx !== 0) gamePlayerState.facing = dx > 0 ? "right" : "left";
+    gamePlayerState.walkPhase = (gamePlayerState.walkPhase + dtSec * 4) % 1;
+  } else {
+    gamePlayerState.walkPhase = 0;
+  }
+  gamePlayerState.isMoving = isMoving;
+  renderGamePlayer(stage);
+
+  if (gameExitDebounceMs > 0) {
+    gameExitDebounceMs = Math.max(0, gameExitDebounceMs - dtSec * 1000);
+    return;
+  }
+  const door = stage.handle.exitDoorAnchor;
+  const distToDoor = Math.hypot(
+    gamePlayerState.pos.x - door.x,
+    gamePlayerState.pos.y - door.y
+  );
+  if (distToDoor <= EXIT_DOOR_PROXIMITY_RADIUS_WORLD) {
+    gameExitDebounceMs = 400;
+    leaveCurrentEnclosedStageToPrevious();
+  }
+}
+
 async function enterAmenityFromYardPad(
   target: YardAmenityPadPosition
 ): Promise<void> {
@@ -1652,6 +2022,7 @@ async function enterAmenityFromYardPad(
 async function enterStructureSpaceFromProximity(
   target: StructureProximityTarget
 ): Promise<void> {
+  if (target.spaceId === undefined) return;
   if (stageController === null) return;
   const current = stageController.current();
   if (current !== null && current.id !== "overworld") return;
@@ -1881,15 +2252,7 @@ function hydrateChatFromSnapshot(s: Snapshot): void {
 function collectStructuresForRender(s: Snapshot): Structure[] {
   const out: Structure[] = [];
   for (const o of s.worldMap.occupants) {
-    if (o.kind === "mcp") {
-      out.push({
-        id: `mcp:${o.id}`,
-        kind: "tool",
-        x: o.x,
-        y: o.y,
-        label: o.name,
-      });
-    } else if (o.kind === "structure") {
+    if (o.kind === "structure") {
       out.push({
         id: o.id,
         kind: "structure",
@@ -1900,6 +2263,9 @@ function collectStructuresForRender(s: Snapshot): Structure[] {
         primaryAmenity: o.primaryAmenity,
         amenities: o.amenities,
         spaceIds: o.spaceIds,
+        ...(o.gameId !== undefined && isGameId(o.gameId)
+          ? { gameId: o.gameId }
+          : {}),
       });
     }
   }
@@ -2602,7 +2968,7 @@ function syncStructureNodes(structs: Structure[]): void {
   const standalone: Structure[] = [];
 
   for (const st of structs) {
-    if (st.kind === "structure") {
+    if (st.kind === "structure" && st.gameId === undefined) {
       const ck = compoundStructureGroupKey(st);
       alive.add(ck);
       const arr = compoundGroups.get(ck) ?? [];
@@ -2688,6 +3054,29 @@ function syncStructureNodes(structs: Structure[]): void {
       boxG.position.set(sx, sy);
       n.caption.text = (st.label ?? "Home").slice(0, 24);
       n.caption.position.set(sx - n.caption.width / 2, sy - box * 1.15);
+    } else if (
+      st.gameId !== undefined &&
+      isGameId(st.gameId)
+    ) {
+      const gameId = st.gameId;
+      const pal = arcadeCabinetPaletteForGame(gameId);
+      const cabinetBox = box * 1.05;
+      drawArcadeCabinet(boxG, cabinetBox, pal);
+      boxG.position.set(sx - cabinetBox * 0.48, sy - cabinetBox * 0.75);
+      const featured =
+        cachedFeaturedGameId ?? featuredGameIdForUtcDate(new Date());
+      const isFeatured =
+        gameId === "daily-rotator" || gameId === featured;
+      if (isFeatured) {
+        const glow = new Graphics({ roundPixels: true });
+        glow
+          .circle(0, 0, cabinetBox * 0.72)
+          .stroke({ color: 0xfde047, width: 3, alpha: 0.85 });
+        glow.position.set(sx, sy - cabinetBox * 0.35);
+        n.root.addChild(glow);
+      }
+      n.caption.text = (st.label ?? st.name ?? gameId).slice(0, 28);
+      n.caption.position.set(sx - n.caption.width / 2, sy - cabinetBox * 0.95);
     } else if (isMcpStore) {
       const storePal = mcpStorePalette(palette);
       const storeBox = box * 1.12;
@@ -3121,6 +3510,8 @@ function onTick(dt: number): void {
     currentStageId === "amenityCarWash"
   ) {
     tickAmenityPlayer(dt);
+  } else if (currentStageId !== undefined && isGameStageId(currentStageId)) {
+    tickGamePlayer(dt);
   }
   updateCameraAndWorldRoot();
 }
@@ -3223,11 +3614,27 @@ function onFrame(): void {
   } else {
     lastStructureProximityTarget = null;
   }
+  if (activeGameStage !== null) {
+    refreshGameStageProximityTarget();
+  } else {
+    lastGameStageProximityTarget = null;
+  }
   if (stageController?.current()?.id !== "spaceYard") {
     lastYardAmenityPadTarget = null;
   }
   if (proximityLegendEl !== null) {
-    if (
+    if (activeGameStage !== null) {
+      const gameTarget = lastGameStageProximityTarget;
+      if (gameTarget !== null) {
+        proximityLegendEl.textContent =
+          gameTarget.activatable === false
+            ? `Near ${gameTarget.label}. ${gameTarget.verb}`
+            : `Near ${gameTarget.label}. A: ${gameTarget.verb.toLowerCase()}`;
+      } else {
+        proximityLegendEl.textContent =
+          "Joystick or arrows to move · Walk to exit door to leave";
+      }
+    } else if (
       activeAmenityStage !== null &&
       activeAmenityStage.nearestBuyable !== null
     ) {
@@ -3243,17 +3650,38 @@ function onFrame(): void {
     } else if (lastProximityPartnerId !== null) {
       proximityLegendEl.textContent = `Near ${playerDisplayName(lastProximityPartnerId)}. A: for assist · C: for chat · P: push to talk · Z: for zone · Y: for yield`;
     } else if (lastStructureProximityTarget !== null) {
-      const spaceName =
-        lastStructureProximityTarget.label ??
-        lastStructureProximityTarget.spaceId;
-      proximityLegendEl.textContent = `Near ${spaceName}. A: enter space`;
+      const target = lastStructureProximityTarget;
+      const targetName = target.label ?? target.spaceId ?? "cabinet";
+      if (target.gameId !== undefined) {
+        proximityLegendEl.textContent = `Near ${targetName}. A: play`;
+      } else {
+        proximityLegendEl.textContent = `Near ${targetName}. A: enter space`;
+      }
     } else {
       proximityLegendEl.textContent =
         "Near another player: A: for assist · C: for chat · P: push to talk · Z: for zone · Y: for yield";
     }
   }
   if (proximityPromptEl !== null) {
-    if (lastProximityPartnerId !== null) {
+    if (
+      activeGameStage !== null &&
+      lastGameStageProximityTarget !== null
+    ) {
+      const stage = activeGameStage;
+      const target = lastGameStageProximityTarget;
+      const screen = gameStageProximityPromptScreenPosition({ stage, target });
+      if (screen !== null) {
+        proximityPromptEl.textContent =
+          target.activatable === false
+            ? target.verb
+            : `A: ${target.verb} ${target.label}`;
+        proximityPromptEl.style.display = "block";
+        proximityPromptEl.style.left = `${screen.x}px`;
+        proximityPromptEl.style.top = `${screen.y}px`;
+      } else {
+        proximityPromptEl.style.display = "none";
+      }
+    } else if (lastProximityPartnerId !== null) {
       const pos = playerWorldPos.get(lastProximityPartnerId);
       if (pos !== undefined) {
         const { cx, cy } = getAgentHeroAnchorScreen(lastProximityPartnerId, pos, box);
@@ -3266,18 +3694,20 @@ function onFrame(): void {
         proximityPromptEl.style.display = "none";
       }
     } else if (lastStructureProximityTarget !== null) {
+      const target = lastStructureProximityTarget;
       const centroidLocal = worldToWorldRootLocal(
-        lastStructureProximityTarget.centroid.x,
-        lastStructureProximityTarget.centroid.y
+        target.centroid.x,
+        target.centroid.y
       );
       const centroidScreen = worldRootLocalToCanvas(
         centroidLocal.x,
         centroidLocal.y
       );
-      const spaceName =
-        lastStructureProximityTarget.label ??
-        lastStructureProximityTarget.spaceId;
-      proximityPromptEl.textContent = `A: enter ${spaceName}`;
+      const targetName = target.label ?? target.spaceId ?? "cabinet";
+      proximityPromptEl.textContent =
+        target.gameId !== undefined
+          ? `A: play ${targetName}`
+          : `A: enter ${targetName}`;
       proximityPromptEl.style.display = "block";
       proximityPromptEl.style.left = `${centroidScreen.x}px`;
       proximityPromptEl.style.top = `${centroidScreen.y - box * 1.6}px`;
@@ -3610,7 +4040,16 @@ export function bootstrap(): void {
         await refreshWalletInventoryPanel();
       },
     });
+    gameResultPanel = createGameResultPanel({ parent: document.body });
+    gameStreakPanel = createGameStreakPanel({
+      parent: document.body,
+      onRefresh: () => {
+        void refreshGameStreakPanel();
+      },
+    });
+    gameHowToPlayPanel = createGameHowToPlayPanel({ parent: document.body });
     void refreshWalletHud();
+    void refreshGameStreakPanel();
     proximityPromptEl = document.createElement("div");
     proximityPromptEl.className = "preview-proximity-prompt";
     proximityPromptEl.textContent = "A: for assist\nC: for chat\nP: push to talk";
@@ -3630,7 +4069,13 @@ export function bootstrap(): void {
         if (lastProximityPartnerId !== null) return null;
         const target = lastStructureProximityTarget;
         if (target === null) return null;
-        return target.label ?? target.spaceId;
+        return target.label ?? target.spaceId ?? null;
+      },
+      getStructureProximityVerb: () => {
+        if (lastProximityPartnerId !== null) return null;
+        const target = lastStructureProximityTarget;
+        if (target === null) return null;
+        return target.gameId !== undefined ? "Play" : "Enter";
       },
       getAmenityProximityLabel: () => {
         const target = lastYardAmenityPadTarget;
@@ -3644,12 +4089,38 @@ export function bootstrap(): void {
         if (buyable === null) return null;
         return buyable.tooltipModel.sale.status === "sold" ? "View" : "Buy";
       },
+      getGameStageProximityLabel: () => {
+        if (activeGameStage === null) return null;
+        return lastGameStageProximityTarget?.label ?? null;
+      },
+      getGameStageProximityVerb: () => {
+        if (activeGameStage === null) return null;
+        return lastGameStageProximityTarget?.verb ?? null;
+      },
+      getGameStageProximityActivatable: () => {
+        if (activeGameStage === null) return false;
+        const target = lastGameStageProximityTarget;
+        if (target === null) return false;
+        return target.activatable !== false;
+      },
       onAssist: () => {
+        if (
+          activeGameStage !== null &&
+          lastGameStageProximityTarget !== null
+        ) {
+          activateGameStageProximityTarget();
+          return;
+        }
         if (
           lastProximityPartnerId === null &&
           lastStructureProximityTarget !== null
         ) {
-          void enterStructureSpaceFromProximity(lastStructureProximityTarget);
+          const target = lastStructureProximityTarget;
+          if (target.gameId !== undefined) {
+            void enterGameFromProximity(target);
+          } else {
+            void enterStructureSpaceFromProximity(target);
+          }
           return;
         }
         triggerProximityAssistOrChat("assist");

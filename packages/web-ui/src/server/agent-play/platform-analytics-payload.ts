@@ -35,7 +35,7 @@ export type PlatformAnalyticsPlayerChain = {
   occupantKinds: {
     human: number;
     agent: number;
-    mcp: number;
+    arcadeCabinets: number;
   } | null;
 };
 
@@ -86,15 +86,19 @@ function parseSnapshotOccupants(
     }
     let human = 0;
     let agent = 0;
-    let mcp = 0;
+    let arcadeCabinets = 0;
     for (const o of occ) {
       if (o.kind === "human") human += 1;
       else if (o.kind === "agent") agent += 1;
-      else if (o.kind === "mcp") mcp += 1;
+      else if (o.kind === "structure" && "gameId" in o && typeof o.gameId === "string") {
+        arcadeCabinets += 1;
+      } else if (o.kind === "mcp") {
+        arcadeCabinets += 1;
+      }
     }
     return {
       snapshotOccupantCount: occ.length,
-      occupantKinds: { human, agent, mcp },
+      occupantKinds: { human, agent, arcadeCabinets },
     };
   } catch {
     return { snapshotOccupantCount: null, occupantKinds: null };
