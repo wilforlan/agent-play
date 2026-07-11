@@ -24,7 +24,8 @@ export type BuyHouseResult =
 export const buyHouse = async (input: {
   sid: string;
   houseId: HouseId;
-  ownerDisplayName?: string;
+  ownerName: string;
+  ownerSignature: string;
   fetcher?: typeof fetch;
 }): Promise<BuyHouseResult> => {
   const creds = readHumanCredentials();
@@ -33,12 +34,11 @@ export const buyHouse = async (input: {
   }
   const fetcher = input.fetcher ?? fetch;
   const url = `/api/agent-play/sdk/rpc?sid=${encodeURIComponent(input.sid)}`;
-  const payload: { houseId: HouseId; ownerDisplayName?: string } = {
+  const payload = {
     houseId: input.houseId,
+    ownerName: input.ownerName.trim(),
+    ownerSignature: input.ownerSignature.trim(),
   };
-  if (input.ownerDisplayName !== undefined) {
-    payload.ownerDisplayName = input.ownerDisplayName;
-  }
   const response = await fetcher(url, {
     method: "POST",
     headers: {

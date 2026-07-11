@@ -13,13 +13,17 @@ const vacantHouse = (houseId: 1 | 2 | 3 | 4): HouseSlot => ({
   layoutLabel: "Studio layout",
   ownerNodeId: null,
   ownerDisplayName: null,
+  ownerName: null,
+  ownerSignature: null,
   purchasedAt: null,
 });
 
 const ownedHouse = (houseId: 1 | 2 | 3 | 4): HouseSlot => ({
   ...vacantHouse(houseId),
   ownerNodeId: "node-a",
-  ownerDisplayName: "Alex",
+  ownerDisplayName: "Alex · AK",
+  ownerName: "Alex Kim",
+  ownerSignature: "AK",
   purchasedAt: "2026-05-12T00:00:00.000Z",
 });
 
@@ -46,14 +50,29 @@ describe("house-interior-stage", () => {
     handle.destroy();
   });
 
-  it("hides purchase panel in inspect mode when already owned", () => {
+  it("shows ownership panel for owned houses in inspect mode", () => {
     const handle = buildHouseInteriorStage({
       cellScale: 32,
       house: ownedHouse(3),
       mode: "inspect",
     });
     expect(handle.showPurchasePanel).toBe(false);
-    expect(handle.ownerDisplayName).toBe("Alex");
+    expect(handle.showOwnershipPanel).toBe(true);
+    expect(handle.ownerDisplayName).toBe("Alex · AK");
+    expect(handle.ownershipPanelLines.some((line) => line.includes("Alex Kim"))).toBe(
+      true
+    );
+    handle.destroy();
+  });
+
+  it("shows ownership panel for owned houses in owner mode", () => {
+    const handle = buildHouseInteriorStage({
+      cellScale: 32,
+      house: ownedHouse(2),
+      mode: "owner",
+    });
+    expect(handle.showOwnershipPanel).toBe(true);
+    expect(handle.ownershipPanelLines.length).toBeGreaterThan(3);
     handle.destroy();
   });
 

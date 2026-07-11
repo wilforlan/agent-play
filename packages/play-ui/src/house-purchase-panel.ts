@@ -12,8 +12,8 @@ const ensureStyles = (): void => {
 .preview-house-purchase-panel {
   position: fixed;
   z-index: 12000;
-  min-width: 240px;
-  max-width: 300px;
+  min-width: 260px;
+  max-width: 320px;
   padding: 14px;
   border-radius: 10px;
   border: 1px solid rgba(148, 163, 184, 0.45);
@@ -37,6 +37,29 @@ const ensureStyles = (): void => {
   color: #fcd34d;
   font-size: 13px;
   margin-bottom: 8px;
+}
+.preview-house-purchase-panel__field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+.preview-house-purchase-panel__field label {
+  font-size: 11px;
+  color: #94a3b8;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+.preview-house-purchase-panel__field input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  background: rgba(30, 41, 59, 0.9);
+  color: #f8fafc;
+  font-size: 13px;
 }
 .preview-house-purchase-panel button {
   width: 100%;
@@ -75,6 +98,11 @@ const ensureStyles = (): void => {
   document.head.appendChild(style);
 };
 
+export type HousePurchaseOwnerDetails = {
+  ownerName: string;
+  ownerSignature: string;
+};
+
 export type HousePurchasePanelHandle = {
   readonly root: HTMLElement;
   show(input: {
@@ -83,7 +111,7 @@ export type HousePurchasePanelHandle = {
     priceUsd: number;
     ownerDisplayName: string | null;
     balanceUsd: number | null;
-    onBuy: () => void;
+    onBuy: (details: HousePurchaseOwnerDetails) => void;
   }): void;
   hide(): void;
   setBusy(): void;
@@ -103,23 +131,66 @@ export const createHousePurchasePanel = (): HousePurchasePanelHandle => {
   const owned = document.createElement("div");
   owned.className = "preview-house-purchase-panel__owned";
   owned.hidden = true;
+
+  const nameField = document.createElement("div");
+  nameField.className = "preview-house-purchase-panel__field";
+  const nameLabel = document.createElement("label");
+  nameLabel.textContent = "Owner name";
+  const nameInput = document.createElement("input");
+  nameInput.type = "text";
+  nameInput.autocomplete = "name";
+  nameInput.maxLength = 40;
+  nameInput.dataset.field = "owner-name";
+  nameLabel.htmlFor = "preview-house-owner-name";
+  nameInput.id = "preview-house-owner-name";
+  nameField.append(nameLabel, nameInput);
+
+  const signatureField = document.createElement("div");
+  signatureField.className = "preview-house-purchase-panel__field";
+  const signatureLabel = document.createElement("label");
+  signatureLabel.textContent = "Signature (initials)";
+  const signatureInput = document.createElement("input");
+  signatureInput.type = "text";
+  signatureInput.autocomplete = "off";
+  signatureInput.maxLength = 8;
+  signatureInput.dataset.field = "owner-signature";
+  signatureLabel.htmlFor = "preview-house-owner-signature";
+  signatureInput.id = "preview-house-owner-signature";
+  signatureField.append(signatureLabel, signatureInput);
+
   const error = document.createElement("div");
   error.className = "preview-house-purchase-panel__error";
   error.hidden = true;
   const buyBtn = document.createElement("button");
   buyBtn.type = "button";
   buyBtn.textContent = "Buy house";
-  root.append(title, meta, owned, error, buyBtn);
+  root.append(title, meta, owned, nameField, signatureField, error, buyBtn);
   document.body.appendChild(root);
 
-  let onBuy: (() => void) | null = null;
+  let onBuy: ((details: HousePurchaseOwnerDetails) => void) | null = null;
   let busy = false;
+
+  const readOwnerDetails = (): HousePurchaseOwnerDetails | null => {
+    const ownerName = nameInput.value.trim();
+    const ownerSignature = signatureInput.value.trim();
+    if (ownerName.length === 0 || ownerSignature.length === 0) {
+      return null;
+    }
+    return { ownerName, ownerSignature };
+  };
 
   buyBtn.addEventListener("click", () => {
     if (busy || onBuy === null || buyBtn.disabled) {
       return;
     }
-    onBuy();
+    const details = readOwnerDetails();
+    if (details === null) {
+      error.textContent = "Enter your name and initials";
+      error.hidden = false;
+      return;
+    }
+    error.hidden = true;
+    onBuy(details);
   });
 
   return {
@@ -127,16 +198,22 @@ export const createHousePurchasePanel = (): HousePurchasePanelHandle => {
     show(input) {
       error.hidden = true;
       busy = false;
+      nameInput.value = "";
+      signatureInput.value = "";
       title.textContent = `House ${String(input.houseId)}`;
       meta.textContent = `${input.layoutLabel} · ${formatUsd(input.priceUsd)}`;
       if (input.ownerDisplayName !== null) {
         owned.hidden = false;
         owned.textContent = `Owned by ${input.ownerDisplayName}`;
+        nameField.hidden = true;
+        signatureField.hidden = true;
         buyBtn.disabled = true;
         buyBtn.textContent = "Not for sale";
         onBuy = null;
       } else {
         owned.hidden = true;
+        nameField.hidden = false;
+        signatureField.hidden = false;
         const balance = input.balanceUsd;
         const canAfford =
           balance !== null && Number.isFinite(balance) && balance >= input.priceUsd;

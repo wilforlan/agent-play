@@ -1,6 +1,7 @@
 import { Container, Graphics, Text } from "pixi.js";
 import type { HouseSlot } from "@agent-play/sdk/browser";
 import {
+  buildHouseOwnershipPanelLines,
   clampHousePosition,
   getHouseBlueprint,
   houseSpawnPosition,
@@ -20,10 +21,12 @@ export type HouseInteriorStageHandle = StageHandle & {
   readonly mode: HouseStageMode;
   readonly houseId: HouseSlot["houseId"];
   readonly showPurchasePanel: boolean;
+  readonly showOwnershipPanel: boolean;
   readonly ownerDisplayName: string | null;
   readonly priceUsd: number;
   readonly layoutLabel: string;
   readonly purchaseAnchor: { x: number; y: number } | null;
+  readonly ownershipPanelLines: readonly string[];
   clampPosition(pos: { x: number; y: number }): { x: number; y: number };
   exitDoorAnchor: { x: number; y: number };
   spawnPosition(): { x: number; y: number };
@@ -58,6 +61,47 @@ const buildHouseFloor = (input: {
     });
   }
   return floor;
+};
+
+const mountOwnershipPanel = (input: {
+  root: Container;
+  cellScale: number;
+  bounds: AmenityStageBounds;
+  lines: readonly string[];
+}): void => {
+  if (input.lines.length === 0) {
+    return;
+  }
+  const panelWidth = input.cellScale * 4.8;
+  const panelHeight = input.cellScale * (1.2 + input.lines.length * 0.42);
+  const panelX =
+    (input.bounds.minX + input.bounds.maxX) * 0.5 * input.cellScale -
+    panelWidth * 0.5;
+  const panelY = input.bounds.minY * input.cellScale + input.cellScale * 0.55;
+  const plaque = new Graphics();
+  plaque
+    .roundRect(panelX, panelY, panelWidth, panelHeight, 10)
+    .fill({ color: 0xf8fafc, alpha: 0.96 });
+  plaque
+    .roundRect(panelX, panelY, panelWidth, panelHeight, 10)
+    .stroke({ color: 0x1e3a5f, width: 2, alpha: 0.85 });
+  input.root.addChild(plaque);
+
+  const fontSize = Math.max(11, Math.round(input.cellScale * 0.28));
+  const lineHeight = fontSize * 1.35;
+  input.lines.forEach((line, index) => {
+    const text = new Text({
+      text: line,
+      style: {
+        fontFamily: "system-ui, sans-serif",
+        fontSize: index === 0 ? fontSize + 1 : fontSize,
+        fontWeight: index === 0 ? "800" : "600",
+        fill: index === 0 ? 0x1e3a5f : 0x334155,
+      },
+    });
+    text.position.set(panelX + input.cellScale * 0.35, panelY + input.cellScale * 0.35 + index * lineHeight);
+    input.root.addChild(text);
+  });
 };
 
 export const buildHouseInteriorStage = (input: {
@@ -101,11 +145,22 @@ export const buildHouseInteriorStage = (input: {
   root.addChild(label);
 
   const owned = input.house.ownerNodeId !== null;
+  const ownershipPanelLines = buildHouseOwnershipPanelLines(input.house);
+  const showOwnershipPanel = owned && ownershipPanelLines.length > 0;
   const showPurchasePanel =
     input.mode === "inspect" && !owned;
   const purchaseAnchor = showPurchasePanel
     ? { x: blueprint.bounds.maxX * 0.55, y: blueprint.bounds.maxY - 1.2 }
     : null;
+
+  if (showOwnershipPanel) {
+    mountOwnershipPanel({
+      root,
+      cellScale: input.cellScale,
+      bounds: blueprint.bounds,
+      lines: ownershipPanelLines,
+    });
+  }
 
   if (purchaseAnchor !== null) {
     const panelMarker = new Graphics();
@@ -129,10 +184,12 @@ export const buildHouseInteriorStage = (input: {
     mode: input.mode,
     houseId: input.house.houseId,
     showPurchasePanel,
+    showOwnershipPanel,
     ownerDisplayName: input.house.ownerDisplayName,
     priceUsd: input.house.priceUsd,
     layoutLabel: blueprint.label,
     purchaseAnchor,
+    ownershipPanelLines,
     attach: () => {},
     detach: () => {},
     destroy: () => {
