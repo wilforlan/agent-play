@@ -45,6 +45,7 @@ import {
   createEmptyHouseStreetContent,
   findParkingSpot,
   findHouseSlot,
+  formatHouseOwnerDisplayName,
   housePurchaseDetail,
   isHouseOwned,
   listActiveParkingOccupancies,
@@ -2243,7 +2244,8 @@ export class RedisSessionStore implements SessionStore {
   async buyHouse(input: {
     nodeId: string;
     houseId: HouseId;
-    ownerDisplayName: string;
+    ownerName: string;
+    ownerSignature: string;
     now: string;
     recordId: string;
   }): Promise<BuyHouseResult> {
@@ -2283,6 +2285,10 @@ export class RedisSessionStore implements SessionStore {
         await this.redis.unwatch();
         return { ok: false, error: "INSUFFICIENT_FUNDS" };
       }
+      const ownerDisplayName = formatHouseOwnerDisplayName({
+        name: input.ownerName,
+        signature: input.ownerSignature,
+      });
       const nextHouses = street.houses.map((h) => {
         if (h.houseId !== input.houseId) {
           return h;
@@ -2290,7 +2296,9 @@ export class RedisSessionStore implements SessionStore {
         return {
           ...h,
           ownerNodeId: input.nodeId,
-          ownerDisplayName: input.ownerDisplayName.trim(),
+          ownerDisplayName,
+          ownerName: input.ownerName.trim(),
+          ownerSignature: input.ownerSignature.trim().toUpperCase(),
           purchasedAt: input.now,
         };
       });

@@ -303,7 +303,8 @@ export type SessionStore = {
   buyHouse(input: {
     nodeId: string;
     houseId: HouseId;
-    ownerDisplayName: string;
+    ownerName: string;
+    ownerSignature: string;
     now: string;
     recordId: string;
   }): Promise<BuyHouseResult>;

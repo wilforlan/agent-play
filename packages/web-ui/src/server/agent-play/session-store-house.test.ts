@@ -24,7 +24,8 @@ describe("session-store: parking-lane houses", () => {
     const result = await store.buyHouse({
       nodeId: "node-a",
       houseId: 2,
-      ownerDisplayName: "Alex",
+      ownerName: "Alex Kim",
+      ownerSignature: "AK",
       now: ISO,
       recordId: "house-purchase-1",
     });
@@ -34,7 +35,9 @@ describe("session-store: parking-lane houses", () => {
     }
     const house = findHouseSlot(result.houseStreet, 2);
     expect(house?.ownerNodeId).toBe("node-a");
-    expect(house?.ownerDisplayName).toBe("Alex");
+    expect(house?.ownerDisplayName).toBe("Alex Kim · AK");
+    expect(house?.ownerName).toBe("Alex Kim");
+    expect(house?.ownerSignature).toBe("AK");
     expect(result.wallet.balanceUsd).toBe(5000 - 2199.99);
     expect(result.record.amenityKind).toBe("house");
     expect(result.record.spaceId).toBe("__houses__");
@@ -50,7 +53,8 @@ describe("session-store: parking-lane houses", () => {
     const first = await store.buyHouse({
       nodeId: "node-a",
       houseId: 1 as HouseId,
-      ownerDisplayName: "First",
+      ownerName: "First Owner",
+      ownerSignature: "FO",
       now: ISO,
       recordId: "house-1",
     });
@@ -58,7 +62,8 @@ describe("session-store: parking-lane houses", () => {
     const second = await store.buyHouse({
       nodeId: "node-b",
       houseId: 1 as HouseId,
-      ownerDisplayName: "Second",
+      ownerName: "Second Owner",
+      ownerSignature: "SO",
       now: ISO,
       recordId: "house-2",
     });
@@ -72,7 +77,8 @@ describe("session-store: parking-lane houses", () => {
     const result = await store.buyHouse({
       nodeId: "node-a",
       houseId: 4 as HouseId,
-      ownerDisplayName: "Broke",
+      ownerName: "Broke Buyer",
+      ownerSignature: "BB",
       now: ISO,
       recordId: "house-3",
     });
@@ -88,7 +94,8 @@ describe("session-store: parking-lane houses", () => {
     const result = await store.buyHouse({
       nodeId: "node-a",
       houseId: 5 as HouseId,
-      ownerDisplayName: "Ghost",
+      ownerName: "Ghost",
+      ownerSignature: "GH",
       now: ISO,
       recordId: "house-4",
     });
@@ -102,7 +109,8 @@ describe("session-store: parking-lane houses", () => {
     await store.buyHouse({
       nodeId: "node-a",
       houseId: 3 as HouseId,
-      ownerDisplayName: "Owner",
+      ownerName: "Record Owner",
+      ownerSignature: "RO",
       now: ISO,
       recordId: "house-5",
     });
