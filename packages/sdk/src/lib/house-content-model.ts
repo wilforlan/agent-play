@@ -3,6 +3,9 @@ import { z } from "zod";
 const NonEmpty = z.string().trim().min(1);
 const IsoTimestamp = z.string().trim().min(1);
 const PositivePrice = z.number().finite().positive();
+const OwnerName = z.string().trim().min(1).max(40);
+const OwnerSignature = z.string().trim().min(1).max(8);
+const OwnerDisplayName = z.string().trim().min(1).max(24);
 
 export const HOUSE_WORLD_X = [3, 8, 13, 18] as const;
 
@@ -36,7 +39,9 @@ export const HouseSlotSchema = z.object({
   layoutId: HouseIdSchema,
   layoutLabel: NonEmpty,
   ownerNodeId: NonEmpty.nullable(),
-  ownerDisplayName: z.string().trim().min(1).max(24).nullable(),
+  ownerDisplayName: OwnerDisplayName.nullable(),
+  ownerName: OwnerName.nullable(),
+  ownerSignature: OwnerSignature.nullable(),
   purchasedAt: IsoTimestamp.nullable(),
 });
 
@@ -68,6 +73,8 @@ export const createEmptyHouseStreetContent = (): HouseStreetContent => {
       layoutLabel: entry.layoutLabel,
       ownerNodeId: null,
       ownerDisplayName: null,
+      ownerName: null,
+      ownerSignature: null,
       purchasedAt: null,
     };
   });
@@ -85,3 +92,44 @@ export const isHouseOwned = (house: HouseSlot): boolean =>
 
 export const housePurchaseDetail = (house: HouseSlot): string =>
   `House ${String(house.houseId)} · ${house.layoutLabel}`;
+
+export const formatHouseOwnerDisplayName = (input: {
+  name: string;
+  signature: string;
+}): string => {
+  const name = input.name.trim();
+  const signature = input.signature.trim().toUpperCase();
+  const divider = " · ";
+  const combined = `${name}${divider}${signature}`;
+  if (combined.length <= 24) {
+    return combined;
+  }
+  const suffix = `${divider}${signature}`;
+  const maxNameLen = 24 - suffix.length;
+  if (maxNameLen < 1) {
+    return signature.slice(0, 24);
+  }
+  return `${name.slice(0, maxNameLen)}${suffix}`;
+};
+
+export const buildHouseOwnershipPanelLines = (house: HouseSlot): readonly string[] => {
+  if (!isHouseOwned(house)) {
+    return [];
+  }
+  const ownerName = house.ownerName ?? house.ownerDisplayName ?? "Owner";
+  const ownerSignature = house.ownerSignature ?? "—";
+  const purchasedAt =
+    house.purchasedAt !== null
+      ? new Date(house.purchasedAt).toLocaleDateString(undefined, {
+          dateStyle: "medium",
+        })
+      : "—";
+  return [
+    "PROPERTY RECORD",
+    `Owner: ${ownerName}`,
+    `Signature: ${ownerSignature}`,
+    `Purchased: ${purchasedAt}`,
+    "Security: Node-verified title",
+    "Private residence · authorized entry only",
+  ];
+};
