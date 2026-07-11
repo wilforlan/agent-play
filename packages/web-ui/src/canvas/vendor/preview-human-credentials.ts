@@ -2,7 +2,7 @@
  * @module @agent-play/play-ui/preview-human-credentials
  * preview human credentials — preview canvas module (Pixi + DOM).
  */
-import type { FileSystemFileHandle } from "../../file-system-access.js";
+import type { FileSystemFileHandle } from "./file-system-access.js";
 
 const STORAGE_KEY = "agent-play.humanCredentials";
 
