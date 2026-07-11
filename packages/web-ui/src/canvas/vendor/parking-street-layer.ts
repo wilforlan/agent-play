@@ -1,5 +1,14 @@
 import { Container, Graphics } from "pixi.js";
-import type { ParkingStreetContent, WorldBounds } from "@agent-play/sdk/browser";
+import type {
+  HouseStreetContent,
+  ParkingStreetContent,
+  WorldBounds,
+} from "@agent-play/sdk/browser";
+import {
+  createEmptyHouseStreetContent,
+  getHouseBlueprint,
+  HOUSE_WORLD_X,
+} from "@agent-play/sdk/browser";
 import { buildCarSprite } from "./sprite-car.js";
 import { drawFlowerCluster, drawHomeStructure } from "./structure-art.js";
 import { buildTSignPost } from "./world-street-signs.js";
@@ -8,15 +17,17 @@ import { PARKING_BAY_ANCHORS } from "./parking-street-proximity.js";
 
 export const PARKING_CAR_DISPLAY_SCALE = 1.4;
 
-const HOUSE_PALETTE = {
-  wall: 0xf5e6d3,
-  roof: 0x8b5e3c,
-  door: 0x5c3d2e,
-  window: 0x9ad4ff,
-  trim: 0xffffff,
-};
+export { HOUSE_WORLD_X };
 
-const HOUSE_WORLD_X = [3, 8, 13, 18] as const;
+export const formatHouseSignLabel = (input: {
+  ownerDisplayName: string | null;
+  priceUsd: number;
+}): string => {
+  if (input.ownerDisplayName !== null && input.ownerDisplayName.length > 0) {
+    return input.ownerDisplayName;
+  }
+  return `$${input.priceUsd.toFixed(2)}`;
+};
 
 export const laneDashSegments = (input: {
   left: number;
@@ -69,6 +80,7 @@ export function buildParkingStreetLayer(input: {
   zoneRect: WorldBounds;
   bandRect?: WorldBounds;
   parkingStreet: ParkingStreetContent;
+  houseStreet?: HouseStreetContent;
   palette: MultiversePalette;
   cellScale: number;
   worldToLocal: (wx: number, wy: number) => { x: number; y: number };
@@ -105,16 +117,34 @@ export function buildParkingStreetLayer(input: {
   });
   root.addChild(dash);
 
+  const houseStreet = input.houseStreet ?? createEmptyHouseStreetContent();
   for (let i = 0; i < HOUSE_WORLD_X.length; i += 1) {
     const hx = HOUSE_WORLD_X[i];
     if (hx === undefined) {
       continue;
     }
+    const houseId = (i + 1) as 1 | 2 | 3 | 4;
+    const slot = houseStreet.houses[i];
+    const blueprint = getHouseBlueprint(houseId);
     const houseLoc = input.worldToLocal(hx, maxY - 0.2);
     const houseG = new Graphics();
-    drawHomeStructure(houseG, input.cellScale * 1.1, HOUSE_PALETTE);
+    drawHomeStructure(houseG, input.cellScale * 1.1, blueprint.exteriorPalette);
     houseG.position.set(houseLoc.x, houseLoc.y);
     root.addChild(houseG);
+
+    const sign = buildTSignPost({
+      palette: input.palette,
+      cellScale: input.cellScale,
+      label: formatHouseSignLabel({
+        ownerDisplayName: slot?.ownerDisplayName ?? null,
+        priceUsd: slot?.priceUsd ?? 0,
+      }),
+    });
+    sign.position.set(
+      houseLoc.x + input.cellScale * 0.95,
+      houseLoc.y - input.cellScale * 0.15
+    );
+    root.addChild(sign);
 
     const flowerG = new Graphics();
     drawFlowerCluster(flowerG, input.cellScale * 0.35, i + 1);

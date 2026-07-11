@@ -32,6 +32,7 @@ export type ParkingTicketTooltipHandle = {
       displayNick: string;
     }) => void;
   }): void;
+  showLoading(): void;
   showInspect(details: ParkingSpotInspectDetails): void;
   hide(): void;
   setBusy(): void;
@@ -169,6 +170,30 @@ const ensureStyles = (): void => {
 .preview-parking-ticket-tooltip__buy--hidden {
   display: none;
 }
+.preview-parking-ticket-tooltip__loading {
+  display: none;
+  font-size: 13px;
+  color: #cbd5e1;
+  text-align: center;
+  padding: 8px 0;
+}
+.preview-parking-ticket-tooltip__loading--open {
+  display: block;
+}
+.preview-parking-ticket-tooltip__spinner {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(255,255,255,0.25);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: preview-parking-spin 0.8s linear infinite;
+  vertical-align: -2px;
+  margin-right: 6px;
+}
+@keyframes preview-parking-spin {
+  to { transform: rotate(360deg); }
+}
 `;
   document.head.appendChild(style);
 };
@@ -244,7 +269,12 @@ export const createParkingTicketTooltip = (): ParkingTicketTooltipHandle => {
   inspectFooter.className = "preview-parking-ticket-tooltip__inspect-footer";
   inspectSection.append(inspectTitle, inspectBody, inspectFooter);
 
-  root.append(buySection, inspectSection);
+  const loadingSection = document.createElement("div");
+  loadingSection.className = "preview-parking-ticket-tooltip__loading";
+  loadingSection.innerHTML =
+    '<span class="preview-parking-ticket-tooltip__spinner"></span>Loading cars…';
+
+  root.append(buySection, inspectSection, loadingSection);
   document.body.appendChild(root);
 
   let busy = false;
@@ -281,12 +311,33 @@ export const createParkingTicketTooltip = (): ParkingTicketTooltipHandle => {
       "preview-parking-ticket-tooltip__inspect--open",
       !visible
     );
+    loadingSection.classList.remove("preview-parking-ticket-tooltip__loading--open");
     inspectMode = !visible;
+  };
+
+  const setLoadingVisible = (visible: boolean): void => {
+    buySection.classList.toggle(
+      "preview-parking-ticket-tooltip__buy--hidden",
+      visible
+    );
+    inspectSection.classList.toggle(
+      "preview-parking-ticket-tooltip__inspect--open",
+      false
+    );
+    loadingSection.classList.toggle(
+      "preview-parking-ticket-tooltip__loading--open",
+      visible
+    );
+    inspectMode = false;
+    if (visible) {
+      onBuy = null;
+    }
   };
 
   return {
     root,
     show(input) {
+      setLoadingVisible(false);
       setBuyVisible(true);
       error.hidden = true;
       blocked.hidden = input.ownershipBlocked === undefined;
@@ -305,7 +356,14 @@ export const createParkingTicketTooltip = (): ParkingTicketTooltipHandle => {
         input.cars.length === 0 || input.ownershipBlocked !== undefined;
       root.classList.add("preview-parking-ticket-tooltip--open");
     },
+    showLoading() {
+      error.hidden = true;
+      blocked.hidden = true;
+      setLoadingVisible(true);
+      root.classList.add("preview-parking-ticket-tooltip--open");
+    },
     showInspect(details) {
+      setLoadingVisible(false);
       setBuyVisible(false);
       onBuy = null;
       inspectTitle.textContent = `Bay ${String(details.bay)} · layer ${String(details.layer)}`;
@@ -373,6 +431,7 @@ export const createParkingTicketTooltip = (): ParkingTicketTooltipHandle => {
       inspectMode = false;
       buyBtn.disabled = false;
       buyBtn.textContent = "Buy ticket";
+      setLoadingVisible(false);
       setBuyVisible(true);
     },
     setBusy() {
