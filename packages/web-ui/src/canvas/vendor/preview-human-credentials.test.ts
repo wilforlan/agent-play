@@ -1,11 +1,16 @@
 // @vitest-environment happy-dom
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { downloadHumanCredentialsJson } from "./preview-human-credentials.js";
 
 describe("downloadHumanCredentialsJson", () => {
+  beforeEach(() => {
+    Reflect.deleteProperty(window, "showSaveFilePicker");
+  });
+
   afterEach(() => {
     vi.useRealTimers();
     vi.restoreAllMocks();
+    Reflect.deleteProperty(window, "showSaveFilePicker");
   });
 
   it("appends a hidden anchor to the document and clicks it", () => {
@@ -54,5 +59,39 @@ describe("downloadHumanCredentialsJson", () => {
     vi.advanceTimersByTime(1);
     expect(document.body.contains(anchor)).toBe(false);
     expect(revokeSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("writes credentials through showSaveFilePicker when available", async () => {
+    const write = vi.fn().mockResolvedValue(undefined);
+    const close = vi.fn().mockResolvedValue(undefined);
+    const createWritable = vi
+      .fn()
+      .mockResolvedValue({ write, close });
+    const showSaveFilePicker = vi
+      .fn()
+      .mockResolvedValue({ createWritable });
+    window.showSaveFilePicker = showSaveFilePicker;
+
+    downloadHumanCredentialsJson({
+      nodeId: "node-abc",
+      passw: "alpha bravo charlie",
+      serverUrl: "https://example.com",
+    });
+
+    await vi.waitFor(() => {
+      expect(showSaveFilePicker).toHaveBeenCalledWith({
+        suggestedName: "credentials.json",
+        types: [
+          {
+            description: "JSON",
+            accept: { "application/json": [".json"] },
+          },
+        ],
+      });
+    });
+    await vi.waitFor(() => {
+      expect(write).toHaveBeenCalledTimes(1);
+      expect(close).toHaveBeenCalledTimes(1);
+    });
   });
 });
