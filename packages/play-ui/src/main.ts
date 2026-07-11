@@ -231,6 +231,7 @@ import { buildParkWorldBackdrop } from "./scene-backgrounds.js";
 import { buildParkingStreetLayer } from "./parking-street-layer.js";
 import {
   findNearestParkingBay,
+  isParkingBayVacant,
   type ParkingBayAnchor,
 } from "./parking-street-proximity.js";
 import {
@@ -1634,6 +1635,8 @@ function deriveYardAmenitiesForSpace(spaceId: string): Array<{
 let activeYardStage: SpaceYardStageHandle | null = null;
 let activeYardSpaceId: string | null = null;
 let lastYardAmenityPadTarget: YardAmenityPadPosition | null = null;
+let lastParkingBayNearest: (ParkingBayAnchor & { distance: number }) | null =
+  null;
 let lastParkingBayTarget: (ParkingBayAnchor & { distance: number }) | null =
   null;
 let parkingTooltipOpenForBay: {
@@ -2793,6 +2796,10 @@ async function buyParkingTicketAtBay(input: {
     }
     tooltip.hide();
     parkingTooltipOpenForBay = null;
+    const humanPid = getHumanPlayerId();
+    const humanPos =
+      humanPid !== null ? playerWorldPos.get(humanPid) ?? null : null;
+    applyParkingBayProximity(humanPos);
     return;
   }
   const messages: Record<string, string> = {
@@ -3381,19 +3388,46 @@ function resolveParkingStreetContent(): ParkingStreetContent {
 }
 
 function isParkingSpotVacant(bay: number, layer: number): boolean {
-  const street = resolveParkingStreetContent();
-  const spot = street.spots.find((s) => s.bay === bay && s.layer === layer);
-  if (spot === undefined) {
-    return false;
+  return isParkingBayVacant({
+    parkingStreet: resolveParkingStreetContent(),
+    bay: bay as ParkingBayAnchor["bay"],
+    layer: layer as ParkingBayAnchor["layer"],
+  });
+}
+
+function applyParkingBayProximity(
+  humanPos: { x: number; y: number } | null
+): void {
+  const prevNearest = lastParkingBayNearest;
+  const prevTarget = lastParkingBayTarget;
+  if (humanPos === null) {
+    lastParkingBayNearest = null;
+    lastParkingBayTarget = null;
+  } else {
+    const nearest = findNearestParkingBay({ playerWorld: humanPos });
+    lastParkingBayNearest = nearest;
+    lastParkingBayTarget =
+      nearest !== null && isParkingSpotVacant(nearest.bay, nearest.layer)
+        ? nearest
+        : null;
   }
-  const occupant = spot.occupant;
-  if (occupant === null) {
-    return true;
+  if (
+    parkingTooltipOpenForBay !== null &&
+    (lastParkingBayTarget === null ||
+      lastParkingBayTarget.bay !== parkingTooltipOpenForBay.bay ||
+      lastParkingBayTarget.layer !== parkingTooltipOpenForBay.layer)
+  ) {
+    parkingTicketTooltip?.hide();
+    parkingTooltipOpenForBay = null;
+  } else if (lastParkingBayTarget !== null && parkingTicketTooltip?.isOpen()) {
+    positionParkingTicketTooltip(lastParkingBayTarget);
   }
-  if (occupant.expiresAt === null) {
-    return false;
+  if (
+    prevNearest !== lastParkingBayNearest ||
+    prevTarget !== lastParkingBayTarget
+  ) {
+    proximityTouchPadHandle?.refresh();
   }
-  return new Date(occupant.expiresAt).getTime() <= Date.now();
 }
 
 function listActiveParkingForNode(nodeId: string): Array<{
@@ -3949,28 +3983,9 @@ function onFrame(): void {
     activeAmenityStage === null &&
     activeGameStage === null
   ) {
-    const prevBay = lastParkingBayTarget;
-    const nearest = findNearestParkingBay({ playerWorld: humanPosForParking });
-    lastParkingBayTarget =
-      nearest !== null &&
-      isParkingSpotVacant(nearest.bay, nearest.layer)
-        ? nearest
-        : null;
-    if (
-      parkingTooltipOpenForBay !== null &&
-      (lastParkingBayTarget === null ||
-        lastParkingBayTarget.bay !== parkingTooltipOpenForBay.bay ||
-        lastParkingBayTarget.layer !== parkingTooltipOpenForBay.layer)
-    ) {
-      parkingTicketTooltip?.hide();
-      parkingTooltipOpenForBay = null;
-    } else if (lastParkingBayTarget !== null && parkingTicketTooltip?.isOpen()) {
-      positionParkingTicketTooltip(lastParkingBayTarget);
-    }
-    if (prevBay !== lastParkingBayTarget) {
-      proximityTouchPadHandle?.refresh();
-    }
+    applyParkingBayProximity(humanPosForParking);
   } else {
+    lastParkingBayNearest = null;
     lastParkingBayTarget = null;
     if (parkingTooltipOpenForBay !== null) {
       parkingTicketTooltip?.hide();
@@ -4002,9 +4017,15 @@ function onFrame(): void {
       const amenityName =
         AMENITY_DISPLAY_LABEL[lastYardAmenityPadTarget.kind as AmenityKind];
       proximityLegendEl.textContent = `Near ${amenityName}. P: enter ${amenityName.toLowerCase()}`;
-    } else if (lastParkingBayTarget !== null) {
-      proximityLegendEl.textContent =
-        `Near parking bay ${String(lastParkingBayTarget.bay)} (layer ${String(lastParkingBayTarget.layer)}). P: buy ticket`;
+    } else if (lastParkingBayNearest !== null) {
+      const bay = lastParkingBayNearest;
+      if (lastParkingBayTarget !== null) {
+        proximityLegendEl.textContent =
+          `Near parking bay ${String(bay.bay)} (layer ${String(bay.layer)}). P: buy ticket`;
+      } else {
+        proximityLegendEl.textContent =
+          `Near parking bay ${String(bay.bay)} (layer ${String(bay.layer)}). Occupied`;
+      }
     } else if (lastProximityPartnerId !== null) {
       proximityLegendEl.textContent = `Near ${playerDisplayName(lastProximityPartnerId)}. A: for assist · C: for chat · P: push to talk · Z: for zone · Y: for yield`;
     } else if (lastStructureProximityTarget !== null) {
@@ -4069,11 +4090,12 @@ function onFrame(): void {
       proximityPromptEl.style.display = "block";
       proximityPromptEl.style.left = `${centroidScreen.x}px`;
       proximityPromptEl.style.top = `${centroidScreen.y - box * 1.6}px`;
-    } else if (lastParkingBayTarget !== null) {
-      const bay = lastParkingBayTarget;
+    } else if (lastParkingBayNearest !== null) {
+      const bay = lastParkingBayNearest;
       const local = worldToWorldRootLocal(bay.x, bay.y);
       const screen = worldRootLocalToCanvas(local.x, local.y);
-      proximityPromptEl.textContent = "P: buy parking ticket";
+      proximityPromptEl.textContent =
+        lastParkingBayTarget !== null ? "P: buy parking ticket" : "Spot occupied";
       proximityPromptEl.style.display = "block";
       proximityPromptEl.style.left = `${screen.x}px`;
       proximityPromptEl.style.top = `${screen.y - box * 1.4}px`;
@@ -4458,13 +4480,14 @@ export function bootstrap(): void {
         return buyable.tooltipModel.sale.status === "sold" ? "View" : "Buy";
       },
       getParkingProximityLabel: () => {
-        if (lastParkingBayTarget === null) return null;
-        return `Bay ${String(lastParkingBayTarget.bay)}`;
+        if (lastParkingBayNearest === null) return null;
+        return `Bay ${String(lastParkingBayNearest.bay)}`;
       },
       getParkingProximityVerb: () => {
-        if (lastParkingBayTarget === null) return null;
-        return "Buy ticket";
+        if (lastParkingBayNearest === null) return null;
+        return lastParkingBayTarget !== null ? "Buy ticket" : "Occupied";
       },
+      getParkingProximityActivatable: () => lastParkingBayTarget !== null,
       getGameStageProximityLabel: () => {
         if (activeGameStage === null) return null;
         return lastGameStageProximityTarget?.label ?? null;

@@ -1119,6 +1119,10 @@ export async function POST(req: NextRequest) {
         });
       }
       case "buyParkingTicket": {
+        const repository = await getRepository();
+        if (repository === null) {
+          return Response.json({ error: "repository unavailable" }, { status: 503 });
+        }
         const nodeId = req.headers.get("x-node-id")?.trim() ?? "";
         const passwHash = req.headers.get("x-node-passw") ?? "";
         if (nodeId.length === 0 || passwHash.length === 0) {

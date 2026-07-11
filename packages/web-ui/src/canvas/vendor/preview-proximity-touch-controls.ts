@@ -47,6 +47,11 @@ export type CreatePreviewProximityTouchControlsOptions = {
    */
   getParkingProximityVerb?: () => string | null | undefined;
   /**
+   * Whether the nearest parking bay can be purchased with `P`.
+   * Defaults to `true` when omitted.
+   */
+  getParkingProximityActivatable?: () => boolean;
+  /**
    * When the human is inside an arcade game stage and near an interactable,
    * returns the object's display label for the `P` button.
    */
@@ -214,18 +219,29 @@ export function createPreviewProximityTouchControls(
       }
     } else if (nearParking) {
       const verb = options.getParkingProximityVerb?.() ?? "Buy ticket";
+      const activatable = options.getParkingProximityActivatable?.() ?? true;
       btnAssist.disabled = true;
       subA.textContent = "Assist";
       btnAssist.removeAttribute("aria-label");
       btnChat.disabled = true;
-      btnPushToTalk.disabled = false;
+      btnPushToTalk.disabled = !activatable;
       subP.textContent = verb;
-      btnPushToTalk.classList.add("preview-proximity-touch-pad__key--proximity-active");
-      btnPushToTalk.classList.remove("preview-proximity-touch-pad__key--proximity-hint");
-      btnPushToTalk.setAttribute(
-        "aria-label",
-        `${verb} ${parkingLabel ?? "parking"}`
+      btnPushToTalk.classList.toggle(
+        "preview-proximity-touch-pad__key--proximity-active",
+        activatable
       );
+      btnPushToTalk.classList.toggle(
+        "preview-proximity-touch-pad__key--proximity-hint",
+        !activatable
+      );
+      if (activatable) {
+        btnPushToTalk.setAttribute(
+          "aria-label",
+          `${verb} ${parkingLabel ?? "parking"}`
+        );
+      } else {
+        btnPushToTalk.setAttribute("aria-label", verb);
+      }
     } else if (nearStructure) {
       const verb = options.getStructureProximityVerb?.() ?? "Enter";
       btnAssist.disabled = false;

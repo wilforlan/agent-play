@@ -423,4 +423,55 @@ describe("createPreviewProximityTouchControls", () => {
     expect(assistBtn.disabled).toBe(true);
     expect(pttBtn.disabled).toBe(false);
   });
+
+  it("shows parking verb on P but keeps it disabled when spot is occupied", () => {
+    const { root } = createPreviewProximityTouchControls({
+      parent,
+      getBoundsElement: () => parent,
+      getCanAct: () => false,
+      getParkingProximityLabel: () => "Bay 1",
+      getParkingProximityVerb: () => "Occupied",
+      getParkingProximityActivatable: () => false,
+      onAssist,
+      onChat,
+      onPushToTalk,
+    });
+    const pttBtn = root.querySelector(
+      ".preview-proximity-touch-pad__key--ptt"
+    ) as HTMLButtonElement;
+    const subP = root.querySelector(
+      ".preview-proximity-touch-pad__key--ptt .preview-proximity-touch-pad__key-sub"
+    ) as HTMLElement;
+    expect(pttBtn.disabled).toBe(true);
+    expect(subP.textContent).toBe("Occupied");
+    expect(
+      pttBtn.classList.contains("preview-proximity-touch-pad__key--proximity-hint")
+    ).toBe(true);
+    pttBtn.click();
+    expect(onPushToTalk).not.toHaveBeenCalled();
+  });
+
+  it("enables P for parking when spot is vacant", () => {
+    const { root } = createPreviewProximityTouchControls({
+      parent,
+      getBoundsElement: () => parent,
+      getCanAct: () => false,
+      getParkingProximityLabel: () => "Bay 2",
+      getParkingProximityVerb: () => "Buy ticket",
+      getParkingProximityActivatable: () => true,
+      onAssist,
+      onChat,
+      onPushToTalk,
+    });
+    const pttBtn = root.querySelector(
+      ".preview-proximity-touch-pad__key--ptt"
+    ) as HTMLButtonElement;
+    const subP = root.querySelector(
+      ".preview-proximity-touch-pad__key--ptt .preview-proximity-touch-pad__key-sub"
+    ) as HTMLElement;
+    expect(pttBtn.disabled).toBe(false);
+    expect(subP.textContent).toBe("Buy ticket");
+    pttBtn.click();
+    expect(onPushToTalk).toHaveBeenCalledTimes(1);
+  });
 });

@@ -1,4 +1,5 @@
-import type { ParkingSpot } from "@agent-play/sdk/browser";
+import type { ParkingSpot, ParkingStreetContent } from "@agent-play/sdk/browser";
+import { findParkingSpot } from "@agent-play/sdk/browser";
 
 export type ParkingBayAnchor = {
   bay: ParkingSpot["bay"];
@@ -37,4 +38,25 @@ export const findNearestParkingBay = (input: {
     }
   }
   return best;
+};
+
+export const isParkingBayVacant = (input: {
+  parkingStreet: ParkingStreetContent;
+  bay: ParkingSpot["bay"];
+  layer: ParkingSpot["layer"];
+  nowMs?: number;
+}): boolean => {
+  const spot = findParkingSpot(input.parkingStreet, input.bay, input.layer);
+  if (spot === undefined) {
+    return false;
+  }
+  const occupant = spot.occupant;
+  if (occupant === null) {
+    return true;
+  }
+  if (occupant.expiresAt === null) {
+    return false;
+  }
+  const now = input.nowMs ?? Date.now();
+  return new Date(occupant.expiresAt).getTime() <= now;
 };
