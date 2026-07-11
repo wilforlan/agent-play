@@ -65,7 +65,10 @@ import {
   createWalletInventoryPanel,
   type WalletInventoryPanelHandle,
 } from "./wallet-inventory-panel.js";
-import { fetchPurchases } from "./wallet-purchases-client.js";
+import {
+  buildPurchaseItemKey,
+  fetchPurchases,
+} from "./wallet-purchases-client.js";
 import { redeemWalletBundle } from "./wallet-bundle-client.js";
 import { deepLogObject, deepLogText, deepLogTree } from "./browser-deep-logs.js";
 import { buildCrowdLayer } from "./crowd-draw.js";
@@ -84,7 +87,7 @@ import {
 } from "./agent-chat-panel-position.js";
 import {
   clampWorldPosition,
-  createVerticalStripSeedLayout,
+  createWorldLayoutWithParkingRow,
   DEFAULT_AGENT_SPAWN_MIN_DISTANCE,
   expandBoundsToMinimumPlayArea,
   isAgentSpawnOccupancyPointAvailableInZone,
@@ -92,7 +95,7 @@ import {
   listOccupancyPointsForZone,
   mergeSnapshotWithPlayerChainNode,
   MINIMUM_PLAY_WORLD_BOUNDS,
-  MINIMUM_STREET_LAYOUT_BOUNDS,
+  DEFAULT_LAYOUT_BOUNDS_WITH_PARKING,
   occupancyKeyForPosition,
   parsePlayerChainFanoutNotifyFromSsePayload,
   parsePlayerChainNodeRpcBody,
@@ -107,6 +110,10 @@ import {
   type GameEvent,
   type GameId,
   type OccupantGroup,
+  canNodeAcquireParkingSpot,
+  createEmptyParkingStreetContent,
+  type ParkingDurationTier,
+  type ParkingStreetContent,
   type WorldBounds,
   type WorldLayout,
 } from "@agent-play/sdk/browser";
@@ -221,6 +228,16 @@ import {
 import { fetchGameStats } from "./game-stats-client.js";
 import { applyGameOutcome } from "./apply-game-outcome-client.js";
 import { buildParkWorldBackdrop } from "./scene-backgrounds.js";
+import { buildParkingStreetLayer } from "./parking-street-layer.js";
+import {
+  findNearestParkingBay,
+  type ParkingBayAnchor,
+} from "./parking-street-proximity.js";
+import {
+  createParkingTicketTooltip,
+  type ParkingTicketTooltipHandle,
+} from "./parking-ticket-tooltip.js";
+import { buyParkingTicket } from "./parking-ticket-client.js";
 import {
   clampCameraToWorldRect,
   computeWorldRootScrollRect,
@@ -510,6 +527,7 @@ type Snapshot = {
   worldLayout?: SnapshotWorldLayout;
   mcpServers?: SnapshotMcpRegistration[];
   spaces?: SnapshotSpaceCatalogEntry[];
+  parkingStreet?: ParkingStreetContent;
 };
 
 function mapOccupantLastUpdate(
@@ -867,12 +885,13 @@ function resolveWorldLayout(): WorldLayout {
   const s0 = STREET_NAME_POOL[0];
   const s1 = STREET_NAME_POOL[1];
   const s2 = STREET_NAME_POOL[2];
-  if (s0 === undefined || s1 === undefined || s2 === undefined) {
+  const s3 = STREET_NAME_POOL[3];
+  if (s0 === undefined || s1 === undefined || s2 === undefined || s3 === undefined) {
     throw new Error("resolveWorldLayout: invalid street pool");
   }
-  return createVerticalStripSeedLayout({
-    bounds: MINIMUM_STREET_LAYOUT_BOUNDS,
-    streets: [s0, s1, s2],
+  return createWorldLayoutWithParkingRow({
+    bounds: DEFAULT_LAYOUT_BOUNDS_WITH_PARKING,
+    streets: [s0, s1, s2, s3],
   });
 }
 
@@ -889,6 +908,9 @@ function zoneDebugStroke(primary: OccupantGroup): {
   }
   if (primary === "arcade") {
     return { width: 3, color: 0xf472b6, alpha: 0.95 };
+  }
+  if (primary === "parking") {
+    return { width: 3, color: 0x94a3b8, alpha: 0.95 };
   }
   return { width: 3, color: 0xa855f7, alpha: 0.95 };
 }
@@ -1294,6 +1316,17 @@ function onDocumentKeyDown(e: KeyboardEvent): void {
   }
   if (
     e.key.toLowerCase() === "p" &&
+    activeAmenityStage === null &&
+    activeGameStage === null &&
+    stageController?.current()?.id === "overworld" &&
+    lastParkingBayTarget !== null
+  ) {
+    e.preventDefault();
+    cycleParkingTicketAction();
+    return;
+  }
+  if (
+    e.key.toLowerCase() === "p" &&
     activeAmenityStage !== null
   ) {
     const stage = activeAmenityStage;
@@ -1357,6 +1390,7 @@ const gridGraphics = new Graphics();
 const agentsLayer = new Container();
 const parkBackdropLayer = new Container();
 const streetSignsLayer = new Container();
+const parkingStreetLayer = new Container();
 const worldRoot = new Container();
 /**
  * The DOM element that contains the Pixi canvas. Captured by
@@ -1413,6 +1447,10 @@ async function refreshWalletInventoryPanel(): Promise<void> {
       powerUps: result.wallet.powerUps,
       purchases: result.purchases,
       items: result.items,
+      activeParking: listActiveParkingForNode(playerId),
+      parkingCapacityHint: buildParkingCapacityHint(
+        listActiveParkingForNode(playerId)
+      ),
     });
   } catch (error) {
     const message =
@@ -1596,6 +1634,12 @@ function deriveYardAmenitiesForSpace(spaceId: string): Array<{
 let activeYardStage: SpaceYardStageHandle | null = null;
 let activeYardSpaceId: string | null = null;
 let lastYardAmenityPadTarget: YardAmenityPadPosition | null = null;
+let lastParkingBayTarget: (ParkingBayAnchor & { distance: number }) | null =
+  null;
+let parkingTooltipOpenForBay: {
+  bay: ParkingBayAnchor["bay"];
+  layer: ParkingBayAnchor["layer"];
+} | null = null;
 
 type AmenityKind = "shop" | "supermarket" | "car_wash";
 
@@ -1632,6 +1676,7 @@ type ActiveAmenityStage = {
 
 let activeAmenityStage: ActiveAmenityStage | null = null;
 let amenityItemTooltip: ItemTooltipHandle | null = null;
+let parkingTicketTooltip: ParkingTicketTooltipHandle | null = null;
 
 type ActiveGameStage = {
   cabinetGameId: GameId;
@@ -2457,6 +2502,7 @@ function ingestSnapshot(snap: Snapshot): void {
     applyBounds(MINIMUM_PLAY_WORLD_BOUNDS);
   }
   paintStreetSigns();
+  paintParkingStreet();
   const wbSpawn = getWorldBoundsForClamp();
   const humanSpawn =
     wbSpawn !== null ? defaultHumanSpawnInWorld(wbSpawn) : { x: 0, y: 0 };
@@ -2639,6 +2685,148 @@ function positionAmenityItemTooltip(stage: ActiveAmenityStage): void {
   // placement clears the sprite.
   const anchorY = hostRect.top + (localY - 32) * scaleY;
   amenityItemTooltip.position({ x: anchorX, y: anchorY });
+}
+
+function positionParkingTicketTooltip(bay: ParkingBayAnchor): void {
+  const tooltip = parkingTicketTooltip;
+  if (tooltip === null) {
+    return;
+  }
+  const local = worldToWorldRootLocal(bay.x, bay.y);
+  const screen = worldRootLocalToCanvas(local.x, local.y);
+  const host = canvasHostRef?.getBoundingClientRect();
+  const offsetX = host?.left ?? 0;
+  const offsetY = host?.top ?? 0;
+  tooltip.root.style.left = `${String(Math.round(screen.x + offsetX - 110))}px`;
+  tooltip.root.style.top = `${String(Math.round(screen.y + offsetY - 200))}px`;
+}
+
+async function showParkingTicketTooltip(
+  target: ParkingBayAnchor
+): Promise<void> {
+  const tooltip = parkingTicketTooltip;
+  if (tooltip === null) {
+    return;
+  }
+  const nodeId = getViewerWalletPlayerId();
+  if (nodeId === null) {
+    return;
+  }
+  const sid = getSid();
+  if (sid === null) {
+    return;
+  }
+  const purchaseResult = await fetchPurchases({ sid, playerId: nodeId });
+  const cars = purchaseResult.purchases
+    .filter((record) => record.amenityKind === "car_wash")
+    .map((record) => {
+      const key = buildPurchaseItemKey({
+        itemRef: record.itemRef,
+        spaceId: record.spaceId,
+      });
+      const raw =
+        key !== null ? purchaseResult.items[key] : undefined;
+      const fields =
+        typeof raw === "object" && raw !== null
+          ? (raw as { model?: unknown; name?: unknown })
+          : {};
+      const label =
+        typeof fields.model === "string"
+          ? fields.model
+          : typeof fields.name === "string"
+            ? fields.name
+            : "Car";
+      return { purchaseId: record.id, label };
+    });
+  tooltip.show({
+    cars,
+    ownershipBlocked: resolveParkingOwnershipBlocked(nodeId),
+    onBuy: ({ carPurchaseId, durationTier, displayNick }) => {
+      void buyParkingTicketAtBay({
+        bay: target.bay,
+        layer: target.layer,
+        carPurchaseId,
+        durationTier,
+        displayNick,
+      });
+    },
+  });
+  parkingTooltipOpenForBay = { bay: target.bay, layer: target.layer };
+  positionParkingTicketTooltip(target);
+}
+
+async function buyParkingTicketAtBay(input: {
+  bay: ParkingBayAnchor["bay"];
+  layer: ParkingBayAnchor["layer"];
+  carPurchaseId: string;
+  durationTier: ParkingDurationTier;
+  displayNick: string;
+}): Promise<void> {
+  const tooltip = parkingTicketTooltip;
+  if (tooltip === null) {
+    return;
+  }
+  const sid = getSid();
+  if (sid === null) {
+    tooltip.setError("No session");
+    return;
+  }
+  tooltip.setBusy();
+  const result = await buyParkingTicket({
+    sid,
+    bay: input.bay,
+    layer: input.layer,
+    carPurchaseId: input.carPurchaseId,
+    durationTier: input.durationTier,
+    displayNick: input.displayNick,
+  });
+  if (result.ok) {
+    walletBalanceCached = result.wallet.balanceUsd;
+    walletHud?.setBalance(result.wallet.balanceUsd);
+    walletHud?.setPowerUps(result.wallet.powerUps);
+    if (snapshot !== null) {
+      snapshot = { ...snapshot, parkingStreet: result.parkingStreet };
+      paintParkingStreet();
+    }
+    if (walletInventoryPanel !== null && walletInventoryPanel.isOpen()) {
+      void refreshWalletInventoryPanel();
+    }
+    tooltip.hide();
+    parkingTooltipOpenForBay = null;
+    return;
+  }
+  const messages: Record<string, string> = {
+    NO_WALLET_CAR: "You need a wallet-owned car",
+    SPOT_OCCUPIED: "Spot already taken",
+    PARKING_OWNERSHIP_LIMIT: "Timed parking limit reached",
+    PARKING_FOREVER_LIMIT: "Forever parking blocks other spots",
+    INSUFFICIENT_FUNDS: "Insufficient funds",
+    INVALID_SPOT: "Invalid parking spot",
+    UNAUTHORIZED: "Sign in to park",
+  };
+  tooltip.setError(messages[result.error] ?? result.message);
+}
+
+function cycleParkingTicketAction(): void {
+  const tooltip = parkingTicketTooltip;
+  const target = lastParkingBayTarget;
+  if (tooltip === null || target === null) {
+    return;
+  }
+  const openForThisBay =
+    parkingTooltipOpenForBay !== null &&
+    parkingTooltipOpenForBay.bay === target.bay &&
+    parkingTooltipOpenForBay.layer === target.layer;
+  if (!openForThisBay) {
+    void showParkingTicketTooltip(target);
+    return;
+  }
+  if (tooltip.isBusy()) {
+    return;
+  }
+  tooltip.root.querySelector("button")?.dispatchEvent(
+    new MouseEvent("click", { bubbles: true })
+  );
 }
 
 async function buyAmenityItem(
@@ -3172,11 +3360,13 @@ function paintStreetSigns(): void {
     return;
   }
   const layout = resolveWorldLayout();
-  const zones: StreetSignZone[] = layout.zones.map((z) => ({
-    id: z.id,
-    streetLabel: z.streetLabel,
-    rect: { ...z.rect },
-  }));
+  const zones: StreetSignZone[] = layout.zones
+    .filter((z) => z.primaryGroup !== "parking")
+    .map((z) => ({
+      id: z.id,
+      streetLabel: z.streetLabel,
+      rect: { ...z.rect },
+    }));
   mountStreetSignPosts({
     layer: streetSignsLayer,
     palette,
@@ -3184,6 +3374,129 @@ function paintStreetSigns(): void {
     cellScale,
     zones,
   });
+}
+
+function resolveParkingStreetContent(): ParkingStreetContent {
+  return snapshot?.parkingStreet ?? createEmptyParkingStreetContent();
+}
+
+function isParkingSpotVacant(bay: number, layer: number): boolean {
+  const street = resolveParkingStreetContent();
+  const spot = street.spots.find((s) => s.bay === bay && s.layer === layer);
+  if (spot === undefined) {
+    return false;
+  }
+  const occupant = spot.occupant;
+  if (occupant === null) {
+    return true;
+  }
+  if (occupant.expiresAt === null) {
+    return false;
+  }
+  return new Date(occupant.expiresAt).getTime() <= Date.now();
+}
+
+function listActiveParkingForNode(nodeId: string): Array<{
+  bay: number;
+  layer: number;
+  displayNick: string;
+  tier: ParkingDurationTier;
+  expiresAt: string | null;
+}> {
+  const now = Date.now();
+  const out: Array<{
+    bay: number;
+    layer: number;
+    displayNick: string;
+    tier: ParkingDurationTier;
+    expiresAt: string | null;
+  }> = [];
+  for (const spot of resolveParkingStreetContent().spots) {
+    const occupant = spot.occupant;
+    if (occupant === null || occupant.nodeId !== nodeId) {
+      continue;
+    }
+    if (
+      occupant.expiresAt !== null &&
+      new Date(occupant.expiresAt).getTime() <= now
+    ) {
+      continue;
+    }
+    out.push({
+      bay: spot.bay,
+      layer: spot.layer,
+      displayNick: occupant.displayNick,
+      tier: occupant.tier,
+      expiresAt: occupant.expiresAt,
+    });
+  }
+  return out;
+}
+
+function buildParkingCapacityHint(
+  active: ReadonlyArray<{
+    tier: ParkingDurationTier;
+    expiresAt: string | null;
+  }>
+): string {
+  const hasForever = active.some(
+    (row) => row.tier === "forever" || row.expiresAt === null
+  );
+  if (hasForever) {
+    return "Forever (1 of 1)";
+  }
+  return `${String(active.length)} of 2 timed spots`;
+}
+
+function resolveParkingOwnershipBlocked(nodeId: string): string | undefined {
+  const active = listActiveParkingForNode(nodeId).map((row) => ({
+    nodeId,
+    tier: row.tier,
+    expiresAt: row.expiresAt,
+  }));
+  const check = canNodeAcquireParkingSpot({
+    nodeId,
+    tier: "1h",
+    active,
+  });
+  if (check.ok) {
+    return undefined;
+  }
+  if (check.error === "PARKING_FOREVER_LIMIT") {
+    return "Forever spot active — no more parking for this node.";
+  }
+  return "Maximum timed parking spots reached (2 of 2).";
+}
+
+function paintParkingStreet(): void {
+  for (const ch of [...parkingStreetLayer.children]) {
+    parkingStreetLayer.removeChild(ch);
+    ch.destroy({ children: true });
+  }
+  if (snapshot === null) {
+    return;
+  }
+  const layout = resolveWorldLayout();
+  const parkingZone = pickZoneForGroup(layout, "parking");
+  const clampBounds = getWorldBoundsForClamp();
+  const bandRect =
+    clampBounds !== null
+      ? {
+          minX: clampBounds.minX,
+          maxX: clampBounds.maxX,
+          minY: parkingZone.rect.minY,
+          maxY: parkingZone.rect.maxY,
+        }
+      : parkingZone.rect;
+  const layer = buildParkingStreetLayer({
+    zoneRect: parkingZone.rect,
+    bandRect,
+    parkingStreet: resolveParkingStreetContent(),
+    palette,
+    cellScale,
+    worldToLocal: worldToWorldRootLocal,
+  });
+  parkingStreetLayer.addChild(layer);
 }
 
 function paintGrid(): void {
@@ -3626,6 +3939,44 @@ function onFrame(): void {
   if (stageController?.current()?.id !== "spaceYard") {
     lastYardAmenityPadTarget = null;
   }
+  const onOverworldForParking =
+    stageController === null || stageController.current()?.id === "overworld";
+  const humanPosForParking =
+    primaryPid !== null ? playerWorldPos.get(primaryPid) ?? null : null;
+  if (
+    onOverworldForParking &&
+    humanPosForParking !== null &&
+    activeAmenityStage === null &&
+    activeGameStage === null
+  ) {
+    const prevBay = lastParkingBayTarget;
+    const nearest = findNearestParkingBay({ playerWorld: humanPosForParking });
+    lastParkingBayTarget =
+      nearest !== null &&
+      isParkingSpotVacant(nearest.bay, nearest.layer)
+        ? nearest
+        : null;
+    if (
+      parkingTooltipOpenForBay !== null &&
+      (lastParkingBayTarget === null ||
+        lastParkingBayTarget.bay !== parkingTooltipOpenForBay.bay ||
+        lastParkingBayTarget.layer !== parkingTooltipOpenForBay.layer)
+    ) {
+      parkingTicketTooltip?.hide();
+      parkingTooltipOpenForBay = null;
+    } else if (lastParkingBayTarget !== null && parkingTicketTooltip?.isOpen()) {
+      positionParkingTicketTooltip(lastParkingBayTarget);
+    }
+    if (prevBay !== lastParkingBayTarget) {
+      proximityTouchPadHandle?.refresh();
+    }
+  } else {
+    lastParkingBayTarget = null;
+    if (parkingTooltipOpenForBay !== null) {
+      parkingTicketTooltip?.hide();
+      parkingTooltipOpenForBay = null;
+    }
+  }
   if (proximityLegendEl !== null) {
     if (activeGameStage !== null) {
       const gameTarget = lastGameStageProximityTarget;
@@ -3651,6 +4002,9 @@ function onFrame(): void {
       const amenityName =
         AMENITY_DISPLAY_LABEL[lastYardAmenityPadTarget.kind as AmenityKind];
       proximityLegendEl.textContent = `Near ${amenityName}. P: enter ${amenityName.toLowerCase()}`;
+    } else if (lastParkingBayTarget !== null) {
+      proximityLegendEl.textContent =
+        `Near parking bay ${String(lastParkingBayTarget.bay)} (layer ${String(lastParkingBayTarget.layer)}). P: buy ticket`;
     } else if (lastProximityPartnerId !== null) {
       proximityLegendEl.textContent = `Near ${playerDisplayName(lastProximityPartnerId)}. A: for assist · C: for chat · P: push to talk · Z: for zone · Y: for yield`;
     } else if (lastStructureProximityTarget !== null) {
@@ -3715,6 +4069,14 @@ function onFrame(): void {
       proximityPromptEl.style.display = "block";
       proximityPromptEl.style.left = `${centroidScreen.x}px`;
       proximityPromptEl.style.top = `${centroidScreen.y - box * 1.6}px`;
+    } else if (lastParkingBayTarget !== null) {
+      const bay = lastParkingBayTarget;
+      const local = worldToWorldRootLocal(bay.x, bay.y);
+      const screen = worldRootLocalToCanvas(local.x, local.y);
+      proximityPromptEl.textContent = "P: buy parking ticket";
+      proximityPromptEl.style.display = "block";
+      proximityPromptEl.style.left = `${screen.x}px`;
+      proximityPromptEl.style.top = `${screen.y - box * 1.4}px`;
     } else {
       proximityPromptEl.style.display = "none";
     }
@@ -3956,6 +4318,7 @@ export function bootstrap(): void {
 
     worldRoot.addChild(parkBackdropLayer);
     worldRoot.addChild(streetSignsLayer);
+    worldRoot.addChild(parkingStreetLayer);
     worldRoot.addChild(gridGraphics);
     worldRoot.addChild(structureLayer);
     worldRoot.addChild(agentsLayer);
@@ -4059,6 +4422,7 @@ export function bootstrap(): void {
     proximityPromptEl.textContent = "A: for assist\nC: for chat\nP: push to talk";
     canvasHost.appendChild(proximityPromptEl);
     amenityItemTooltip = createItemTooltip({ parent: document.body });
+    parkingTicketTooltip = createParkingTicketTooltip();
 
     proximityTouchPadHandle = createPreviewProximityTouchControls({
       parent: canvasWrap,
@@ -4092,6 +4456,14 @@ export function bootstrap(): void {
         const buyable = stage.nearestBuyable;
         if (buyable === null) return null;
         return buyable.tooltipModel.sale.status === "sold" ? "View" : "Buy";
+      },
+      getParkingProximityLabel: () => {
+        if (lastParkingBayTarget === null) return null;
+        return `Bay ${String(lastParkingBayTarget.bay)}`;
+      },
+      getParkingProximityVerb: () => {
+        if (lastParkingBayTarget === null) return null;
+        return "Buy ticket";
       },
       getGameStageProximityLabel: () => {
         if (activeGameStage === null) return null;
@@ -4132,6 +4504,10 @@ export function bootstrap(): void {
           lastGameStageProximityTarget.activatable !== false
         ) {
           activateGameStageProximityTarget();
+          return;
+        }
+        if (lastParkingBayTarget !== null && activeAmenityStage === null) {
+          cycleParkingTicketAction();
           return;
         }
         if (activeAmenityStage !== null) {
