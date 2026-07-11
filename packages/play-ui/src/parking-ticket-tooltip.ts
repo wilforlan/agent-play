@@ -9,6 +9,18 @@ export type ParkingCarOption = {
   label: string;
 };
 
+export type ParkingSpotInspectDetails = {
+  bay: number;
+  layer: number;
+  displayNick: string;
+  model: string;
+  colorHex: string;
+  tier: ParkingDurationTier;
+  purchasedAt: string;
+  expiresAt: string | null;
+  costUsd: number;
+};
+
 export type ParkingTicketTooltipHandle = {
   readonly root: HTMLElement;
   show(input: {
@@ -20,15 +32,30 @@ export type ParkingTicketTooltipHandle = {
       displayNick: string;
     }) => void;
   }): void;
+  showInspect(details: ParkingSpotInspectDetails): void;
   hide(): void;
   setBusy(): void;
   setError(message: string): void;
   isOpen(): boolean;
   isBusy(): boolean;
+  isInspectMode(): boolean;
   destroy(): void;
 };
 
 const STYLE_ID = "preview-parking-ticket-tooltip-styles";
+
+const formatUsd = (amount: number): string => `$${amount.toFixed(2)}`;
+
+const formatTimestamp = (iso: string): string => {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) {
+    return iso;
+  }
+  return date.toLocaleString(undefined, {
+    dateStyle: "medium",
+    timeStyle: "short",
+  });
+};
 
 const ensureStyles = (): void => {
   if (document.getElementById(STYLE_ID) !== null) {
@@ -92,14 +119,83 @@ const ensureStyles = (): void => {
   font-size: 12px;
   margin-bottom: 8px;
 }
+.preview-parking-ticket-tooltip__inspect {
+  display: none;
+  font-size: 13px;
+  line-height: 1.45;
+}
+.preview-parking-ticket-tooltip__inspect--open {
+  display: block;
+}
+.preview-parking-ticket-tooltip__inspect-title {
+  font-size: 14px;
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+.preview-parking-ticket-tooltip__inspect-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 6px;
+}
+.preview-parking-ticket-tooltip__inspect-label {
+  color: #94a3b8;
+  font-size: 11px;
+}
+.preview-parking-ticket-tooltip__inspect-value {
+  text-align: right;
+}
+.preview-parking-ticket-tooltip__inspect-car {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.preview-parking-ticket-tooltip__inspect-swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+}
+.preview-parking-ticket-tooltip__inspect-footer {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(148, 163, 184, 0.25);
+  color: #cbd5e1;
+  font-size: 12px;
+}
+.preview-parking-ticket-tooltip__buy {
+  display: block;
+}
+.preview-parking-ticket-tooltip__buy--hidden {
+  display: none;
+}
 `;
   document.head.appendChild(style);
+};
+
+const appendInspectRow = (input: {
+  parent: HTMLElement;
+  label: string;
+  value: string;
+}): void => {
+  const row = document.createElement("div");
+  row.className = "preview-parking-ticket-tooltip__inspect-row";
+  const label = document.createElement("span");
+  label.className = "preview-parking-ticket-tooltip__inspect-label";
+  label.textContent = input.label;
+  const value = document.createElement("span");
+  value.className = "preview-parking-ticket-tooltip__inspect-value";
+  value.textContent = input.value;
+  row.append(label, value);
+  input.parent.appendChild(row);
 };
 
 export const createParkingTicketTooltip = (): ParkingTicketTooltipHandle => {
   ensureStyles();
   const root = document.createElement("div");
   root.className = "preview-parking-ticket-tooltip";
+  const buySection = document.createElement("div");
+  buySection.className = "preview-parking-ticket-tooltip__buy";
   const blocked = document.createElement("div");
   blocked.className = "preview-parking-ticket-tooltip__blocked";
   blocked.hidden = true;
@@ -127,10 +223,32 @@ export const createParkingTicketTooltip = (): ParkingTicketTooltipHandle => {
   const buyBtn = document.createElement("button");
   buyBtn.type = "button";
   buyBtn.textContent = "Buy ticket";
-  root.append(blocked, error, nickLabel, nickInput, carLabel, carSelect, tierLabel, tierSelect, buyBtn);
+  buySection.append(
+    blocked,
+    error,
+    nickLabel,
+    nickInput,
+    carLabel,
+    carSelect,
+    tierLabel,
+    tierSelect,
+    buyBtn
+  );
+
+  const inspectSection = document.createElement("div");
+  inspectSection.className = "preview-parking-ticket-tooltip__inspect";
+  const inspectTitle = document.createElement("div");
+  inspectTitle.className = "preview-parking-ticket-tooltip__inspect-title";
+  const inspectBody = document.createElement("div");
+  const inspectFooter = document.createElement("div");
+  inspectFooter.className = "preview-parking-ticket-tooltip__inspect-footer";
+  inspectSection.append(inspectTitle, inspectBody, inspectFooter);
+
+  root.append(buySection, inspectSection);
   document.body.appendChild(root);
 
   let busy = false;
+  let inspectMode = false;
   let onBuy:
     | ((input: {
         carPurchaseId: string;
@@ -154,9 +272,22 @@ export const createParkingTicketTooltip = (): ParkingTicketTooltipHandle => {
     onBuy({ carPurchaseId, durationTier: tier, displayNick: nick });
   });
 
+  const setBuyVisible = (visible: boolean): void => {
+    buySection.classList.toggle(
+      "preview-parking-ticket-tooltip__buy--hidden",
+      !visible
+    );
+    inspectSection.classList.toggle(
+      "preview-parking-ticket-tooltip__inspect--open",
+      !visible
+    );
+    inspectMode = !visible;
+  };
+
   return {
     root,
     show(input) {
+      setBuyVisible(true);
       error.hidden = true;
       blocked.hidden = input.ownershipBlocked === undefined;
       if (input.ownershipBlocked !== undefined) {
@@ -174,11 +305,75 @@ export const createParkingTicketTooltip = (): ParkingTicketTooltipHandle => {
         input.cars.length === 0 || input.ownershipBlocked !== undefined;
       root.classList.add("preview-parking-ticket-tooltip--open");
     },
+    showInspect(details) {
+      setBuyVisible(false);
+      onBuy = null;
+      inspectTitle.textContent = `Bay ${String(details.bay)} · layer ${String(details.layer)}`;
+      inspectBody.replaceChildren();
+
+      appendInspectRow({
+        parent: inspectBody,
+        label: "Owner",
+        value: details.displayNick,
+      });
+
+      const carRow = document.createElement("div");
+      carRow.className = "preview-parking-ticket-tooltip__inspect-row";
+      const carLabelEl = document.createElement("span");
+      carLabelEl.className = "preview-parking-ticket-tooltip__inspect-label";
+      carLabelEl.textContent = "Car";
+      const carValue = document.createElement("span");
+      carValue.className =
+        "preview-parking-ticket-tooltip__inspect-value preview-parking-ticket-tooltip__inspect-car";
+      const swatch = document.createElement("span");
+      swatch.className = "preview-parking-ticket-tooltip__inspect-swatch";
+      swatch.style.backgroundColor = details.colorHex;
+      const carName = document.createElement("span");
+      carName.textContent = details.model;
+      carValue.append(swatch, carName);
+      carRow.append(carLabelEl, carValue);
+      inspectBody.appendChild(carRow);
+
+      appendInspectRow({
+        parent: inspectBody,
+        label: "Purchased",
+        value: formatTimestamp(details.purchasedAt),
+      });
+      appendInspectRow({
+        parent: inspectBody,
+        label: "Duration",
+        value: details.tier,
+      });
+      appendInspectRow({
+        parent: inspectBody,
+        label: "Expires",
+        value:
+          details.expiresAt === null
+            ? "Never"
+            : formatTimestamp(details.expiresAt),
+      });
+      appendInspectRow({
+        parent: inspectBody,
+        label: "Ticket cost",
+        value: formatUsd(details.costUsd),
+      });
+
+      inspectFooter.textContent =
+        details.tier === "forever"
+          ? "Forever ticket — this spot is not available for purchase."
+          : details.expiresAt === null
+            ? "This spot is currently occupied."
+            : `Available when the ticket expires (${formatTimestamp(details.expiresAt)}).`;
+
+      root.classList.add("preview-parking-ticket-tooltip--open");
+    },
     hide() {
       root.classList.remove("preview-parking-ticket-tooltip--open");
       busy = false;
+      inspectMode = false;
       buyBtn.disabled = false;
       buyBtn.textContent = "Buy ticket";
+      setBuyVisible(true);
     },
     setBusy() {
       busy = true;
@@ -197,6 +392,9 @@ export const createParkingTicketTooltip = (): ParkingTicketTooltipHandle => {
     },
     isBusy() {
       return busy;
+    },
+    isInspectMode() {
+      return inspectMode;
     },
     destroy() {
       root.remove();

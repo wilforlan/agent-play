@@ -431,7 +431,7 @@ describe("createPreviewProximityTouchControls", () => {
       getCanAct: () => false,
       getParkingProximityLabel: () => "Bay 1",
       getParkingProximityVerb: () => "Occupied",
-      getParkingProximityActivatable: () => false,
+      getParkingProximityActivatable: () => true,
       onAssist,
       onChat,
       onPushToTalk,
@@ -442,13 +442,13 @@ describe("createPreviewProximityTouchControls", () => {
     const subP = root.querySelector(
       ".preview-proximity-touch-pad__key--ptt .preview-proximity-touch-pad__key-sub"
     ) as HTMLElement;
-    expect(pttBtn.disabled).toBe(true);
+    expect(pttBtn.disabled).toBe(false);
     expect(subP.textContent).toBe("Occupied");
     expect(
-      pttBtn.classList.contains("preview-proximity-touch-pad__key--proximity-hint")
+      pttBtn.classList.contains("preview-proximity-touch-pad__key--proximity-active")
     ).toBe(true);
     pttBtn.click();
-    expect(onPushToTalk).not.toHaveBeenCalled();
+    expect(onPushToTalk).toHaveBeenCalledTimes(1);
   });
 
   it("enables P for parking when spot is vacant", () => {

@@ -112,7 +112,10 @@ import {
   type OccupantGroup,
   canNodeAcquireParkingSpot,
   createEmptyParkingStreetContent,
+  DEFAULT_PARKING_RATES_USD,
+  findParkingSpot,
   type ParkingDurationTier,
+  type ParkingOccupant,
   type ParkingStreetContent,
   type WorldBounds,
   type WorldLayout,
@@ -1320,7 +1323,7 @@ function onDocumentKeyDown(e: KeyboardEvent): void {
     activeAmenityStage === null &&
     activeGameStage === null &&
     stageController?.current()?.id === "overworld" &&
-    lastParkingBayTarget !== null
+    lastParkingBayNearest !== null
   ) {
     e.preventDefault();
     cycleParkingTicketAction();
@@ -2758,6 +2761,54 @@ async function showParkingTicketTooltip(
   positionParkingTicketTooltip(target);
 }
 
+function resolveActiveParkingOccupant(
+  bay: ParkingBayAnchor["bay"],
+  layer: ParkingBayAnchor["layer"]
+): ParkingOccupant | null {
+  const spot = findParkingSpot(resolveParkingStreetContent(), bay, layer);
+  if (spot === undefined) {
+    return null;
+  }
+  const occupant = spot.occupant;
+  if (occupant === null) {
+    return null;
+  }
+  if (
+    occupant.expiresAt !== null &&
+    new Date(occupant.expiresAt).getTime() <= Date.now()
+  ) {
+    return null;
+  }
+  return occupant;
+}
+
+function showParkingSpotInspectTooltip(target: ParkingBayAnchor): void {
+  const tooltip = parkingTicketTooltip;
+  if (tooltip === null) {
+    return;
+  }
+  const occupant = resolveActiveParkingOccupant(target.bay, target.layer);
+  if (occupant === null) {
+    return;
+  }
+  const street = resolveParkingStreetContent();
+  const costUsd =
+    street.rates[occupant.tier] ?? DEFAULT_PARKING_RATES_USD[occupant.tier];
+  tooltip.showInspect({
+    bay: target.bay,
+    layer: target.layer,
+    displayNick: occupant.displayNick,
+    model: occupant.model,
+    colorHex: occupant.colorHex,
+    tier: occupant.tier,
+    purchasedAt: occupant.purchasedAt,
+    expiresAt: occupant.expiresAt,
+    costUsd,
+  });
+  parkingTooltipOpenForBay = { bay: target.bay, layer: target.layer };
+  positionParkingTicketTooltip(target);
+}
+
 async function buyParkingTicketAtBay(input: {
   bay: ParkingBayAnchor["bay"];
   layer: ParkingBayAnchor["layer"];
@@ -2816,19 +2867,28 @@ async function buyParkingTicketAtBay(input: {
 
 function cycleParkingTicketAction(): void {
   const tooltip = parkingTicketTooltip;
-  const target = lastParkingBayTarget;
-  if (tooltip === null || target === null) {
+  const nearest = lastParkingBayNearest;
+  if (tooltip === null || nearest === null) {
     return;
   }
   const openForThisBay =
     parkingTooltipOpenForBay !== null &&
-    parkingTooltipOpenForBay.bay === target.bay &&
-    parkingTooltipOpenForBay.layer === target.layer;
+    parkingTooltipOpenForBay.bay === nearest.bay &&
+    parkingTooltipOpenForBay.layer === nearest.layer;
   if (!openForThisBay) {
-    void showParkingTicketTooltip(target);
+    if (lastParkingBayTarget !== null) {
+      void showParkingTicketTooltip(lastParkingBayTarget);
+    } else {
+      showParkingSpotInspectTooltip(nearest);
+    }
     return;
   }
   if (tooltip.isBusy()) {
+    return;
+  }
+  if (tooltip.isInspectMode()) {
+    tooltip.hide();
+    parkingTooltipOpenForBay = null;
     return;
   }
   tooltip.root.querySelector("button")?.dispatchEvent(
@@ -3413,14 +3473,14 @@ function applyParkingBayProximity(
   }
   if (
     parkingTooltipOpenForBay !== null &&
-    (lastParkingBayTarget === null ||
-      lastParkingBayTarget.bay !== parkingTooltipOpenForBay.bay ||
-      lastParkingBayTarget.layer !== parkingTooltipOpenForBay.layer)
+    (lastParkingBayNearest === null ||
+      lastParkingBayNearest.bay !== parkingTooltipOpenForBay.bay ||
+      lastParkingBayNearest.layer !== parkingTooltipOpenForBay.layer)
   ) {
     parkingTicketTooltip?.hide();
     parkingTooltipOpenForBay = null;
-  } else if (lastParkingBayTarget !== null && parkingTicketTooltip?.isOpen()) {
-    positionParkingTicketTooltip(lastParkingBayTarget);
+  } else if (lastParkingBayNearest !== null && parkingTicketTooltip?.isOpen()) {
+    positionParkingTicketTooltip(lastParkingBayNearest);
   }
   if (
     prevNearest !== lastParkingBayNearest ||
@@ -4024,7 +4084,7 @@ function onFrame(): void {
           `Near parking bay ${String(bay.bay)} (layer ${String(bay.layer)}). P: buy ticket`;
       } else {
         proximityLegendEl.textContent =
-          `Near parking bay ${String(bay.bay)} (layer ${String(bay.layer)}). Occupied`;
+          `Near parking bay ${String(bay.bay)} (layer ${String(bay.layer)}). P: inspect spot`;
       }
     } else if (lastProximityPartnerId !== null) {
       proximityLegendEl.textContent = `Near ${playerDisplayName(lastProximityPartnerId)}. A: for assist · C: for chat · P: push to talk · Z: for zone · Y: for yield`;
@@ -4095,7 +4155,9 @@ function onFrame(): void {
       const local = worldToWorldRootLocal(bay.x, bay.y);
       const screen = worldRootLocalToCanvas(local.x, local.y);
       proximityPromptEl.textContent =
-        lastParkingBayTarget !== null ? "P: buy parking ticket" : "Spot occupied";
+        lastParkingBayTarget !== null
+          ? "P: buy parking ticket"
+          : "P: inspect parking spot";
       proximityPromptEl.style.display = "block";
       proximityPromptEl.style.left = `${screen.x}px`;
       proximityPromptEl.style.top = `${screen.y - box * 1.4}px`;
@@ -4487,7 +4549,7 @@ export function bootstrap(): void {
         if (lastParkingBayNearest === null) return null;
         return lastParkingBayTarget !== null ? "Buy ticket" : "Occupied";
       },
-      getParkingProximityActivatable: () => lastParkingBayTarget !== null,
+      getParkingProximityActivatable: () => lastParkingBayNearest !== null,
       getGameStageProximityLabel: () => {
         if (activeGameStage === null) return null;
         return lastGameStageProximityTarget?.label ?? null;
@@ -4529,7 +4591,7 @@ export function bootstrap(): void {
           activateGameStageProximityTarget();
           return;
         }
-        if (lastParkingBayTarget !== null && activeAmenityStage === null) {
+        if (lastParkingBayNearest !== null && activeAmenityStage === null) {
           cycleParkingTicketAction();
           return;
         }
