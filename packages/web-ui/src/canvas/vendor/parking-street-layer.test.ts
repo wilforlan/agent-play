@@ -25,7 +25,7 @@ describe("laneDashSegments", () => {
 describe("computeBandPixelExtents", () => {
   it("spans padded map minX through maxX when bandRect is wider than zoneRect", () => {
     const extents = computeBandPixelExtents({
-      bandRect: { minX: -1, maxX: 20, minY: 4, maxY: 7 },
+      bandRect: { minX: -1, maxX: 20, minY: 6, maxY: 9 },
       worldToLocal: (wx, wy) => ({ x: (wx + 1) * 32, y: wy * 32 }),
     });
     expect(extents.left).toBe(0);
@@ -60,7 +60,7 @@ describe("buildParkingStreetLayer", () => {
       ),
     };
     const layer = buildParkingStreetLayer({
-      zoneRect: { minX: 0, maxX: 19, minY: 4, maxY: 7 },
+      zoneRect: { minX: 0, maxX: 19, minY: 6, maxY: 9 },
       parkingStreet: street,
       palette: defaultMultiversePalette,
       cellScale: 32,

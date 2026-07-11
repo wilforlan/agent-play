@@ -1,11 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
-  COLUMN_STREET_ROW_HEIGHT,
   MINIMUM_STREET_LAYOUT_BOUNDS,
-  PARKING_COLUMN_GAP_ROWS,
   PARKING_STREET_ROW_HEIGHT,
   STREET_NAME_POOL,
   createWorldLayoutWithParkingRow,
+  parkingZoneMinYFromColumnBase,
   pickZoneForGroup,
 } from "@agent-play/sdk";
 import { bootstrapWorldLayoutIfNeeded } from "./world-layout-bootstrap.js";
@@ -144,7 +143,7 @@ describe("bootstrapWorldLayoutIfNeeded", () => {
         minX: MINIMUM_STREET_LAYOUT_BOUNDS.minX,
         minY: MINIMUM_STREET_LAYOUT_BOUNDS.minY,
         maxX: MINIMUM_STREET_LAYOUT_BOUNDS.maxX,
-        maxY: 7,
+        maxY: 9,
       },
       streets: [s0, s1, s2, s3],
     });
@@ -170,9 +169,9 @@ describe("bootstrapWorldLayoutIfNeeded", () => {
     await repo.saveLayout(legacy);
     const migrated = await bootstrapWorldLayoutIfNeeded({ repo });
     expect(pickZoneForGroup(migrated, "parking").rect.minY).toBe(
-      COLUMN_STREET_ROW_HEIGHT + PARKING_COLUMN_GAP_ROWS
+      parkingZoneMinYFromColumnBase(0)
     );
-    expect(migrated.bounds.maxY).toBe(7);
+    expect(migrated.bounds.maxY).toBe(9);
     expect(migrated.rev).toBe(4);
   });
 });

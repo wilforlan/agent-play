@@ -42,18 +42,25 @@ export const COLUMN_STREET_ROW_HEIGHT = 3;
 export const PARKING_STREET_ROW_HEIGHT = 4;
 
 /** Empty grid rows between column street signs and the parking asphalt band. */
-export const PARKING_COLUMN_GAP_ROWS = 1;
+export const PARKING_COLUMN_GAP_ROWS = 2.5;
 
-/** Default bounds: column streets (Y 0–2), gap (Y 3), parking row (Y 4–7). */
+export const parkingZoneMinYFromColumnBase = (columnMinY: number): number => {
+  const columnMaxY = columnMinY + COLUMN_STREET_ROW_HEIGHT - 1;
+  return Math.ceil(columnMaxY + 1 + PARKING_COLUMN_GAP_ROWS);
+};
+
+export const parkingZoneMaxYFromColumnBase = (columnMinY: number): number => {
+  return (
+    parkingZoneMinYFromColumnBase(columnMinY) + PARKING_STREET_ROW_HEIGHT - 1
+  );
+};
+
+/** Default bounds: column streets (Y 0–2), gap, parking row (Y 6–9). */
 export const DEFAULT_LAYOUT_BOUNDS_WITH_PARKING: WorldBounds = {
   minX: 0,
   minY: 0,
   maxX: 19,
-  maxY:
-    COLUMN_STREET_ROW_HEIGHT -
-    1 +
-    PARKING_COLUMN_GAP_ROWS +
-    PARKING_STREET_ROW_HEIGHT,
+  maxY: parkingZoneMaxYFromColumnBase(0),
 };
 
 export function expandBoundsToMinimumPlayArea(bounds: WorldBounds): WorldBounds {

@@ -5,6 +5,8 @@ import {
   MINIMUM_STREET_LAYOUT_BOUNDS,
   PARKING_COLUMN_GAP_ROWS,
   PARKING_STREET_ROW_HEIGHT,
+  parkingZoneMinYFromColumnBase,
+  parkingZoneMaxYFromColumnBase,
 } from "./world-bounds.js";
 import { STREET_NAME_POOL } from "./world-streets-pool.js";
 import {
@@ -71,7 +73,7 @@ const getParkingSeedLayout = () =>
   });
 
 describe("createWorldLayoutWithParkingRow", () => {
-  it("places column streets on Y 0–2, gap on Y 3, parking strip on Y 4–7 spanning full X", () => {
+  it("places column streets on Y 0–2 and parking strip on Y 6–9 spanning full X", () => {
     const layout = getParkingSeedLayout();
     expect(layout.zones.length).toBe(4);
     const agent = pickZoneForGroup(layout, "agent");
@@ -80,13 +82,10 @@ describe("createWorldLayoutWithParkingRow", () => {
     expect(agent.rect.maxY).toBe(COLUMN_STREET_ROW_HEIGHT - 1);
     expect(parking.id).toBe("zone-parking-strip");
     expect(parking.rect.minY).toBe(
-      COLUMN_STREET_ROW_HEIGHT + PARKING_COLUMN_GAP_ROWS
+      parkingZoneMinYFromColumnBase(agent.rect.minY)
     );
     expect(parking.rect.maxY).toBe(
-      COLUMN_STREET_ROW_HEIGHT +
-        PARKING_COLUMN_GAP_ROWS +
-        PARKING_STREET_ROW_HEIGHT -
-        1
+      parkingZoneMaxYFromColumnBase(agent.rect.minY)
     );
     expect(parking.rect.minX).toBe(DEFAULT_LAYOUT_BOUNDS_WITH_PARKING.minX);
     expect(parking.rect.maxX).toBe(DEFAULT_LAYOUT_BOUNDS_WITH_PARKING.maxX);
@@ -101,10 +100,10 @@ describe("createWorldLayoutWithParkingRow", () => {
     expect(pickZoneForGroup(migrated, "agent").streetId).toBe(
       pickZoneForGroup(legacy, "agent").streetId
     );
-    expect(pickZoneForGroup(migrated, "parking").rect.minY).toBe(4);
+    expect(pickZoneForGroup(migrated, "parking").rect.minY).toBe(6);
   });
 
-  it("re-migrates parking row without column gap to Y 4–7", () => {
+  it("re-migrates parking row without column gap to Y 6–9", () => {
     const current = getParkingSeedLayout();
     const agent = pickZoneForGroup(current, "agent");
     const withoutGap: WorldLayout = {
@@ -128,13 +127,35 @@ describe("createWorldLayoutWithParkingRow", () => {
     expect(layoutNeedsParkingColumnGapMigration(withoutGap)).toBe(true);
     const migrated = migrateLayoutToParkingColumnGap(withoutGap);
     expect(layoutNeedsParkingColumnGapMigration(migrated)).toBe(false);
-    expect(pickZoneForGroup(migrated, "parking").rect.minY).toBe(4);
-    expect(pickZoneForGroup(migrated, "parking").rect.maxY).toBe(7);
-    expect(migrated.bounds.maxY).toBe(7);
+    expect(pickZoneForGroup(migrated, "parking").rect.minY).toBe(6);
+    expect(pickZoneForGroup(migrated, "parking").rect.maxY).toBe(9);
+    expect(migrated.bounds.maxY).toBe(9);
     expect(migrated.rev).toBe(6);
     expect(pickZoneForGroup(migrated, "agent").streetId).toBe(
       pickZoneForGroup(withoutGap, "agent").streetId
     );
+  });
+
+  it("re-migrates prior 1-row-gap parking layout to elevated Y 6–9", () => {
+    const current = getParkingSeedLayout();
+    const priorGap: WorldLayout = {
+      ...current,
+      rev: 7,
+      bounds: { ...current.bounds, maxY: 7 },
+      zones: current.zones.map((zone) => {
+        if (zone.primaryGroup !== "parking") {
+          return zone;
+        }
+        return {
+          ...zone,
+          rect: { ...zone.rect, minY: 4, maxY: 7 },
+        };
+      }),
+    };
+    expect(layoutNeedsParkingColumnGapMigration(priorGap)).toBe(true);
+    const migrated = migrateLayoutToParkingColumnGap(priorGap);
+    expect(pickZoneForGroup(migrated, "parking").rect.minY).toBe(6);
+    expect(pickZoneForGroup(migrated, "parking").rect.maxY).toBe(9);
   });
 
   it("migrates legacy mcp primaryGroup layout to include parking row", () => {

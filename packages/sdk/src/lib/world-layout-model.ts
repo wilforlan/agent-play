@@ -3,6 +3,8 @@ import {
   COLUMN_STREET_ROW_HEIGHT,
   PARKING_COLUMN_GAP_ROWS,
   PARKING_STREET_ROW_HEIGHT,
+  parkingZoneMinYFromColumnBase,
+  parkingZoneMaxYFromColumnBase,
 } from "./world-bounds.js";
 import {
   buildRankedOccupancyPointsInRect,
@@ -444,8 +446,7 @@ export function layoutNeedsParkingColumnGapMigration(
   if (agent === undefined || parking === undefined) {
     return false;
   }
-  const expectedParkingMinY =
-    agent.rect.maxY + 1 + PARKING_COLUMN_GAP_ROWS;
+  const expectedParkingMinY = parkingZoneMinYFromColumnBase(agent.rect.minY);
   return parking.rect.minY < expectedParkingMinY;
 }
 
@@ -458,12 +459,7 @@ export function migrateLayoutToParkingColumnGap(
   }
   const streets = streetsFromLayoutWithParking(normalized);
   const { minX, minY, maxX } = normalized.bounds;
-  const requiredMaxY =
-    minY +
-    COLUMN_STREET_ROW_HEIGHT -
-    1 +
-    PARKING_COLUMN_GAP_ROWS +
-    PARKING_STREET_ROW_HEIGHT;
+  const requiredMaxY = parkingZoneMaxYFromColumnBase(minY);
   const nextBounds: WorldBounds = {
     minX,
     minY,
@@ -496,10 +492,10 @@ export function migrateLayoutToParkingRow(layout: WorldLayout): WorldLayout {
   }
   const nextBounds: WorldBounds = {
     ...normalized.bounds,
-    maxY:
-      normalized.bounds.maxY +
-      PARKING_STREET_ROW_HEIGHT +
-      PARKING_COLUMN_GAP_ROWS,
+    maxY: Math.max(
+      normalized.bounds.maxY,
+      parkingZoneMaxYFromColumnBase(normalized.bounds.minY)
+    ),
   };
   return createWorldLayoutWithParkingRow({
     bounds: nextBounds,
@@ -569,10 +565,9 @@ export function createWorldLayoutWithParkingRow(input: {
   if (spanX < 3) {
     throw new Error("createWorldLayoutWithParkingRow: bounds spanX too small");
   }
-  const requiredSpanY =
-    COLUMN_STREET_ROW_HEIGHT +
-    PARKING_COLUMN_GAP_ROWS +
-    PARKING_STREET_ROW_HEIGHT;
+  const requiredSpanY = Math.ceil(
+    COLUMN_STREET_ROW_HEIGHT + PARKING_COLUMN_GAP_ROWS + PARKING_STREET_ROW_HEIGHT
+  );
   const actualSpanY = maxY - minY + 1;
   if (actualSpanY < requiredSpanY) {
     throw new Error(
@@ -581,7 +576,7 @@ export function createWorldLayoutWithParkingRow(input: {
   }
   const columnMinY = minY;
   const columnMaxY = minY + COLUMN_STREET_ROW_HEIGHT - 1;
-  const parkingMinY = columnMaxY + 1 + PARKING_COLUMN_GAP_ROWS;
+  const parkingMinY = parkingZoneMinYFromColumnBase(columnMinY);
   const parkingMaxY = parkingMinY + PARKING_STREET_ROW_HEIGHT - 1;
   if (parkingMaxY > maxY) {
     throw new Error("createWorldLayoutWithParkingRow: parking band exceeds bounds");

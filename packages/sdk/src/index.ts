@@ -82,6 +82,8 @@ export {
   PARKING_COLUMN_GAP_ROWS,
   PARKING_STREET_ROW_HEIGHT,
   DEFAULT_LAYOUT_BOUNDS_WITH_PARKING,
+  parkingZoneMinYFromColumnBase,
+  parkingZoneMaxYFromColumnBase,
   type WorldBounds,
 } from "./lib/world-bounds.js";
 export {

@@ -8,14 +8,14 @@ export type ParkingBayAnchor = {
 };
 
 export const PARKING_BAY_ANCHORS: readonly ParkingBayAnchor[] = [
-  { bay: 1, layer: 1, x: 3.5, y: 5.2 },
-  { bay: 1, layer: 2, x: 3.5, y: 4.6 },
-  { bay: 2, layer: 1, x: 8.5, y: 5.2 },
-  { bay: 2, layer: 2, x: 8.5, y: 4.6 },
-  { bay: 3, layer: 1, x: 13.5, y: 5.2 },
-  { bay: 3, layer: 2, x: 13.5, y: 4.6 },
-  { bay: 4, layer: 1, x: 18.5, y: 5.2 },
-  { bay: 4, layer: 2, x: 18.5, y: 4.6 },
+  { bay: 1, layer: 1, x: 3.5, y: 7.2 },
+  { bay: 1, layer: 2, x: 3.5, y: 6.6 },
+  { bay: 2, layer: 1, x: 8.5, y: 7.2 },
+  { bay: 2, layer: 2, x: 8.5, y: 6.6 },
+  { bay: 3, layer: 1, x: 13.5, y: 7.2 },
+  { bay: 3, layer: 2, x: 13.5, y: 6.6 },
+  { bay: 4, layer: 1, x: 18.5, y: 7.2 },
+  { bay: 4, layer: 2, x: 18.5, y: 6.6 },
 ];
 
 export const findNearestParkingBay = (input: {
