@@ -69,6 +69,18 @@ describe("AQL — ADD SHOP/SUPERMARKET/CARWASH parsing", () => {
     expect(parsed.diagnostics).toHaveLength(0);
   });
 
+  it("parses CONNECT with MAIN_NODE PASSPHRASE", () => {
+    const source = `CONNECT SERVER "http://localhost:3000" MAIN_NODE "main-1" PASSPHRASE "${PHRASE}"`;
+    const parsed = parseAql(tokenizeAql(source));
+    expect(parsed.diagnostics).toHaveLength(0);
+    const stmt = parsed.program.statements[0];
+    expect(stmt?.kind).toBe("ConnectStmt");
+    if (stmt?.kind !== "ConnectStmt") {
+      throw new Error("expected ConnectStmt");
+    }
+    expect(stmt.passphrase?.kind).toBe("StringLiteral");
+  });
+
   it("parses SET WALLET PLAYER and INSPECT WALLET", () => {
     const source = `SET WALLET PLAYER "p1" BALANCE 50
 INSPECT WALLET "p1"`;
@@ -111,6 +123,70 @@ ADD SHOP ITEM TYPE "book" NAME "n" DESCRIPTION "d" PRICE 1`;
 });
 
 describe("AQL — executor dispatches to RPC", () => {
+  it("SET WALLET rejects CONNECT MAIN_NODE that is not kind=main", async () => {
+    const source = `CONNECT SERVER "http://localhost:3000" MAIN_NODE "agent-1" PASSPHRASE "${PHRASE}"
+SET WALLET PLAYER "agent-1" BALANCE 1000`;
+    const parsed = parseAql(tokenizeAql(source));
+    expect(parsed.diagnostics).toHaveLength(0);
+    const { client } = buildRuntimeMock();
+    const inspectMainNode = vi.fn(async () => ({
+      mainNode: { nodeId: "agent-1", kind: "agent", parentNodeId: "main-1" },
+    }));
+    const result = await executeAqlProgram({
+      program: parsed.program,
+      runtimeClient: {
+        ...buildRuntimeMock().client,
+        inspectMainNode,
+      },
+      initialState: {
+        ...baseState(),
+        mainNodeId: "",
+        nodePasswordMaterial: null,
+        sid: null,
+      },
+    });
+    expect(result.diagnostics.length).toBeGreaterThan(0);
+    expect(result.diagnostics[0]?.message).toContain('MAIN_NODE "main-1"');
+  });
+
+  it("CONNECT PASSPHRASE supplies credentials for SET WALLET", async () => {
+    const source = `CONNECT SERVER "http://localhost:3000" MAIN_NODE "main-1" PASSPHRASE "${PHRASE}"
+SET WALLET PLAYER "main-1" BALANCE 1000`;
+    const parsed = parseAql(tokenizeAql(source));
+    expect(parsed.diagnostics).toHaveLength(0);
+    const { rpc, client } = buildRuntimeMock();
+    const result = await executeAqlProgram({
+      program: parsed.program,
+      runtimeClient: {
+        ...client,
+        inspectMainNode: async () => ({
+          mainNode: { nodeId: "main-1", kind: "main" },
+        }),
+      },
+      initialState: {
+        ...baseState(),
+        mainNodeId: "",
+        nodePasswordMaterial: null,
+        sid: null,
+      },
+    });
+    expect(result.diagnostics).toHaveLength(0);
+    expect(result.state.mainNodeId).toBe("main-1");
+    expect(result.state.nodePasswordMaterial).not.toBeNull();
+    const walletCalls = rpc.mock.calls.filter(
+      (c) => (c[0] as { op: string }).op === "setPlayerWalletBalance"
+    );
+    expect(walletCalls.length).toBe(1);
+    const args = walletCalls[0]?.[0] as {
+      nodeId: string;
+      passwordMaterial: string;
+      payload: Record<string, unknown>;
+    };
+    expect(args.nodeId).toBe("main-1");
+    expect(args.passwordMaterial).toBe(result.state.nodePasswordMaterial);
+    expect(args.payload).toMatchObject({ playerId: "main-1", balanceUsd: 1000 });
+  });
+
   it("ADD SHOP ITEM calls sdkRpc op=addShopItem with the space context", async () => {
     const source = `USE SPACE NODE "nid" PASSPHRASE "${PHRASE}"
 ADD SHOP ITEM TYPE "book" NAME "Hitchhiker" DESCRIPTION "Don't Panic" PRICE 12.5`;

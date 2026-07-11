@@ -38,6 +38,37 @@ export type CreatePreviewProximityTouchControlsOptions = {
    */
   getAmenityItemActionLabel?: () => string | null | undefined;
   /**
+   * When the human is on the overworld near a vacant parking bay, returns
+   * the bay label for the `P` button.
+   */
+  getParkingProximityLabel?: () => string | null | undefined;
+  /**
+   * Verb shown on the `P` button when near a parking bay.
+   */
+  getParkingProximityVerb?: () => string | null | undefined;
+  /**
+   * Whether the nearest parking bay can be purchased with `P`.
+   * Defaults to `true` when omitted.
+   */
+  getParkingProximityActivatable?: () => boolean;
+  /**
+   * When the human is on the overworld near a parking-lane house door,
+   * returns the house label for proximity UI.
+   */
+  getHouseProximityLabel?: () => string | null | undefined;
+  /**
+   * Verb shown on the `A` button when near a house (typically `"Enter"`).
+   */
+  getHouseAssistVerb?: () => string | null | undefined;
+  /**
+   * Whether the viewer can enter the house as owner with `A`.
+   */
+  getHouseAssistActivatable?: () => boolean;
+  /**
+   * Verb shown on the `P` button when near a house (typically `"Inspect"`).
+   */
+  getHouseInspectVerb?: () => string | null | undefined;
+  /**
    * When the human is inside an arcade game stage and near an interactable,
    * returns the object's display label for the `P` button.
    */
@@ -146,6 +177,12 @@ export function createPreviewProximityTouchControls(
     const gameStageLabel = options.getGameStageProximityLabel?.() ?? null;
     const nearGameStage =
       typeof gameStageLabel === "string" && gameStageLabel.length > 0;
+    const parkingLabel = options.getParkingProximityLabel?.() ?? null;
+    const nearParking =
+      typeof parkingLabel === "string" && parkingLabel.length > 0;
+    const houseLabel = options.getHouseProximityLabel?.() ?? null;
+    const nearHouse =
+      typeof houseLabel === "string" && houseLabel.length > 0;
     const structureLabel = options.getStructureProximityLabel?.() ?? null;
     const nearStructure =
       typeof structureLabel === "string" && structureLabel.length > 0;
@@ -200,6 +237,62 @@ export function createPreviewProximityTouchControls(
       } else {
         btnPushToTalk.setAttribute("aria-label", verb);
       }
+    } else if (nearParking) {
+      const verb = options.getParkingProximityVerb?.() ?? "Buy ticket";
+      const activatable = options.getParkingProximityActivatable?.() ?? true;
+      btnAssist.disabled = true;
+      subA.textContent = "Assist";
+      btnAssist.removeAttribute("aria-label");
+      btnChat.disabled = true;
+      btnPushToTalk.disabled = !activatable;
+      subP.textContent = verb;
+      btnPushToTalk.classList.toggle(
+        "preview-proximity-touch-pad__key--proximity-active",
+        activatable
+      );
+      btnPushToTalk.classList.toggle(
+        "preview-proximity-touch-pad__key--proximity-hint",
+        !activatable
+      );
+      if (activatable) {
+        btnPushToTalk.setAttribute(
+          "aria-label",
+          `${verb} ${parkingLabel ?? "parking"}`
+        );
+      } else {
+        btnPushToTalk.setAttribute("aria-label", verb);
+      }
+    } else if (nearHouse) {
+      const assistVerb = options.getHouseAssistVerb?.() ?? "Enter";
+      const assistActivatable = options.getHouseAssistActivatable?.() ?? false;
+      const inspectVerb = options.getHouseInspectVerb?.() ?? "Inspect";
+      btnAssist.disabled = !assistActivatable;
+      subA.textContent = assistVerb;
+      btnAssist.classList.toggle(
+        "preview-proximity-touch-pad__key--proximity-active",
+        assistActivatable
+      );
+      btnAssist.classList.toggle(
+        "preview-proximity-touch-pad__key--proximity-hint",
+        !assistActivatable
+      );
+      if (assistActivatable) {
+        btnAssist.setAttribute(
+          "aria-label",
+          `${assistVerb} ${houseLabel ?? "house"}`
+        );
+      } else {
+        btnAssist.removeAttribute("aria-label");
+      }
+      btnChat.disabled = true;
+      btnPushToTalk.disabled = false;
+      subP.textContent = inspectVerb;
+      btnPushToTalk.classList.add("preview-proximity-touch-pad__key--proximity-active");
+      btnPushToTalk.classList.remove("preview-proximity-touch-pad__key--proximity-hint");
+      btnPushToTalk.setAttribute(
+        "aria-label",
+        `${inspectVerb} ${houseLabel ?? "house"}`
+      );
     } else if (nearStructure) {
       const verb = options.getStructureProximityVerb?.() ?? "Enter";
       btnAssist.disabled = false;
@@ -220,6 +313,10 @@ export function createPreviewProximityTouchControls(
       btnAssist.disabled = !can;
       subA.textContent = "Assist";
       btnAssist.removeAttribute("aria-label");
+      btnAssist.classList.remove(
+        "preview-proximity-touch-pad__key--proximity-active",
+        "preview-proximity-touch-pad__key--proximity-hint"
+      );
       btnChat.disabled = !can;
       btnPushToTalk.disabled = !can;
       subP.textContent = "Push";

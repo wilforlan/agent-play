@@ -102,7 +102,7 @@ const KEYWORD_SUGGESTIONS: AqlSuggestion[] = [
   { label: "SHOW HEADERS", insertText: "SHOW HEADERS", kind: "keyword" },
   { label: "INTO", insertText: "INTO ", kind: "keyword" },
   { label: "LET", insertText: "LET ", kind: "keyword" },
-  { label: "CONNECT SERVER", insertText: "CONNECT SERVER ", kind: "keyword" },
+  { label: "CONNECT SERVER", insertText: 'CONNECT SERVER "" MAIN_NODE "" PASSPHRASE ""', kind: "keyword" },
   { label: "MACRO", insertText: "MACRO ", kind: "keyword" },
   { label: "CALL", insertText: "CALL ", kind: "keyword" },
   { label: "RETURN", insertText: "RETURN ", kind: "keyword" },

@@ -257,12 +257,44 @@ export default function PlaygroundClient({ defaultServerUrl }: PlaygroundClientP
     setIsRunning(true);
     setDiagnostics([]);
     try {
+      const trimmedUrl = serverUrl.trim();
+      const trimmedMain = mainNodeId.trim();
+      let nodePasswordMaterial = executionState.nodePasswordMaterial;
+      if (isTenWordPassphrase(mainPassphrase)) {
+        nodePasswordMaterial = nodeCredentialsMaterialFromHumanPassphrase(mainPassphrase);
+      }
+      let sid = executionState.sid;
+      if (sid === null && trimmedUrl.length > 0) {
+        const sessionRes = await fetch(`${trimmedUrl.replace(/\/$/, "")}/api/agent-play/session`);
+        const sessionJson = (await sessionRes.json()) as { sid?: unknown };
+        if (
+          sessionRes.ok &&
+          typeof sessionJson.sid === "string" &&
+          sessionJson.sid.length > 0
+        ) {
+          sid = sessionJson.sid;
+        }
+      }
+      const needsMainNodeAuth = /\bSET\s+WALLET\b/i.test(aql);
+      if (
+        needsMainNodeAuth &&
+        (trimmedMain.length === 0 ||
+          nodePasswordMaterial === null ||
+          nodePasswordMaterial.length === 0)
+      ) {
+        setDiagnostics([
+          "SET WALLET requires Main Node ID and a valid 10-word passphrase. Fill both fields, then click Connect or Run.",
+        ]);
+        return;
+      }
       const nextState: AqlExecutionState = {
         ...executionState,
-        serverUrl: serverUrl.trim(),
-        mainNodeId: mainNodeId.trim(),
+        serverUrl: trimmedUrl,
+        mainNodeId: trimmedMain,
+        sid,
+        nodePasswordMaterial,
       };
-      const source = `LET serverUrl = "${serverUrl.trim()}"\n${aql}`;
+      const source = `LET serverUrl = "${trimmedUrl}"\n${aql}`;
       const result = await runAql({ source, state: nextState });
       setExecutionState(result.nextState);
       setResponse(result.response);

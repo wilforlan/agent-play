@@ -55,7 +55,15 @@ export function buildParkScene(
   return root;
 }
 
-const PARK_SKY_GRASS_RATIO = 0.58;
+export const PARK_SKY_GRASS_RATIO = 0.5;
+
+export function getParkBackdropLayoutMetrics(heightPx: number): {
+  grassTop: number;
+  skyHeight: number;
+} {
+  const grassTop = heightPx * PARK_SKY_GRASS_RATIO;
+  return { grassTop, skyHeight: grassTop };
+}
 
 /**
  * Park sky + grass + props sized to the scrolling world in **pixel space** (matches grid extent).
@@ -67,13 +75,10 @@ export function buildParkWorldBackdrop(
 ): Container {
   const root = new Container();
   const rng = mulberry32(seed);
-  const grassTop = heightPx * PARK_SKY_GRASS_RATIO;
+  const { grassTop } = getParkBackdropLayoutMetrics(heightPx);
 
   const sky = new Graphics();
-  sky.rect(0, 0, widthPx, grassTop * 0.52).fill({ color: 0x7ec8e3 });
-  sky
-    .rect(0, grassTop * 0.52, widthPx, grassTop * 0.48)
-    .fill({ color: 0xa8d8ea });
+  sky.rect(0, 0, widthPx, grassTop).fill({ color: 0x7ec8e3 });
   root.addChild(sky);
 
   const grass = new Graphics();

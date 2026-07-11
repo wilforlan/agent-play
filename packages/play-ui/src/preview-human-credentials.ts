@@ -79,6 +79,9 @@ export function getMainNodeIdForIntercom(): string | null {
   return c === null ? null : c.nodeId;
 }
 
+const CREDENTIALS_DOWNLOAD_FILENAME = "credentials.json";
+const CREDENTIALS_DOWNLOAD_CLEANUP_MS = 200;
+
 export function downloadHumanCredentialsJson(options: {
   nodeId: string;
   passw: string;
@@ -96,9 +99,19 @@ export function downloadHumanCredentialsJson(options: {
     type: "application/json",
   });
   const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = "credentials.json";
-  a.click();
-  URL.revokeObjectURL(url);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = CREDENTIALS_DOWNLOAD_FILENAME;
+  anchor.rel = "noopener";
+  anchor.style.position = "fixed";
+  anchor.style.left = "-9999px";
+  anchor.style.top = "0";
+  document.body.appendChild(anchor);
+  anchor.click();
+  window.setTimeout(() => {
+    if (anchor.parentNode !== null) {
+      anchor.remove();
+    }
+    URL.revokeObjectURL(url);
+  }, CREDENTIALS_DOWNLOAD_CLEANUP_MS);
 }

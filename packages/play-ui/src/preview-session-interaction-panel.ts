@@ -10,9 +10,11 @@ import {
 import { appendChatLogLine, getChatLogLinesForAgent } from "./preview-chat-log.js";
 import type { AssistToolDef } from "./preview-assist-ui.js";
 import {
+  downloadHumanCredentialsJson,
   formatCredentialCreatedAt,
   readHumanCredentials,
 } from "./preview-human-credentials.js";
+import { resolveDeploymentServerUrlFromApiBase } from "./preview-human-node-restore.js";
 import { logSessionInteraction } from "./preview-session-interaction-log.js";
 import {
   buildAssistArgsFromInputs,
@@ -500,6 +502,21 @@ function ensureStyles(): void {
   background: rgba(127, 29, 29, 0.42);
   color: #fecaca;
 }
+.preview-session-interaction__node-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+}
+.preview-session-interaction__node-download-btn {
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 11px;
+  cursor: pointer;
+  border: 1px solid rgba(148, 163, 184, 0.45);
+  background: rgba(51, 65, 85, 0.55);
+  color: #e2e8f0;
+}
 .preview-session-interaction__danger-overlay {
   position: fixed;
   inset: 0;
@@ -792,11 +809,21 @@ export function createPreviewSessionInteractionPanel(options: {
   nodeActionBtn.type = "button";
   nodeActionBtn.dataset.nodeUi = "1";
   nodeActionBtn.className = "preview-session-interaction__node-new-btn";
+  const nodeDownloadBtn = document.createElement("button");
+  nodeDownloadBtn.type = "button";
+  nodeDownloadBtn.dataset.nodeDownload = "1";
+  nodeDownloadBtn.className =
+    "preview-session-interaction__node-download-btn";
+  nodeDownloadBtn.textContent = "Download credentials";
+  nodeDownloadBtn.hidden = true;
+  const nodeActionsRow = document.createElement("div");
+  nodeActionsRow.className = "preview-session-interaction__node-actions";
+  nodeActionsRow.append(nodeDownloadBtn, nodeActionBtn);
   nodeInfo.append(
     nodeSectionTitle,
     nodeIdRow,
     nodeCreatedRow,
-    nodeActionBtn
+    nodeActionsRow
   );
 
   const playPadHelp = createPlayPadKeysHelpSection();
@@ -806,6 +833,7 @@ export function createPreviewSessionInteractionPanel(options: {
     if (creds === null) {
       nodeIdValue.textContent = "—";
       nodeCreatedValue.textContent = "—";
+      nodeDownloadBtn.hidden = true;
       nodeActionBtn.textContent = "Set up main node";
       nodeActionBtn.classList.remove(
         "preview-session-interaction__node-new-btn--danger"
@@ -814,11 +842,24 @@ export function createPreviewSessionInteractionPanel(options: {
     }
     nodeIdValue.textContent = creds.nodeId;
     nodeCreatedValue.textContent = formatCredentialCreatedAt(creds.createdAtIso);
+    nodeDownloadBtn.hidden = false;
     nodeActionBtn.textContent = "Create new node";
     nodeActionBtn.classList.add(
       "preview-session-interaction__node-new-btn--danger"
     );
   };
+
+  nodeDownloadBtn.addEventListener("click", () => {
+    const creds = readHumanCredentials();
+    if (creds === null) {
+      return;
+    }
+    downloadHumanCredentialsJson({
+      nodeId: creds.nodeId,
+      passw: creds.passw,
+      serverUrl: resolveDeploymentServerUrlFromApiBase(options.apiBase),
+    });
+  });
 
   nodeActionBtn.addEventListener("click", () => {
     void (async () => {

@@ -25,6 +25,10 @@ import type {
   PurchaseRecord,
   ShopItem,
   SupermarketItem,
+  ParkingStreetContent,
+  ParkingDurationTier,
+  HouseStreetContent,
+  HouseId,
   ApplyGameOutcomeInput,
   GameStats,
 } from "@agent-play/sdk";
@@ -281,6 +285,29 @@ export type SessionStore = {
       }
     | { ok: false; error: "NO_SESSION" }
   >;
+  getParkingStreet(): Promise<ParkingStreetContent>;
+  setParkingStreet(content: ParkingStreetContent): Promise<void>;
+  buyParkingTicket(input: {
+    nodeId: string;
+    bay: 1 | 2 | 3 | 4;
+    layer?: 1 | 2;
+    carPurchaseId: string;
+    durationTier: ParkingDurationTier;
+    displayNick: string;
+    now: string;
+    recordId: string;
+  }): Promise<BuyParkingTicketResult>;
+  tickParkingExpiry(nowIso: string): Promise<ParkingStreetContent>;
+  getHouseStreet(): Promise<HouseStreetContent>;
+  setHouseStreet(content: HouseStreetContent): Promise<void>;
+  buyHouse(input: {
+    nodeId: string;
+    houseId: HouseId;
+    ownerName: string;
+    ownerSignature: string;
+    now: string;
+    recordId: string;
+  }): Promise<BuyHouseResult>;
 };
 
 /**
@@ -303,4 +330,37 @@ export type ExecutePurchaseResult =
         | "INSUFFICIENT_FUNDS"
         | "ITEM_NOT_FOUND"
         | "AMENITY_KIND_MISMATCH";
+    };
+
+export type BuyParkingTicketResult =
+  | {
+      ok: true;
+      record: PurchaseRecord;
+      wallet: PlayerWallet;
+      parkingStreet: ParkingStreetContent;
+    }
+  | {
+      ok: false;
+      error:
+        | "NO_WALLET_CAR"
+        | "SPOT_OCCUPIED"
+        | "PARKING_OWNERSHIP_LIMIT"
+        | "PARKING_FOREVER_LIMIT"
+        | "INSUFFICIENT_FUNDS"
+        | "INVALID_SPOT";
+    };
+
+export type BuyHouseResult =
+  | {
+      ok: true;
+      record: PurchaseRecord;
+      wallet: PlayerWallet;
+      houseStreet: HouseStreetContent;
+    }
+  | {
+      ok: false;
+      error:
+        | "HOUSE_ALREADY_OWNED"
+        | "INSUFFICIENT_FUNDS"
+        | "INVALID_HOUSE";
     };

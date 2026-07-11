@@ -44,7 +44,7 @@ const themes: Record<SceneThemeId, SceneTheme> = {
     appBackgroundColor: 0x87ceeb,
     buildScene: buildParkScene,
     crowdSeedSalt: 0x11,
-    grassBandTopRatio: 0.58,
+    grassBandTopRatio: 0.5,
     gridStroke: { color: 0x94a3b8, alpha: 0.28 },
     palettePartial: {
       text: "#0f172a",
@@ -66,7 +66,7 @@ const themes: Record<SceneThemeId, SceneTheme> = {
     appBackgroundColor: 0x5c6f82,
     buildScene: buildNewYorkScene,
     crowdSeedSalt: 0x22,
-    grassBandTopRatio: 0.58,
+    grassBandTopRatio: 0.5,
     gridStroke: { color: 0xfacc15, alpha: 0.26 },
     palettePartial: {
       text: "#f8fafc",
@@ -88,7 +88,7 @@ const themes: Record<SceneThemeId, SceneTheme> = {
     appBackgroundColor: 0x1a2332,
     buildScene: buildTokyoScene,
     crowdSeedSalt: 0x33,
-    grassBandTopRatio: 0.58,
+    grassBandTopRatio: 0.5,
     gridStroke: { color: 0x94a3b8, alpha: 0.32 },
     palettePartial: {
       text: "#fce4ec",

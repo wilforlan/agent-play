@@ -65,7 +65,10 @@ import {
   createWalletInventoryPanel,
   type WalletInventoryPanelHandle,
 } from "./wallet-inventory-panel.js";
-import { fetchPurchases } from "./wallet-purchases-client.js";
+import {
+  buildPurchaseItemKey,
+  fetchPurchases,
+} from "./wallet-purchases-client.js";
 import { redeemWalletBundle } from "./wallet-bundle-client.js";
 import { deepLogObject, deepLogText, deepLogTree } from "./browser-deep-logs.js";
 import { buildCrowdLayer } from "./crowd-draw.js";
@@ -84,7 +87,7 @@ import {
 } from "./agent-chat-panel-position.js";
 import {
   clampWorldPosition,
-  createVerticalStripSeedLayout,
+  createWorldLayoutWithParkingRow,
   DEFAULT_AGENT_SPAWN_MIN_DISTANCE,
   expandBoundsToMinimumPlayArea,
   isAgentSpawnOccupancyPointAvailableInZone,
@@ -92,7 +95,7 @@ import {
   listOccupancyPointsForZone,
   mergeSnapshotWithPlayerChainNode,
   MINIMUM_PLAY_WORLD_BOUNDS,
-  MINIMUM_STREET_LAYOUT_BOUNDS,
+  DEFAULT_LAYOUT_BOUNDS_WITH_PARKING,
   occupancyKeyForPosition,
   parsePlayerChainFanoutNotifyFromSsePayload,
   parsePlayerChainNodeRpcBody,
@@ -107,6 +110,18 @@ import {
   type GameEvent,
   type GameId,
   type OccupantGroup,
+  canNodeAcquireParkingSpot,
+  createEmptyHouseStreetContent,
+  createEmptyParkingStreetContent,
+  findHouseSlot,
+  getHouseBlueprint,
+  DEFAULT_PARKING_RATES_USD,
+  findParkingSpot,
+  type HouseId,
+  type HouseStreetContent,
+  type ParkingDurationTier,
+  type ParkingOccupant,
+  type ParkingStreetContent,
   type WorldBounds,
   type WorldLayout,
 } from "@agent-play/sdk/browser";
@@ -221,6 +236,32 @@ import {
 import { fetchGameStats } from "./game-stats-client.js";
 import { applyGameOutcome } from "./apply-game-outcome-client.js";
 import { buildParkWorldBackdrop } from "./scene-backgrounds.js";
+import { buildParkingStreetLayer } from "./parking-street-layer.js";
+import {
+  findNearestParkingBay,
+  isParkingBayVacant,
+  type ParkingBayAnchor,
+} from "./parking-street-proximity.js";
+import {
+  buildHouseInteriorStage,
+  type HouseInteriorStageHandle,
+  type HouseStageMode,
+} from "./house-interior-stage.js";
+import {
+  canEnterHouseAsOwner,
+  findNearestHouseDoor,
+  type HouseDoorAnchor,
+} from "./house-street-proximity.js";
+import {
+  createHousePurchasePanel,
+  type HousePurchasePanelHandle,
+} from "./house-purchase-panel.js";
+import { buyHouse } from "./house-purchase-client.js";
+import {
+  createParkingTicketTooltip,
+  type ParkingTicketTooltipHandle,
+} from "./parking-ticket-tooltip.js";
+import { buyParkingTicket } from "./parking-ticket-client.js";
 import {
   clampCameraToWorldRect,
   computeWorldRootScrollRect,
@@ -510,6 +551,8 @@ type Snapshot = {
   worldLayout?: SnapshotWorldLayout;
   mcpServers?: SnapshotMcpRegistration[];
   spaces?: SnapshotSpaceCatalogEntry[];
+  parkingStreet?: ParkingStreetContent;
+  houseStreet?: HouseStreetContent;
 };
 
 function mapOccupantLastUpdate(
@@ -867,12 +910,13 @@ function resolveWorldLayout(): WorldLayout {
   const s0 = STREET_NAME_POOL[0];
   const s1 = STREET_NAME_POOL[1];
   const s2 = STREET_NAME_POOL[2];
-  if (s0 === undefined || s1 === undefined || s2 === undefined) {
+  const s3 = STREET_NAME_POOL[3];
+  if (s0 === undefined || s1 === undefined || s2 === undefined || s3 === undefined) {
     throw new Error("resolveWorldLayout: invalid street pool");
   }
-  return createVerticalStripSeedLayout({
-    bounds: MINIMUM_STREET_LAYOUT_BOUNDS,
-    streets: [s0, s1, s2],
+  return createWorldLayoutWithParkingRow({
+    bounds: DEFAULT_LAYOUT_BOUNDS_WITH_PARKING,
+    streets: [s0, s1, s2, s3],
   });
 }
 
@@ -889,6 +933,9 @@ function zoneDebugStroke(primary: OccupantGroup): {
   }
   if (primary === "arcade") {
     return { width: 3, color: 0xf472b6, alpha: 0.95 };
+  }
+  if (primary === "parking") {
+    return { width: 3, color: 0x94a3b8, alpha: 0.95 };
   }
   return { width: 3, color: 0xa855f7, alpha: 0.95 };
 }
@@ -1294,6 +1341,32 @@ function onDocumentKeyDown(e: KeyboardEvent): void {
   }
   if (
     e.key.toLowerCase() === "p" &&
+    activeAmenityStage === null &&
+    activeGameStage === null &&
+    activeHouseStage === null &&
+    stageController?.current()?.id === "overworld" &&
+    lastHouseNearest !== null
+  ) {
+    e.preventDefault();
+    void enterHouseStage({
+      houseId: lastHouseNearest.houseId,
+      mode: "inspect",
+    });
+    return;
+  }
+  if (
+    e.key.toLowerCase() === "p" &&
+    activeAmenityStage === null &&
+    activeGameStage === null &&
+    stageController?.current()?.id === "overworld" &&
+    lastParkingBayNearest !== null
+  ) {
+    e.preventDefault();
+    cycleParkingTicketAction();
+    return;
+  }
+  if (
+    e.key.toLowerCase() === "p" &&
     activeAmenityStage !== null
   ) {
     const stage = activeAmenityStage;
@@ -1308,6 +1381,30 @@ function onDocumentKeyDown(e: KeyboardEvent): void {
     lastProximityPartnerId
   );
   if (partner === null || partner === HUMAN_VIEWER_PLAYER_ID) {
+    if (
+      e.key.toLowerCase() === "a" &&
+      lastHouseNearest !== null &&
+      stageController?.current()?.id === "overworld"
+    ) {
+      const house = findHouseSlot(
+        resolveHouseStreetContent(),
+        lastHouseNearest.houseId
+      );
+      if (
+        house !== undefined &&
+        canEnterHouseAsOwner({
+          viewerNodeId: getViewerWalletPlayerId(),
+          house,
+        })
+      ) {
+        e.preventDefault();
+        void enterHouseStage({
+          houseId: lastHouseNearest.houseId,
+          mode: "owner",
+        });
+        return;
+      }
+    }
     if (
       e.key.toLowerCase() === "a" &&
       lastStructureProximityTarget !== null
@@ -1357,6 +1454,7 @@ const gridGraphics = new Graphics();
 const agentsLayer = new Container();
 const parkBackdropLayer = new Container();
 const streetSignsLayer = new Container();
+const parkingStreetLayer = new Container();
 const worldRoot = new Container();
 /**
  * The DOM element that contains the Pixi canvas. Captured by
@@ -1413,6 +1511,10 @@ async function refreshWalletInventoryPanel(): Promise<void> {
       powerUps: result.wallet.powerUps,
       purchases: result.purchases,
       items: result.items,
+      activeParking: listActiveParkingForNode(playerId),
+      parkingCapacityHint: buildParkingCapacityHint(
+        listActiveParkingForNode(playerId)
+      ),
     });
   } catch (error) {
     const message =
@@ -1596,6 +1698,15 @@ function deriveYardAmenitiesForSpace(spaceId: string): Array<{
 let activeYardStage: SpaceYardStageHandle | null = null;
 let activeYardSpaceId: string | null = null;
 let lastYardAmenityPadTarget: YardAmenityPadPosition | null = null;
+let lastParkingBayNearest: (ParkingBayAnchor & { distance: number }) | null =
+  null;
+let lastParkingBayTarget: (ParkingBayAnchor & { distance: number }) | null =
+  null;
+let lastHouseNearest: (HouseDoorAnchor & { distance: number }) | null = null;
+let parkingTooltipOpenForBay: {
+  bay: ParkingBayAnchor["bay"];
+  layer: ParkingBayAnchor["layer"];
+} | null = null;
 
 type AmenityKind = "shop" | "supermarket" | "car_wash";
 
@@ -1632,6 +1743,22 @@ type ActiveAmenityStage = {
 
 let activeAmenityStage: ActiveAmenityStage | null = null;
 let amenityItemTooltip: ItemTooltipHandle | null = null;
+let parkingTicketTooltip: ParkingTicketTooltipHandle | null = null;
+let housePurchasePanel: HousePurchasePanelHandle | null = null;
+
+type ActiveHouseStage = {
+  houseId: HouseId;
+  mode: HouseStageMode;
+  handle: HouseInteriorStageHandle;
+  cellScale: number;
+  offsetX: number;
+  offsetY: number;
+  playerLayer: Container;
+  heroGraphic: Graphics;
+  exitDoorAnchor: { x: number; y: number };
+};
+
+let activeHouseStage: ActiveHouseStage | null = null;
 
 type ActiveGameStage = {
   cabinetGameId: GameId;
@@ -1676,6 +1803,7 @@ function leaveCurrentEnclosedStageToPrevious(): void {
   if (controller === null) return;
   const wasGame = activeGameStage !== null;
   const wasAmenity = activeAmenityStage !== null;
+  const wasHouse = activeHouseStage !== null;
   void controller
     .back()
     .then(() => {
@@ -1683,6 +1811,9 @@ function leaveCurrentEnclosedStageToPrevious(): void {
         activeGameStage = null;
         gameHowToPlayPanel?.hide();
         gameResultPanel?.close();
+      } else if (wasHouse) {
+        activeHouseStage = null;
+        housePurchasePanel?.hide();
       } else if (wasAmenity) {
         activeAmenityStage = null;
         amenityItemTooltip?.hide();
@@ -2020,6 +2151,284 @@ async function enterAmenityFromYardPad(
   } catch (error) {
     console.warn("[agent-play:world] enter amenity failed", error);
     activeAmenityStage = null;
+  }
+}
+
+const housePlayerState: {
+  pos: { x: number; y: number };
+  facing: "left" | "right";
+  walkPhase: number;
+  isMoving: boolean;
+} = {
+  pos: { x: 0, y: 0 },
+  facing: "right",
+  walkPhase: 0,
+  isMoving: false,
+};
+let houseExitDebounceMs = 0;
+
+function renderHousePlayer(stage: ActiveHouseStage): void {
+  stage.playerLayer.position.set(
+    housePlayerState.pos.x * stage.cellScale,
+    housePlayerState.pos.y * stage.cellScale
+  );
+  const playerScale = Math.max(0.5, Math.min(1.1, stage.cellScale / 48));
+  drawPlatformHero(stage.heroGraphic, {
+    scale: playerScale,
+    facing: housePlayerState.facing,
+    walkPhase: housePlayerState.walkPhase,
+    isMoving: housePlayerState.isMoving,
+  });
+}
+
+function positionHousePurchasePanel(stage: ActiveHouseStage): void {
+  const panel = housePurchasePanel;
+  if (panel === null) {
+    return;
+  }
+  const host = canvasHostRef?.getBoundingClientRect();
+  const offsetX = host?.left ?? 0;
+  const offsetY = host?.top ?? 0;
+  panel.root.style.left = `${String(Math.round(offsetX + VIEW_W * 0.5 - 120))}px`;
+  panel.root.style.top = `${String(Math.round(offsetY + VIEW_H * 0.55))}px`;
+}
+
+function syncHousePurchasePanel(stage: ActiveHouseStage): void {
+  const panel = housePurchasePanel;
+  if (panel === null) {
+    return;
+  }
+  if (!stage.handle.showPurchasePanel) {
+    panel.hide();
+    return;
+  }
+  const house = findHouseSlot(resolveHouseStreetContent(), stage.houseId);
+  if (house === undefined) {
+    return;
+  }
+  panel.show({
+    houseId: house.houseId,
+    layoutLabel: stage.handle.layoutLabel,
+    priceUsd: house.priceUsd,
+    ownerDisplayName: stage.handle.ownerDisplayName,
+    balanceUsd: walletBalanceCached,
+    onBuy: (details) => {
+      void buyHouseFromPanel(stage.houseId, details);
+    },
+  });
+  positionHousePurchasePanel(stage);
+}
+
+async function reenterHouseStageAsOwner(houseId: HouseId): Promise<void> {
+  const controller = stageController;
+  if (controller === null) {
+    return;
+  }
+  housePurchasePanel?.hide();
+  if (activeHouseStage !== null) {
+    try {
+      await controller.back();
+    } catch {
+      return;
+    }
+    activeHouseStage = null;
+  }
+  await enterHouseStage({ houseId, mode: "owner" });
+}
+
+async function buyHouseFromPanel(
+  houseId: HouseId,
+  details: { ownerName: string; ownerSignature: string }
+): Promise<void> {
+  const panel = housePurchasePanel;
+  if (panel === null || activeHouseStage === null) {
+    return;
+  }
+  const sid = getSid();
+  if (sid === null) {
+    panel.setError("No session");
+    return;
+  }
+  panel.setBusy();
+  const result = await buyHouse({
+    sid,
+    houseId,
+    ownerName: details.ownerName,
+    ownerSignature: details.ownerSignature,
+  });
+  if (result.ok) {
+    walletBalanceCached = result.wallet.balanceUsd;
+    walletHud?.setBalance(result.wallet.balanceUsd);
+    walletHud?.setPowerUps(result.wallet.powerUps);
+    if (snapshot !== null) {
+      snapshot = { ...snapshot, houseStreet: result.houseStreet };
+      paintParkingStreet();
+    }
+    if (walletInventoryPanel !== null && walletInventoryPanel.isOpen()) {
+      void refreshWalletInventoryPanel();
+    }
+    await reenterHouseStageAsOwner(houseId);
+    return;
+  }
+  const messages: Record<string, string> = {
+    HOUSE_ALREADY_OWNED: "House already owned",
+    INSUFFICIENT_FUNDS: "Insufficient funds",
+    INVALID_HOUSE: "Invalid house",
+    UNAUTHORIZED: "Sign in to buy",
+  };
+  panel.setError(messages[result.error] ?? result.message);
+}
+
+function tickHousePlayer(dtSec: number): void {
+  const stage = activeHouseStage;
+  if (stage === null) {
+    return;
+  }
+  const direction = nextEnclosedStageInputDirection({
+    joystickEnabled: getPreviewViewSettings().joystickEnabled,
+    joystickVector: getJoystickVector(),
+    arrowKeys,
+  });
+  const { dx, dy, source } = direction;
+  const isMoving = source !== "idle";
+  if (isMoving) {
+    const step = AMENITY_PLAYER_SPEED_CELLS_PER_SEC * dtSec;
+    housePlayerState.pos.x = housePlayerState.pos.x + dx * step;
+    housePlayerState.pos.y = housePlayerState.pos.y + dy * step;
+    housePlayerState.pos = stage.handle.clampPosition(housePlayerState.pos);
+    if (dx !== 0) {
+      housePlayerState.facing = dx > 0 ? "right" : "left";
+    }
+    housePlayerState.walkPhase = (housePlayerState.walkPhase + dtSec * 4) % 1;
+  } else {
+    housePlayerState.walkPhase = 0;
+  }
+  housePlayerState.isMoving = isMoving;
+  renderHousePlayer(stage);
+
+  if (houseExitDebounceMs > 0) {
+    houseExitDebounceMs = Math.max(0, houseExitDebounceMs - dtSec * 1000);
+    return;
+  }
+  const door = stage.exitDoorAnchor;
+  const distToDoor = Math.hypot(
+    housePlayerState.pos.x - door.x,
+    housePlayerState.pos.y - door.y
+  );
+  if (distToDoor <= EXIT_DOOR_PROXIMITY_RADIUS_WORLD) {
+    houseExitDebounceMs = 400;
+    housePurchasePanel?.hide();
+    leaveCurrentEnclosedStageToPrevious();
+  }
+}
+
+async function enterHouseStage(input: {
+  houseId: HouseId;
+  mode: HouseStageMode;
+}): Promise<void> {
+  if (stageController === null) {
+    return;
+  }
+  if (activeHouseStage !== null) {
+    return;
+  }
+  const current = stageController.current();
+  if (current === null || current.id !== "overworld") {
+    return;
+  }
+  const house = findHouseSlot(resolveHouseStreetContent(), input.houseId);
+  if (house === undefined) {
+    return;
+  }
+  const blueprint = getHouseBlueprint(house.layoutId);
+  const bounds = blueprint.bounds;
+  const availableHeight = Math.max(0, VIEW_H - AMENITY_HEADER_BAND_PX);
+  const boundsW = Math.max(1, bounds.maxX - bounds.minX);
+  const boundsH = Math.max(1, bounds.maxY - bounds.minY);
+  const cellScale = Math.max(
+    16,
+    Math.min(VIEW_W / boundsW, availableHeight / boundsH)
+  );
+  const stageW = boundsW * cellScale;
+  const stageH = boundsH * cellScale;
+  const offsetX = (VIEW_W - stageW) / 2;
+  const offsetY = AMENITY_HEADER_BAND_PX + (availableHeight - stageH) / 2;
+
+  const handle = buildHouseInteriorStage({
+    cellScale,
+    house,
+    mode: input.mode,
+  });
+  const rootContainer = handle.root as unknown as Container;
+  rootContainer.position.set(offsetX, offsetY);
+
+  const header = new Graphics();
+  header
+    .rect(0, 0, VIEW_W, AMENITY_HEADER_BAND_PX)
+    .fill({ color: 0x111827 });
+  header
+    .rect(0, AMENITY_HEADER_BAND_PX - 2, VIEW_W, 2)
+    .fill({ color: 0x374151, alpha: 0.7 });
+  header.position.set(-offsetX, -offsetY);
+  rootContainer.addChild(header);
+
+  const headline = new Text({
+    text: `House ${String(house.houseId)} · ${blueprint.label}`,
+    style: {
+      fontFamily: "system-ui, sans-serif",
+      fontSize: 22,
+      fontWeight: "700",
+      fill: 0xffffff,
+      stroke: { color: 0x000000, width: 2, alpha: 0.45 },
+    },
+  });
+  headline.anchor.set(0.5, 0.5);
+  headline.position.set(
+    VIEW_W / 2 - offsetX,
+    AMENITY_HEADER_BAND_PX / 2 - offsetY
+  );
+  rootContainer.addChild(headline);
+
+  const playerLayer = new Container();
+  const heroGraphic = new Graphics();
+  playerLayer.addChild(heroGraphic);
+  rootContainer.addChild(playerLayer);
+
+  const spawn = handle.spawnPosition();
+  housePlayerState.pos = handle.clampPosition({ x: spawn.x, y: spawn.y });
+  housePlayerState.facing =
+    getHumanPlayerId() !== null
+      ? facingByPlayer.get(getHumanPlayerId() as string) ?? "right"
+      : "right";
+  housePlayerState.walkPhase = 0;
+  housePlayerState.isMoving = false;
+  houseExitDebounceMs = 250;
+
+  activeHouseStage = {
+    houseId: input.houseId,
+    mode: input.mode,
+    handle,
+    cellScale,
+    offsetX,
+    offsetY,
+    playerLayer,
+    heroGraphic,
+    exitDoorAnchor: handle.exitDoorAnchor,
+  };
+  lastHouseNearest = null;
+  renderHousePlayer(activeHouseStage);
+  syncHousePurchasePanel(activeHouseStage);
+
+  try {
+    await stageController.enter(handle);
+    deepLogText("stage:enter:house", {
+      houseId: input.houseId,
+      mode: input.mode,
+    });
+  } catch (error) {
+    console.warn("[agent-play:world] enter house failed", error);
+    activeHouseStage = null;
+    housePurchasePanel?.hide();
   }
 }
 
@@ -2457,6 +2866,7 @@ function ingestSnapshot(snap: Snapshot): void {
     applyBounds(MINIMUM_PLAY_WORLD_BOUNDS);
   }
   paintStreetSigns();
+  paintParkingStreet();
   const wbSpawn = getWorldBoundsForClamp();
   const humanSpawn =
     wbSpawn !== null ? defaultHumanSpawnInWorld(wbSpawn) : { x: 0, y: 0 };
@@ -2639,6 +3049,211 @@ function positionAmenityItemTooltip(stage: ActiveAmenityStage): void {
   // placement clears the sprite.
   const anchorY = hostRect.top + (localY - 32) * scaleY;
   amenityItemTooltip.position({ x: anchorX, y: anchorY });
+}
+
+function positionParkingTicketTooltip(bay: ParkingBayAnchor): void {
+  const tooltip = parkingTicketTooltip;
+  if (tooltip === null) {
+    return;
+  }
+  const local = worldToWorldRootLocal(bay.x, bay.y);
+  const screen = worldRootLocalToCanvas(local.x, local.y);
+  const host = canvasHostRef?.getBoundingClientRect();
+  const offsetX = host?.left ?? 0;
+  const offsetY = host?.top ?? 0;
+  tooltip.root.style.left = `${String(Math.round(screen.x + offsetX - 110))}px`;
+  tooltip.root.style.top = `${String(Math.round(screen.y + offsetY - 200))}px`;
+}
+
+async function showParkingTicketTooltip(
+  target: ParkingBayAnchor
+): Promise<void> {
+  const tooltip = parkingTicketTooltip;
+  if (tooltip === null) {
+    return;
+  }
+  const nodeId = getViewerWalletPlayerId();
+  if (nodeId === null) {
+    return;
+  }
+  const sid = getSid();
+  if (sid === null) {
+    return;
+  }
+  tooltip.showLoading();
+  parkingTooltipOpenForBay = { bay: target.bay, layer: target.layer };
+  positionParkingTicketTooltip(target);
+  const purchaseResult = await fetchPurchases({ sid, playerId: nodeId });
+  const cars = purchaseResult.purchases
+    .filter((record) => record.amenityKind === "car_wash")
+    .map((record) => {
+      const key = buildPurchaseItemKey({
+        itemRef: record.itemRef,
+        spaceId: record.spaceId,
+      });
+      const raw =
+        key !== null ? purchaseResult.items[key] : undefined;
+      const fields =
+        typeof raw === "object" && raw !== null
+          ? (raw as { model?: unknown; name?: unknown })
+          : {};
+      const label =
+        typeof fields.model === "string"
+          ? fields.model
+          : typeof fields.name === "string"
+            ? fields.name
+            : "Car";
+      return { purchaseId: record.id, label };
+    });
+  tooltip.show({
+    cars,
+    ownershipBlocked: resolveParkingOwnershipBlocked(nodeId),
+    onBuy: ({ carPurchaseId, durationTier, displayNick }) => {
+      void buyParkingTicketAtBay({
+        bay: target.bay,
+        layer: target.layer,
+        carPurchaseId,
+        durationTier,
+        displayNick,
+      });
+    },
+  });
+  positionParkingTicketTooltip(target);
+}
+
+function resolveActiveParkingOccupant(
+  bay: ParkingBayAnchor["bay"],
+  layer: ParkingBayAnchor["layer"]
+): ParkingOccupant | null {
+  const spot = findParkingSpot(resolveParkingStreetContent(), bay, layer);
+  if (spot === undefined) {
+    return null;
+  }
+  const occupant = spot.occupant;
+  if (occupant === null) {
+    return null;
+  }
+  if (
+    occupant.expiresAt !== null &&
+    new Date(occupant.expiresAt).getTime() <= Date.now()
+  ) {
+    return null;
+  }
+  return occupant;
+}
+
+function showParkingSpotInspectTooltip(target: ParkingBayAnchor): void {
+  const tooltip = parkingTicketTooltip;
+  if (tooltip === null) {
+    return;
+  }
+  const occupant = resolveActiveParkingOccupant(target.bay, target.layer);
+  if (occupant === null) {
+    return;
+  }
+  const street = resolveParkingStreetContent();
+  const costUsd =
+    street.rates[occupant.tier] ?? DEFAULT_PARKING_RATES_USD[occupant.tier];
+  tooltip.showInspect({
+    bay: target.bay,
+    layer: target.layer,
+    displayNick: occupant.displayNick,
+    model: occupant.model,
+    colorHex: occupant.colorHex,
+    tier: occupant.tier,
+    purchasedAt: occupant.purchasedAt,
+    expiresAt: occupant.expiresAt,
+    costUsd,
+  });
+  parkingTooltipOpenForBay = { bay: target.bay, layer: target.layer };
+  positionParkingTicketTooltip(target);
+}
+
+async function buyParkingTicketAtBay(input: {
+  bay: ParkingBayAnchor["bay"];
+  layer: ParkingBayAnchor["layer"];
+  carPurchaseId: string;
+  durationTier: ParkingDurationTier;
+  displayNick: string;
+}): Promise<void> {
+  const tooltip = parkingTicketTooltip;
+  if (tooltip === null) {
+    return;
+  }
+  const sid = getSid();
+  if (sid === null) {
+    tooltip.setError("No session");
+    return;
+  }
+  tooltip.setBusy();
+  const result = await buyParkingTicket({
+    sid,
+    bay: input.bay,
+    layer: input.layer,
+    carPurchaseId: input.carPurchaseId,
+    durationTier: input.durationTier,
+    displayNick: input.displayNick,
+  });
+  if (result.ok) {
+    walletBalanceCached = result.wallet.balanceUsd;
+    walletHud?.setBalance(result.wallet.balanceUsd);
+    walletHud?.setPowerUps(result.wallet.powerUps);
+    if (snapshot !== null) {
+      snapshot = { ...snapshot, parkingStreet: result.parkingStreet };
+      paintParkingStreet();
+    }
+    if (walletInventoryPanel !== null && walletInventoryPanel.isOpen()) {
+      void refreshWalletInventoryPanel();
+    }
+    tooltip.hide();
+    parkingTooltipOpenForBay = null;
+    const humanPid = getHumanPlayerId();
+    const humanPos =
+      humanPid !== null ? playerWorldPos.get(humanPid) ?? null : null;
+    applyParkingBayProximity(humanPos);
+    return;
+  }
+  const messages: Record<string, string> = {
+    NO_WALLET_CAR: "You need a wallet-owned car",
+    SPOT_OCCUPIED: "Spot already taken",
+    PARKING_OWNERSHIP_LIMIT: "Timed parking limit reached",
+    PARKING_FOREVER_LIMIT: "Forever parking blocks other spots",
+    INSUFFICIENT_FUNDS: "Insufficient funds",
+    INVALID_SPOT: "Invalid parking spot",
+    UNAUTHORIZED: "Sign in to park",
+  };
+  tooltip.setError(messages[result.error] ?? result.message);
+}
+
+function cycleParkingTicketAction(): void {
+  const tooltip = parkingTicketTooltip;
+  const nearest = lastParkingBayNearest;
+  if (tooltip === null || nearest === null) {
+    return;
+  }
+  const openForThisBay =
+    parkingTooltipOpenForBay !== null &&
+    parkingTooltipOpenForBay.bay === nearest.bay &&
+    parkingTooltipOpenForBay.layer === nearest.layer;
+  if (!openForThisBay) {
+    if (lastParkingBayTarget !== null) {
+      void showParkingTicketTooltip(lastParkingBayTarget);
+    } else {
+      showParkingSpotInspectTooltip(nearest);
+    }
+    return;
+  }
+  if (tooltip.isBusy()) {
+    return;
+  }
+  if (tooltip.isInspectMode()) {
+    tooltip.hide();
+    parkingTooltipOpenForBay = null;
+    return;
+  }
+  tooltip.root.querySelector("button")?.dispatchEvent(
+    new MouseEvent("click", { bubbles: true })
+  );
 }
 
 async function buyAmenityItem(
@@ -3172,11 +3787,13 @@ function paintStreetSigns(): void {
     return;
   }
   const layout = resolveWorldLayout();
-  const zones: StreetSignZone[] = layout.zones.map((z) => ({
-    id: z.id,
-    streetLabel: z.streetLabel,
-    rect: { ...z.rect },
-  }));
+  const zones: StreetSignZone[] = layout.zones
+    .filter((z) => z.primaryGroup !== "parking")
+    .map((z) => ({
+      id: z.id,
+      streetLabel: z.streetLabel,
+      rect: { ...z.rect },
+    }));
   mountStreetSignPosts({
     layer: streetSignsLayer,
     palette,
@@ -3184,6 +3801,175 @@ function paintStreetSigns(): void {
     cellScale,
     zones,
   });
+}
+
+function resolveParkingStreetContent(): ParkingStreetContent {
+  return snapshot?.parkingStreet ?? createEmptyParkingStreetContent();
+}
+
+function resolveHouseStreetContent(): HouseStreetContent {
+  return snapshot?.houseStreet ?? createEmptyHouseStreetContent();
+}
+
+function isParkingSpotVacant(bay: number, layer: number): boolean {
+  return isParkingBayVacant({
+    parkingStreet: resolveParkingStreetContent(),
+    bay: bay as ParkingBayAnchor["bay"],
+    layer: layer as ParkingBayAnchor["layer"],
+  });
+}
+
+function applyHouseDoorProximity(
+  humanPos: { x: number; y: number } | null
+): void {
+  const prevNearest = lastHouseNearest;
+  if (humanPos === null) {
+    lastHouseNearest = null;
+  } else {
+    lastHouseNearest = findNearestHouseDoor({ playerWorld: humanPos });
+  }
+  if (prevNearest !== lastHouseNearest) {
+    proximityTouchPadHandle?.refresh();
+  }
+}
+
+function applyParkingBayProximity(
+  humanPos: { x: number; y: number } | null
+): void {
+  const prevNearest = lastParkingBayNearest;
+  const prevTarget = lastParkingBayTarget;
+  if (humanPos === null) {
+    lastParkingBayNearest = null;
+    lastParkingBayTarget = null;
+  } else {
+    const nearest = findNearestParkingBay({ playerWorld: humanPos });
+    lastParkingBayNearest = nearest;
+    lastParkingBayTarget =
+      nearest !== null && isParkingSpotVacant(nearest.bay, nearest.layer)
+        ? nearest
+        : null;
+  }
+  if (
+    parkingTooltipOpenForBay !== null &&
+    (lastParkingBayNearest === null ||
+      lastParkingBayNearest.bay !== parkingTooltipOpenForBay.bay ||
+      lastParkingBayNearest.layer !== parkingTooltipOpenForBay.layer)
+  ) {
+    parkingTicketTooltip?.hide();
+    parkingTooltipOpenForBay = null;
+  } else if (lastParkingBayNearest !== null && parkingTicketTooltip?.isOpen()) {
+    positionParkingTicketTooltip(lastParkingBayNearest);
+  }
+  if (
+    prevNearest !== lastParkingBayNearest ||
+    prevTarget !== lastParkingBayTarget
+  ) {
+    proximityTouchPadHandle?.refresh();
+  }
+}
+
+function listActiveParkingForNode(nodeId: string): Array<{
+  bay: number;
+  layer: number;
+  displayNick: string;
+  tier: ParkingDurationTier;
+  expiresAt: string | null;
+}> {
+  const now = Date.now();
+  const out: Array<{
+    bay: number;
+    layer: number;
+    displayNick: string;
+    tier: ParkingDurationTier;
+    expiresAt: string | null;
+  }> = [];
+  for (const spot of resolveParkingStreetContent().spots) {
+    const occupant = spot.occupant;
+    if (occupant === null || occupant.nodeId !== nodeId) {
+      continue;
+    }
+    if (
+      occupant.expiresAt !== null &&
+      new Date(occupant.expiresAt).getTime() <= now
+    ) {
+      continue;
+    }
+    out.push({
+      bay: spot.bay,
+      layer: spot.layer,
+      displayNick: occupant.displayNick,
+      tier: occupant.tier,
+      expiresAt: occupant.expiresAt,
+    });
+  }
+  return out;
+}
+
+function buildParkingCapacityHint(
+  active: ReadonlyArray<{
+    tier: ParkingDurationTier;
+    expiresAt: string | null;
+  }>
+): string {
+  const hasForever = active.some(
+    (row) => row.tier === "forever" || row.expiresAt === null
+  );
+  if (hasForever) {
+    return "Forever (1 of 1)";
+  }
+  return `${String(active.length)} of 2 timed spots`;
+}
+
+function resolveParkingOwnershipBlocked(nodeId: string): string | undefined {
+  const active = listActiveParkingForNode(nodeId).map((row) => ({
+    nodeId,
+    tier: row.tier,
+    expiresAt: row.expiresAt,
+  }));
+  const check = canNodeAcquireParkingSpot({
+    nodeId,
+    tier: "1h",
+    active,
+  });
+  if (check.ok) {
+    return undefined;
+  }
+  if (check.error === "PARKING_FOREVER_LIMIT") {
+    return "Forever spot active — no more parking for this node.";
+  }
+  return "Maximum timed parking spots reached (2 of 2).";
+}
+
+function paintParkingStreet(): void {
+  for (const ch of [...parkingStreetLayer.children]) {
+    parkingStreetLayer.removeChild(ch);
+    ch.destroy({ children: true });
+  }
+  if (snapshot === null) {
+    return;
+  }
+  const layout = resolveWorldLayout();
+  const parkingZone = pickZoneForGroup(layout, "parking");
+  const clampBounds = getWorldBoundsForClamp();
+  const bandRect =
+    clampBounds !== null
+      ? {
+          minX: clampBounds.minX,
+          maxX: clampBounds.maxX,
+          minY: parkingZone.rect.minY,
+          maxY: parkingZone.rect.maxY,
+        }
+      : parkingZone.rect;
+  const layer = buildParkingStreetLayer({
+    zoneRect: parkingZone.rect,
+    bandRect,
+    parkingStreet: resolveParkingStreetContent(),
+    houseStreet: resolveHouseStreetContent(),
+    palette,
+    cellScale,
+    worldToLocal: worldToWorldRootLocal,
+  });
+  parkingStreetLayer.addChild(layer);
 }
 
 function paintGrid(): void {
@@ -3508,6 +4294,8 @@ function onTick(dt: number): void {
   const currentStageId = stageController?.current()?.id;
   if (currentStageId === "spaceYard") {
     tickYardPlayer(dt);
+  } else if (currentStageId === "houseInterior") {
+    tickHousePlayer(dt);
   } else if (
     currentStageId === "amenityShop" ||
     currentStageId === "amenitySupermarket" ||
@@ -3626,6 +4414,28 @@ function onFrame(): void {
   if (stageController?.current()?.id !== "spaceYard") {
     lastYardAmenityPadTarget = null;
   }
+  const onOverworldForParking =
+    stageController === null || stageController.current()?.id === "overworld";
+  const humanPosForParking =
+    primaryPid !== null ? playerWorldPos.get(primaryPid) ?? null : null;
+  if (
+    onOverworldForParking &&
+    humanPosForParking !== null &&
+    activeAmenityStage === null &&
+    activeGameStage === null &&
+    activeHouseStage === null
+  ) {
+    applyHouseDoorProximity(humanPosForParking);
+    applyParkingBayProximity(humanPosForParking);
+  } else {
+    lastHouseNearest = null;
+    lastParkingBayNearest = null;
+    lastParkingBayTarget = null;
+    if (parkingTooltipOpenForBay !== null) {
+      parkingTicketTooltip?.hide();
+      parkingTooltipOpenForBay = null;
+    }
+  }
   if (proximityLegendEl !== null) {
     if (activeGameStage !== null) {
       const gameTarget = lastGameStageProximityTarget;
@@ -3651,6 +4461,32 @@ function onFrame(): void {
       const amenityName =
         AMENITY_DISPLAY_LABEL[lastYardAmenityPadTarget.kind as AmenityKind];
       proximityLegendEl.textContent = `Near ${amenityName}. P: enter ${amenityName.toLowerCase()}`;
+    } else if (lastHouseNearest !== null) {
+      const door = lastHouseNearest;
+      const house = findHouseSlot(resolveHouseStreetContent(), door.houseId);
+      const viewerId = getViewerWalletPlayerId();
+      const canEnter =
+        house !== undefined &&
+        canEnterHouseAsOwner({ viewerNodeId: viewerId, house });
+      if (canEnter) {
+        proximityLegendEl.textContent = `Near House ${String(door.houseId)}. A: enter · P: inspect`;
+      } else if (
+        house?.ownerDisplayName !== null &&
+        house?.ownerDisplayName !== undefined
+      ) {
+        proximityLegendEl.textContent = `Near House ${String(door.houseId)} · ${house.ownerDisplayName}. P: inspect`;
+      } else {
+        proximityLegendEl.textContent = `Near House ${String(door.houseId)}. P: inspect interior`;
+      }
+    } else if (lastParkingBayNearest !== null) {
+      const bay = lastParkingBayNearest;
+      if (lastParkingBayTarget !== null) {
+        proximityLegendEl.textContent =
+          `Near parking bay ${String(bay.bay)} (layer ${String(bay.layer)}). P: buy ticket`;
+      } else {
+        proximityLegendEl.textContent =
+          `Near parking bay ${String(bay.bay)} (layer ${String(bay.layer)}). P: inspect spot`;
+      }
     } else if (lastProximityPartnerId !== null) {
       proximityLegendEl.textContent = `Near ${playerDisplayName(lastProximityPartnerId)}. A: for assist · C: for chat · P: push to talk · Z: for zone · Y: for yield`;
     } else if (lastStructureProximityTarget !== null) {
@@ -3715,6 +4551,32 @@ function onFrame(): void {
       proximityPromptEl.style.display = "block";
       proximityPromptEl.style.left = `${centroidScreen.x}px`;
       proximityPromptEl.style.top = `${centroidScreen.y - box * 1.6}px`;
+    } else if (lastHouseNearest !== null) {
+      const door = lastHouseNearest;
+      const local = worldToWorldRootLocal(door.x, door.y);
+      const screen = worldRootLocalToCanvas(local.x, local.y);
+      const house = findHouseSlot(resolveHouseStreetContent(), door.houseId);
+      const viewerId = getViewerWalletPlayerId();
+      const canEnter =
+        house !== undefined &&
+        canEnterHouseAsOwner({ viewerNodeId: viewerId, house });
+      proximityPromptEl.textContent = canEnter
+        ? "A: enter house\nP: inspect interior"
+        : "P: inspect interior";
+      proximityPromptEl.style.display = "block";
+      proximityPromptEl.style.left = `${screen.x}px`;
+      proximityPromptEl.style.top = `${screen.y - box * 1.4}px`;
+    } else if (lastParkingBayNearest !== null) {
+      const bay = lastParkingBayNearest;
+      const local = worldToWorldRootLocal(bay.x, bay.y);
+      const screen = worldRootLocalToCanvas(local.x, local.y);
+      proximityPromptEl.textContent =
+        lastParkingBayTarget !== null
+          ? "P: buy parking ticket"
+          : "P: inspect parking spot";
+      proximityPromptEl.style.display = "block";
+      proximityPromptEl.style.left = `${screen.x}px`;
+      proximityPromptEl.style.top = `${screen.y - box * 1.4}px`;
     } else {
       proximityPromptEl.style.display = "none";
     }
@@ -3956,6 +4818,7 @@ export function bootstrap(): void {
 
     worldRoot.addChild(parkBackdropLayer);
     worldRoot.addChild(streetSignsLayer);
+    worldRoot.addChild(parkingStreetLayer);
     worldRoot.addChild(gridGraphics);
     worldRoot.addChild(structureLayer);
     worldRoot.addChild(agentsLayer);
@@ -4059,6 +4922,8 @@ export function bootstrap(): void {
     proximityPromptEl.textContent = "A: for assist\nC: for chat\nP: push to talk";
     canvasHost.appendChild(proximityPromptEl);
     amenityItemTooltip = createItemTooltip({ parent: document.body });
+    parkingTicketTooltip = createParkingTicketTooltip();
+    housePurchasePanel = createHousePurchasePanel();
 
     proximityTouchPadHandle = createPreviewProximityTouchControls({
       parent: canvasWrap,
@@ -4093,6 +4958,40 @@ export function bootstrap(): void {
         if (buyable === null) return null;
         return buyable.tooltipModel.sale.status === "sold" ? "View" : "Buy";
       },
+      getParkingProximityLabel: () => {
+        if (lastParkingBayNearest === null) return null;
+        return `Bay ${String(lastParkingBayNearest.bay)}`;
+      },
+      getParkingProximityVerb: () => {
+        if (lastParkingBayNearest === null) return null;
+        return lastParkingBayTarget !== null ? "Buy ticket" : "Occupied";
+      },
+      getParkingProximityActivatable: () => lastParkingBayNearest !== null,
+      getHouseProximityLabel: () => {
+        if (lastHouseNearest === null) return null;
+        const house = findHouseSlot(
+          resolveHouseStreetContent(),
+          lastHouseNearest.houseId
+        );
+        const owner = house?.ownerDisplayName;
+        return owner !== null && owner !== undefined && owner.length > 0
+          ? `House ${String(lastHouseNearest.houseId)} · ${owner}`
+          : `House ${String(lastHouseNearest.houseId)}`;
+      },
+      getHouseAssistVerb: () => (lastHouseNearest === null ? null : "Enter"),
+      getHouseAssistActivatable: () => {
+        if (lastHouseNearest === null) return false;
+        const house = findHouseSlot(
+          resolveHouseStreetContent(),
+          lastHouseNearest.houseId
+        );
+        if (house === undefined) return false;
+        return canEnterHouseAsOwner({
+          viewerNodeId: getViewerWalletPlayerId(),
+          house,
+        });
+      },
+      getHouseInspectVerb: () => (lastHouseNearest === null ? null : "Inspect"),
       getGameStageProximityLabel: () => {
         if (activeGameStage === null) return null;
         return lastGameStageProximityTarget?.label ?? null;
@@ -4108,6 +5007,25 @@ export function bootstrap(): void {
         return target.activatable !== false;
       },
       onAssist: () => {
+        if (lastHouseNearest !== null) {
+          const house = findHouseSlot(
+            resolveHouseStreetContent(),
+            lastHouseNearest.houseId
+          );
+          if (
+            house !== undefined &&
+            canEnterHouseAsOwner({
+              viewerNodeId: getViewerWalletPlayerId(),
+              house,
+            })
+          ) {
+            void enterHouseStage({
+              houseId: lastHouseNearest.houseId,
+              mode: "owner",
+            });
+            return;
+          }
+        }
         if (
           lastProximityPartnerId === null &&
           lastStructureProximityTarget !== null
@@ -4132,6 +5050,22 @@ export function bootstrap(): void {
           lastGameStageProximityTarget.activatable !== false
         ) {
           activateGameStageProximityTarget();
+          return;
+        }
+        if (
+          lastHouseNearest !== null &&
+          activeAmenityStage === null &&
+          activeGameStage === null &&
+          activeHouseStage === null
+        ) {
+          void enterHouseStage({
+            houseId: lastHouseNearest.houseId,
+            mode: "inspect",
+          });
+          return;
+        }
+        if (lastParkingBayNearest !== null && activeAmenityStage === null) {
+          cycleParkingTicketAction();
           return;
         }
         if (activeAmenityStage !== null) {

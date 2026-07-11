@@ -78,6 +78,12 @@ export {
   expandBoundsToMinimumPlayArea,
   MINIMUM_PLAY_WORLD_BOUNDS,
   MINIMUM_STREET_LAYOUT_BOUNDS,
+  COLUMN_STREET_ROW_HEIGHT,
+  PARKING_COLUMN_GAP_ROWS,
+  PARKING_STREET_ROW_HEIGHT,
+  DEFAULT_LAYOUT_BOUNDS_WITH_PARKING,
+  parkingZoneMinYFromColumnBase,
+  parkingZoneMaxYFromColumnBase,
   type WorldBounds,
 } from "./lib/world-bounds.js";
 export {
@@ -132,6 +138,11 @@ export {
   isAgentSpawnOccupancyPointAvailableInZone,
   isSpaceAnchorOccupancyPointAvailableInZone,
   createVerticalStripSeedLayout,
+  createWorldLayoutWithParkingRow,
+  migrateLayoutToParkingRow,
+  layoutNeedsParkingColumnGapMigration,
+  migrateLayoutToParkingColumnGap,
+  layoutHasParkingZone,
   migrateWorldLayoutBounds,
   applyBoundsFieldUpdateToLayout,
   type WorldLayoutBoundsField,
@@ -162,6 +173,63 @@ export {
   type SpaceContentItem,
   type SupermarketItem,
 } from "./lib/space-content-model.js";
+export {
+  ParkingDurationTierSchema,
+  ParkingSpotSchema,
+  ParkingStreetContentSchema,
+  createEmptyParkingStreetContent,
+  findParkingSpot,
+  listActiveParkingOccupancies,
+  PARKING_BAY_COUNT,
+  PARKING_LAYERS_PER_BAY,
+  PARKING_SPOT_COUNT,
+  type ParkingSpot,
+  type ParkingOccupant,
+  type ParkingStreetContent,
+} from "./lib/parking-content-model.js";
+export {
+  HOUSE_CATALOG,
+  HOUSE_WORLD_X,
+  HouseIdSchema,
+  HouseSlotSchema,
+  HouseStreetContentSchema,
+  PARKING_HOUSE_COUNT,
+  buildHouseOwnershipPanelLines,
+  createEmptyHouseStreetContent,
+  findHouseSlot,
+  formatHouseOwnerDisplayName,
+  housePurchaseDetail,
+  isHouseOwned,
+  type HouseId,
+  type HouseSlot,
+  type HouseStreetContent,
+} from "./lib/house-content-model.js";
+export {
+  HOUSE_BLUEPRINTS,
+  clampHousePosition,
+  getHouseBlueprint,
+  houseSpawnPosition,
+  layoutHouseFixtures,
+  type HouseBlueprint,
+  type HouseFixtureKind,
+  type HouseFixtureSlot,
+  type HouseStageBounds,
+} from "./lib/house-layout-model.js";
+export {
+  DEFAULT_PARKING_RATES_USD,
+  PARKING_DURATION_TIERS,
+  computeParkingExpiresAt,
+  effectiveHourlyRateUsd,
+  isParkingOccupantActive,
+} from "./lib/parking-pricing.js";
+export {
+  canNodeAcquireParkingSpot,
+  MAX_SLOTS_WITH_FOREVER,
+  MAX_TIMED_PARKING_SLOTS_PER_NODE,
+  type ParkingDurationTier,
+  type ParkingOccupancyRef,
+  type ParkingOwnershipError,
+} from "./lib/parking-ownership.js";
 export {
   APU_TOKEN,
   buildAmenityPurchaseApuFields,

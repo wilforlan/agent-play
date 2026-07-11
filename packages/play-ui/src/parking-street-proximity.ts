@@ -1,0 +1,62 @@
+import type { ParkingSpot, ParkingStreetContent } from "@agent-play/sdk/browser";
+import { findParkingSpot } from "@agent-play/sdk/browser";
+
+export type ParkingBayAnchor = {
+  bay: ParkingSpot["bay"];
+  layer: ParkingSpot["layer"];
+  x: number;
+  y: number;
+};
+
+export const PARKING_BAY_ANCHORS: readonly ParkingBayAnchor[] = [
+  { bay: 1, layer: 1, x: 3.5, y: 7.2 },
+  { bay: 1, layer: 2, x: 3.5, y: 6.6 },
+  { bay: 2, layer: 1, x: 8.5, y: 7.2 },
+  { bay: 2, layer: 2, x: 8.5, y: 6.6 },
+  { bay: 3, layer: 1, x: 13.5, y: 7.2 },
+  { bay: 3, layer: 2, x: 13.5, y: 6.6 },
+  { bay: 4, layer: 1, x: 18.5, y: 7.2 },
+  { bay: 4, layer: 2, x: 18.5, y: 6.6 },
+];
+
+export const findNearestParkingBay = (input: {
+  playerWorld: { x: number; y: number };
+  maxDistance?: number;
+}): (ParkingBayAnchor & { distance: number }) | null => {
+  const maxDistance = input.maxDistance ?? 2.4;
+  let best: (ParkingBayAnchor & { distance: number }) | null = null;
+  for (const anchor of PARKING_BAY_ANCHORS) {
+    const distance = Math.hypot(
+      input.playerWorld.x - anchor.x,
+      input.playerWorld.y - anchor.y
+    );
+    if (distance > maxDistance) {
+      continue;
+    }
+    if (best === null || distance < best.distance) {
+      best = { ...anchor, distance };
+    }
+  }
+  return best;
+};
+
+export const isParkingBayVacant = (input: {
+  parkingStreet: ParkingStreetContent;
+  bay: ParkingSpot["bay"];
+  layer: ParkingSpot["layer"];
+  nowMs?: number;
+}): boolean => {
+  const spot = findParkingSpot(input.parkingStreet, input.bay, input.layer);
+  if (spot === undefined) {
+    return false;
+  }
+  const occupant = spot.occupant;
+  if (occupant === null) {
+    return true;
+  }
+  if (occupant.expiresAt === null) {
+    return false;
+  }
+  const now = input.nowMs ?? Date.now();
+  return new Date(occupant.expiresAt).getTime() <= now;
+};

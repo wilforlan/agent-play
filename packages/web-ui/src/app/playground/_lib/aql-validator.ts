@@ -264,6 +264,9 @@ export function validateAql(program: AqlProgram): ValidationResult {
       case "ConnectStmt":
         validateExpr(stmt.serverUrl);
         validateExpr(stmt.mainNodeId);
+        if (stmt.passphrase !== undefined) {
+          validateExpr(stmt.passphrase);
+        }
         return;
       case "FetchStmt":
       case "IntoStmt":

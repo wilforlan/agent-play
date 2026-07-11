@@ -52,6 +52,7 @@ export type BuildCarSpriteOptions = {
   colorHex: string;
   model: string;
   sold: boolean;
+  scale?: number;
 };
 
 /**
@@ -166,6 +167,11 @@ export const buildCarSprite = (options: BuildCarSpriteOptions): Container => {
     const badge = buildSoldBadge({ width: CAR_WIDTH, height: CAR_HEIGHT });
     badge.position.set(-CAR_WIDTH / 2, -CAR_HEIGHT / 2);
     root.addChild(badge);
+  }
+
+  const scale = options.scale ?? 1;
+  if (scale !== 1) {
+    root.scale.set(scale);
   }
 
   return root;
