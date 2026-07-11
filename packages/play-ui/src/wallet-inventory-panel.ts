@@ -205,6 +205,8 @@ const ensureStyles = (): void => {
   letter-spacing: 0.5px;
 }
 .${PANEL_CLASS}__chip--car_wash { background: #cbd5f5; color: #1e293b; }
+.${PANEL_CLASS}__chip--parking { background: #dbeafe; color: #1e3a8a; }
+.${PANEL_CLASS}__chip--house { background: #fde68a; color: #78350f; }
 .${PANEL_CLASS}__parking {
   margin: 0 20px 16px;
   padding: 12px 14px;
@@ -420,6 +422,8 @@ const AMENITY_LABEL: Record<string, string> = {
   shop: "Shop",
   supermarket: "Supermarket",
   car_wash: "Car Wash",
+  parking: "Parking",
+  house: "House",
   talk_time: "Voice",
   wallet_bundle: "Bundle",
   apu_credit: "APU Credit",
@@ -527,6 +531,20 @@ export const buildPurchaseSubtitle = (input: {
     return left.length > 0
       ? `${left} · Bought ${at}`
       : `Bought ${at}`;
+  }
+  if (input.record.amenityKind === "parking") {
+    const detail =
+      typeof input.record.detail === "string" && input.record.detail.length > 0
+        ? input.record.detail
+        : "Parking ticket";
+    return `${detail} · ${at}`;
+  }
+  if (input.record.amenityKind === "house") {
+    const detail =
+      typeof input.record.detail === "string" && input.record.detail.length > 0
+        ? input.record.detail
+        : "House purchase";
+    return `${detail} · ${at}`;
   }
   const type = input.fields.type;
   if (typeof type === "string" && type.length > 0) {
