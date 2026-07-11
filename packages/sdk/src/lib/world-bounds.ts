@@ -35,6 +35,27 @@ export const MINIMUM_STREET_LAYOUT_BOUNDS: WorldBounds = {
   maxY: 2,
 };
 
+/** Height in grid rows of the three-column street band at the bottom of the map. */
+export const COLUMN_STREET_ROW_HEIGHT = 3;
+
+/** Height in grid rows of the single-zone parking street band above column streets. */
+export const PARKING_STREET_ROW_HEIGHT = 4;
+
+/** Empty grid rows between column street signs and the parking asphalt band. */
+export const PARKING_COLUMN_GAP_ROWS = 1;
+
+/** Default bounds: column streets (Y 0–2), gap (Y 3), parking row (Y 4–7). */
+export const DEFAULT_LAYOUT_BOUNDS_WITH_PARKING: WorldBounds = {
+  minX: 0,
+  minY: 0,
+  maxX: 19,
+  maxY:
+    COLUMN_STREET_ROW_HEIGHT -
+    1 +
+    PARKING_COLUMN_GAP_ROWS +
+    PARKING_STREET_ROW_HEIGHT,
+};
+
 export function expandBoundsToMinimumPlayArea(bounds: WorldBounds): WorldBounds {
   return {
     minX: Math.min(bounds.minX, MINIMUM_PLAY_WORLD_BOUNDS.minX),

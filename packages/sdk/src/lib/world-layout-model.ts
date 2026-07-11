@@ -1,5 +1,10 @@
 import type { WorldBounds } from "./world-bounds.js";
 import {
+  COLUMN_STREET_ROW_HEIGHT,
+  PARKING_COLUMN_GAP_ROWS,
+  PARKING_STREET_ROW_HEIGHT,
+} from "./world-bounds.js";
+import {
   buildRankedOccupancyPointsInRect,
   isAgentSpawnOccupancyPointAvailableInRect,
   isSpaceAnchorOccupancyPointAvailableInRect,
@@ -9,7 +14,82 @@ import {
 import type { StreetPoolEntry } from "./world-streets-pool.js";
 import { STREET_NAME_POOL } from "./world-streets-pool.js";
 
-export type OccupantGroup = "agent" | "space" | "arcade";
+const LEGACY_MCP_PRIMARY_GROUP = "mcp";
+
+function normalizeLegacyOccupantGroup(value: string): OccupantGroup {
+  if (value === LEGACY_MCP_PRIMARY_GROUP) {
+    return "arcade";
+  }
+  if (
+    value === "agent" ||
+    value === "space" ||
+    value === "arcade" ||
+    value === "parking"
+  ) {
+    return value;
+  }
+  throw new Error(
+    `normalizeLegacyWorldLayout: unknown primaryGroup ${value}`
+  );
+}
+
+function migrateLegacyWorldLayoutZone(zone: Zone): Zone {
+  const rawPrimary = String(zone.primaryGroup);
+  const primaryGroup = normalizeLegacyOccupantGroup(rawPrimary);
+  const id =
+    zone.id === "zone-mcp-strip" || rawPrimary === LEGACY_MCP_PRIMARY_GROUP
+      ? primaryGroup === "arcade"
+        ? "zone-arcade-strip"
+        : zone.id
+      : zone.id;
+  const allowedGroups = [
+    ...new Set(
+      zone.allowedGroups.map((group) =>
+        normalizeLegacyOccupantGroup(String(group))
+      )
+    ),
+  ];
+  return { ...zone, id, primaryGroup, allowedGroups };
+}
+
+function threeStreetsFromLayoutOrPool(
+  layout: WorldLayout
+): readonly [StreetPoolEntry, StreetPoolEntry, StreetPoolEntry] {
+  if (layout.streets.length >= 3) {
+    const s0 = layout.streets[0];
+    const s1 = layout.streets[1];
+    const s2 = layout.streets[2];
+    if (s0 !== undefined && s1 !== undefined && s2 !== undefined) {
+      return [
+        { id: s0.id, label: s0.label },
+        { id: s1.id, label: s1.label },
+        { id: s2.id, label: s2.label },
+      ];
+    }
+  }
+  const a = STREET_NAME_POOL[0];
+  const b = STREET_NAME_POOL[1];
+  const c = STREET_NAME_POOL[2];
+  if (a === undefined || b === undefined || c === undefined) {
+    throw new Error("normalizeLegacyWorldLayout: STREET_NAME_POOL too small");
+  }
+  return [a, b, c];
+}
+
+export function normalizeLegacyWorldLayout(layout: WorldLayout): WorldLayout {
+  const migratedZones = layout.zones.map(migrateLegacyWorldLayoutZone);
+  if (migratedZones.some((zone) => zone.primaryGroup === "arcade")) {
+    return { ...layout, zones: migratedZones };
+  }
+  const streets = threeStreetsFromLayoutOrPool(layout);
+  const rebuilt = createVerticalStripSeedLayout({
+    bounds: layout.bounds,
+    streets,
+  });
+  return { ...rebuilt, rev: layout.rev };
+}
+
+export type OccupantGroup = "agent" | "space" | "arcade" | "parking";
 
 export type Street = {
   id: string;
@@ -207,7 +287,109 @@ function assertValidLayoutBounds(bounds: WorldBounds): void {
   }
 }
 
-const PRIMARY_GROUP_ORDER: readonly OccupantGroup[] = ["agent", "space", "arcade"];
+const PRIMARY_GROUP_ORDER: readonly OccupantGroup[] = [
+  "agent",
+  "space",
+  "arcade",
+];
+
+function partitionColumnWidths(spanX: number): [number, number, number] {
+  if (spanX === 20) {
+    return [7, 7, 6];
+  }
+  const w0 = Math.floor(spanX / 3);
+  const w1 = Math.floor((spanX - w0) / 2);
+  const w2 = spanX - w0 - w1;
+  return [w0, w1, w2];
+}
+
+function buildColumnZones(input: {
+  bounds: WorldBounds;
+  columnMinY: number;
+  columnMaxY: number;
+  streets: readonly [StreetPoolEntry, StreetPoolEntry, StreetPoolEntry];
+}): Zone[] {
+  const { minX, maxX } = input.bounds;
+  const spanX = maxX - minX + 1;
+  const widths = partitionColumnWidths(spanX);
+  const w0 = widths[0];
+  const w1 = widths[1];
+  const w2 = widths[2];
+  if (w0 === undefined || w1 === undefined || w2 === undefined) {
+    throw new Error("buildColumnZones: width partition failed");
+  }
+  const x0 = minX;
+  const x0Max = x0 + w0 - 1;
+  const x1 = x0Max + 1;
+  const x1Max = x1 + w1 - 1;
+  const x2 = x1Max + 1;
+  const x2Max = x2 + w2 - 1;
+  const s0 = input.streets[0];
+  const s1 = input.streets[1];
+  const s2 = input.streets[2];
+  if (s0 === undefined || s1 === undefined || s2 === undefined) {
+    throw new Error("buildColumnZones: expected three streets");
+  }
+  const { columnMinY, columnMaxY } = input;
+  return [
+    {
+      id: "zone-agent-strip",
+      streetId: s0.id,
+      streetLabel: s0.label,
+      rect: { minX: x0, maxX: x0Max, minY: columnMinY, maxY: columnMaxY },
+      primaryGroup: "agent",
+      allowedGroups: ["agent"],
+    },
+    {
+      id: "zone-space-strip",
+      streetId: s1.id,
+      streetLabel: s1.label,
+      rect: { minX: x1, maxX: x1Max, minY: columnMinY, maxY: columnMaxY },
+      primaryGroup: "space",
+      allowedGroups: ["space"],
+    },
+    {
+      id: "zone-arcade-strip",
+      streetId: s2.id,
+      streetLabel: s2.label,
+      rect: { minX: x2, maxX: x2Max, minY: columnMinY, maxY: columnMaxY },
+      primaryGroup: "arcade",
+      allowedGroups: ["arcade"],
+    },
+  ];
+}
+
+export function layoutHasParkingZone(layout: WorldLayout): boolean {
+  return layout.zones.some((z) => z.primaryGroup === "parking");
+}
+
+function streetsFromLayoutWithParking(
+  layout: WorldLayout
+): readonly [
+  StreetPoolEntry,
+  StreetPoolEntry,
+  StreetPoolEntry,
+  StreetPoolEntry,
+] {
+  const agent = primaryZoneForGroup(layout, "agent");
+  const space = primaryZoneForGroup(layout, "space");
+  const arcade = primaryZoneForGroup(layout, "arcade");
+  const parking = primaryZoneForGroup(layout, "parking");
+  if (
+    agent === undefined ||
+    space === undefined ||
+    arcade === undefined ||
+    parking === undefined
+  ) {
+    throw new Error("streetsFromLayoutWithParking: missing primary zone");
+  }
+  return [
+    { id: agent.streetId, label: agent.streetLabel },
+    { id: space.streetId, label: space.streetLabel },
+    { id: arcade.streetId, label: arcade.streetLabel },
+    { id: parking.streetId, label: parking.streetLabel },
+  ];
+}
 
 function streetsFromLayoutPrimaryGroups(
   layout: WorldLayout
@@ -235,12 +417,99 @@ export function migrateWorldLayoutBounds(input: {
   bounds: WorldBounds;
 }): WorldLayout {
   assertValidLayoutBounds(input.bounds);
+  if (layoutHasParkingZone(input.layout)) {
+    const streets = streetsFromLayoutWithParking(input.layout);
+    const reseeded = createWorldLayoutWithParkingRow({
+      bounds: input.bounds,
+      streets,
+    });
+    return { ...reseeded, rev: input.layout.rev + 1 };
+  }
   const streets = streetsFromLayoutPrimaryGroups(input.layout);
   const reseeded = createVerticalStripSeedLayout({
     bounds: input.bounds,
     streets,
   });
   return { ...reseeded, rev: input.layout.rev + 1 };
+}
+
+export function layoutNeedsParkingColumnGapMigration(
+  layout: WorldLayout
+): boolean {
+  if (!layoutHasParkingZone(layout)) {
+    return false;
+  }
+  const agent = primaryZoneForGroup(layout, "agent");
+  const parking = primaryZoneForGroup(layout, "parking");
+  if (agent === undefined || parking === undefined) {
+    return false;
+  }
+  const expectedParkingMinY =
+    agent.rect.maxY + 1 + PARKING_COLUMN_GAP_ROWS;
+  return parking.rect.minY < expectedParkingMinY;
+}
+
+export function migrateLayoutToParkingColumnGap(
+  layout: WorldLayout
+): WorldLayout {
+  const normalized = normalizeLegacyWorldLayout(layout);
+  if (!layoutNeedsParkingColumnGapMigration(normalized)) {
+    return normalized;
+  }
+  const streets = streetsFromLayoutWithParking(normalized);
+  const { minX, minY, maxX } = normalized.bounds;
+  const requiredMaxY =
+    minY +
+    COLUMN_STREET_ROW_HEIGHT -
+    1 +
+    PARKING_COLUMN_GAP_ROWS +
+    PARKING_STREET_ROW_HEIGHT;
+  const nextBounds: WorldBounds = {
+    minX,
+    minY,
+    maxX,
+    maxY: Math.max(normalized.bounds.maxY, requiredMaxY),
+  };
+  const reseeded = createWorldLayoutWithParkingRow({
+    bounds: nextBounds,
+    streets,
+  });
+  return { ...reseeded, rev: normalized.rev + 1 };
+}
+
+export function migrateLayoutToParkingRow(layout: WorldLayout): WorldLayout {
+  const normalized = normalizeLegacyWorldLayout(layout);
+  if (layoutHasParkingZone(normalized)) {
+    return normalized;
+  }
+  const agent = primaryZoneForGroup(normalized, "agent");
+  const space = primaryZoneForGroup(normalized, "space");
+  const arcade = primaryZoneForGroup(normalized, "arcade");
+  if (agent === undefined || space === undefined || arcade === undefined) {
+    throw new Error("migrateLayoutToParkingRow: missing column zone");
+  }
+  const parkingStreet = nextStreetFromPool(
+    new Set(normalized.streets.map((s) => s.id))
+  );
+  if (parkingStreet === undefined) {
+    throw new Error("migrateLayoutToParkingRow: no street available in pool");
+  }
+  const nextBounds: WorldBounds = {
+    ...normalized.bounds,
+    maxY:
+      normalized.bounds.maxY +
+      PARKING_STREET_ROW_HEIGHT +
+      PARKING_COLUMN_GAP_ROWS,
+  };
+  return createWorldLayoutWithParkingRow({
+    bounds: nextBounds,
+    streets: [
+      { id: agent.streetId, label: agent.streetLabel },
+      { id: space.streetId, label: space.streetLabel },
+      { id: arcade.streetId, label: arcade.streetLabel },
+      parkingStreet,
+    ],
+  });
 }
 
 export function applyBoundsFieldUpdateToLayout(input: {
@@ -260,62 +529,19 @@ export function createVerticalStripSeedLayout(input: {
   bounds: WorldBounds;
   streets: readonly [StreetPoolEntry, StreetPoolEntry, StreetPoolEntry];
 }): WorldLayout {
-  const { minX, maxX, minY, maxY } = input.bounds;
-  const spanX = maxX - minX + 1;
-  if (spanX < 3) {
-    throw new Error("createVerticalStripSeedLayout: bounds spanX too small");
-  }
-  const widths: [number, number, number] =
-    spanX === 20 ? [7, 7, 6] : (() => {
-      const w0 = Math.floor(spanX / 3);
-      const w1 = Math.floor((spanX - w0) / 2);
-      const w2 = spanX - w0 - w1;
-      return [w0, w1, w2];
-    })();
-  const w0 = widths[0];
-  const w1 = widths[1];
-  const w2 = widths[2];
-  if (w0 === undefined || w1 === undefined || w2 === undefined) {
-    throw new Error("createVerticalStripSeedLayout: width partition failed");
-  }
-  const x0 = minX;
-  const x0Max = x0 + w0 - 1;
-  const x1 = x0Max + 1;
-  const x1Max = x1 + w1 - 1;
-  const x2 = x1Max + 1;
-  const x2Max = x2 + w2 - 1;
+  const { minY, maxY } = input.bounds;
+  const zones = buildColumnZones({
+    bounds: input.bounds,
+    columnMinY: minY,
+    columnMaxY: maxY,
+    streets: input.streets,
+  });
   const s0 = input.streets[0];
   const s1 = input.streets[1];
   const s2 = input.streets[2];
   if (s0 === undefined || s1 === undefined || s2 === undefined) {
     throw new Error("createVerticalStripSeedLayout: expected three streets");
   }
-  const zones: Zone[] = [
-    {
-      id: "zone-agent-strip",
-      streetId: s0.id,
-      streetLabel: s0.label,
-      rect: { minX: x0, maxX: x0Max, minY, maxY },
-      primaryGroup: "agent",
-      allowedGroups: ["agent"],
-    },
-    {
-      id: "zone-space-strip",
-      streetId: s1.id,
-      streetLabel: s1.label,
-      rect: { minX: x1, maxX: x1Max, minY, maxY },
-      primaryGroup: "space",
-      allowedGroups: ["space"],
-    },
-    {
-      id: "zone-arcade-strip",
-      streetId: s2.id,
-      streetLabel: s2.label,
-      rect: { minX: x2, maxX: x2Max, minY, maxY },
-      primaryGroup: "arcade",
-      allowedGroups: ["arcade"],
-    },
-  ];
   const streets: Street[] = [
     streetFromPoolEntry(s0),
     streetFromPoolEntry(s1),
@@ -325,6 +551,72 @@ export function createVerticalStripSeedLayout(input: {
     rev: 1,
     bounds: input.bounds,
     zones,
+    streets,
+  };
+}
+
+export function createWorldLayoutWithParkingRow(input: {
+  bounds: WorldBounds;
+  streets: readonly [
+    StreetPoolEntry,
+    StreetPoolEntry,
+    StreetPoolEntry,
+    StreetPoolEntry,
+  ];
+}): WorldLayout {
+  const { minX, maxX, minY, maxY } = input.bounds;
+  const spanX = maxX - minX + 1;
+  if (spanX < 3) {
+    throw new Error("createWorldLayoutWithParkingRow: bounds spanX too small");
+  }
+  const requiredSpanY =
+    COLUMN_STREET_ROW_HEIGHT +
+    PARKING_COLUMN_GAP_ROWS +
+    PARKING_STREET_ROW_HEIGHT;
+  const actualSpanY = maxY - minY + 1;
+  if (actualSpanY < requiredSpanY) {
+    throw new Error(
+      `createWorldLayoutWithParkingRow: spanY must be >= ${String(requiredSpanY)}`
+    );
+  }
+  const columnMinY = minY;
+  const columnMaxY = minY + COLUMN_STREET_ROW_HEIGHT - 1;
+  const parkingMinY = columnMaxY + 1 + PARKING_COLUMN_GAP_ROWS;
+  const parkingMaxY = parkingMinY + PARKING_STREET_ROW_HEIGHT - 1;
+  if (parkingMaxY > maxY) {
+    throw new Error("createWorldLayoutWithParkingRow: parking band exceeds bounds");
+  }
+  const s0 = input.streets[0];
+  const s1 = input.streets[1];
+  const s2 = input.streets[2];
+  const s3 = input.streets[3];
+  if (s0 === undefined || s1 === undefined || s2 === undefined || s3 === undefined) {
+    throw new Error("createWorldLayoutWithParkingRow: expected four streets");
+  }
+  const columnZones = buildColumnZones({
+    bounds: input.bounds,
+    columnMinY,
+    columnMaxY,
+    streets: [s0, s1, s2],
+  });
+  const parkingZone: Zone = {
+    id: "zone-parking-strip",
+    streetId: s3.id,
+    streetLabel: s3.label,
+    rect: { minX, maxX, minY: parkingMinY, maxY: parkingMaxY },
+    primaryGroup: "parking",
+    allowedGroups: ["parking"],
+  };
+  const streets: Street[] = [
+    streetFromPoolEntry(s0),
+    streetFromPoolEntry(s1),
+    streetFromPoolEntry(s2),
+    streetFromPoolEntry(s3),
+  ];
+  return {
+    rev: 1,
+    bounds: input.bounds,
+    zones: [...columnZones, parkingZone],
     streets,
   };
 }

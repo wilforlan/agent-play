@@ -154,6 +154,27 @@ const trackRpcAnalyticsEvent = (input: {
   });
 };
 
+async function fanoutParkingStreetUpdated(input: {
+  store: ReturnType<typeof getSessionStore>;
+  world: Awaited<ReturnType<typeof getPlayWorld>>;
+}): Promise<void> {
+  const snap = await input.world.getSnapshotJson();
+  const persistRev = await input.store.persistSnapshotReturningRev(snap);
+  await input.store.publishWorldFanout(
+    persistRev.rev,
+    WORLD_AGENT_SIGNAL_EVENT,
+    {
+      playerId: WORLD_FANOUT_PLAYER_ID,
+      kind: "metadata",
+      data: { reason: "parking_street_updated" },
+    },
+    {
+      merkleRootHex: persistRev.merkleRootHex,
+      merkleLeafCount: persistRev.merkleLeafCount,
+    }
+  );
+}
+
 async function fanoutAmenityContentUpdated(input: {
   store: ReturnType<typeof getSessionStore>;
   world: Awaited<ReturnType<typeof getPlayWorld>>;
@@ -1094,6 +1115,82 @@ export async function POST(req: NextRequest) {
           purchase: result.record,
           wallet: result.wallet,
           item: result.updatedItem,
+        });
+      }
+      case "buyParkingTicket": {
+        const nodeId = req.headers.get("x-node-id")?.trim() ?? "";
+        const passwHash = req.headers.get("x-node-passw") ?? "";
+        if (nodeId.length === 0 || passwHash.length === 0) {
+          return Response.json({ error: "missing x-node-id / x-node-passw" }, { status: 401 });
+        }
+        if (!(await repository.verifyNodePasswHash({ nodeId, passwHash }))) {
+          return Response.json({ error: "unauthorized" }, { status: 401 });
+        }
+        const p = body.payload as {
+          bay?: unknown;
+          layer?: unknown;
+          carPurchaseId?: unknown;
+          durationTier?: unknown;
+          displayNick?: unknown;
+        };
+        const bay = p.bay;
+        if (
+          bay !== 1 &&
+          bay !== 2 &&
+          bay !== 3 &&
+          bay !== 4
+        ) {
+          return Response.json({ error: "invalid payload" }, { status: 400 });
+        }
+        const layerRaw = p.layer;
+        const layer =
+          layerRaw === 2 ? 2 : layerRaw === 1 || layerRaw === undefined ? 1 : null;
+        if (layer === null) {
+          return Response.json({ error: "invalid payload" }, { status: 400 });
+        }
+        if (
+          typeof p.carPurchaseId !== "string" ||
+          p.carPurchaseId.trim().length === 0 ||
+          typeof p.durationTier !== "string" ||
+          typeof p.displayNick !== "string" ||
+          p.displayNick.trim().length === 0
+        ) {
+          return Response.json({ error: "invalid payload" }, { status: 400 });
+        }
+        const tier = p.durationTier.trim();
+        const validTiers = [
+          "1h",
+          "12h",
+          "1d",
+          "3d",
+          "7d",
+          "1mo",
+          "3mo",
+          "1y",
+          "forever",
+        ] as const;
+        if (!(validTiers as readonly string[]).includes(tier)) {
+          return Response.json({ error: "invalid payload" }, { status: 400 });
+        }
+        const now = new Date().toISOString();
+        const result = await store.buyParkingTicket({
+          nodeId,
+          bay,
+          layer,
+          carPurchaseId: p.carPurchaseId.trim(),
+          durationTier: tier,
+          displayNick: p.displayNick.trim(),
+          now,
+          recordId: `park-${randomUUID()}`,
+        });
+        if (!result.ok) {
+          return Response.json({ error: result.error }, { status: 409 });
+        }
+        await fanoutParkingStreetUpdated({ store, world });
+        return Response.json({
+          purchase: result.record,
+          wallet: result.wallet,
+          parkingStreet: result.parkingStreet,
         });
       }
       case "redeemWalletBundle": {
