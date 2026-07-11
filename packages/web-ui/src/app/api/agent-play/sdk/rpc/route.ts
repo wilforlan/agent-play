@@ -155,6 +155,27 @@ const trackRpcAnalyticsEvent = (input: {
   });
 };
 
+async function fanoutHouseStreetUpdated(input: {
+  store: ReturnType<typeof getSessionStore>;
+  world: Awaited<ReturnType<typeof getPlayWorld>>;
+}): Promise<void> {
+  const snap = await input.world.getSnapshotJson();
+  const persistRev = await input.store.persistSnapshotReturningRev(snap);
+  await input.store.publishWorldFanout(
+    persistRev.rev,
+    WORLD_AGENT_SIGNAL_EVENT,
+    {
+      playerId: WORLD_FANOUT_PLAYER_ID,
+      kind: "metadata",
+      data: { reason: "house_street_updated" },
+    },
+    {
+      merkleRootHex: persistRev.merkleRootHex,
+      merkleLeafCount: persistRev.merkleLeafCount,
+    }
+  );
+}
+
 async function fanoutParkingStreetUpdated(input: {
   store: ReturnType<typeof getSessionStore>;
   world: Awaited<ReturnType<typeof getPlayWorld>>;
@@ -961,7 +982,13 @@ export async function POST(req: NextRequest) {
         const purchases = await store.listPurchases({ playerId, limit });
         const spaceIds = Array.from(
           new Set(purchases.map((rec) => rec.spaceId))
-        ).filter((sid) => sid !== "__talk__" && sid !== "__wallet__");
+        ).filter(
+          (sid) =>
+            sid !== "__talk__" &&
+            sid !== "__wallet__" &&
+            sid !== "__houses__" &&
+            sid !== "__parking__"
+        );
         const itemsByRef: Record<string, unknown> = {};
         for (const spaceId of spaceIds) {
           const [shopItems, supermarketItems, carWashCars] = await Promise.all([
@@ -1196,6 +1223,55 @@ export async function POST(req: NextRequest) {
           purchase: result.record,
           wallet: result.wallet,
           parkingStreet: result.parkingStreet,
+        });
+      }
+      case "buyHouse": {
+        const repository = await getRepository();
+        if (repository === null) {
+          return Response.json({ error: "repository unavailable" }, { status: 503 });
+        }
+        const nodeId = req.headers.get("x-node-id")?.trim() ?? "";
+        const passwHash = req.headers.get("x-node-passw") ?? "";
+        if (nodeId.length === 0 || passwHash.length === 0) {
+          return Response.json({ error: "missing x-node-id / x-node-passw" }, { status: 401 });
+        }
+        if (!(await repository.verifyNodePasswHash({ nodeId, passwHash }))) {
+          return Response.json({ error: "unauthorized" }, { status: 401 });
+        }
+        const p = body.payload as {
+          houseId?: unknown;
+          ownerDisplayName?: unknown;
+        };
+        const houseId = p.houseId;
+        if (
+          houseId !== 1 &&
+          houseId !== 2 &&
+          houseId !== 3 &&
+          houseId !== 4
+        ) {
+          return Response.json({ error: "invalid payload" }, { status: 400 });
+        }
+        const ownerDisplayName =
+          typeof p.ownerDisplayName === "string" &&
+          p.ownerDisplayName.trim().length > 0
+            ? p.ownerDisplayName.trim().slice(0, 24)
+            : nodeId;
+        const now = new Date().toISOString();
+        const result = await store.buyHouse({
+          nodeId,
+          houseId,
+          ownerDisplayName,
+          now,
+          recordId: `house-${randomUUID()}`,
+        });
+        if (!result.ok) {
+          return Response.json({ error: result.error }, { status: 409 });
+        }
+        await fanoutHouseStreetUpdated({ store, world });
+        return Response.json({
+          purchase: result.record,
+          wallet: result.wallet,
+          houseStreet: result.houseStreet,
         });
       }
       case "redeemWalletBundle": {
