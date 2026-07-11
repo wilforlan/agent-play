@@ -71,6 +71,7 @@ import {
 } from "./wallet-purchases-client.js";
 import { redeemWalletBundle } from "./wallet-bundle-client.js";
 import { deepLogObject, deepLogText, deepLogTree } from "./browser-deep-logs.js";
+import { isFiniteAgentHome } from "./agent-snapshot-position.js";
 import { buildCrowdLayer } from "./crowd-draw.js";
 import { layoutCrowdClusters } from "./crowd-layout.js";
 import { drawPlatformHero, type HeroPaletteVariant } from "./hero-puppet.js";
@@ -2870,16 +2871,29 @@ function ingestSnapshot(snap: Snapshot): void {
   const wbSpawn = getWorldBoundsForClamp();
   const humanSpawn =
     wbSpawn !== null ? defaultHumanSpawnInWorld(wbSpawn) : { x: 0, y: 0 };
+  let snapshotPlacementIncomplete = false;
   for (const p of listAgentRows(snapshot)) {
     const home = getPlayerHomeCell(p.agentId, snapshot);
-    const spawn =
-      home !== null ? { x: home.x, y: home.y } : { x: 0, y: 0 };
+    if (!isFiniteAgentHome(home)) {
+      snapshotPlacementIncomplete = true;
+      deepLogObject("ingestSnapshot:skipAgentPlacement", {
+        agentId: p.agentId,
+        home,
+      });
+      continue;
+    }
     const clamped =
-      wbSpawn !== null ? clampWorldPosition(spawn, wbSpawn) : spawn;
+      wbSpawn !== null ? clampWorldPosition(home, wbSpawn) : home;
     playerWorldPos.set(p.agentId, clamped);
     waypointQueues.delete(p.agentId);
     if (p.stationary === false && p.lastUpdate !== undefined) {
       applyJourneyUpdate(p.lastUpdate);
+    }
+  }
+  if (snapshotPlacementIncomplete) {
+    const sid = getSid();
+    if (sid !== null) {
+      void loadSnapshot(sid);
     }
   }
   if (!playerWorldPos.has(HUMAN_VIEWER_PLAYER_ID)) {

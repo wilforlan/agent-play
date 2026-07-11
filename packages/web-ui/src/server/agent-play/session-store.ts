@@ -85,6 +85,11 @@ export type SpaceAmenityLogEntry = {
   detail?: unknown;
 };
 
+export type SnapshotMutationFanoutItem = {
+  event: string;
+  data: unknown;
+};
+
 export type SessionStore = {
   readonly fanoutDelivery: "redis" | "local";
   readonly playerChainGenesis: string;
@@ -98,6 +103,14 @@ export type SessionStore = {
   persistSnapshotReturningRev(
     snapshot: PreviewSnapshotJson
   ): Promise<PersistSnapshotRev>;
+  runSnapshotMutation(options: {
+    mutate: (
+      snapshot: PreviewSnapshotJson | null
+    ) => Promise<{
+      next: PreviewSnapshotJson;
+      fanout: SnapshotMutationFanoutItem[];
+    }>;
+  }): Promise<void>;
   getSnapshotRev(): Promise<number>;
   publishWorldFanout(
     rev: number,

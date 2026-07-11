@@ -44,28 +44,32 @@ function zoneForAgentStreet(
   return agentPrimary;
 }
 
+function agentNeedsCoordinatePlacement(input: {
+  agent: PreviewWorldMapAgentOccupantJson;
+  zone: Zone;
+  claimedKeys: ReadonlySet<string>;
+}): boolean {
+  const coordX = input.agent.x;
+  const coordY = input.agent.y;
+  if (
+    typeof coordX !== "number" ||
+    typeof coordY !== "number" ||
+    !Number.isFinite(coordX) ||
+    !Number.isFinite(coordY) ||
+    !pointCellInZone(coordX, coordY, input.zone)
+  ) {
+    return true;
+  }
+  const key = occupancyKeyForPosition(coordX, coordY);
+  return input.claimedKeys.has(key);
+}
+
 export function materializeAgentOccupantCoordinatesForLayout(
   occupants: readonly PreviewWorldMapOccupantJson[],
   worldLayoutJson: WorldLayoutJson
 ): PreviewWorldMapOccupantJson[] {
   const layout = worldLayoutJsonToRuntime(worldLayoutJson);
   const agentPrimary = pickZoneForGroup(layout, "agent");
-  const anyAgentNeedsPlacement = occupants.some((o) => {
-    if (o.kind !== "agent") {
-      return false;
-    }
-    const zone = zoneForAgentStreet(layout, o.streetId, agentPrimary);
-    return (
-      typeof o.x !== "number" ||
-      typeof o.y !== "number" ||
-      !Number.isFinite(o.x) ||
-      !Number.isFinite(o.y) ||
-      !pointCellInZone(o.x, o.y, zone)
-    );
-  });
-  if (!anyAgentNeedsPlacement) {
-    return occupants.map((o) => (o.kind === "agent" ? { ...o } : o));
-  }
 
   const fixedPositions: Array<{ x: number; y: number }> = [];
   for (const o of occupants) {
@@ -87,15 +91,15 @@ export function materializeAgentOccupantCoordinatesForLayout(
   const byId = new Map<string, PreviewWorldMapAgentOccupantJson>();
   for (const agent of agents) {
     const zone = zoneForAgentStreet(layout, agent.streetId, agentPrimary);
-    const coordX = agent.x;
-    const coordY = agent.y;
     if (
-      typeof coordX === "number" &&
-      typeof coordY === "number" &&
-      Number.isFinite(coordX) &&
-      Number.isFinite(coordY) &&
-      pointCellInZone(coordX, coordY, zone)
+      !agentNeedsCoordinatePlacement({
+        agent,
+        zone,
+        claimedKeys: occupiedKeys,
+      })
     ) {
+      const coordX = agent.x;
+      const coordY = agent.y;
       const key = occupancyKeyForPosition(coordX, coordY);
       occupiedKeys.add(key);
       existingOccupants.push({ x: coordX, y: coordY });

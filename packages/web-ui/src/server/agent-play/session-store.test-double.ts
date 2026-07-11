@@ -73,10 +73,12 @@ import type {
   PersistSnapshotRev,
   PublishedSessionMetadata,
   SessionStore,
+  SnapshotMutationFanoutItem,
   SpaceAmenityLogEntry,
   WorldChatMessage,
   WorldFanoutOptions,
 } from "./session-store.js";
+import { publishSnapshotFanout } from "./world-redis-sync.js";
 
 const EVENT_LOG_MAX = 200;
 const SPACE_AMENITY_LOG_MAX = 500;
@@ -262,6 +264,29 @@ export class TestSessionStore implements SessionStore {
       merkleRootHex: chain.merkleRootHex,
       merkleLeafCount: chain.merkleLeafCount,
     };
+  }
+
+  async runSnapshotMutation(options: {
+    mutate: (
+      snapshot: PreviewSnapshotJson | null
+    ) => Promise<{
+      next: PreviewSnapshotJson;
+      fanout: SnapshotMutationFanoutItem[];
+    }>;
+  }): Promise<void> {
+    const cached = await this.getSnapshotJson();
+    const { next, fanout } = await options.mutate(cached);
+    const prev = cached;
+    const { rev, merkleRootHex, merkleLeafCount } =
+      await this.persistSnapshotReturningRev(next);
+    await publishSnapshotFanout(this, {
+      prev,
+      next,
+      rev,
+      merkleRootHex,
+      merkleLeafCount,
+      fanout,
+    });
   }
 
   async getSnapshotRev(): Promise<number> {
