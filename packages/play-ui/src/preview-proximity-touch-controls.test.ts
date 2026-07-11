@@ -474,4 +474,84 @@ describe("createPreviewProximityTouchControls", () => {
     pttBtn.click();
     expect(onPushToTalk).toHaveBeenCalledTimes(1);
   });
+
+  it("vacant house: A disabled and P inspect enabled", () => {
+    const { root } = createPreviewProximityTouchControls({
+      parent,
+      getBoundsElement: () => parent,
+      getCanAct: () => false,
+      getHouseProximityLabel: () => "House 1",
+      getHouseAssistVerb: () => "Enter",
+      getHouseAssistActivatable: () => false,
+      getHouseInspectVerb: () => "Inspect",
+      onAssist,
+      onChat,
+      onPushToTalk,
+    });
+    const assistBtn = root.querySelector(
+      ".preview-proximity-touch-pad__key--assist"
+    ) as HTMLButtonElement;
+    const pttBtn = root.querySelector(
+      ".preview-proximity-touch-pad__key--ptt"
+    ) as HTMLButtonElement;
+    expect(assistBtn.disabled).toBe(true);
+    expect(pttBtn.disabled).toBe(false);
+    expect(
+      root.querySelector(
+        ".preview-proximity-touch-pad__key--ptt .preview-proximity-touch-pad__key-sub"
+      )?.textContent
+    ).toBe("Inspect");
+    pttBtn.click();
+    expect(onPushToTalk).toHaveBeenCalledTimes(1);
+  });
+
+  it("owned viewer house: A enter and P inspect enabled", () => {
+    const { root } = createPreviewProximityTouchControls({
+      parent,
+      getBoundsElement: () => parent,
+      getCanAct: () => false,
+      getHouseProximityLabel: () => "House 2 · Alex",
+      getHouseAssistVerb: () => "Enter",
+      getHouseAssistActivatable: () => true,
+      getHouseInspectVerb: () => "Inspect",
+      onAssist,
+      onChat,
+      onPushToTalk,
+    });
+    const assistBtn = root.querySelector(
+      ".preview-proximity-touch-pad__key--assist"
+    ) as HTMLButtonElement;
+    const pttBtn = root.querySelector(
+      ".preview-proximity-touch-pad__key--ptt"
+    ) as HTMLButtonElement;
+    expect(assistBtn.disabled).toBe(false);
+    expect(pttBtn.disabled).toBe(false);
+    assistBtn.click();
+    pttBtn.click();
+    expect(onAssist).toHaveBeenCalledTimes(1);
+    expect(onPushToTalk).toHaveBeenCalledTimes(1);
+  });
+
+  it("owned other house: A disabled and P inspect enabled", () => {
+    const { root } = createPreviewProximityTouchControls({
+      parent,
+      getBoundsElement: () => parent,
+      getCanAct: () => false,
+      getHouseProximityLabel: () => "House 3 · Alex",
+      getHouseAssistVerb: () => "Enter",
+      getHouseAssistActivatable: () => false,
+      getHouseInspectVerb: () => "Inspect",
+      onAssist,
+      onChat,
+      onPushToTalk,
+    });
+    const assistBtn = root.querySelector(
+      ".preview-proximity-touch-pad__key--assist"
+    ) as HTMLButtonElement;
+    const pttBtn = root.querySelector(
+      ".preview-proximity-touch-pad__key--ptt"
+    ) as HTMLButtonElement;
+    expect(assistBtn.disabled).toBe(true);
+    expect(pttBtn.disabled).toBe(false);
+  });
 });

@@ -105,4 +105,35 @@ describe("parking-ticket-tooltip", () => {
     expect(tooltip.root.textContent).toContain("not available for purchase");
     tooltip.destroy();
   });
+
+  it("showLoading opens immediately with spinner before purchase data", () => {
+    const tooltip = createParkingTicketTooltip();
+    tooltip.showLoading();
+    expect(tooltip.isOpen()).toBe(true);
+    expect(tooltip.root.textContent).toContain("Loading cars");
+    const buySection = tooltip.root.querySelector(
+      ".preview-parking-ticket-tooltip__buy"
+    );
+    expect(
+      buySection?.classList.contains("preview-parking-ticket-tooltip__buy--hidden")
+    ).toBe(true);
+    tooltip.destroy();
+  });
+
+  it("show replaces loading state with the buy form", () => {
+    const tooltip = createParkingTicketTooltip();
+    tooltip.showLoading();
+    tooltip.show({
+      cars: [{ purchaseId: "car-1", label: "GT 350" }],
+      onBuy: vi.fn(),
+    });
+    const loading = tooltip.root.querySelector(
+      ".preview-parking-ticket-tooltip__loading"
+    );
+    expect(
+      loading?.classList.contains("preview-parking-ticket-tooltip__loading--open")
+    ).toBe(false);
+    expect(tooltip.isInspectMode()).toBe(false);
+    tooltip.destroy();
+  });
 });

@@ -4,6 +4,7 @@ import { createEmptyParkingStreetContent } from "@agent-play/sdk/browser";
 import {
   buildParkingStreetLayer,
   computeBandPixelExtents,
+  formatHouseSignLabel,
   laneDashSegments,
 } from "./parking-street-layer.js";
 import { defaultMultiversePalette } from "./multiverse-engine.js";
@@ -67,5 +68,20 @@ describe("buildParkingStreetLayer", () => {
       worldToLocal: (wx, wy) => ({ x: wx * 32, y: wy * 32 }),
     });
     expect(layer.children.length).toBeGreaterThan(4);
+  });
+
+  it("shows owner name on house sign when owned", () => {
+    expect(
+      formatHouseSignLabel({
+        ownerDisplayName: "Alex",
+        priceUsd: 1299.99,
+      })
+    ).toBe("Alex");
+    expect(
+      formatHouseSignLabel({
+        ownerDisplayName: null,
+        priceUsd: 2199.99,
+      })
+    ).toBe("$2199.99");
   });
 });

@@ -137,4 +137,37 @@ describe("wallet-purchases-client: fetchPurchases", () => {
       fetchPurchases({ sid: "s1", playerId: "u", fetcher })
     ).rejects.toThrow();
   });
+
+  it("accepts house purchase rows in the DTO shape", async () => {
+    const fetcher = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            wallet,
+            purchases: [
+              {
+                id: "p-house",
+                playerId: "u",
+                spaceId: "__houses__",
+                amenityKind: "house",
+                itemRef: { kind: "house", id: "house-1" },
+                priceUsd: 1299.99,
+                detail: "House 1 · Studio layout",
+                at: "2026-01-01T00:00:00.000Z",
+              },
+            ],
+            items: {},
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        )
+    );
+
+    const result = await fetchPurchases({
+      sid: "s1",
+      playerId: "u",
+      fetcher,
+    });
+    expect(result.purchases[0]?.amenityKind).toBe("house");
+    expect(result.purchases[0]?.itemRef.kind).toBe("house");
+  });
 });

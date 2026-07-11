@@ -86,6 +86,33 @@ describe("buildPurchaseSubtitle", () => {
     expect(subtitle).toContain("game:hidden-gems");
     expect(subtitle).toContain("Arcade round round-1");
   });
+
+  it("uses detail for parking purchases", () => {
+    const subtitle = buildPurchaseSubtitle({
+      record: carPurchase({
+        amenityKind: "parking",
+        spaceId: "__parking__",
+        itemRef: { kind: "parking", id: "bay-1-1" },
+        detail: "Bay 1 · layer 1 · 1h",
+      }),
+      fields: {},
+    });
+    expect(subtitle).toContain("Bay 1");
+  });
+
+  it("uses detail for house purchases", () => {
+    const subtitle = buildPurchaseSubtitle({
+      record: carPurchase({
+        amenityKind: "house",
+        spaceId: "__houses__",
+        itemRef: { kind: "house", id: "house-1" },
+        detail: "House 1 · Studio layout",
+      }),
+      fields: {},
+    });
+    expect(subtitle).toContain("House 1");
+    expect(subtitle).toContain("Studio layout");
+  });
 });
 
 describe("createWalletInventoryPanel", () => {
