@@ -111,9 +111,14 @@ import {
   type GameId,
   type OccupantGroup,
   canNodeAcquireParkingSpot,
+  createEmptyHouseStreetContent,
   createEmptyParkingStreetContent,
+  findHouseSlot,
+  getHouseBlueprint,
   DEFAULT_PARKING_RATES_USD,
   findParkingSpot,
+  type HouseId,
+  type HouseStreetContent,
   type ParkingDurationTier,
   type ParkingOccupant,
   type ParkingStreetContent,
@@ -237,6 +242,21 @@ import {
   isParkingBayVacant,
   type ParkingBayAnchor,
 } from "./parking-street-proximity.js";
+import {
+  buildHouseInteriorStage,
+  type HouseInteriorStageHandle,
+  type HouseStageMode,
+} from "./house-interior-stage.js";
+import {
+  canEnterHouseAsOwner,
+  findNearestHouseDoor,
+  type HouseDoorAnchor,
+} from "./house-street-proximity.js";
+import {
+  createHousePurchasePanel,
+  type HousePurchasePanelHandle,
+} from "./house-purchase-panel.js";
+import { buyHouse } from "./house-purchase-client.js";
 import {
   createParkingTicketTooltip,
   type ParkingTicketTooltipHandle,
@@ -532,6 +552,7 @@ type Snapshot = {
   mcpServers?: SnapshotMcpRegistration[];
   spaces?: SnapshotSpaceCatalogEntry[];
   parkingStreet?: ParkingStreetContent;
+  houseStreet?: HouseStreetContent;
 };
 
 function mapOccupantLastUpdate(
@@ -1322,6 +1343,21 @@ function onDocumentKeyDown(e: KeyboardEvent): void {
     e.key.toLowerCase() === "p" &&
     activeAmenityStage === null &&
     activeGameStage === null &&
+    activeHouseStage === null &&
+    stageController?.current()?.id === "overworld" &&
+    lastHouseNearest !== null
+  ) {
+    e.preventDefault();
+    void enterHouseStage({
+      houseId: lastHouseNearest.houseId,
+      mode: "inspect",
+    });
+    return;
+  }
+  if (
+    e.key.toLowerCase() === "p" &&
+    activeAmenityStage === null &&
+    activeGameStage === null &&
     stageController?.current()?.id === "overworld" &&
     lastParkingBayNearest !== null
   ) {
@@ -1345,6 +1381,30 @@ function onDocumentKeyDown(e: KeyboardEvent): void {
     lastProximityPartnerId
   );
   if (partner === null || partner === HUMAN_VIEWER_PLAYER_ID) {
+    if (
+      e.key.toLowerCase() === "a" &&
+      lastHouseNearest !== null &&
+      stageController?.current()?.id === "overworld"
+    ) {
+      const house = findHouseSlot(
+        resolveHouseStreetContent(),
+        lastHouseNearest.houseId
+      );
+      if (
+        house !== undefined &&
+        canEnterHouseAsOwner({
+          viewerNodeId: getViewerWalletPlayerId(),
+          house,
+        })
+      ) {
+        e.preventDefault();
+        void enterHouseStage({
+          houseId: lastHouseNearest.houseId,
+          mode: "owner",
+        });
+        return;
+      }
+    }
     if (
       e.key.toLowerCase() === "a" &&
       lastStructureProximityTarget !== null
@@ -1642,6 +1702,7 @@ let lastParkingBayNearest: (ParkingBayAnchor & { distance: number }) | null =
   null;
 let lastParkingBayTarget: (ParkingBayAnchor & { distance: number }) | null =
   null;
+let lastHouseNearest: (HouseDoorAnchor & { distance: number }) | null = null;
 let parkingTooltipOpenForBay: {
   bay: ParkingBayAnchor["bay"];
   layer: ParkingBayAnchor["layer"];
@@ -1683,6 +1744,21 @@ type ActiveAmenityStage = {
 let activeAmenityStage: ActiveAmenityStage | null = null;
 let amenityItemTooltip: ItemTooltipHandle | null = null;
 let parkingTicketTooltip: ParkingTicketTooltipHandle | null = null;
+let housePurchasePanel: HousePurchasePanelHandle | null = null;
+
+type ActiveHouseStage = {
+  houseId: HouseId;
+  mode: HouseStageMode;
+  handle: HouseInteriorStageHandle;
+  cellScale: number;
+  offsetX: number;
+  offsetY: number;
+  playerLayer: Container;
+  heroGraphic: Graphics;
+  exitDoorAnchor: { x: number; y: number };
+};
+
+let activeHouseStage: ActiveHouseStage | null = null;
 
 type ActiveGameStage = {
   cabinetGameId: GameId;
@@ -1727,6 +1803,7 @@ function leaveCurrentEnclosedStageToPrevious(): void {
   if (controller === null) return;
   const wasGame = activeGameStage !== null;
   const wasAmenity = activeAmenityStage !== null;
+  const wasHouse = activeHouseStage !== null;
   void controller
     .back()
     .then(() => {
@@ -1734,6 +1811,9 @@ function leaveCurrentEnclosedStageToPrevious(): void {
         activeGameStage = null;
         gameHowToPlayPanel?.hide();
         gameResultPanel?.close();
+      } else if (wasHouse) {
+        activeHouseStage = null;
+        housePurchasePanel?.hide();
       } else if (wasAmenity) {
         activeAmenityStage = null;
         amenityItemTooltip?.hide();
@@ -2071,6 +2151,268 @@ async function enterAmenityFromYardPad(
   } catch (error) {
     console.warn("[agent-play:world] enter amenity failed", error);
     activeAmenityStage = null;
+  }
+}
+
+const housePlayerState: {
+  pos: { x: number; y: number };
+  facing: "left" | "right";
+  walkPhase: number;
+  isMoving: boolean;
+} = {
+  pos: { x: 0, y: 0 },
+  facing: "right",
+  walkPhase: 0,
+  isMoving: false,
+};
+let houseExitDebounceMs = 0;
+
+function renderHousePlayer(stage: ActiveHouseStage): void {
+  stage.playerLayer.position.set(
+    housePlayerState.pos.x * stage.cellScale,
+    housePlayerState.pos.y * stage.cellScale
+  );
+  const playerScale = Math.max(0.5, Math.min(1.1, stage.cellScale / 48));
+  drawPlatformHero(stage.heroGraphic, {
+    scale: playerScale,
+    facing: housePlayerState.facing,
+    walkPhase: housePlayerState.walkPhase,
+    isMoving: housePlayerState.isMoving,
+  });
+}
+
+function positionHousePurchasePanel(stage: ActiveHouseStage): void {
+  const panel = housePurchasePanel;
+  if (panel === null) {
+    return;
+  }
+  const host = canvasHostRef?.getBoundingClientRect();
+  const offsetX = host?.left ?? 0;
+  const offsetY = host?.top ?? 0;
+  panel.root.style.left = `${String(Math.round(offsetX + VIEW_W * 0.5 - 120))}px`;
+  panel.root.style.top = `${String(Math.round(offsetY + VIEW_H * 0.55))}px`;
+}
+
+function syncHousePurchasePanel(stage: ActiveHouseStage): void {
+  const panel = housePurchasePanel;
+  if (panel === null) {
+    return;
+  }
+  if (!stage.handle.showPurchasePanel) {
+    panel.hide();
+    return;
+  }
+  const house = findHouseSlot(resolveHouseStreetContent(), stage.houseId);
+  if (house === undefined) {
+    return;
+  }
+  panel.show({
+    houseId: house.houseId,
+    layoutLabel: stage.handle.layoutLabel,
+    priceUsd: house.priceUsd,
+    ownerDisplayName: stage.handle.ownerDisplayName,
+    balanceUsd: walletBalanceCached,
+    onBuy: () => {
+      void buyHouseFromPanel(stage.houseId);
+    },
+  });
+  positionHousePurchasePanel(stage);
+}
+
+async function buyHouseFromPanel(houseId: HouseId): Promise<void> {
+  const panel = housePurchasePanel;
+  if (panel === null || activeHouseStage === null) {
+    return;
+  }
+  const sid = getSid();
+  if (sid === null) {
+    panel.setError("No session");
+    return;
+  }
+  panel.setBusy();
+  const result = await buyHouse({
+    sid,
+    houseId,
+  });
+  if (result.ok) {
+    walletBalanceCached = result.wallet.balanceUsd;
+    walletHud?.setBalance(result.wallet.balanceUsd);
+    walletHud?.setPowerUps(result.wallet.powerUps);
+    if (snapshot !== null) {
+      snapshot = { ...snapshot, houseStreet: result.houseStreet };
+      paintParkingStreet();
+    }
+    if (walletInventoryPanel !== null && walletInventoryPanel.isOpen()) {
+      void refreshWalletInventoryPanel();
+    }
+    panel.hide();
+    leaveCurrentEnclosedStageToPrevious();
+    const humanPid = getHumanPlayerId();
+    const humanPos =
+      humanPid !== null ? playerWorldPos.get(humanPid) ?? null : null;
+    applyHouseDoorProximity(humanPos);
+    applyParkingBayProximity(humanPos);
+    return;
+  }
+  const messages: Record<string, string> = {
+    HOUSE_ALREADY_OWNED: "House already owned",
+    INSUFFICIENT_FUNDS: "Insufficient funds",
+    INVALID_HOUSE: "Invalid house",
+    UNAUTHORIZED: "Sign in to buy",
+  };
+  panel.setError(messages[result.error] ?? result.message);
+}
+
+function tickHousePlayer(dtSec: number): void {
+  const stage = activeHouseStage;
+  if (stage === null) {
+    return;
+  }
+  const direction = nextEnclosedStageInputDirection({
+    joystickEnabled: getPreviewViewSettings().joystickEnabled,
+    joystickVector: getJoystickVector(),
+    arrowKeys,
+  });
+  const { dx, dy, source } = direction;
+  const isMoving = source !== "idle";
+  if (isMoving) {
+    const step = AMENITY_PLAYER_SPEED_CELLS_PER_SEC * dtSec;
+    housePlayerState.pos.x = housePlayerState.pos.x + dx * step;
+    housePlayerState.pos.y = housePlayerState.pos.y + dy * step;
+    housePlayerState.pos = stage.handle.clampPosition(housePlayerState.pos);
+    if (dx !== 0) {
+      housePlayerState.facing = dx > 0 ? "right" : "left";
+    }
+    housePlayerState.walkPhase = (housePlayerState.walkPhase + dtSec * 4) % 1;
+  } else {
+    housePlayerState.walkPhase = 0;
+  }
+  housePlayerState.isMoving = isMoving;
+  renderHousePlayer(stage);
+
+  if (houseExitDebounceMs > 0) {
+    houseExitDebounceMs = Math.max(0, houseExitDebounceMs - dtSec * 1000);
+    return;
+  }
+  const door = stage.exitDoorAnchor;
+  const distToDoor = Math.hypot(
+    housePlayerState.pos.x - door.x,
+    housePlayerState.pos.y - door.y
+  );
+  if (distToDoor <= EXIT_DOOR_PROXIMITY_RADIUS_WORLD) {
+    houseExitDebounceMs = 400;
+    housePurchasePanel?.hide();
+    leaveCurrentEnclosedStageToPrevious();
+  }
+}
+
+async function enterHouseStage(input: {
+  houseId: HouseId;
+  mode: HouseStageMode;
+}): Promise<void> {
+  if (stageController === null) {
+    return;
+  }
+  if (activeHouseStage !== null) {
+    return;
+  }
+  const current = stageController.current();
+  if (current === null || current.id !== "overworld") {
+    return;
+  }
+  const house = findHouseSlot(resolveHouseStreetContent(), input.houseId);
+  if (house === undefined) {
+    return;
+  }
+  const blueprint = getHouseBlueprint(house.layoutId);
+  const bounds = blueprint.bounds;
+  const availableHeight = Math.max(0, VIEW_H - AMENITY_HEADER_BAND_PX);
+  const boundsW = Math.max(1, bounds.maxX - bounds.minX);
+  const boundsH = Math.max(1, bounds.maxY - bounds.minY);
+  const cellScale = Math.max(
+    16,
+    Math.min(VIEW_W / boundsW, availableHeight / boundsH)
+  );
+  const stageW = boundsW * cellScale;
+  const stageH = boundsH * cellScale;
+  const offsetX = (VIEW_W - stageW) / 2;
+  const offsetY = AMENITY_HEADER_BAND_PX + (availableHeight - stageH) / 2;
+
+  const handle = buildHouseInteriorStage({
+    cellScale,
+    house,
+    mode: input.mode,
+  });
+  const rootContainer = handle.root as unknown as Container;
+  rootContainer.position.set(offsetX, offsetY);
+
+  const header = new Graphics();
+  header
+    .rect(0, 0, VIEW_W, AMENITY_HEADER_BAND_PX)
+    .fill({ color: 0x111827 });
+  header
+    .rect(0, AMENITY_HEADER_BAND_PX - 2, VIEW_W, 2)
+    .fill({ color: 0x374151, alpha: 0.7 });
+  header.position.set(-offsetX, -offsetY);
+  rootContainer.addChild(header);
+
+  const headline = new Text({
+    text: `House ${String(house.houseId)} · ${blueprint.label}`,
+    style: {
+      fontFamily: "system-ui, sans-serif",
+      fontSize: 22,
+      fontWeight: "700",
+      fill: 0xffffff,
+      stroke: { color: 0x000000, width: 2, alpha: 0.45 },
+    },
+  });
+  headline.anchor.set(0.5, 0.5);
+  headline.position.set(
+    VIEW_W / 2 - offsetX,
+    AMENITY_HEADER_BAND_PX / 2 - offsetY
+  );
+  rootContainer.addChild(headline);
+
+  const playerLayer = new Container();
+  const heroGraphic = new Graphics();
+  playerLayer.addChild(heroGraphic);
+  rootContainer.addChild(playerLayer);
+
+  const spawn = handle.spawnPosition();
+  housePlayerState.pos = handle.clampPosition({ x: spawn.x, y: spawn.y });
+  housePlayerState.facing =
+    getHumanPlayerId() !== null
+      ? facingByPlayer.get(getHumanPlayerId() as string) ?? "right"
+      : "right";
+  housePlayerState.walkPhase = 0;
+  housePlayerState.isMoving = false;
+  houseExitDebounceMs = 250;
+
+  activeHouseStage = {
+    houseId: input.houseId,
+    mode: input.mode,
+    handle,
+    cellScale,
+    offsetX,
+    offsetY,
+    playerLayer,
+    heroGraphic,
+    exitDoorAnchor: handle.exitDoorAnchor,
+  };
+  lastHouseNearest = null;
+  renderHousePlayer(activeHouseStage);
+  syncHousePurchasePanel(activeHouseStage);
+
+  try {
+    await stageController.enter(handle);
+    deepLogText("stage:enter:house", {
+      houseId: input.houseId,
+      mode: input.mode,
+    });
+  } catch (error) {
+    console.warn("[agent-play:world] enter house failed", error);
+    activeHouseStage = null;
+    housePurchasePanel?.hide();
   }
 }
 
@@ -2722,6 +3064,9 @@ async function showParkingTicketTooltip(
   if (sid === null) {
     return;
   }
+  tooltip.showLoading();
+  parkingTooltipOpenForBay = { bay: target.bay, layer: target.layer };
+  positionParkingTicketTooltip(target);
   const purchaseResult = await fetchPurchases({ sid, playerId: nodeId });
   const cars = purchaseResult.purchases
     .filter((record) => record.amenityKind === "car_wash")
@@ -2757,7 +3102,6 @@ async function showParkingTicketTooltip(
       });
     },
   });
-  parkingTooltipOpenForBay = { bay: target.bay, layer: target.layer };
   positionParkingTicketTooltip(target);
 }
 
@@ -3447,12 +3791,30 @@ function resolveParkingStreetContent(): ParkingStreetContent {
   return snapshot?.parkingStreet ?? createEmptyParkingStreetContent();
 }
 
+function resolveHouseStreetContent(): HouseStreetContent {
+  return snapshot?.houseStreet ?? createEmptyHouseStreetContent();
+}
+
 function isParkingSpotVacant(bay: number, layer: number): boolean {
   return isParkingBayVacant({
     parkingStreet: resolveParkingStreetContent(),
     bay: bay as ParkingBayAnchor["bay"],
     layer: layer as ParkingBayAnchor["layer"],
   });
+}
+
+function applyHouseDoorProximity(
+  humanPos: { x: number; y: number } | null
+): void {
+  const prevNearest = lastHouseNearest;
+  if (humanPos === null) {
+    lastHouseNearest = null;
+  } else {
+    lastHouseNearest = findNearestHouseDoor({ playerWorld: humanPos });
+  }
+  if (prevNearest !== lastHouseNearest) {
+    proximityTouchPadHandle?.refresh();
+  }
 }
 
 function applyParkingBayProximity(
@@ -3586,6 +3948,7 @@ function paintParkingStreet(): void {
     zoneRect: parkingZone.rect,
     bandRect,
     parkingStreet: resolveParkingStreetContent(),
+    houseStreet: resolveHouseStreetContent(),
     palette,
     cellScale,
     worldToLocal: worldToWorldRootLocal,
@@ -3915,6 +4278,8 @@ function onTick(dt: number): void {
   const currentStageId = stageController?.current()?.id;
   if (currentStageId === "spaceYard") {
     tickYardPlayer(dt);
+  } else if (currentStageId === "houseInterior") {
+    tickHousePlayer(dt);
   } else if (
     currentStageId === "amenityShop" ||
     currentStageId === "amenitySupermarket" ||
@@ -4041,10 +4406,13 @@ function onFrame(): void {
     onOverworldForParking &&
     humanPosForParking !== null &&
     activeAmenityStage === null &&
-    activeGameStage === null
+    activeGameStage === null &&
+    activeHouseStage === null
   ) {
+    applyHouseDoorProximity(humanPosForParking);
     applyParkingBayProximity(humanPosForParking);
   } else {
+    lastHouseNearest = null;
     lastParkingBayNearest = null;
     lastParkingBayTarget = null;
     if (parkingTooltipOpenForBay !== null) {
@@ -4077,6 +4445,23 @@ function onFrame(): void {
       const amenityName =
         AMENITY_DISPLAY_LABEL[lastYardAmenityPadTarget.kind as AmenityKind];
       proximityLegendEl.textContent = `Near ${amenityName}. P: enter ${amenityName.toLowerCase()}`;
+    } else if (lastHouseNearest !== null) {
+      const door = lastHouseNearest;
+      const house = findHouseSlot(resolveHouseStreetContent(), door.houseId);
+      const viewerId = getViewerWalletPlayerId();
+      const canEnter =
+        house !== undefined &&
+        canEnterHouseAsOwner({ viewerNodeId: viewerId, house });
+      if (canEnter) {
+        proximityLegendEl.textContent = `Near House ${String(door.houseId)}. A: enter · P: inspect`;
+      } else if (
+        house?.ownerDisplayName !== null &&
+        house?.ownerDisplayName !== undefined
+      ) {
+        proximityLegendEl.textContent = `Near House ${String(door.houseId)} · ${house.ownerDisplayName}. P: inspect`;
+      } else {
+        proximityLegendEl.textContent = `Near House ${String(door.houseId)}. P: inspect interior`;
+      }
     } else if (lastParkingBayNearest !== null) {
       const bay = lastParkingBayNearest;
       if (lastParkingBayTarget !== null) {
@@ -4150,6 +4535,21 @@ function onFrame(): void {
       proximityPromptEl.style.display = "block";
       proximityPromptEl.style.left = `${centroidScreen.x}px`;
       proximityPromptEl.style.top = `${centroidScreen.y - box * 1.6}px`;
+    } else if (lastHouseNearest !== null) {
+      const door = lastHouseNearest;
+      const local = worldToWorldRootLocal(door.x, door.y);
+      const screen = worldRootLocalToCanvas(local.x, local.y);
+      const house = findHouseSlot(resolveHouseStreetContent(), door.houseId);
+      const viewerId = getViewerWalletPlayerId();
+      const canEnter =
+        house !== undefined &&
+        canEnterHouseAsOwner({ viewerNodeId: viewerId, house });
+      proximityPromptEl.textContent = canEnter
+        ? "A: enter house\nP: inspect interior"
+        : "P: inspect interior";
+      proximityPromptEl.style.display = "block";
+      proximityPromptEl.style.left = `${screen.x}px`;
+      proximityPromptEl.style.top = `${screen.y - box * 1.4}px`;
     } else if (lastParkingBayNearest !== null) {
       const bay = lastParkingBayNearest;
       const local = worldToWorldRootLocal(bay.x, bay.y);
@@ -4507,6 +4907,7 @@ export function bootstrap(): void {
     canvasHost.appendChild(proximityPromptEl);
     amenityItemTooltip = createItemTooltip({ parent: document.body });
     parkingTicketTooltip = createParkingTicketTooltip();
+    housePurchasePanel = createHousePurchasePanel();
 
     proximityTouchPadHandle = createPreviewProximityTouchControls({
       parent: canvasWrap,
@@ -4550,6 +4951,31 @@ export function bootstrap(): void {
         return lastParkingBayTarget !== null ? "Buy ticket" : "Occupied";
       },
       getParkingProximityActivatable: () => lastParkingBayNearest !== null,
+      getHouseProximityLabel: () => {
+        if (lastHouseNearest === null) return null;
+        const house = findHouseSlot(
+          resolveHouseStreetContent(),
+          lastHouseNearest.houseId
+        );
+        const owner = house?.ownerDisplayName;
+        return owner !== null && owner !== undefined && owner.length > 0
+          ? `House ${String(lastHouseNearest.houseId)} · ${owner}`
+          : `House ${String(lastHouseNearest.houseId)}`;
+      },
+      getHouseAssistVerb: () => (lastHouseNearest === null ? null : "Enter"),
+      getHouseAssistActivatable: () => {
+        if (lastHouseNearest === null) return false;
+        const house = findHouseSlot(
+          resolveHouseStreetContent(),
+          lastHouseNearest.houseId
+        );
+        if (house === undefined) return false;
+        return canEnterHouseAsOwner({
+          viewerNodeId: getViewerWalletPlayerId(),
+          house,
+        });
+      },
+      getHouseInspectVerb: () => (lastHouseNearest === null ? null : "Inspect"),
       getGameStageProximityLabel: () => {
         if (activeGameStage === null) return null;
         return lastGameStageProximityTarget?.label ?? null;
@@ -4565,6 +4991,25 @@ export function bootstrap(): void {
         return target.activatable !== false;
       },
       onAssist: () => {
+        if (lastHouseNearest !== null) {
+          const house = findHouseSlot(
+            resolveHouseStreetContent(),
+            lastHouseNearest.houseId
+          );
+          if (
+            house !== undefined &&
+            canEnterHouseAsOwner({
+              viewerNodeId: getViewerWalletPlayerId(),
+              house,
+            })
+          ) {
+            void enterHouseStage({
+              houseId: lastHouseNearest.houseId,
+              mode: "owner",
+            });
+            return;
+          }
+        }
         if (
           lastProximityPartnerId === null &&
           lastStructureProximityTarget !== null
@@ -4589,6 +5034,18 @@ export function bootstrap(): void {
           lastGameStageProximityTarget.activatable !== false
         ) {
           activateGameStageProximityTarget();
+          return;
+        }
+        if (
+          lastHouseNearest !== null &&
+          activeAmenityStage === null &&
+          activeGameStage === null &&
+          activeHouseStage === null
+        ) {
+          void enterHouseStage({
+            houseId: lastHouseNearest.houseId,
+            mode: "inspect",
+          });
           return;
         }
         if (lastParkingBayNearest !== null && activeAmenityStage === null) {
