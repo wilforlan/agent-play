@@ -11,6 +11,7 @@ vi.mock("./presentation-analytics.js", () => ({
 
 import { createPreviewSessionInteractionPanel } from "./preview-session-interaction-panel.js";
 import { resetPreviewViewSettings, setPreviewViewSettings } from "./preview-view-settings.js";
+import * as humanCredentials from "./preview-human-credentials.js";
 
 const CREDENTIALS_KEY = "agent-play.humanCredentials";
 const realtimeAgentConstructorMock = vi.fn();
@@ -911,5 +912,79 @@ describe("createPreviewSessionInteractionPanel", () => {
       return body.op === "talkSessionStart";
     });
     expect(talkStarts.length).toBeGreaterThan(0);
+  });
+
+  it("shows Download credentials beside Create new node when credentials exist", () => {
+    sessionStorage.setItem(
+      CREDENTIALS_KEY,
+      JSON.stringify({
+        nodeId: "node-abc",
+        passw: "secret-pass",
+        createdAtIso: "2026-01-01T00:00:00.000Z",
+      })
+    );
+    const panel = createPreviewSessionInteractionPanel({
+      getSid: () => "sid-1",
+      apiBase: "/api/agent-play",
+      getMainNodeId: () => "node-abc",
+    });
+    document.body.append(panel.element);
+    const downloadBtn = panel.element.querySelector<HTMLButtonElement>(
+      '[data-node-download="1"]'
+    );
+    expect(downloadBtn).not.toBeNull();
+    expect(downloadBtn?.hidden).toBe(false);
+    expect(downloadBtn?.textContent).toContain("Download credentials");
+    const createBtn = panel.element.querySelector<HTMLButtonElement>(
+      '[data-node-ui="1"]'
+    );
+    expect(createBtn?.textContent).toBe("Create new node");
+  });
+
+  it("hides Download credentials when no credentials are stored", () => {
+    const panel = createPreviewSessionInteractionPanel({
+      getSid: () => "sid-1",
+      apiBase: "/api/agent-play",
+      getMainNodeId: () => null,
+    });
+    document.body.append(panel.element);
+    const downloadBtn = panel.element.querySelector<HTMLButtonElement>(
+      '[data-node-download="1"]'
+    );
+    expect(downloadBtn?.hidden).toBe(true);
+    const createBtn = panel.element.querySelector<HTMLButtonElement>(
+      '[data-node-ui="1"]'
+    );
+    expect(createBtn?.textContent).toBe("Set up main node");
+  });
+
+  it("downloads credentials.json with node id, passw, and serverUrl", () => {
+    const downloadSpy = vi
+      .spyOn(humanCredentials, "downloadHumanCredentialsJson")
+      .mockImplementation(() => {});
+    sessionStorage.setItem(
+      CREDENTIALS_KEY,
+      JSON.stringify({
+        nodeId: "node-xyz",
+        passw: "pw-123",
+        createdAtIso: "2026-01-01T00:00:00.000Z",
+      })
+    );
+    const panel = createPreviewSessionInteractionPanel({
+      getSid: () => "sid-1",
+      apiBase: "https://example.com/api/agent-play",
+      getMainNodeId: () => "node-xyz",
+    });
+    document.body.append(panel.element);
+    panel.element
+      .querySelector<HTMLButtonElement>('[data-node-download="1"]')
+      ?.click();
+    expect(downloadSpy).toHaveBeenCalledWith({
+      nodeId: "node-xyz",
+      passw: "pw-123",
+      serverUrl: "https://example.com",
+    });
+    expect(sessionStorage.getItem(CREDENTIALS_KEY)).toContain("node-xyz");
+    downloadSpy.mockRestore();
   });
 });

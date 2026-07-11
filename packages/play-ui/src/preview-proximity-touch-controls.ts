@@ -38,6 +38,15 @@ export type CreatePreviewProximityTouchControlsOptions = {
    */
   getAmenityItemActionLabel?: () => string | null | undefined;
   /**
+   * When the human is on the overworld near a vacant parking bay, returns
+   * the bay label for the `P` button.
+   */
+  getParkingProximityLabel?: () => string | null | undefined;
+  /**
+   * Verb shown on the `P` button when near a parking bay.
+   */
+  getParkingProximityVerb?: () => string | null | undefined;
+  /**
    * When the human is inside an arcade game stage and near an interactable,
    * returns the object's display label for the `P` button.
    */
@@ -146,6 +155,9 @@ export function createPreviewProximityTouchControls(
     const gameStageLabel = options.getGameStageProximityLabel?.() ?? null;
     const nearGameStage =
       typeof gameStageLabel === "string" && gameStageLabel.length > 0;
+    const parkingLabel = options.getParkingProximityLabel?.() ?? null;
+    const nearParking =
+      typeof parkingLabel === "string" && parkingLabel.length > 0;
     const structureLabel = options.getStructureProximityLabel?.() ?? null;
     const nearStructure =
       typeof structureLabel === "string" && structureLabel.length > 0;
@@ -200,6 +212,20 @@ export function createPreviewProximityTouchControls(
       } else {
         btnPushToTalk.setAttribute("aria-label", verb);
       }
+    } else if (nearParking) {
+      const verb = options.getParkingProximityVerb?.() ?? "Buy ticket";
+      btnAssist.disabled = true;
+      subA.textContent = "Assist";
+      btnAssist.removeAttribute("aria-label");
+      btnChat.disabled = true;
+      btnPushToTalk.disabled = false;
+      subP.textContent = verb;
+      btnPushToTalk.classList.add("preview-proximity-touch-pad__key--proximity-active");
+      btnPushToTalk.classList.remove("preview-proximity-touch-pad__key--proximity-hint");
+      btnPushToTalk.setAttribute(
+        "aria-label",
+        `${verb} ${parkingLabel ?? "parking"}`
+      );
     } else if (nearStructure) {
       const verb = options.getStructureProximityVerb?.() ?? "Enter";
       btnAssist.disabled = false;
