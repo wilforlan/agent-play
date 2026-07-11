@@ -171,7 +171,7 @@ export type WorldLayoutZoneJson = {
   streetLabel: string;
   rect: { minX: number; minY: number; maxX: number; maxY: number };
   primaryGroup: "agent" | "space" | "arcade" | "parking";
-  allowedGroups: readonly ("agent" | "space" | "arcade")[];
+  allowedGroups: readonly ("agent" | "space" | "arcade" | "parking")[];
 };
 
 export type WorldLayoutStreetJson = {

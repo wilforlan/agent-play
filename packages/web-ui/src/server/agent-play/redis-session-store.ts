@@ -2112,6 +2112,10 @@ export class RedisSessionStore implements SessionStore {
         return { ok: false, error: ownership.error };
       }
       const priceUsd = street.rates[input.durationTier];
+      if (priceUsd === undefined || !Number.isFinite(priceUsd) || priceUsd <= 0) {
+        await this.redis.unwatch();
+        return { ok: false, error: "INVALID_SPOT" };
+      }
       const rawWallet = await this.redis.get(walletKey);
       if (rawWallet === null) {
         await this.redis.unwatch();

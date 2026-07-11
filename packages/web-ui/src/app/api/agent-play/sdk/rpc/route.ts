@@ -46,6 +46,7 @@ import {
   type CarWashCar,
   type ShopItem,
   type SupermarketItem,
+  type ParkingDurationTier,
 } from "@agent-play/sdk";
 import {
   agentPlayVerbose,
@@ -1200,8 +1201,12 @@ export async function POST(req: NextRequest) {
           "3mo",
           "1y",
           "forever",
-        ] as const;
-        if (!(validTiers as readonly string[]).includes(tier)) {
+        ] as const satisfies readonly ParkingDurationTier[];
+        const isParkingDurationTier = (
+          value: string
+        ): value is ParkingDurationTier =>
+          (validTiers as readonly string[]).includes(value);
+        if (!isParkingDurationTier(tier)) {
           return Response.json({ error: "invalid payload" }, { status: 400 });
         }
         const now = new Date().toISOString();

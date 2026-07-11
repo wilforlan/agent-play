@@ -1205,6 +1205,9 @@ export class TestSessionStore implements SessionStore {
       return { ok: false, error: ownership.error };
     }
     const priceUsd = street.rates[input.durationTier];
+    if (priceUsd === undefined || !Number.isFinite(priceUsd) || priceUsd <= 0) {
+      return { ok: false, error: "INVALID_SPOT" };
+    }
     const wallet = await this.getPlayerWallet(input.nodeId);
     if (wallet.balanceUsd < priceUsd) {
       return { ok: false, error: "INSUFFICIENT_FUNDS" };
