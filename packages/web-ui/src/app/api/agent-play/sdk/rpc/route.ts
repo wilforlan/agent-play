@@ -1240,7 +1240,8 @@ export async function POST(req: NextRequest) {
         }
         const p = body.payload as {
           houseId?: unknown;
-          ownerDisplayName?: unknown;
+          ownerName?: unknown;
+          ownerSignature?: unknown;
         };
         const houseId = p.houseId;
         if (
@@ -1251,16 +1252,20 @@ export async function POST(req: NextRequest) {
         ) {
           return Response.json({ error: "invalid payload" }, { status: 400 });
         }
-        const ownerDisplayName =
-          typeof p.ownerDisplayName === "string" &&
-          p.ownerDisplayName.trim().length > 0
-            ? p.ownerDisplayName.trim().slice(0, 24)
-            : nodeId;
+        if (
+          typeof p.ownerName !== "string" ||
+          p.ownerName.trim().length === 0 ||
+          typeof p.ownerSignature !== "string" ||
+          p.ownerSignature.trim().length === 0
+        ) {
+          return Response.json({ error: "invalid payload" }, { status: 400 });
+        }
         const now = new Date().toISOString();
         const result = await store.buyHouse({
           nodeId,
           houseId,
-          ownerDisplayName,
+          ownerName: p.ownerName.trim(),
+          ownerSignature: p.ownerSignature.trim(),
           now,
           recordId: `house-${randomUUID()}`,
         });

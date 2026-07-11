@@ -115,7 +115,8 @@ describe("POST /api/agent-play/sdk/rpc — buyHouse", () => {
           op: "buyHouse",
           payload: {
             houseId: 1,
-            ownerDisplayName: "Alex",
+            ownerName: "Alex Kim",
+            ownerSignature: "AK",
           },
         }),
       })
@@ -130,6 +131,32 @@ describe("POST /api/agent-play/sdk/rpc — buyHouse", () => {
     expect(body.houseStreet?.houses[0]?.ownerDisplayName).toBe("Alex");
     expect(store.buyHouse).toHaveBeenCalledOnce();
     expect(store.publishWorldFanout).toHaveBeenCalled();
+  });
+
+  it("returns 400 when owner name or signature is missing", async () => {
+    getPlayWorld.mockResolvedValue(buildWorldMock());
+    const store = buildStoreMock();
+    getSessionStore.mockReturnValue(store);
+    getRepository.mockResolvedValue(buildMainNodeRepoMock());
+    validateAgentPlaySession.mockResolvedValue(true);
+
+    const res = await POST(
+      new NextRequest("http://localhost/api/agent-play/sdk/rpc?sid=s1", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-node-id": "node-main",
+          "x-node-passw": "passw-hash",
+        },
+        body: JSON.stringify({
+          op: "buyHouse",
+          payload: { houseId: 1 },
+        }),
+      })
+    );
+
+    expect(res.status).toBe(400);
+    expect(store.buyHouse).not.toHaveBeenCalled();
   });
 
   it("returns 409 when house is already owned", async () => {
@@ -155,7 +182,11 @@ describe("POST /api/agent-play/sdk/rpc — buyHouse", () => {
         },
         body: JSON.stringify({
           op: "buyHouse",
-          payload: { houseId: 1 },
+          payload: {
+            houseId: 1,
+            ownerName: "Alex Kim",
+            ownerSignature: "AK",
+          },
         }),
       })
     );
