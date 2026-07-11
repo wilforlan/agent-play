@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
+  COLUMN_STREET_ROW_HEIGHT,
   MINIMUM_STREET_LAYOUT_BOUNDS,
+  PARKING_COLUMN_GAP_ROWS,
+  PARKING_STREET_ROW_HEIGHT,
   STREET_NAME_POOL,
+  createWorldLayoutWithParkingRow,
   pickZoneForGroup,
 } from "@agent-play/sdk";
 import { bootstrapWorldLayoutIfNeeded } from "./world-layout-bootstrap.js";
@@ -115,5 +119,60 @@ describe("bootstrapWorldLayoutIfNeeded", () => {
     const second = await bootstrapWorldLayoutIfNeeded({ repo });
     expect(second.rev).toBe(first.rev);
     expect(second.zones.length).toBe(first.zones.length);
+  });
+
+  it("re-migrates stored parking layout without column gap on next bootstrap", async () => {
+    const redis = new FakeRedis();
+    const repo = new WorldLayoutRepository({
+      redis: redis as never,
+      hostId: "h-gap",
+    });
+    const s0 = STREET_NAME_POOL[0];
+    const s1 = STREET_NAME_POOL[1];
+    const s2 = STREET_NAME_POOL[2];
+    const s3 = STREET_NAME_POOL[3];
+    if (
+      s0 === undefined ||
+      s1 === undefined ||
+      s2 === undefined ||
+      s3 === undefined
+    ) {
+      throw new Error("STREET_NAME_POOL too small");
+    }
+    const seeded = createWorldLayoutWithParkingRow({
+      bounds: {
+        minX: MINIMUM_STREET_LAYOUT_BOUNDS.minX,
+        minY: MINIMUM_STREET_LAYOUT_BOUNDS.minY,
+        maxX: MINIMUM_STREET_LAYOUT_BOUNDS.maxX,
+        maxY: 7,
+      },
+      streets: [s0, s1, s2, s3],
+    });
+    const agent = pickZoneForGroup(seeded, "agent");
+    const legacy = {
+      ...seeded,
+      rev: 3,
+      bounds: { ...seeded.bounds, maxY: 6 },
+      zones: seeded.zones.map((zone) => {
+        if (zone.primaryGroup !== "parking") {
+          return zone;
+        }
+        return {
+          ...zone,
+          rect: {
+            ...zone.rect,
+            minY: agent.rect.maxY + 1,
+            maxY: agent.rect.maxY + PARKING_STREET_ROW_HEIGHT,
+          },
+        };
+      }),
+    };
+    await repo.saveLayout(legacy);
+    const migrated = await bootstrapWorldLayoutIfNeeded({ repo });
+    expect(pickZoneForGroup(migrated, "parking").rect.minY).toBe(
+      COLUMN_STREET_ROW_HEIGHT + PARKING_COLUMN_GAP_ROWS
+    );
+    expect(migrated.bounds.maxY).toBe(7);
+    expect(migrated.rev).toBe(4);
   });
 });

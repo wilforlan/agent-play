@@ -24,6 +24,8 @@ import type {
   PurchaseRecord,
   ShopItem,
   SupermarketItem,
+  ParkingStreetContent,
+  ParkingDurationTier,
 } from "@agent-play/sdk";
 import {
   ApplyGameOutcomeInputSchema,
@@ -32,7 +34,14 @@ import {
   PurchaseRecordSchema,
   ShopItemSchema,
   SupermarketItemSchema,
+  ParkingStreetContentSchema,
   TALK_PRICE_PER_SECOND_USD,
+  canNodeAcquireParkingSpot,
+  computeParkingExpiresAt,
+  createEmptyParkingStreetContent,
+  findParkingSpot,
+  listActiveParkingOccupancies,
+  isParkingOccupantActive,
   computeTalkAgentPowerUpsEarned,
   createInitialAgentRewardWallet,
   createInitialPlayerWallet,
@@ -74,6 +83,7 @@ import {
   type GeographyHumanState,
 } from "./world-geography.js";
 import type {
+  BuyParkingTicketResult,
   ExecutePurchaseResult,
   PresenceLease,
   PersistSnapshotRev,
@@ -144,6 +154,10 @@ function spaceSupermarketItemsHashKey(hostId: string, spaceId: string): string {
 
 function spaceCarWashCarsHashKey(hostId: string, spaceId: string): string {
   return `agent-play:${hostId}:space:${spaceId}:carwash-cars`;
+}
+
+function parkingStreetKey(hostId: string): string {
+  return `agent-play:${hostId}:parking-street`;
 }
 
 function playerWalletKey(hostId: string, playerId: string): string {
@@ -1989,6 +2003,212 @@ export class RedisSessionStore implements SessionStore {
 
   getHostId(): string {
     return this.hostId;
+  }
+
+  async getParkingStreet(): Promise<ParkingStreetContent> {
+    const raw = await this.redis.get(parkingStreetKey(this.hostId));
+    if (raw === null || raw.length === 0) {
+      return createEmptyParkingStreetContent();
+    }
+    try {
+      return ParkingStreetContentSchema.parse(JSON.parse(raw));
+    } catch {
+      return createEmptyParkingStreetContent();
+    }
+  }
+
+  async setParkingStreet(content: ParkingStreetContent): Promise<void> {
+    const parsed = ParkingStreetContentSchema.parse(content);
+    await this.redis.set(parkingStreetKey(this.hostId), JSON.stringify(parsed));
+  }
+
+  private async resolveWalletCarFromPurchase(input: {
+    nodeId: string;
+    carPurchaseId: string;
+  }): Promise<CarWashCar | null> {
+    const purchases = await this.listPurchases({
+      playerId: input.nodeId,
+      limit: 200,
+    });
+    const record = purchases.find((p) => p.id === input.carPurchaseId);
+    if (
+      record === undefined ||
+      record.amenityKind !== "car_wash" ||
+      record.itemRef.kind !== "carwash"
+    ) {
+      return null;
+    }
+    const cars = await this.listCarWashCars(record.spaceId);
+    const car = cars.find((c) => c.id === record.itemRef.id);
+    if (
+      car === undefined ||
+      car.sale.status !== "sold" ||
+      car.sale.soldToPlayerId !== input.nodeId
+    ) {
+      return null;
+    }
+    return car;
+  }
+
+  async buyParkingTicket(input: {
+    nodeId: string;
+    bay: 1 | 2 | 3 | 4;
+    layer?: 1 | 2;
+    carPurchaseId: string;
+    durationTier: ParkingDurationTier;
+    displayNick: string;
+    now: string;
+    recordId: string;
+  }): Promise<BuyParkingTicketResult> {
+    const layer = input.layer ?? 1;
+    const streetKey = parkingStreetKey(this.hostId);
+    const walletKey = playerWalletKey(this.hostId, input.nodeId);
+    const purchasesKeyName = playerPurchasesKey(this.hostId, input.nodeId);
+
+    await this.getPlayerWallet(input.nodeId);
+
+    const maxAttempts = 5;
+    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+      await this.redis.watch(streetKey, walletKey);
+      const street = await this.getParkingStreet();
+      const spot = findParkingSpot(street, input.bay, layer);
+      if (spot === undefined) {
+        await this.redis.unwatch();
+        return { ok: false, error: "INVALID_SPOT" };
+      }
+      if (spot.occupant !== null) {
+        await this.redis.unwatch();
+        return { ok: false, error: "SPOT_OCCUPIED" };
+      }
+      const car = await this.resolveWalletCarFromPurchase({
+        nodeId: input.nodeId,
+        carPurchaseId: input.carPurchaseId,
+      });
+      if (car === null) {
+        await this.redis.unwatch();
+        return { ok: false, error: "NO_WALLET_CAR" };
+      }
+      const active = listActiveParkingOccupancies(street, input.now);
+      const ownership = canNodeAcquireParkingSpot({
+        nodeId: input.nodeId,
+        tier: input.durationTier,
+        active,
+      });
+      if (!ownership.ok) {
+        await this.redis.unwatch();
+        return { ok: false, error: ownership.error };
+      }
+      const priceUsd = street.rates[input.durationTier];
+      const rawWallet = await this.redis.get(walletKey);
+      if (rawWallet === null) {
+        await this.redis.unwatch();
+        return { ok: false, error: "INSUFFICIENT_FUNDS" };
+      }
+      let wallet: PlayerWallet;
+      try {
+        wallet = PlayerWalletSchema.parse(JSON.parse(rawWallet));
+      } catch {
+        await this.redis.unwatch();
+        return { ok: false, error: "INSUFFICIENT_FUNDS" };
+      }
+      if (wallet.balanceUsd < priceUsd) {
+        await this.redis.unwatch();
+        return { ok: false, error: "INSUFFICIENT_FUNDS" };
+      }
+      const expiresAt = computeParkingExpiresAt({
+        tier: input.durationTier,
+        purchasedAtIso: input.now,
+      });
+      const nextSpots = street.spots.map((s) => {
+        if (s.bay !== input.bay || s.layer !== layer) {
+          return s;
+        }
+        return {
+          ...s,
+          occupant: {
+            nodeId: input.nodeId,
+            carPurchaseId: input.carPurchaseId,
+            displayNick: input.displayNick.trim(),
+            colorHex: car.colorHex,
+            model: car.model,
+            tier: input.durationTier,
+            purchasedAt: input.now,
+            expiresAt,
+          },
+        };
+      });
+      const nextStreet = ParkingStreetContentSchema.parse({
+        spots: nextSpots,
+        rates: street.rates,
+      });
+      const nextWallet: PlayerWallet = {
+        ...wallet,
+        balanceUsd: wallet.balanceUsd - priceUsd,
+        updatedAt: input.now,
+      };
+      const record: PurchaseRecord = {
+        id: input.recordId,
+        playerId: input.nodeId,
+        spaceId: "__parking__",
+        amenityKind: "parking",
+        itemRef: { kind: "parking", id: spot.id },
+        priceUsd,
+        at: input.now,
+        detail: `Parking ${input.durationTier} bay ${String(input.bay)} layer ${String(layer)}`,
+      };
+      const multi = this.redis.multi();
+      multi.set(streetKey, JSON.stringify(nextStreet));
+      multi.set(walletKey, JSON.stringify(nextWallet));
+      multi.lpush(purchasesKeyName, JSON.stringify(record));
+      multi.ltrim(purchasesKeyName, 0, PURCHASES_MAX - 1);
+      const exec = await multi.exec();
+      if (exec === null) {
+        continue;
+      }
+      safeIndexPurchaseRecord({
+        redis: this.redis,
+        hostId: this.hostId,
+        record,
+      });
+      return {
+        ok: true,
+        record,
+        wallet: nextWallet,
+        parkingStreet: nextStreet,
+      };
+    }
+    return { ok: false, error: "SPOT_OCCUPIED" };
+  }
+
+  async tickParkingExpiry(nowIso: string): Promise<ParkingStreetContent> {
+    const street = await this.getParkingStreet();
+    const nextSpots = street.spots.map((s) => {
+      const occupant = s.occupant;
+      if (occupant === null) {
+        return s;
+      }
+      if (
+        isParkingOccupantActive({
+          expiresAt: occupant.expiresAt,
+          nowIso,
+        })
+      ) {
+        return s;
+      }
+      return { ...s, occupant: null };
+    });
+    const nextStreet = ParkingStreetContentSchema.parse({
+      spots: nextSpots,
+      rates: street.rates,
+    });
+    const changed = nextSpots.some((s, i) => {
+      const prev = street.spots[i];
+      return prev?.occupant !== s.occupant;
+    });
+    if (changed) {
+      await this.setParkingStreet(nextStreet);
+    }
+    return nextStreet;
   }
 
   getRedis(): Redis {

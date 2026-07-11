@@ -16,10 +16,18 @@ import type {
   PurchaseRecord,
   ShopItem,
   SupermarketItem,
+  ParkingStreetContent,
+  ParkingDurationTier,
 } from "@agent-play/sdk";
 import {
   ApplyGameOutcomeInputSchema,
   PurchaseRecordSchema,
+  canNodeAcquireParkingSpot,
+  computeParkingExpiresAt,
+  createEmptyParkingStreetContent,
+  findParkingSpot,
+  listActiveParkingOccupancies,
+  isParkingOccupantActive,
   computeTalkAgentPowerUpsEarned,
   createInitialAgentRewardWallet,
   createInitialPlayerWallet,
@@ -51,6 +59,7 @@ import {
   type TestDoubleScannerMirror,
 } from "./test-double-scanner-mirror.js";
 import type {
+  BuyParkingTicketResult,
   ExecutePurchaseResult,
   PresenceLease,
   PersistSnapshotRev,
@@ -91,6 +100,7 @@ export class TestSessionStore implements SessionStore {
     Map<string, SupermarketItem>
   >();
   private readonly carWashCars = new Map<string, Map<string, CarWashCar>>();
+  private parkingStreet: ParkingStreetContent = createEmptyParkingStreetContent();
   private readonly playerWallets = new Map<string, PlayerWallet>();
   private readonly playerPurchases = new Map<string, PurchaseRecord[]>();
   private readonly geographyHumans = new Map<string, GeographyHumanState>();
@@ -1094,5 +1104,177 @@ export class TestSessionStore implements SessionStore {
       await this.appendPurchaseRecord(apuRecord);
     }
     return applied.result;
+  }
+
+  async getParkingStreet(): Promise<ParkingStreetContent> {
+    return {
+      spots: this.parkingStreet.spots.map((s) => ({
+        ...s,
+        occupant:
+          s.occupant === null
+            ? null
+            : { ...s.occupant },
+      })),
+      rates: { ...this.parkingStreet.rates },
+    };
+  }
+
+  async setParkingStreet(content: ParkingStreetContent): Promise<void> {
+    this.parkingStreet = {
+      spots: content.spots.map((s) => ({
+        ...s,
+        occupant:
+          s.occupant === null
+            ? null
+            : { ...s.occupant },
+      })),
+      rates: { ...content.rates },
+    };
+  }
+
+  private async resolveWalletCarFromPurchase(input: {
+    nodeId: string;
+    carPurchaseId: string;
+  }): Promise<CarWashCar | null> {
+    const purchases = await this.listPurchases({
+      playerId: input.nodeId,
+      limit: 200,
+    });
+    const record = purchases.find((p) => p.id === input.carPurchaseId);
+    if (
+      record === undefined ||
+      record.amenityKind !== "car_wash" ||
+      record.itemRef.kind !== "carwash"
+    ) {
+      return null;
+    }
+    const cars = await this.listCarWashCars(record.spaceId);
+    const car = cars.find((c) => c.id === record.itemRef.id);
+    if (
+      car === undefined ||
+      car.sale.status !== "sold" ||
+      car.sale.soldToPlayerId !== input.nodeId
+    ) {
+      return null;
+    }
+    return car;
+  }
+
+  async buyParkingTicket(input: {
+    nodeId: string;
+    bay: 1 | 2 | 3 | 4;
+    layer?: 1 | 2;
+    carPurchaseId: string;
+    durationTier: ParkingDurationTier;
+    displayNick: string;
+    now: string;
+    recordId: string;
+  }): Promise<BuyParkingTicketResult> {
+    const layer = input.layer ?? 1;
+    const street = await this.getParkingStreet();
+    const spot = findParkingSpot(street, input.bay, layer);
+    if (spot === undefined) {
+      return { ok: false, error: "INVALID_SPOT" };
+    }
+    if (spot.occupant !== null) {
+      return { ok: false, error: "SPOT_OCCUPIED" };
+    }
+    const car = await this.resolveWalletCarFromPurchase({
+      nodeId: input.nodeId,
+      carPurchaseId: input.carPurchaseId,
+    });
+    if (car === null) {
+      return { ok: false, error: "NO_WALLET_CAR" };
+    }
+    const active = listActiveParkingOccupancies(street, input.now);
+    const ownership = canNodeAcquireParkingSpot({
+      nodeId: input.nodeId,
+      tier: input.durationTier,
+      active,
+    });
+    if (!ownership.ok) {
+      return { ok: false, error: ownership.error };
+    }
+    const priceUsd = street.rates[input.durationTier];
+    const wallet = await this.getPlayerWallet(input.nodeId);
+    if (wallet.balanceUsd < priceUsd) {
+      return { ok: false, error: "INSUFFICIENT_FUNDS" };
+    }
+    const expiresAt = computeParkingExpiresAt({
+      tier: input.durationTier,
+      purchasedAtIso: input.now,
+    });
+    const nextSpots = street.spots.map((s) => {
+      if (s.bay !== input.bay || s.layer !== layer) {
+        return s;
+      }
+      return {
+        ...s,
+        occupant: {
+          nodeId: input.nodeId,
+          carPurchaseId: input.carPurchaseId,
+          displayNick: input.displayNick.trim(),
+          colorHex: car.colorHex,
+          model: car.model,
+          tier: input.durationTier,
+          purchasedAt: input.now,
+          expiresAt,
+        },
+      };
+    });
+    const nextStreet: ParkingStreetContent = {
+      spots: nextSpots,
+      rates: street.rates,
+    };
+    await this.setParkingStreet(nextStreet);
+    const nextWallet: PlayerWallet = {
+      ...wallet,
+      balanceUsd: wallet.balanceUsd - priceUsd,
+      updatedAt: input.now,
+    };
+    this.playerWallets.set(input.nodeId, nextWallet);
+    mirrorWalletBalance(this.scannerMirror, nextWallet);
+    const record: PurchaseRecord = {
+      id: input.recordId,
+      playerId: input.nodeId,
+      spaceId: "__parking__",
+      amenityKind: "parking",
+      itemRef: { kind: "parking", id: spot.id },
+      priceUsd,
+      at: input.now,
+      detail: `Parking ${input.durationTier} bay ${String(input.bay)} layer ${String(layer)}`,
+    };
+    await this.appendPurchaseRecord(record);
+    return {
+      ok: true,
+      record,
+      wallet: nextWallet,
+      parkingStreet: nextStreet,
+    };
+  }
+
+  async tickParkingExpiry(nowIso: string): Promise<ParkingStreetContent> {
+    const street = await this.getParkingStreet();
+    const nextSpots = street.spots.map((s) => {
+      const occupant = s.occupant;
+      if (occupant === null) {
+        return s;
+      }
+      if (
+        isParkingOccupantActive({
+          expiresAt: occupant.expiresAt,
+          nowIso,
+        })
+      ) {
+        return s;
+      }
+      return { ...s, occupant: null };
+    });
+    const nextStreet: ParkingStreetContent = {
+      spots: nextSpots,
+      rates: street.rates,
+    };
+    await this.setParkingStreet(nextStreet);
+    return nextStreet;
   }
 }
