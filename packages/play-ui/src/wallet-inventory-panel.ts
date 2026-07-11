@@ -18,6 +18,15 @@ import type { PurchaseRecordDto } from "./wallet-purchases-client.js";
 import { buildPurchaseItemKey } from "./wallet-purchases-client.js";
 import { createWalletDisplayStrip } from "./wallet-display-strip.js";
 import { WALLET_BUNDLE_OFFERS } from "@agent-play/sdk/browser";
+import type { ParkingDurationTier } from "@agent-play/sdk/browser";
+
+export type ActiveParkingRow = {
+  readonly bay: number;
+  readonly layer: number;
+  readonly displayNick: string;
+  readonly tier: ParkingDurationTier;
+  readonly expiresAt: string | null;
+};
 
 /**
  * Minimal shape of an item payload as returned by the `listPurchases`
@@ -55,6 +64,8 @@ export type WalletInventoryPanelHandle = {
     powerUps: number;
     purchases: ReadonlyArray<PurchaseRecordDto>;
     items: Readonly<Record<string, unknown>>;
+    activeParking?: ReadonlyArray<ActiveParkingRow>;
+    parkingCapacityHint?: string;
   }): void;
   /** Show a loading shimmer in place of the list. */
   setLoading(): void;
@@ -194,6 +205,33 @@ const ensureStyles = (): void => {
   letter-spacing: 0.5px;
 }
 .${PANEL_CLASS}__chip--car_wash { background: #cbd5f5; color: #1e293b; }
+.${PANEL_CLASS}__parking {
+  margin: 0 20px 16px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: #eef2ff;
+  border: 1px solid #c7d2fe;
+}
+.${PANEL_CLASS}__parking-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: #312e81;
+  margin-bottom: 4px;
+}
+.${PANEL_CLASS}__parking-hint {
+  font-size: 12px;
+  color: #4338ca;
+  margin-bottom: 8px;
+}
+.${PANEL_CLASS}__parking-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 13px;
+  padding: 6px 0;
+  border-top: 1px solid rgba(99, 102, 241, 0.2);
+}
+.${PANEL_CLASS}__parking-row:first-of-type { border-top: none; }
 .${PANEL_CLASS}__chip--shop { background: #fde68a; color: #78350f; }
 .${PANEL_CLASS}__chip--supermarket { background: #bbf7d0; color: #064e3b; }
 .${PANEL_CLASS}__chip--talk_time {
@@ -388,6 +426,25 @@ const AMENITY_LABEL: Record<string, string> = {
   apu_debit: "APU Debit",
 };
 
+const formatParkingExpiry = (input: {
+  tier: ParkingDurationTier;
+  expiresAt: string | null;
+}): string => {
+  if (input.tier === "forever" || input.expiresAt === null) {
+    return "Forever";
+  }
+  const ms = new Date(input.expiresAt).getTime() - Date.now();
+  if (ms <= 0) {
+    return "Expired";
+  }
+  const hours = Math.floor(ms / (60 * 60 * 1000));
+  if (hours < 48) {
+    return `${String(hours)}h left`;
+  }
+  const days = Math.floor(hours / 24);
+  return `${String(days)}d left`;
+};
+
 const amenityLabelForDisplay = (kind: string): string => {
   if (kind in AMENITY_LABEL) {
     return AMENITY_LABEL[kind] ?? "Activity";
@@ -531,6 +588,8 @@ export const createWalletInventoryPanel = (
         purchases: ReadonlyArray<PurchaseRecordDto>;
         items: Readonly<Record<string, unknown>>;
         selectedId: string | null;
+        activeParking: ReadonlyArray<ActiveParkingRow>;
+        parkingCapacityHint: string;
       };
 
   let state: ViewState = { kind: "loading" };
@@ -574,6 +633,41 @@ export const createWalletInventoryPanel = (
       });
       row.append(left, btn);
       wrap.appendChild(row);
+    }
+    parent.appendChild(wrap);
+  };
+
+  const renderActiveParkingSection = (
+    parent: HTMLElement,
+    rows: ReadonlyArray<ActiveParkingRow>,
+    capacityHint: string
+  ): void => {
+    const wrap = document.createElement("div");
+    wrap.className = `${PANEL_CLASS}__parking`;
+    const title = document.createElement("div");
+    title.className = `${PANEL_CLASS}__parking-title`;
+    title.textContent = "Active parking";
+    const hint = document.createElement("div");
+    hint.className = `${PANEL_CLASS}__parking-hint`;
+    hint.textContent = capacityHint;
+    wrap.append(title, hint);
+    if (rows.length === 0) {
+      const empty = document.createElement("div");
+      empty.style.fontSize = "12px";
+      empty.style.color = "#4b5563";
+      empty.textContent = "No active parking spots.";
+      wrap.appendChild(empty);
+    } else {
+      for (const row of rows) {
+        const line = document.createElement("div");
+        line.className = `${PANEL_CLASS}__parking-row`;
+        const left = document.createElement("span");
+        left.textContent = `Bay ${String(row.bay)} · ${row.displayNick}`;
+        const right = document.createElement("span");
+        right.textContent = `${row.tier} · ${formatParkingExpiry(row)}`;
+        line.append(left, right);
+        wrap.appendChild(line);
+      }
     }
     parent.appendChild(wrap);
   };
@@ -884,6 +978,11 @@ export const createWalletInventoryPanel = (
     }
     body.innerHTML = "";
     appendBundleExchangeSection(body, data.powerUps);
+    renderActiveParkingSection(
+      body,
+      data.activeParking,
+      data.parkingCapacityHint
+    );
     renderPurchasesList(body, data.purchases, data.items);
   };
 
@@ -916,7 +1015,7 @@ export const createWalletInventoryPanel = (
     open,
     close,
     isOpen: () => isOpen,
-    setData: ({ balanceUsd, powerUps, purchases, items }) => {
+    setData: ({ balanceUsd, powerUps, purchases, items, activeParking, parkingCapacityHint }) => {
       state = {
         kind: "data",
         balanceUsd,
@@ -924,6 +1023,8 @@ export const createWalletInventoryPanel = (
         purchases,
         items,
         selectedId: null,
+        activeParking: activeParking ?? [],
+        parkingCapacityHint: parkingCapacityHint ?? "0 of 2 timed spots",
       };
       if (isOpen) renderCurrent();
     },

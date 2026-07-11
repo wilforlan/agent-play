@@ -45,6 +45,23 @@ export function drawHomeStructure(
   });
 }
 
+export function drawFlowerCluster(
+  g: Graphics,
+  radius: number,
+  seed: number
+): void {
+  const colors = [0xff6b9d, 0xffd166, 0xc77dff, 0xff8fab];
+  g.clear();
+  g.circle(0, radius * 0.15, radius * 0.55).fill({ color: 0x3d9a54, alpha: 0.9 });
+  for (let i = 0; i < 5; i += 1) {
+    const angle = (i / 5) * Math.PI * 2 + seed * 0.3;
+    const color = colors[i % colors.length] ?? 0xff6b9d;
+    const fx = Math.cos(angle) * radius * 0.35;
+    const fy = Math.sin(angle) * radius * 0.2 - radius * 0.1;
+    g.circle(fx, fy, radius * 0.22).fill({ color, alpha: 0.95 });
+  }
+}
+
 export function drawToolPad(
   g: Graphics,
   box: number,
