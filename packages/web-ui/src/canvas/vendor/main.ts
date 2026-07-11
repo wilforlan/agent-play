@@ -2212,14 +2212,34 @@ function syncHousePurchasePanel(stage: ActiveHouseStage): void {
     priceUsd: house.priceUsd,
     ownerDisplayName: stage.handle.ownerDisplayName,
     balanceUsd: walletBalanceCached,
-    onBuy: () => {
-      void buyHouseFromPanel(stage.houseId);
+    onBuy: (details) => {
+      void buyHouseFromPanel(stage.houseId, details);
     },
   });
   positionHousePurchasePanel(stage);
 }
 
-async function buyHouseFromPanel(houseId: HouseId): Promise<void> {
+async function reenterHouseStageAsOwner(houseId: HouseId): Promise<void> {
+  const controller = stageController;
+  if (controller === null) {
+    return;
+  }
+  housePurchasePanel?.hide();
+  if (activeHouseStage !== null) {
+    try {
+      await controller.back();
+    } catch {
+      return;
+    }
+    activeHouseStage = null;
+  }
+  await enterHouseStage({ houseId, mode: "owner" });
+}
+
+async function buyHouseFromPanel(
+  houseId: HouseId,
+  details: { ownerName: string; ownerSignature: string }
+): Promise<void> {
   const panel = housePurchasePanel;
   if (panel === null || activeHouseStage === null) {
     return;
@@ -2233,6 +2253,8 @@ async function buyHouseFromPanel(houseId: HouseId): Promise<void> {
   const result = await buyHouse({
     sid,
     houseId,
+    ownerName: details.ownerName,
+    ownerSignature: details.ownerSignature,
   });
   if (result.ok) {
     walletBalanceCached = result.wallet.balanceUsd;
@@ -2245,13 +2267,7 @@ async function buyHouseFromPanel(houseId: HouseId): Promise<void> {
     if (walletInventoryPanel !== null && walletInventoryPanel.isOpen()) {
       void refreshWalletInventoryPanel();
     }
-    panel.hide();
-    leaveCurrentEnclosedStageToPrevious();
-    const humanPid = getHumanPlayerId();
-    const humanPos =
-      humanPid !== null ? playerWorldPos.get(humanPid) ?? null : null;
-    applyHouseDoorProximity(humanPos);
-    applyParkingBayProximity(humanPos);
+    await reenterHouseStageAsOwner(houseId);
     return;
   }
   const messages: Record<string, string> = {
