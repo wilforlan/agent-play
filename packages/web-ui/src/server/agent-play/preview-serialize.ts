@@ -27,6 +27,7 @@ import {
   migrateLayoutToParkingRow,
   type CarWashCar,
   type ParkingStreetContent,
+  type HouseStreetContent,
   type ShopItem,
   type SupermarketItem,
   type WorldLayout,
@@ -197,6 +198,7 @@ export type PreviewSnapshotJson = {
   worldMap: PreviewWorldMapJson;
   worldLayout: WorldLayoutJson;
   parkingStreet?: ParkingStreetContent;
+  houseStreet?: HouseStreetContent;
   spaces?: SpaceCatalogEntryJson[];
   mcpServers?: PreviewMcpRegistrationJson[];
 };

@@ -684,7 +684,14 @@ export class PlayWorld {
     };
     const normalized = resolveStructureAnchorsAtRuntime(withAgents);
     const withAmenities = await this.hydrateAmenityContent(normalized);
-    return this.hydrateParkingStreet(withAmenities);
+    return this.hydrateHouseStreet(withAmenities);
+  }
+
+  private async hydrateHouseStreet(
+    snapshot: PreviewSnapshotJson
+  ): Promise<PreviewSnapshotJson> {
+    const houseStreet = await this.sessionStore.getHouseStreet();
+    return { ...snapshot, houseStreet };
   }
 
   private async hydrateParkingStreet(

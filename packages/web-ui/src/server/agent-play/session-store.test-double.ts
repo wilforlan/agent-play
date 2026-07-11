@@ -18,6 +18,8 @@ import type {
   SupermarketItem,
   ParkingStreetContent,
   ParkingDurationTier,
+  HouseStreetContent,
+  HouseId,
 } from "@agent-play/sdk";
 import {
   ApplyGameOutcomeInputSchema,
@@ -25,7 +27,11 @@ import {
   canNodeAcquireParkingSpot,
   computeParkingExpiresAt,
   createEmptyParkingStreetContent,
+  createEmptyHouseStreetContent,
   findParkingSpot,
+  findHouseSlot,
+  housePurchaseDetail,
+  isHouseOwned,
   listActiveParkingOccupancies,
   isParkingOccupantActive,
   computeTalkAgentPowerUpsEarned,
@@ -60,6 +66,7 @@ import {
 } from "./test-double-scanner-mirror.js";
 import type {
   BuyParkingTicketResult,
+  BuyHouseResult,
   ExecutePurchaseResult,
   PresenceLease,
   PersistSnapshotRev,
@@ -101,6 +108,7 @@ export class TestSessionStore implements SessionStore {
   >();
   private readonly carWashCars = new Map<string, Map<string, CarWashCar>>();
   private parkingStreet: ParkingStreetContent = createEmptyParkingStreetContent();
+  private houseStreet: HouseStreetContent = createEmptyHouseStreetContent();
   private readonly playerWallets = new Map<string, PlayerWallet>();
   private readonly playerPurchases = new Map<string, PurchaseRecord[]>();
   private readonly geographyHumans = new Map<string, GeographyHumanState>();
@@ -1276,5 +1284,80 @@ export class TestSessionStore implements SessionStore {
     };
     await this.setParkingStreet(nextStreet);
     return nextStreet;
+  }
+
+  async getHouseStreet(): Promise<HouseStreetContent> {
+    return {
+      houses: this.houseStreet.houses.map((h) => ({ ...h })),
+    };
+  }
+
+  async setHouseStreet(content: HouseStreetContent): Promise<void> {
+    this.houseStreet = {
+      houses: content.houses.map((h) => ({ ...h })),
+    };
+  }
+
+  async buyHouse(input: {
+    nodeId: string;
+    houseId: HouseId;
+    ownerDisplayName: string;
+    now: string;
+    recordId: string;
+  }): Promise<BuyHouseResult> {
+    const street = await this.getHouseStreet();
+    const house = findHouseSlot(street, input.houseId);
+    if (house === undefined) {
+      return { ok: false, error: "INVALID_HOUSE" };
+    }
+    if (isHouseOwned(house)) {
+      return { ok: false, error: "HOUSE_ALREADY_OWNED" };
+    }
+    const priceUsd = house.priceUsd;
+    const wallet = await this.getPlayerWallet(input.nodeId);
+    if (wallet.balanceUsd < priceUsd) {
+      return { ok: false, error: "INSUFFICIENT_FUNDS" };
+    }
+    const nextHouses = street.houses.map((h) => {
+      if (h.houseId !== input.houseId) {
+        return h;
+      }
+      return {
+        ...h,
+        ownerNodeId: input.nodeId,
+        ownerDisplayName: input.ownerDisplayName.trim(),
+        purchasedAt: input.now,
+      };
+    });
+    const nextStreet: HouseStreetContent = { houses: nextHouses };
+    await this.setHouseStreet(nextStreet);
+    const nextWallet: PlayerWallet = {
+      ...wallet,
+      balanceUsd: wallet.balanceUsd - priceUsd,
+      updatedAt: input.now,
+    };
+    this.playerWallets.set(input.nodeId, nextWallet);
+    mirrorWalletBalance(this.scannerMirror, nextWallet);
+    const updatedHouse = findHouseSlot(nextStreet, input.houseId);
+    if (updatedHouse === undefined) {
+      return { ok: false, error: "INVALID_HOUSE" };
+    }
+    const record: PurchaseRecord = {
+      id: input.recordId,
+      playerId: input.nodeId,
+      spaceId: "__houses__",
+      amenityKind: "house",
+      itemRef: { kind: "house", id: house.id },
+      priceUsd,
+      at: input.now,
+      detail: housePurchaseDetail(updatedHouse),
+    };
+    await this.appendPurchaseRecord(record);
+    return {
+      ok: true,
+      record,
+      wallet: nextWallet,
+      houseStreet: nextStreet,
+    };
   }
 }

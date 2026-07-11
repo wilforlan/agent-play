@@ -35,7 +35,8 @@ export type StageId =
   | "gameSignalHunt"
   | "gameDeliveryDash"
   | "gameLeaseLocker"
-  | "gameTalkTimer";
+  | "gameTalkTimer"
+  | "houseInterior";
 
 /**
  * Minimal display-object contract the controller animates.

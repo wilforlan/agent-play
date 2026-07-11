@@ -26,6 +26,8 @@ import type {
   SupermarketItem,
   ParkingStreetContent,
   ParkingDurationTier,
+  HouseStreetContent,
+  HouseId,
 } from "@agent-play/sdk";
 import {
   ApplyGameOutcomeInputSchema,
@@ -35,11 +37,16 @@ import {
   ShopItemSchema,
   SupermarketItemSchema,
   ParkingStreetContentSchema,
+  HouseStreetContentSchema,
   TALK_PRICE_PER_SECOND_USD,
   canNodeAcquireParkingSpot,
   computeParkingExpiresAt,
   createEmptyParkingStreetContent,
+  createEmptyHouseStreetContent,
   findParkingSpot,
+  findHouseSlot,
+  housePurchaseDetail,
+  isHouseOwned,
   listActiveParkingOccupancies,
   isParkingOccupantActive,
   computeTalkAgentPowerUpsEarned,
@@ -84,6 +91,7 @@ import {
 } from "./world-geography.js";
 import type {
   BuyParkingTicketResult,
+  BuyHouseResult,
   ExecutePurchaseResult,
   PresenceLease,
   PersistSnapshotRev,
@@ -158,6 +166,10 @@ function spaceCarWashCarsHashKey(hostId: string, spaceId: string): string {
 
 function parkingStreetKey(hostId: string): string {
   return `agent-play:${hostId}:parking-street`;
+}
+
+function parkingHousesKey(hostId: string): string {
+  return `agent-play:${hostId}:parking-houses`;
 }
 
 function playerWalletKey(hostId: string, playerId: string): string {
@@ -2209,6 +2221,127 @@ export class RedisSessionStore implements SessionStore {
       await this.setParkingStreet(nextStreet);
     }
     return nextStreet;
+  }
+
+  async getHouseStreet(): Promise<HouseStreetContent> {
+    const raw = await this.redis.get(parkingHousesKey(this.hostId));
+    if (raw === null || raw.length === 0) {
+      return createEmptyHouseStreetContent();
+    }
+    try {
+      return HouseStreetContentSchema.parse(JSON.parse(raw));
+    } catch {
+      return createEmptyHouseStreetContent();
+    }
+  }
+
+  async setHouseStreet(content: HouseStreetContent): Promise<void> {
+    const parsed = HouseStreetContentSchema.parse(content);
+    await this.redis.set(parkingHousesKey(this.hostId), JSON.stringify(parsed));
+  }
+
+  async buyHouse(input: {
+    nodeId: string;
+    houseId: HouseId;
+    ownerDisplayName: string;
+    now: string;
+    recordId: string;
+  }): Promise<BuyHouseResult> {
+    const housesKey = parkingHousesKey(this.hostId);
+    const walletKey = playerWalletKey(this.hostId, input.nodeId);
+    const purchasesKeyName = playerPurchasesKey(this.hostId, input.nodeId);
+
+    await this.getPlayerWallet(input.nodeId);
+
+    const maxAttempts = 5;
+    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+      await this.redis.watch(housesKey, walletKey);
+      const street = await this.getHouseStreet();
+      const house = findHouseSlot(street, input.houseId);
+      if (house === undefined) {
+        await this.redis.unwatch();
+        return { ok: false, error: "INVALID_HOUSE" };
+      }
+      if (isHouseOwned(house)) {
+        await this.redis.unwatch();
+        return { ok: false, error: "HOUSE_ALREADY_OWNED" };
+      }
+      const priceUsd = house.priceUsd;
+      const rawWallet = await this.redis.get(walletKey);
+      if (rawWallet === null) {
+        await this.redis.unwatch();
+        return { ok: false, error: "INSUFFICIENT_FUNDS" };
+      }
+      let wallet: PlayerWallet;
+      try {
+        wallet = PlayerWalletSchema.parse(JSON.parse(rawWallet));
+      } catch {
+        await this.redis.unwatch();
+        return { ok: false, error: "INSUFFICIENT_FUNDS" };
+      }
+      if (wallet.balanceUsd < priceUsd) {
+        await this.redis.unwatch();
+        return { ok: false, error: "INSUFFICIENT_FUNDS" };
+      }
+      const nextHouses = street.houses.map((h) => {
+        if (h.houseId !== input.houseId) {
+          return h;
+        }
+        return {
+          ...h,
+          ownerNodeId: input.nodeId,
+          ownerDisplayName: input.ownerDisplayName.trim(),
+          purchasedAt: input.now,
+        };
+      });
+      const nextStreet = HouseStreetContentSchema.parse({ houses: nextHouses });
+      const nextWallet: PlayerWallet = {
+        ...wallet,
+        balanceUsd: wallet.balanceUsd - priceUsd,
+        updatedAt: input.now,
+      };
+      const updatedHouse = findHouseSlot(nextStreet, input.houseId);
+      if (updatedHouse === undefined) {
+        await this.redis.unwatch();
+        return { ok: false, error: "INVALID_HOUSE" };
+      }
+      const record: PurchaseRecord = {
+        id: input.recordId,
+        playerId: input.nodeId,
+        spaceId: "__houses__",
+        amenityKind: "house",
+        itemRef: { kind: "house", id: house.id },
+        priceUsd,
+        at: input.now,
+        detail: housePurchaseDetail(updatedHouse),
+      };
+      const multi = this.redis.multi();
+      multi.set(housesKey, JSON.stringify(nextStreet));
+      multi.set(walletKey, JSON.stringify(nextWallet));
+      multi.lpush(purchasesKeyName, JSON.stringify(record));
+      multi.ltrim(purchasesKeyName, 0, PURCHASES_MAX - 1);
+      const exec = await multi.exec();
+      if (exec === null) {
+        continue;
+      }
+      safeIndexPurchaseRecord({
+        redis: this.redis,
+        hostId: this.hostId,
+        record,
+      });
+      safeIndexWallet({
+        redis: this.redis,
+        hostId: this.hostId,
+        wallet: nextWallet,
+      });
+      return {
+        ok: true,
+        record,
+        wallet: nextWallet,
+        houseStreet: nextStreet,
+      };
+    }
+    return { ok: false, error: "HOUSE_ALREADY_OWNED" };
   }
 
   getRedis(): Redis {

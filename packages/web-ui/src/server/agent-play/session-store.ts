@@ -27,6 +27,8 @@ import type {
   SupermarketItem,
   ParkingStreetContent,
   ParkingDurationTier,
+  HouseStreetContent,
+  HouseId,
   ApplyGameOutcomeInput,
   GameStats,
 } from "@agent-play/sdk";
@@ -296,6 +298,15 @@ export type SessionStore = {
     recordId: string;
   }): Promise<BuyParkingTicketResult>;
   tickParkingExpiry(nowIso: string): Promise<ParkingStreetContent>;
+  getHouseStreet(): Promise<HouseStreetContent>;
+  setHouseStreet(content: HouseStreetContent): Promise<void>;
+  buyHouse(input: {
+    nodeId: string;
+    houseId: HouseId;
+    ownerDisplayName: string;
+    now: string;
+    recordId: string;
+  }): Promise<BuyHouseResult>;
 };
 
 /**
@@ -336,4 +347,19 @@ export type BuyParkingTicketResult =
         | "PARKING_FOREVER_LIMIT"
         | "INSUFFICIENT_FUNDS"
         | "INVALID_SPOT";
+    };
+
+export type BuyHouseResult =
+  | {
+      ok: true;
+      record: PurchaseRecord;
+      wallet: PlayerWallet;
+      houseStreet: HouseStreetContent;
+    }
+  | {
+      ok: false;
+      error:
+        | "HOUSE_ALREADY_OWNED"
+        | "INSUFFICIENT_FUNDS"
+        | "INVALID_HOUSE";
     };

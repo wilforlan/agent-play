@@ -188,6 +188,32 @@ export {
   type ParkingStreetContent,
 } from "./lib/parking-content-model.js";
 export {
+  HOUSE_CATALOG,
+  HOUSE_WORLD_X,
+  HouseIdSchema,
+  HouseSlotSchema,
+  HouseStreetContentSchema,
+  PARKING_HOUSE_COUNT,
+  createEmptyHouseStreetContent,
+  findHouseSlot,
+  housePurchaseDetail,
+  isHouseOwned,
+  type HouseId,
+  type HouseSlot,
+  type HouseStreetContent,
+} from "./lib/house-content-model.js";
+export {
+  HOUSE_BLUEPRINTS,
+  clampHousePosition,
+  getHouseBlueprint,
+  houseSpawnPosition,
+  layoutHouseFixtures,
+  type HouseBlueprint,
+  type HouseFixtureKind,
+  type HouseFixtureSlot,
+  type HouseStageBounds,
+} from "./lib/house-layout-model.js";
+export {
   DEFAULT_PARKING_RATES_USD,
   PARKING_DURATION_TIERS,
   computeParkingExpiresAt,
