@@ -2,6 +2,8 @@
  * @module @agent-play/play-ui/preview-human-credentials
  * preview human credentials — preview canvas module (Pixi + DOM).
  */
+import type { FileSystemFileHandle } from "../../file-system-access.js";
+
 const STORAGE_KEY = "agent-play.humanCredentials";
 
 export type HumanCredentials = {
@@ -82,6 +84,25 @@ export function getMainNodeIdForIntercom(): string | null {
 const CREDENTIALS_DOWNLOAD_FILENAME = "credentials.json";
 const CREDENTIALS_DOWNLOAD_CLEANUP_MS = 200;
 
+const triggerAnchorBlobDownload = (blob: Blob): void => {
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = CREDENTIALS_DOWNLOAD_FILENAME;
+  anchor.style.position = "fixed";
+  anchor.style.inset = "0";
+  anchor.style.opacity = "0";
+  anchor.style.pointerEvents = "none";
+  document.body.appendChild(anchor);
+  anchor.click();
+  window.setTimeout(() => {
+    if (anchor.parentNode !== null) {
+      anchor.remove();
+    }
+    URL.revokeObjectURL(url);
+  }, CREDENTIALS_DOWNLOAD_CLEANUP_MS);
+};
+
 export function downloadHumanCredentialsJson(options: {
   nodeId: string;
   passw: string;
@@ -98,20 +119,31 @@ export function downloadHumanCredentialsJson(options: {
   const blob = new Blob([JSON.stringify(payload, null, 2)], {
     type: "application/json",
   });
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = CREDENTIALS_DOWNLOAD_FILENAME;
-  anchor.rel = "noopener";
-  anchor.style.position = "fixed";
-  anchor.style.left = "-9999px";
-  anchor.style.top = "0";
-  document.body.appendChild(anchor);
-  anchor.click();
-  window.setTimeout(() => {
-    if (anchor.parentNode !== null) {
-      anchor.remove();
-    }
-    URL.revokeObjectURL(url);
-  }, CREDENTIALS_DOWNLOAD_CLEANUP_MS);
+
+  if (typeof window.showSaveFilePicker === "function") {
+    const saveFilePicker = window.showSaveFilePicker;
+    void saveFilePicker({
+        suggestedName: CREDENTIALS_DOWNLOAD_FILENAME,
+        types: [
+          {
+            description: "JSON",
+            accept: { "application/json": [".json"] },
+          },
+        ],
+      })
+      .then(async (handle: FileSystemFileHandle) => {
+        const writable = await handle.createWritable();
+        await writable.write(blob);
+        await writable.close();
+      })
+      .catch((err: unknown) => {
+        if (err instanceof DOMException && err.name === "AbortError") {
+          return;
+        }
+        triggerAnchorBlobDownload(blob);
+      });
+    return;
+  }
+
+  triggerAnchorBlobDownload(blob);
 }
