@@ -216,6 +216,11 @@ async function execStatement(
       const mainNodeId = String(evalExpr(statement.mainNodeId, context.vars));
       context.state.serverUrl = serverUrl;
       context.state.mainNodeId = mainNodeId;
+      if (statement.passphrase !== undefined) {
+        const phrase = String(evalExpr(statement.passphrase, context.vars));
+        context.state.nodePasswordMaterial =
+          nodeCredentialsMaterialFromHumanPassphrase(phrase);
+      }
       if (context.state.sid !== null) {
         context.outputs.lastResponse = {
           sid: context.state.sid,
@@ -971,6 +976,23 @@ async function execStatement(
       const balanceUsd = Number(evalExpr(statement.balanceUsd, context.vars));
       if (!Number.isFinite(balanceUsd) || balanceUsd < 0) {
         throw new Error("AQL_RUNTIME_ERROR: BALANCE must be a non-negative number");
+      }
+      const nodePayload = await context.rpc.inspectMainNode({
+        nodeId: mainId,
+        passwordMaterial: material,
+      });
+      const mainNode = nodePayload.mainNode as { kind?: string; parentNodeId?: string } | undefined;
+      if (mainNode?.kind !== "main") {
+        const kind = mainNode?.kind ?? "unknown";
+        const parent =
+          typeof mainNode?.parentNodeId === "string" && mainNode.parentNodeId.length > 0
+            ? mainNode.parentNodeId
+            : null;
+        throw new Error(
+          parent === null
+            ? `AQL_RUNTIME_ERROR: SET WALLET requires CONNECT MAIN_NODE to be a main account node (kind=main), not kind=${kind}`
+            : `AQL_RUNTIME_ERROR: SET WALLET requires CONNECT MAIN_NODE to be a main account node (kind=main), not kind=${kind}. Try MAIN_NODE "${parent}" with that account's passphrase`
+        );
       }
       const startedAt = performance.now();
       const rawResponse = await context.rpc.sdkRpc({

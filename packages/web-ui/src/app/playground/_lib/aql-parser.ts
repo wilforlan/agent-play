@@ -11,6 +11,7 @@
  * ADD CARWASH CAR SLOT 3 NAME ... MODEL ... YEAR 2024 PRICE 28999 COLOR "#5a87d1"
  * SET WALLET PLAYER "<playerId>" BALANCE <usd>
  * SET WALLET BALANCE OF PLAYER "<playerId>" <usd>
+ * CONNECT SERVER "<url>" MAIN_NODE "<id>" PASSPHRASE "word1 … word10"
  * ```
  *
  * @see ./aql-validator.ts and ./aql-executor.ts for downstream stages.
@@ -148,6 +149,13 @@ class Parser {
     if (!this.matchKeyword("MAIN_NODE")) return null;
     const mainNodeId = this.parseExpr();
     if (mainNodeId === null) return null;
+    if (this.checkKeyword("PASSPHRASE")) {
+      this.advance();
+      const passphrase = this.parseExpr();
+      return passphrase === null
+        ? null
+        : { kind: "ConnectStmt", serverUrl, mainNodeId, passphrase };
+    }
     return { kind: "ConnectStmt", serverUrl, mainNodeId };
   }
 

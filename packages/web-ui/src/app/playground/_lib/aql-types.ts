@@ -53,6 +53,7 @@ export type AqlStatement =
       kind: "ConnectStmt";
       serverUrl: AqlExpr;
       mainNodeId: AqlExpr;
+      passphrase?: AqlExpr;
     }
   | {
       kind: "CreateSpaceStmt";

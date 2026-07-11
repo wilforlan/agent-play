@@ -107,7 +107,8 @@ async function verifyMainNodeHeaders(req: NextRequest): Promise<Response | null>
   }
   const row = await repository.getNode(nodeId);
   if (row === null || row.kind !== "main") {
-    return Response.json({ error: "main node required" }, { status: 403 });
+    const kind = row?.kind ?? "missing";
+    return Response.json({ error: `main node required (got kind=${kind})` }, { status: 403 });
   }
   return null;
 }
