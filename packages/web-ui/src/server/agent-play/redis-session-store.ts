@@ -98,10 +98,12 @@ import type {
   PersistSnapshotRev,
   PublishedSessionMetadata,
   SessionStore,
+  SnapshotMutationFanoutItem,
   SpaceAmenityLogEntry,
   WorldChatMessage,
   WorldFanoutOptions,
 } from "./session-store.js";
+import { publishSnapshotFanout } from "./world-redis-sync.js";
 
 const PURCHASES_MAX = 500;
 
@@ -545,6 +547,83 @@ export class RedisSessionStore implements SessionStore {
       },
     });
     return { rev, merkleRootHex, merkleLeafCount };
+  }
+
+  async runSnapshotMutation(options: {
+    mutate: (
+      snapshot: PreviewSnapshotJson | null
+    ) => Promise<{
+      next: PreviewSnapshotJson;
+      fanout: SnapshotMutationFanoutItem[];
+    }>;
+  }): Promise<void> {
+    const maxAttempts = 5;
+    const snapKey = snapshotKey(this.hostId);
+    const sessKey = sessionHashKey(this.hostId);
+    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+      await this.redis.watch(snapKey, sessKey);
+      const cached = await this.getSnapshotJson();
+      let next: PreviewSnapshotJson;
+      let fanout: SnapshotMutationFanoutItem[];
+      try {
+        const result = await options.mutate(cached);
+        next = result.next;
+        fanout = result.fanout;
+      } catch (error) {
+        await this.redis.unwatch();
+        throw error;
+      }
+      const prev = cached;
+      const raw = JSON.stringify(next);
+      const { merkleRootHex, merkleLeafCount } = buildPlayerChainFromSnapshot(
+        next,
+        this.playerChainGenesis
+      );
+      const leafDiff = diffPlayerChainLeaves(
+        prev,
+        next,
+        this.playerChainGenesis
+      );
+      const leafDeltaCount =
+        leafDiff.removedKeys.length + leafDiff.updates.length;
+      const chain = this.redis.multi();
+      this.appendSnapshotAndGridToMulti(chain, next, raw);
+      this.appendPlayerChainLeavesToMulti(chain, next);
+      chain.hincrby(sessKey, "snapshotRev", 1);
+      chain.hset(sessKey, {
+        lastSnapshotAt: new Date().toISOString(),
+        snapshotBytes: String(Buffer.byteLength(raw, "utf8")),
+        merkleRootHex,
+        merkleLeafCount: String(merkleLeafCount),
+      });
+      const results = await chain.exec();
+      if (results === null) {
+        continue;
+      }
+      const rev = await this.getSnapshotRev();
+      safeIndexBlock({
+        redis: this.redis,
+        hostId: this.hostId,
+        block: {
+          rev,
+          merkleRootHex,
+          merkleLeafCount,
+          at: new Date().toISOString(),
+          occupantCount: next.worldMap?.occupants?.length,
+          leafDeltaCount,
+        },
+      });
+      await publishSnapshotFanout(this, {
+        prev,
+        next,
+        rev,
+        merkleRootHex,
+        merkleLeafCount,
+        fanout,
+      });
+      return;
+    }
+    throw new Error("runSnapshotMutation: max retries exceeded");
   }
 
   async getSnapshotRev(): Promise<number> {
