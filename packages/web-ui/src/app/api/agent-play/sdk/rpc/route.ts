@@ -54,7 +54,7 @@ import {
 } from "@/server/agent-play/agent-play-debug";
 import { logAgentPlayApi } from "@/server/agent-play/log-agent-play-api";
 import type { Journey } from "@/server/agent-play/@types/world";
-import { readResolvedSnapshot } from "@/server/agent-play/read-resolved-snapshot";
+import { readResolvedSnapshotWithMeta } from "@/server/agent-play/read-resolved-snapshot";
 import { readPlayerChainNode } from "@/server/agent-play/read-player-chain-node";
 import { getPlayWorld, getSessionStore, getSharedRedisClient } from "@/server/get-world";
 import { safeTrackAnalyticsEvent } from "@/server/scanner/scanner-hooks";
@@ -279,10 +279,14 @@ export async function POST(req: NextRequest) {
 
   try {
     if (body.op === "getWorldSnapshot") {
-      const snap = await readResolvedSnapshot({
-        sid: store.getSessionId(),
-        store,
-      });
+      const { snapshot: snap, parkingChanged } =
+        await readResolvedSnapshotWithMeta({
+          sid: store.getSessionId(),
+          store,
+        });
+      if (parkingChanged) {
+        await fanoutParkingStreetUpdated({ store, world });
+      }
       if (isAgentPlayVerboseEnabled()) {
         agentPlayVerbose("api", "getWorldSnapshot", snap);
       }

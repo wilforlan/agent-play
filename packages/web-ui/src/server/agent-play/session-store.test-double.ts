@@ -1205,12 +1205,19 @@ export class TestSessionStore implements SessionStore {
     recordId: string;
   }): Promise<BuyParkingTicketResult> {
     const layer = input.layer ?? 1;
+    await this.tickParkingExpiry(input.now);
     const street = await this.getParkingStreet();
     const spot = findParkingSpot(street, input.bay, layer);
     if (spot === undefined) {
       return { ok: false, error: "INVALID_SPOT" };
     }
-    if (spot.occupant !== null) {
+    if (
+      spot.occupant !== null &&
+      isParkingOccupantActive({
+        expiresAt: spot.occupant.expiresAt,
+        nowIso: input.now,
+      })
+    ) {
       return { ok: false, error: "SPOT_OCCUPIED" };
     }
     const car = await this.resolveWalletCarFromPurchase({
@@ -1290,7 +1297,9 @@ export class TestSessionStore implements SessionStore {
     };
   }
 
-  async tickParkingExpiry(nowIso: string): Promise<ParkingStreetContent> {
+  async tickParkingExpiry(
+    nowIso: string
+  ): Promise<{ street: ParkingStreetContent; changed: boolean }> {
     const street = await this.getParkingStreet();
     const nextSpots = street.spots.map((s) => {
       const occupant = s.occupant;
@@ -1311,8 +1320,14 @@ export class TestSessionStore implements SessionStore {
       spots: nextSpots,
       rates: street.rates,
     };
-    await this.setParkingStreet(nextStreet);
-    return nextStreet;
+    const changed = nextSpots.some((s, i) => {
+      const prev = street.spots[i];
+      return prev?.occupant !== s.occupant;
+    });
+    if (changed) {
+      await this.setParkingStreet(nextStreet);
+    }
+    return { street: nextStreet, changed };
   }
 
   async getHouseStreet(): Promise<HouseStreetContent> {

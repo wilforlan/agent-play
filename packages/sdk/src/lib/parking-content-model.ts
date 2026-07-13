@@ -1,5 +1,8 @@
 import { z } from "zod";
-import { DEFAULT_PARKING_RATES_USD } from "./parking-pricing.js";
+import {
+  DEFAULT_PARKING_RATES_USD,
+  isParkingOccupantActive,
+} from "./parking-pricing.js";
 import type { ParkingDurationTier } from "./parking-ownership.js";
 
 const NonEmpty = z.string().trim().min(1);
@@ -119,3 +122,25 @@ export const findParkingSpot = (
   layer: ParkingSpot["layer"]
 ): ParkingSpot | undefined =>
   content.spots.find((s) => s.bay === bay && s.layer === layer);
+
+export const effectiveParkingStreet = (
+  content: ParkingStreetContent,
+  nowIso: string
+): ParkingStreetContent => ({
+  spots: content.spots.map((spot) => {
+    const occupant = spot.occupant;
+    if (occupant === null) {
+      return spot;
+    }
+    if (
+      isParkingOccupantActive({
+        expiresAt: occupant.expiresAt,
+        nowIso,
+      })
+    ) {
+      return spot;
+    }
+    return { ...spot, occupant: null };
+  }),
+  rates: { ...content.rates },
+});

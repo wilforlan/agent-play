@@ -6,6 +6,7 @@ import type {
 } from "@agent-play/sdk/browser";
 import {
   createEmptyHouseStreetContent,
+  effectiveParkingStreet,
   getHouseBlueprint,
   HOUSE_WORLD_X,
 } from "@agent-play/sdk/browser";
@@ -84,8 +85,13 @@ export function buildParkingStreetLayer(input: {
   palette: MultiversePalette;
   cellScale: number;
   worldToLocal: (wx: number, wy: number) => { x: number; y: number };
+  nowIso?: string;
 }): Container {
   const root = new Container();
+  const parkingStreet = effectiveParkingStreet(
+    input.parkingStreet,
+    input.nowIso ?? new Date().toISOString()
+  );
   const { minX, maxX, minY, maxY } = input.zoneRect;
   const band = input.bandRect ?? input.zoneRect;
   const bandExtents = computeBandPixelExtents({
@@ -169,7 +175,7 @@ export function buildParkingStreetLayer(input: {
     root.addChild(bayOutline);
   }
 
-  for (const spot of input.parkingStreet.spots) {
+  for (const spot of parkingStreet.spots) {
     const occupant = spot.occupant;
     if (occupant === null) {
       continue;

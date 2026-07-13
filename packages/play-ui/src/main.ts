@@ -263,6 +263,7 @@ import {
   type ParkingTicketTooltipHandle,
 } from "./parking-ticket-tooltip.js";
 import { buyParkingTicket } from "./parking-ticket-client.js";
+import { createParkingExpiryScheduler } from "./parking-expiry-schedule.js";
 import {
   clampCameraToWorldRect,
   computeWorldRootScrollRect,
@@ -1745,6 +1746,9 @@ type ActiveAmenityStage = {
 let activeAmenityStage: ActiveAmenityStage | null = null;
 let amenityItemTooltip: ItemTooltipHandle | null = null;
 let parkingTicketTooltip: ParkingTicketTooltipHandle | null = null;
+let parkingExpiryScheduler: ReturnType<
+  typeof createParkingExpiryScheduler
+> | null = null;
 let housePurchasePanel: HousePurchasePanelHandle | null = null;
 
 type ActiveHouseStage = {
@@ -3954,6 +3958,28 @@ function resolveParkingOwnershipBlocked(nodeId: string): string | undefined {
   return "Maximum timed parking spots reached (2 of 2).";
 }
 
+function scheduleParkingExpiryRefresh(): void {
+  if (parkingExpiryScheduler === null) {
+    parkingExpiryScheduler = createParkingExpiryScheduler({
+      getStreet: resolveParkingStreetContent,
+      onExpire: () => {
+        paintParkingStreet();
+        const humanPos = playerWorldPos.get(HUMAN_VIEWER_PLAYER_ID);
+        applyParkingBayProximity(humanPos ?? null);
+        proximityTouchPadHandle?.refresh();
+        if (walletInventoryPanel !== null && walletInventoryPanel.isOpen()) {
+          void refreshWalletInventoryPanel();
+        }
+        const sid = getSid();
+        if (sid !== null) {
+          void loadSnapshot(sid);
+        }
+      },
+    });
+  }
+  parkingExpiryScheduler.schedule();
+}
+
 function paintParkingStreet(): void {
   for (const ch of [...parkingStreetLayer.children]) {
     parkingStreetLayer.removeChild(ch);
@@ -3984,6 +4010,7 @@ function paintParkingStreet(): void {
     worldToLocal: worldToWorldRootLocal,
   });
   parkingStreetLayer.addChild(layer);
+  scheduleParkingExpiryRefresh();
 }
 
 function paintGrid(): void {

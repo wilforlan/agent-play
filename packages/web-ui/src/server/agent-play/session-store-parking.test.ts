@@ -177,7 +177,103 @@ describe("session-store: parking street", () => {
       recordId: "park-exp",
     });
     const cleared = await store.tickParkingExpiry("2026-01-01T02:00:00.000Z");
-    const spot = findParkingSpot(cleared, 4, 2);
+    expect(cleared.changed).toBe(true);
+    const spot = findParkingSpot(cleared.street, 4, 2);
     expect(spot?.occupant).toBeNull();
+  });
+
+  it("tickParkingExpiry returns changed false when nothing expired", async () => {
+    const store = new TestSessionStore();
+    await store.loadOrCreateSessionId();
+    const carPurchaseId = await seedWalletCar(store, "node-a");
+    await store.buyParkingTicket({
+      nodeId: "node-a",
+      bay: 1,
+      layer: 1,
+      carPurchaseId,
+      durationTier: "1h",
+      displayNick: "Active",
+      now: "2026-01-01T00:00:00.000Z",
+      recordId: "park-active",
+    });
+    const ticked = await store.tickParkingExpiry("2026-01-01T00:30:00.000Z");
+    expect(ticked.changed).toBe(false);
+    expect(findParkingSpot(ticked.street, 1, 1)?.occupant?.displayNick).toBe(
+      "Active"
+    );
+  });
+
+  it("buys on a spot with expired occupant still stored in Redis", async () => {
+    const store = new TestSessionStore();
+    await store.loadOrCreateSessionId();
+    const carPurchaseIdA = await seedWalletCar(store, "node-a");
+    await store.buyParkingTicket({
+      nodeId: "node-a",
+      bay: 2,
+      layer: 1,
+      carPurchaseId: carPurchaseIdA,
+      durationTier: "1h",
+      displayNick: "Expired",
+      now: "2026-01-01T00:00:00.000Z",
+      recordId: "park-old",
+    });
+    const street = await store.getParkingStreet();
+    const spot = findParkingSpot(street, 2, 1);
+    if (spot === undefined) {
+      throw new Error("spot");
+    }
+    await store.setParkingStreet({
+      ...street,
+      spots: street.spots.map((s) =>
+        s.id === spot.id
+          ? {
+              ...s,
+              occupant: {
+                nodeId: "node-a",
+                carPurchaseId: carPurchaseIdA,
+                displayNick: "Expired",
+                colorHex: "#ff0000",
+                model: "GT",
+                tier: "1h" as const,
+                purchasedAt: "2026-01-01T00:00:00.000Z",
+                expiresAt: "2026-01-01T01:00:00.000Z",
+              },
+            }
+          : s
+      ),
+    });
+    await store.upsertCarWashCar(baseCar({ id: "car-2", slot: 2, colorHex: "#00ff00" }));
+    await store.setPlayerWalletBalance({
+      playerId: "node-b",
+      balanceUsd: 100,
+    });
+    const purchaseB = await store.executePurchase({
+      spaceId: "space-1",
+      amenityKind: "car_wash",
+      itemRef: { kind: "carwash", id: "car-2" },
+      playerId: "node-b",
+      now: "2026-01-01T02:00:00.000Z",
+      recordId: "p-b",
+    });
+    if (!purchaseB.ok) {
+      throw new Error("seed failed");
+    }
+    const result = await store.buyParkingTicket({
+      nodeId: "node-b",
+      bay: 2,
+      layer: 1,
+      carPurchaseId: purchaseB.record.id,
+      durationTier: "1h",
+      displayNick: "New",
+      now: "2026-01-01T02:00:00.000Z",
+      recordId: "park-new",
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+    expect(findParkingSpot(result.parkingStreet, 2, 1)?.occupant?.nodeId).toBe(
+      "node-b"
+    );
   });
 });
