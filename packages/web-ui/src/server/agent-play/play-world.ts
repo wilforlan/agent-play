@@ -40,6 +40,7 @@ import {
   assertAgentToolContract,
   extractAssistToolNames,
 } from "./agent-tool-contract.js";
+import { hydrateStreetSidecars } from "./hydrate-street-sidecars.js";
 import {
   serializeWorldJourneyUpdate,
   buildSnapshotWorldLayout,
@@ -684,22 +685,11 @@ export class PlayWorld {
     };
     const normalized = resolveStructureAnchorsAtRuntime(withAgents);
     const withAmenities = await this.hydrateAmenityContent(normalized);
-    return this.hydrateHouseStreet(withAmenities);
-  }
-
-  private async hydrateHouseStreet(
-    snapshot: PreviewSnapshotJson
-  ): Promise<PreviewSnapshotJson> {
-    const houseStreet = await this.sessionStore.getHouseStreet();
-    return { ...snapshot, houseStreet };
-  }
-
-  private async hydrateParkingStreet(
-    snapshot: PreviewSnapshotJson
-  ): Promise<PreviewSnapshotJson> {
-    const nowIso = new Date().toISOString();
-    const parkingStreet = await this.sessionStore.tickParkingExpiry(nowIso);
-    return { ...snapshot, parkingStreet };
+    const { snapshot } = await hydrateStreetSidecars(
+      this.sessionStore,
+      withAmenities
+    );
+    return snapshot;
   }
 
   /**

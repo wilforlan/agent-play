@@ -178,6 +178,7 @@ export {
   ParkingSpotSchema,
   ParkingStreetContentSchema,
   createEmptyParkingStreetContent,
+  effectiveParkingStreet,
   findParkingSpot,
   listActiveParkingOccupancies,
   PARKING_BAY_COUNT,

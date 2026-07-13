@@ -1,5 +1,5 @@
 import type { ParkingSpot, ParkingStreetContent } from "@agent-play/sdk/browser";
-import { findParkingSpot } from "@agent-play/sdk/browser";
+import { findParkingSpot, isParkingOccupantActive } from "@agent-play/sdk/browser";
 
 export type ParkingBayAnchor = {
   bay: ParkingSpot["bay"];
@@ -54,9 +54,9 @@ export const isParkingBayVacant = (input: {
   if (occupant === null) {
     return true;
   }
-  if (occupant.expiresAt === null) {
-    return false;
-  }
-  const now = input.nowMs ?? Date.now();
-  return new Date(occupant.expiresAt).getTime() <= now;
+  const nowIso = new Date(input.nowMs ?? Date.now()).toISOString();
+  return !isParkingOccupantActive({
+    expiresAt: occupant.expiresAt,
+    nowIso,
+  });
 };

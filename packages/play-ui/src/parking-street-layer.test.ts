@@ -70,6 +70,50 @@ describe("buildParkingStreetLayer", () => {
     expect(layer.children.length).toBeGreaterThan(4);
   });
 
+  it("does not render car sprites for expired occupants", () => {
+    const content = createEmptyParkingStreetContent();
+    const spot = content.spots.find((s) => s.bay === 1 && s.layer === 1);
+    if (spot === undefined) {
+      throw new Error("spot");
+    }
+    const occupied = {
+      ...spot,
+      occupant: {
+        nodeId: "node-1",
+        carPurchaseId: "p1",
+        displayNick: "Coupe",
+        colorHex: "#ff0000",
+        model: "GT",
+        tier: "1h" as const,
+        purchasedAt: "2026-01-01T00:00:00.000Z",
+        expiresAt: "2026-01-01T01:00:00.000Z",
+      },
+    };
+    const street = {
+      ...content,
+      spots: content.spots.map((s) =>
+        s.bay === 1 && s.layer === 1 ? occupied : s
+      ),
+    };
+    const activeLayer = buildParkingStreetLayer({
+      zoneRect: { minX: 0, maxX: 19, minY: 6, maxY: 9 },
+      parkingStreet: street,
+      palette: defaultMultiversePalette,
+      cellScale: 32,
+      worldToLocal: (wx, wy) => ({ x: wx * 32, y: wy * 32 }),
+      nowIso: "2026-01-01T00:30:00.000Z",
+    });
+    const expiredLayer = buildParkingStreetLayer({
+      zoneRect: { minX: 0, maxX: 19, minY: 6, maxY: 9 },
+      parkingStreet: street,
+      palette: defaultMultiversePalette,
+      cellScale: 32,
+      worldToLocal: (wx, wy) => ({ x: wx * 32, y: wy * 32 }),
+      nowIso: "2026-01-01T02:00:00.000Z",
+    });
+    expect(expiredLayer.children.length).toBeLessThan(activeLayer.children.length);
+  });
+
   it("shows owner name on house sign when owned", () => {
     expect(
       formatHouseSignLabel({

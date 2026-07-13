@@ -2153,6 +2153,7 @@ export class RedisSessionStore implements SessionStore {
     recordId: string;
   }): Promise<BuyParkingTicketResult> {
     const layer = input.layer ?? 1;
+    await this.tickParkingExpiry(input.now);
     const streetKey = parkingStreetKey(this.hostId);
     const walletKey = playerWalletKey(this.hostId, input.nodeId);
     const purchasesKeyName = playerPurchasesKey(this.hostId, input.nodeId);
@@ -2168,7 +2169,13 @@ export class RedisSessionStore implements SessionStore {
         await this.redis.unwatch();
         return { ok: false, error: "INVALID_SPOT" };
       }
-      if (spot.occupant !== null) {
+      if (
+        spot.occupant !== null &&
+        isParkingOccupantActive({
+          expiresAt: spot.occupant.expiresAt,
+          nowIso: input.now,
+        })
+      ) {
         await this.redis.unwatch();
         return { ok: false, error: "SPOT_OCCUPIED" };
       }
@@ -2276,7 +2283,9 @@ export class RedisSessionStore implements SessionStore {
     return { ok: false, error: "SPOT_OCCUPIED" };
   }
 
-  async tickParkingExpiry(nowIso: string): Promise<ParkingStreetContent> {
+  async tickParkingExpiry(
+    nowIso: string
+  ): Promise<{ street: ParkingStreetContent; changed: boolean }> {
     const street = await this.getParkingStreet();
     const nextSpots = street.spots.map((s) => {
       const occupant = s.occupant;
@@ -2304,7 +2313,7 @@ export class RedisSessionStore implements SessionStore {
     if (changed) {
       await this.setParkingStreet(nextStreet);
     }
-    return nextStreet;
+    return { street: nextStreet, changed };
   }
 
   async getHouseStreet(): Promise<HouseStreetContent> {

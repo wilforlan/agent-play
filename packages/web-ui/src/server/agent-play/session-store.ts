@@ -310,7 +310,9 @@ export type SessionStore = {
     now: string;
     recordId: string;
   }): Promise<BuyParkingTicketResult>;
-  tickParkingExpiry(nowIso: string): Promise<ParkingStreetContent>;
+  tickParkingExpiry(
+    nowIso: string
+  ): Promise<{ street: ParkingStreetContent; changed: boolean }>;
   getHouseStreet(): Promise<HouseStreetContent>;
   setHouseStreet(content: HouseStreetContent): Promise<void>;
   buyHouse(input: {
