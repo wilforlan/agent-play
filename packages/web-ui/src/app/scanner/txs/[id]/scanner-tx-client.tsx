@@ -151,7 +151,7 @@ export function ScannerTxClient() {
         ) : null}
 
         <footer className={styles.footer}>
-          Public transaction detail · indexed from the Agent Play ledger
+          Public transaction detail · indexed from the Agent Play World ledger
         </footer>
       </div>
     </div>

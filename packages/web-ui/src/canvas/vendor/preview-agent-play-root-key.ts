@@ -33,7 +33,7 @@ export async function resolveAgentPlayRootKeyForBrowser(
   const res = await fetch(`${base}/bootstrap`);
   if (!res.ok) {
     throw new Error(
-      `Could not load Agent Play root key (${String(res.status)}). Set VITE_AGENT_PLAY_ROOT_KEY or ensure the server exposes GET ${base}/bootstrap.`
+      `Could not load Agent Play World root key (${String(res.status)}). Set VITE_AGENT_PLAY_ROOT_KEY or ensure the server exposes GET ${base}/bootstrap.`
     );
   }
   const json: unknown = await res.json();

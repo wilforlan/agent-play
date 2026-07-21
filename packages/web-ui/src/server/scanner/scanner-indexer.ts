@@ -1,5 +1,6 @@
 import type Redis from "ioredis";
 import {
+  PurchaseRecordSchema,
   ScannerBlockRecordSchema,
   ScannerTxRecordSchema,
   ScannerWalletSnapshotSchema,
@@ -10,6 +11,7 @@ import {
   type ScannerWalletSnapshot,
 } from "@agent-play/sdk";
 import {
+  playerPurchasesScanPattern,
   scannerBlocksKey,
   scannerTxByPlayerKey,
   scannerTxKey,
@@ -120,15 +122,69 @@ export const indexWalletBalance = async (input: {
   await multi.exec();
 };
 
+const SCAN_COUNT = 200;
+
+export const findPurchaseRecordById = async (input: {
+  redis: Redis;
+  hostId: string;
+  txId: string;
+}): Promise<PurchaseRecord | null> => {
+  let cursor = "0";
+  do {
+    const [next, keys] = await input.redis.scan(
+      cursor,
+      "MATCH",
+      playerPurchasesScanPattern(input.hostId),
+      "COUNT",
+      SCAN_COUNT
+    );
+    cursor = next;
+    for (const key of keys) {
+      const lines = await input.redis.lrange(key, 0, -1);
+      for (const line of lines) {
+        try {
+          const record = PurchaseRecordSchema.parse(JSON.parse(line));
+          if (record.id === input.txId) {
+            return record;
+          }
+        } catch {
+          continue;
+        }
+      }
+    }
+  } while (cursor !== "0");
+  return null;
+};
+
 export const getScannerTx = async (input: {
   redis: Redis;
   hostId: string;
   txId: string;
 }): Promise<ScannerTxRecord | null> => {
   const raw = await input.redis.get(scannerTxKey(input.hostId, input.txId));
-  if (raw === null) return null;
+  if (raw !== null) {
+    try {
+      return ScannerTxRecordSchema.parse(JSON.parse(raw));
+    } catch {
+      return null;
+    }
+  }
+
+  const purchase = await findPurchaseRecordById(input);
+  if (purchase === null) {
+    return null;
+  }
+  await indexPurchaseRecord({
+    redis: input.redis,
+    hostId: input.hostId,
+    record: purchase,
+  });
+  const indexed = await input.redis.get(scannerTxKey(input.hostId, input.txId));
+  if (indexed === null) {
+    return null;
+  }
   try {
-    return ScannerTxRecordSchema.parse(JSON.parse(raw));
+    return ScannerTxRecordSchema.parse(JSON.parse(indexed));
   } catch {
     return null;
   }

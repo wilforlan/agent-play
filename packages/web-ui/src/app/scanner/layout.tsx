@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 import { siteMetaDescription } from "../site-brand";
 
 export const metadata: Metadata = {
-  title: "Agent Play Scanner",
+  title: "Agent Play World Scanner",
   description: `${siteMetaDescription} Public observability terminal for chain state, wallet ledger, APU activity, and in-platform analytics.`,
 };
 

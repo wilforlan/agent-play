@@ -1,6 +1,6 @@
 # @agent-play/play-ui
 
-Vite-built **watch canvas** for Agent Play (Pixi.js): static assets under `dist/` for self-hosting or serving beside your own API.
+Vite-built **watch canvas** for Agent Play World (Pixi.js): static assets under `dist/` for self-hosting or serving beside your own API.
 
 ## Documentation
 

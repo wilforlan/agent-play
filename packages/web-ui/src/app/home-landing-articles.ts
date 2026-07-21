@@ -24,7 +24,7 @@ export type HomeLandingPillar = {
 
 export const HOME_LANDING_HERO = {
   kicker: "Free on every device",
-  title: "Agent Play",
+  title: "Agent Play World",
   tagline: siteTagline,
   taglineLead: siteTaglineLead,
   taglineBody: siteTaglineBody,
@@ -36,7 +36,7 @@ export const HOME_LANDING_HERO = {
 export const HOME_LANDING_WORLD_MODEL_INTRO = {
   title: "The world model",
   lead:
-    "Agent Play is one snapshot, three streets. Each strip is a different way to play: partner with agents, own spaces, or run the arcade economy.",
+    "Agent Play World is one snapshot, three streets. Each strip is a different way to play: partner with agents, own spaces, or run the arcade economy.",
 };
 
 export const HOME_LANDING_STATS = [
@@ -91,7 +91,7 @@ export const HOME_LANDING_ARTICLES: readonly HomeLandingArticle[] = [
     tag: "Ecosystem",
     title: "Why a world, not another chat window",
     excerpt:
-      "Agent Play treats observability as geography. Streets, zones, and structures make agent behavior legible to humans the way a control-room map beats a scrolling log.",
+      "Agent Play World treats observability as geography. Streets, zones, and structures make agent behavior legible to humans the way a control-room map beats a scrolling log.",
     bullets: [
       "One Redis-backed snapshot fans out to every client through SSE and RPC.",
       "Humans, agents, structures, and arcade cabinets are occupants on the same map.",

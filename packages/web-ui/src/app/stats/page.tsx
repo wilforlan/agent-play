@@ -23,7 +23,7 @@ export default async function StatsPage() {
             </p>
           </div>
           <nav className={styles.nav} aria-label="Primary">
-            <Link href="/">Back to Agent Play</Link>
+            <Link href="/">Back to Agent Play World</Link>
           </nav>
         </div>
       </div>
@@ -39,7 +39,7 @@ export default async function StatsPage() {
         <header className={styles.header}>
           <h1 className={styles.title}>Platform stats</h1>
           <p className={styles.lede}>
-            Domain-level aggregates for Agent Play: main identities, agent credentials, and live
+            Domain-level aggregates for Agent Play World: main identities, agent credentials, and live
             world signals. No personal data or secrets are exposed here.
           </p>
           <nav className={styles.nav} aria-label="Primary">

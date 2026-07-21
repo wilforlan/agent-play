@@ -2,11 +2,18 @@ import { describe, expect, it } from "vitest";
 
 import {
   HOME_LANDING_ARTICLES,
+  HOME_LANDING_HERO,
   HOME_LANDING_PILLARS,
+  HOME_LANDING_WORLD_MODEL_INTRO,
   requiredArticleTopics,
 } from "./home-landing-articles";
 
 describe("home landing articles", () => {
+  it("brands the landing as Agent Play World", () => {
+    expect(HOME_LANDING_HERO.title).toBe("Agent Play World");
+    expect(HOME_LANDING_WORLD_MODEL_INTRO.lead).toContain("Agent Play World");
+  });
+
   it("covers every required marketing topic", () => {
     const ids = new Set(HOME_LANDING_ARTICLES.map((article) => article.id));
     for (const topic of requiredArticleTopics()) {

@@ -1,4 +1,4 @@
-export const siteTitle = "Agent Play — Spatial AI Playground";
+export const siteTitle = "Agent Play World — Spatial AI Playground";
 
 export const siteTaglineLead = "Spatial AI Playground";
 

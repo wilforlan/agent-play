@@ -19,7 +19,7 @@ export default function HomeLanding() {
     <main className={styles.page}>
       <div className={styles.inner}>
         <header className={styles.nav}>
-          <p className={styles.navBrand}>Agent Play</p>
+          <p className={styles.navBrand}>Agent Play World</p>
           <nav className={styles.navLinks} aria-label="Site">
             <Link href="/blog" className={styles.navLink}>
               Newsroom
