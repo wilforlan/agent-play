@@ -82,6 +82,7 @@ import { getRepository } from "@/server/get-world";
 import { publishWorldIntercomEvent } from "@/server/agent-play/intercom/fanout";
 import { isSpaceAmenityKind } from "@/server/agent-play/space-amenity";
 import { resolveSpaceOwnerWalletPlayerId } from "@/server/agent-play/resolve-space-owner-wallet";
+import { resolveClientPlayerWallet } from "@/server/agent-play/resolve-client-player-wallet";
 import {
   requireAgentServicePlatformKey,
   verifyAgentServicePlatformKey,
@@ -973,7 +974,12 @@ export async function POST(req: NextRequest) {
         if (typeof p.playerId !== "string" || p.playerId.trim().length === 0) {
           return Response.json({ error: "invalid payload" }, { status: 400 });
         }
-        const wallet = await store.getPlayerWallet(p.playerId.trim());
+        const playerId = p.playerId.trim();
+        const stored = await store.getPlayerWallet(playerId);
+        const wallet = await resolveClientPlayerWallet({
+          wallet: stored,
+          playerId,
+        });
         return Response.json({ wallet });
       }
       case "listPurchases": {
@@ -1011,7 +1017,11 @@ export async function POST(req: NextRequest) {
             itemsByRef[`carwash:${spaceId}:${it.id}`] = it;
           }
         }
-        const wallet = await store.getPlayerWallet(playerId);
+        const storedWallet = await store.getPlayerWallet(playerId);
+        const wallet = await resolveClientPlayerWallet({
+          wallet: storedWallet,
+          playerId,
+        });
         return Response.json({
           wallet,
           purchases,
@@ -1146,7 +1156,10 @@ export async function POST(req: NextRequest) {
         });
         return Response.json({
           purchase: result.record,
-          wallet: result.wallet,
+          wallet: await resolveClientPlayerWallet({
+            wallet: result.wallet,
+            playerId: result.record.playerId,
+          }),
           item: result.updatedItem,
         });
       }
@@ -1230,7 +1243,10 @@ export async function POST(req: NextRequest) {
         await fanoutParkingStreetUpdated({ store, world });
         return Response.json({
           purchase: result.record,
-          wallet: result.wallet,
+          wallet: await resolveClientPlayerWallet({
+            wallet: result.wallet,
+            playerId: nodeId,
+          }),
           parkingStreet: result.parkingStreet,
         });
       }
@@ -1284,7 +1300,10 @@ export async function POST(req: NextRequest) {
         await fanoutHouseStreetUpdated({ store, world });
         return Response.json({
           purchase: result.record,
-          wallet: result.wallet,
+          wallet: await resolveClientPlayerWallet({
+            wallet: result.wallet,
+            playerId: nodeId,
+          }),
           houseStreet: result.houseStreet,
         });
       }
@@ -1312,7 +1331,10 @@ export async function POST(req: NextRequest) {
           return Response.json({ error: result.error }, { status: 409 });
         }
         return Response.json({
-          wallet: result.wallet,
+          wallet: await resolveClientPlayerWallet({
+            wallet: result.wallet,
+            playerId: p.playerId.trim(),
+          }),
           purchase: result.record,
         });
       }
@@ -1361,7 +1383,10 @@ export async function POST(req: NextRequest) {
         }
         return Response.json({
           stats: result.stats,
-          wallet: result.wallet,
+          wallet: await resolveClientPlayerWallet({
+            wallet: result.wallet,
+            playerId: p.playerId.trim(),
+          }),
           netPu: result.netPu,
         });
       }

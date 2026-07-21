@@ -9,11 +9,17 @@
  * wallet at {@link DEFAULT_PLAYER_WALLET_BALANCE_USD} ($10) on first read. The
  * route is sid-gated like the other agent-play APIs.
  *
+ * Returned `powerUps` are spendable at runtime: stored wallet APU minus active
+ * Econext savings locks (`econext:{hostId}:account:{playerId}:vaults`). Stored
+ * wallet balances are not mutated — locks are subtracted only on the client
+ * view, matching Econext's available-after-lock model without double-subtract.
+ *
  * @see ../../../../../../server/agent-play/redis-session-store.ts for the
  *      atomic seed implementation.
  */
 import { NextRequest } from "next/server";
 import { logAgentPlayApi } from "@/server/agent-play/log-agent-play-api";
+import { resolveClientPlayerWallet } from "@/server/agent-play/resolve-client-player-wallet";
 import { getSessionStore } from "@/server/get-world";
 import { validateAgentPlaySession } from "@/server/agent-play/session-validation";
 
@@ -47,7 +53,11 @@ export async function GET(
     return Response.json({ error: "missing player id" }, { status: 400 });
   }
   const store = getSessionStore();
-  const wallet = await store.getPlayerWallet(playerId);
+  const stored = await store.getPlayerWallet(playerId);
+  const wallet = await resolveClientPlayerWallet({
+    wallet: stored,
+    playerId,
+  });
   return Response.json(
     { wallet },
     { headers: { "Access-Control-Allow-Origin": "*" } }
