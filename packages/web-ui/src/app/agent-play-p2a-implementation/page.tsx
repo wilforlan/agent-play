@@ -1,9 +1,9 @@
 import styles from "./p2a-landing.module.css";
 
 export const metadata = {
-  title: "Agent Play P2A + Intercom Address",
+  title: "Agent Play World P2A + Intercom Address",
   description:
-    "Peer to Agent communication and intercom-address routing for Agent Ringer in Agent Play.",
+    "Peer to Agent communication and intercom-address routing for Agent Ringer in Agent Play World.",
 };
 
 const ROUTING_STEPS = [
@@ -37,7 +37,7 @@ export default function AgentPlayP2AImplementationPage() {
   return (
     <main className={styles.page}>
       <section className={styles.hero}>
-        <p className={styles.kicker}>Agent Play Frontend Communication</p>
+        <p className={styles.kicker}>Agent Play World Frontend Communication</p>
         <h1 className={styles.title}>P2A + Intercom Address</h1>
         <p className={styles.subtitle}>
           Intercom-address is the routing identity layer for Agent Ringer on the

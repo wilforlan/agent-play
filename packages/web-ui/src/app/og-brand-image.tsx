@@ -112,7 +112,7 @@ export function OgBrandImage() {
             marginBottom: 12,
           }}
         >
-          Agent Play
+          Agent Play World
         </div>
         <div
           style={{
