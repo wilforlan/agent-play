@@ -182,7 +182,7 @@ const ensureStyles = (): void => {
 }
 .${PANEL_CLASS}__row {
   display: grid;
-  grid-template-columns: 44px 1fr auto auto;
+  grid-template-columns: 44px minmax(0, 1fr) auto auto;
   gap: 12px;
   align-items: center;
   padding: 12px 14px;
@@ -190,6 +190,7 @@ const ensureStyles = (): void => {
   background: #ffffff;
   box-shadow: 0 1px 4px rgba(15,23,42,0.08);
   border: 1px solid rgba(15,23,42,0.06);
+  min-width: 0;
 }
 .${PANEL_CLASS}__chip {
   width: 44px;
@@ -203,6 +204,7 @@ const ensureStyles = (): void => {
   font-weight: 800;
   color: #1f2937;
   letter-spacing: 0.5px;
+  flex-shrink: 0;
 }
 .${PANEL_CLASS}__chip--car_wash { background: #cbd5f5; color: #1e293b; }
 .${PANEL_CLASS}__chip--parking { background: #dbeafe; color: #1e3a8a; }
@@ -289,16 +291,73 @@ const ensureStyles = (): void => {
   opacity: 0.45;
   cursor: not-allowed;
 }
-.${PANEL_CLASS}__name { font-weight: 700; font-size: 14px; }
+.${PANEL_CLASS}__name {
+  font-weight: 700;
+  font-size: 14px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.${PANEL_CLASS}__tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 4px;
+  min-width: 0;
+}
+.${PANEL_CLASS}__badge {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  padding: 2px 7px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  line-height: 1.3;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  border: 1px solid transparent;
+}
+.${PANEL_CLASS}__badge--neutral {
+  background: #e2e8f0;
+  color: #334155;
+  border-color: #cbd5e1;
+}
+.${PANEL_CLASS}__badge--credit {
+  background: #dbeafe;
+  color: #1e3a8a;
+  border-color: #93c5fd;
+}
+.${PANEL_CLASS}__badge--debit {
+  background: #ffedd5;
+  color: #9a3412;
+  border-color: #fdba74;
+}
+.${PANEL_CLASS}__badge--accent {
+  background: #ecfdf5;
+  color: #065f46;
+  border-color: #6ee7b7;
+}
 .${PANEL_CLASS}__sub {
   font-size: 11px;
   color: #64748b;
-  margin-top: 2px;
+  margin-top: 4px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 .${PANEL_CLASS}__price {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-weight: 700;
   font-size: 13px;
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 .${PANEL_CLASS}__open {
   border: none;
@@ -309,6 +368,7 @@ const ensureStyles = (): void => {
   font-weight: 700;
   font-size: 12px;
   cursor: pointer;
+  flex-shrink: 0;
 }
 .${PANEL_CLASS}__open:hover { background: #111827; }
 .${PANEL_CLASS}__detail {
@@ -317,6 +377,9 @@ const ensureStyles = (): void => {
   border-radius: 14px;
   border: 1px solid rgba(15,23,42,0.06);
   box-shadow: 0 4px 16px rgba(15,23,42,0.10);
+  min-width: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 .${PANEL_CLASS}__detail-header {
   display: flex;
@@ -324,6 +387,17 @@ const ensureStyles = (): void => {
   align-items: flex-start;
   margin-bottom: 12px;
   gap: 12px;
+  min-width: 0;
+}
+.${PANEL_CLASS}__detail-header .${PANEL_CLASS}__name {
+  flex: 1;
+  min-width: 0;
+}
+.${PANEL_CLASS}__detail-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0 0 12px;
 }
 .${PANEL_CLASS}__back {
   border: none;
@@ -333,6 +407,7 @@ const ensureStyles = (): void => {
   cursor: pointer;
   font-size: 13px;
   padding: 4px 6px;
+  flex-shrink: 0;
 }
 .${PANEL_CLASS}__hero {
   width: 100%;
@@ -349,15 +424,24 @@ const ensureStyles = (): void => {
 }
 .${PANEL_CLASS}__meta {
   display: grid;
-  grid-template-columns: max-content 1fr;
+  grid-template-columns: max-content minmax(0, 1fr);
   gap: 6px 14px;
   font-size: 13px;
   margin-bottom: 16px;
+  min-width: 0;
 }
 .${PANEL_CLASS}__meta-key { color: #64748b; }
+.${PANEL_CLASS}__meta-value {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+}
 .${PANEL_CLASS}__detail-actions {
   display: flex;
   justify-content: flex-end;
+  flex-wrap: wrap;
   gap: 8px;
 }
 `;
@@ -454,6 +538,105 @@ const amenityLabelForDisplay = (kind: string): string => {
     return AMENITY_LABEL[kind] ?? "Activity";
   }
   return "Activity";
+};
+
+export type PurchaseBadgeTone = "neutral" | "credit" | "debit" | "accent";
+
+export type PurchaseBadge = {
+  readonly id: string;
+  readonly label: string;
+  readonly tone: PurchaseBadgeTone;
+};
+
+const sourceBadgeLabel = (source: string): string => {
+  if (source === "econext:transfer" || source.startsWith("econext:transfer")) {
+    return "Econext transfer";
+  }
+  if (source === "econext:trade" || source.startsWith("econext:trade")) {
+    return "Econext trade";
+  }
+  if (source.startsWith("game:")) return "Arcade";
+  if (source.startsWith("deposit:")) return "Deposit";
+  if (source.startsWith("wallet:")) return "Wallet";
+  if (source.startsWith("amenity:")) return "Amenity";
+  return source;
+};
+
+/**
+ * Build compact badges for a purchase row / detail card.
+ *
+ * @public
+ */
+export const buildPurchaseBadges = (
+  record: PurchaseRecordDto,
+): readonly PurchaseBadge[] => {
+  const badges: PurchaseBadge[] = [
+    {
+      id: "kind",
+      label: amenityLabelForDisplay(record.amenityKind),
+      tone:
+        record.amenityKind === "apu_credit"
+          ? "credit"
+          : record.amenityKind === "apu_debit"
+            ? "debit"
+            : "neutral",
+    },
+  ];
+
+  if (record.amenityKind === "apu_credit") {
+    badges.push({ id: "flow", label: "In", tone: "credit" });
+  } else if (record.amenityKind === "apu_debit") {
+    badges.push({ id: "flow", label: "Out", tone: "debit" });
+  }
+
+  if (record.token === "APU") {
+    badges.push({ id: "token", label: "APU", tone: "accent" });
+  }
+
+  const source =
+    record.amenityKind === "apu_debit"
+      ? record.debitSource ?? record.creditSource
+      : record.creditSource ?? record.debitSource;
+  if (typeof source === "string" && source.trim().length > 0) {
+    badges.push({
+      id: "source",
+      label: sourceBadgeLabel(source.trim()),
+      tone: "accent",
+    });
+  }
+
+  return badges;
+};
+
+const detailsButtonLabel = (
+  amenityKind: PurchaseRecordDto["amenityKind"],
+): string => {
+  if (
+    amenityKind === "apu_credit" ||
+    amenityKind === "apu_debit" ||
+    amenityKind === "talk_time" ||
+    amenityKind === "wallet_bundle"
+  ) {
+    return "View details";
+  }
+  return "Open";
+};
+
+const appendBadges = (
+  parent: HTMLElement,
+  badges: readonly PurchaseBadge[],
+  className: string,
+): void => {
+  if (badges.length === 0) return;
+  const wrap = document.createElement("div");
+  wrap.className = className;
+  for (const badge of badges) {
+    const el = document.createElement("span");
+    el.className = `${PANEL_CLASS}__badge ${PANEL_CLASS}__badge--${badge.tone}`;
+    el.textContent = badge.label;
+    wrap.appendChild(el);
+  }
+  parent.appendChild(wrap);
 };
 
 const pickItemFields = (raw: unknown): InventoryItemFields => {
@@ -726,6 +909,7 @@ export const createWalletInventoryPanel = (
       row.appendChild(chip);
 
       const nameWrap = document.createElement("div");
+      nameWrap.style.minWidth = "0";
       const nameEl = document.createElement("div");
       nameEl.className = `${PANEL_CLASS}__name`;
       nameEl.textContent =
@@ -733,17 +917,21 @@ export const createWalletInventoryPanel = (
           ? "Realtime voice"
           : record.amenityKind === "wallet_bundle"
             ? `+${formatUsd(record.priceUsd ?? 0)} balance`
-            : record.amenityKind === "apu_credit" ||
-                record.amenityKind === "apu_debit"
-              ? record.detail ??
-                (record.amenityKind === "apu_credit"
-                  ? "APU credit"
-                  : "APU debit")
-              : fields.name ?? amenityLabelForDisplay(record.amenityKind) + " item";
+            : record.amenityKind === "apu_credit"
+              ? "APU credit"
+              : record.amenityKind === "apu_debit"
+                ? "APU debit"
+                : fields.name ?? amenityLabelForDisplay(record.amenityKind) + " item";
+      nameWrap.appendChild(nameEl);
+      appendBadges(
+        nameWrap,
+        buildPurchaseBadges(record),
+        `${PANEL_CLASS}__tags`,
+      );
       const subEl = document.createElement("div");
       subEl.className = `${PANEL_CLASS}__sub`;
       subEl.textContent = buildPurchaseSubtitle({ record, fields });
-      nameWrap.append(nameEl, subEl);
+      nameWrap.appendChild(subEl);
       row.appendChild(nameWrap);
 
       const price = document.createElement("div");
@@ -754,20 +942,13 @@ export const createWalletInventoryPanel = (
       const openBtn = document.createElement("button");
       openBtn.type = "button";
       openBtn.className = `${PANEL_CLASS}__open`;
-      openBtn.textContent = "Open";
+      openBtn.textContent = detailsButtonLabel(record.amenityKind);
       openBtn.addEventListener("click", () => {
         if (state.kind !== "data") return;
         state = { ...state, selectedId: record.id };
         renderCurrent();
       });
-      if (
-        record.amenityKind !== "talk_time" &&
-        record.amenityKind !== "wallet_bundle" &&
-        record.amenityKind !== "apu_credit" &&
-        record.amenityKind !== "apu_debit"
-      ) {
-        row.appendChild(openBtn);
-      }
+      row.appendChild(openBtn);
       list.appendChild(row);
     }
     parent.appendChild(list);
@@ -800,13 +981,18 @@ export const createWalletInventoryPanel = (
         ? "Realtime voice"
         : record.amenityKind === "wallet_bundle"
           ? `+${formatUsd(record.priceUsd ?? 0)} balance`
-          : record.amenityKind === "apu_credit" ||
-              record.amenityKind === "apu_debit"
-            ? record.detail ??
-              (record.amenityKind === "apu_credit" ? "APU credit" : "APU debit")
-            : fields.name ?? amenityLabelForDisplay(record.amenityKind) + " item";
+          : record.amenityKind === "apu_credit"
+            ? "APU credit"
+            : record.amenityKind === "apu_debit"
+              ? "APU debit"
+              : fields.name ?? amenityLabelForDisplay(record.amenityKind) + " item";
     headerRow.append(back, name);
     card.appendChild(headerRow);
+    appendBadges(
+      card,
+      buildPurchaseBadges(record),
+      `${PANEL_CLASS}__detail-badges`,
+    );
 
     const hero = document.createElement("div");
     hero.className = `${PANEL_CLASS}__hero`;
@@ -843,6 +1029,7 @@ export const createWalletInventoryPanel = (
       k.className = `${PANEL_CLASS}__meta-key`;
       k.textContent = key;
       const v = document.createElement("div");
+      v.className = `${PANEL_CLASS}__meta-value`;
       v.textContent = value;
       meta.append(k, v);
     };

@@ -6,6 +6,7 @@ type Stored = {
   strings: Map<string, string>;
   zsets: Map<string, Map<string, number>>;
   hashes: Map<string, Map<string, string>>;
+  lists: Map<string, string[]>;
 };
 
 const createMockRedis = (): Stored & {
@@ -16,6 +17,15 @@ const createMockRedis = (): Stored & {
   incrby: (key: string, amount: number) => Promise<number>;
   hset: (key: string, row: Record<string, string>) => Promise<number>;
   hgetall: (key: string) => Promise<Record<string, string>>;
+  lrange: (key: string, start: number, stop: number) => Promise<string[]>;
+  scan: (
+    cursor: string,
+    matchToken: "MATCH",
+    pattern: string,
+    countToken: "COUNT",
+    count: number
+  ) => Promise<[string, string[]]>;
+  seedList: (key: string, rows: string[]) => void;
   multi: () => {
     set: (key: string, value: string) => void;
     zadd: (key: string, score: number, member: string) => void;
@@ -25,10 +35,15 @@ const createMockRedis = (): Stored & {
   const strings = new Map<string, string>();
   const zsets = new Map<string, Map<string, number>>();
   const hashes = new Map<string, Map<string, string>>();
+  const lists = new Map<string, string[]>();
   return {
     strings,
     zsets,
     hashes,
+    lists,
+    seedList(key, rows) {
+      lists.set(key, rows);
+    },
     async get(key) {
       return strings.get(key) ?? null;
     },
@@ -58,6 +73,20 @@ const createMockRedis = (): Stored & {
       const bucket = hashes.get(key);
       if (bucket === undefined) return {};
       return Object.fromEntries(bucket.entries());
+    },
+    async lrange(key, start, stop) {
+      const rows = lists.get(key) ?? [];
+      if (stop === -1) {
+        return rows.slice(start);
+      }
+      return rows.slice(start, stop + 1);
+    },
+    async scan(_cursor, _matchToken, pattern) {
+      const regex = new RegExp(
+        `^${pattern.replace(/[.+?^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*")}$`
+      );
+      const keys = [...lists.keys()].filter((key) => regex.test(key));
+      return ["0", keys];
     },
     multi() {
       const ops: Array<() => void> = [];
@@ -108,5 +137,33 @@ describe("scanner-indexer", () => {
     expect(tx?.id).toBe("tx-1");
     expect(redis.strings.get(scannerTxKey(hostId, "tx-1"))).toBeTruthy();
     expect(redis.zsets.get(scannerTxsKey(hostId))?.size).toBe(1);
+  });
+
+  it("lazy-indexes a purchase found only on the player purchases list", async () => {
+    const redis = createMockRedis();
+    const hostId = "default";
+    const record = {
+      id: "36dde625-da2a-4ac6-b022-e15147627db5",
+      playerId: "node-1",
+      spaceId: "econext",
+      amenityKind: "apu_credit" as const,
+      itemRef: { kind: "apu" as const, id: "36dde625-da2a-4ac6-b022-e15147627db5" },
+      priceUsd: 10,
+      at: "2026-07-20T15:00:00.000Z",
+      powerUpsDelta: 8,
+      creditSource: "econext:trade",
+      token: "APU" as const,
+    };
+    const purchasesKey = `agent-play:${hostId}:player:${record.playerId}:purchases`;
+    redis.seedList(purchasesKey, [JSON.stringify(record)]);
+
+    const tx = await getScannerTx({
+      redis: redis as never,
+      hostId,
+      txId: record.id,
+    });
+    expect(tx?.id).toBe(record.id);
+    expect(tx?.op).toBe("applyGameOutcome");
+    expect(redis.strings.get(scannerTxKey(hostId, record.id))).toBeTruthy();
   });
 });

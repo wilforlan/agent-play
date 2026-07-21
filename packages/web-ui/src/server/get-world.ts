@@ -62,7 +62,7 @@ export async function getPlayWorld(): Promise<PlayWorld> {
       const redis = getSharedRedis();
       if (redis === null) {
         throw new Error(
-          "REDIS_URL is required for Agent Play session storage. Set REDIS_URL in the environment."
+          "REDIS_URL is required for Agent Play World session storage. Set REDIS_URL in the environment."
         );
       }
       agentPlayVerbose("get-world", "REDIS_URL present — shared Redis + session store", {

@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 import { describe, expect, it, vi } from "vitest";
 import {
+  buildPurchaseBadges,
   buildPurchaseSubtitle,
   createWalletInventoryPanel,
 } from "./wallet-inventory-panel.js";
@@ -87,6 +88,42 @@ describe("buildPurchaseSubtitle", () => {
     expect(subtitle).toContain("Arcade round round-1");
   });
 
+  it("builds badges for econext transfer credits", () => {
+    const badges = buildPurchaseBadges(
+      carPurchase({
+        amenityKind: "apu_credit",
+        itemRef: { kind: "apu", id: "xfer-1" },
+        creditSource: "econext:transfer",
+        token: "APU",
+        powerUpsDelta: 10,
+      }),
+    );
+    expect(badges.map((badge) => badge.label)).toEqual([
+      "APU Credit",
+      "In",
+      "APU",
+      "Econext transfer",
+    ]);
+  });
+
+  it("builds badges for econext transfer debits", () => {
+    const badges = buildPurchaseBadges(
+      carPurchase({
+        amenityKind: "apu_debit",
+        itemRef: { kind: "apu", id: "xfer-1" },
+        creditSource: "econext:transfer",
+        token: "APU",
+        powerUpsDelta: -10,
+      }),
+    );
+    expect(badges.map((badge) => badge.label)).toEqual([
+      "APU Debit",
+      "Out",
+      "APU",
+      "Econext transfer",
+    ]);
+  });
+
   it("uses detail for parking purchases", () => {
     const subtitle = buildPurchaseSubtitle({
       record: carPurchase({
@@ -161,6 +198,42 @@ describe("createWalletInventoryPanel", () => {
     expect(parent.textContent).toContain("3");
     expect(parent.textContent).toContain("GTR");
     expect(parent.textContent).toContain("$100.00");
+  });
+
+  it("shows View details for APU transfers and opens the detail card", () => {
+    const parent = newParent();
+    const panel = createWalletInventoryPanel({
+      parent,
+      onRefresh: () => {},
+    });
+    panel.open();
+    panel.setData({
+      balanceUsd: 0,
+      powerUps: 10,
+      purchases: [
+        carPurchase({
+          id: "xfer-credit",
+          amenityKind: "apu_credit",
+          itemRef: { kind: "apu", id: "xfer-1" },
+          creditSource: "econext:transfer",
+          token: "APU",
+          powerUpsDelta: 10,
+          detail: "Transfer xfer-1 from sender",
+        }),
+      ],
+      items: {},
+    });
+    expect(parent.textContent).toContain("View details");
+    expect(parent.textContent).toContain("Econext transfer");
+    expect(parent.textContent).toContain("In");
+    const detailsBtn = Array.from(
+      parent.querySelectorAll<HTMLButtonElement>(".preview-wallet-inventory__open"),
+    ).find((button) => button.textContent === "View details");
+    expect(detailsBtn).not.toBeUndefined();
+    detailsBtn?.click();
+    expect(parent.textContent).toContain("← Back to inventory");
+    expect(parent.textContent).toContain("Credit source");
+    expect(parent.textContent).toContain("econext:transfer");
   });
 
   it("clicking Open shows the detail view with Back/Close buttons", () => {
