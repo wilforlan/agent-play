@@ -368,7 +368,7 @@ export async function ensureHumanNodeOnboarding(
       consentBox.type = "checkbox";
       const consentText = document.createElement("span");
       consentText.textContent =
-        "I agree to create a main node for Agent Play in this session.";
+        "I agree to create a main node for Agent Play World in this session.";
       consentLabel.append(consentBox, consentText);
       const phraseLabel = document.createElement("div");
       phraseLabel.style.fontSize = "11px";

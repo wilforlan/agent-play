@@ -4,7 +4,7 @@
  * **@agent-play/cli** — `agent-play` command-line tool for Node identity and repository operations.
  *
  * **Commands** (see `--help`): bootstrap node credentials, create main/agent nodes, validate agents,
- * inspect nodes, and utilities that talk to the Agent Play server using **@agent-play/node-tools** for
+ * inspect nodes, and utilities that talk to the Agent Play World server using **@agent-play/node-tools** for
  * passphrase generation, hashing, and credential files under **`~/.agent-play/`**.
  */
 import { existsSync } from "node:fs";
@@ -274,7 +274,7 @@ function resolveAgentPlayRootPath(options: BootstrapCliOpts): string {
     return cwdRoot;
   }
   throw new Error(
-    "Agent Play root key not found. Pass --root-file <path>, set AGENT_PLAY_ROOT_FILE_PATH, or place .root in ~/.agent-play/ or the project directory."
+    "Agent Play World root key not found. Pass --root-file <path>, set AGENT_PLAY_ROOT_FILE_PATH, or place .root in ~/.agent-play/ or the project directory."
   );
 }
 
