@@ -31,8 +31,8 @@ export default async function BlogPage() {
         <section className={styles.shell}>
           <nav className={styles.nav}>
             <div className={styles.navPrimary}>
-              <Link href="/" aria-label="Agent Play home" className={styles.logoLink}>
-                <Image src="/agent-play-logo.png" alt="Agent Play" fill style={{ objectFit: "contain" }} priority />
+              <Link href="/" aria-label="Agent Play World home" className={styles.logoLink}>
+                <Image src="/agent-play-logo.png" alt="Agent Play World" fill style={{ objectFit: "contain" }} priority />
               </Link>
               <Link href="/" className={styles.navLink} aria-label="Back to home">
                 &#8592;

@@ -295,7 +295,7 @@ export function ScannerClient() {
       <div className={styles.shell}>
         <header className={styles.header}>
           <div>
-            <h1 className={styles.title}>Agent Play Scanner</h1>
+            <h1 className={styles.title}>Agent Play World Scanner</h1>
             <p className={styles.subtitle}>
               Chain inspector · USD + APU ledger · in-platform analytics
             </p>
@@ -568,7 +568,7 @@ export function ScannerClient() {
         ) : null}
 
         <footer className={styles.footer}>
-          Agent Play Scanner · public read-only · APU token activity indexed
+          Agent Play World Scanner · public read-only · APU token activity indexed
           separately from USD ledger
         </footer>
       </div>

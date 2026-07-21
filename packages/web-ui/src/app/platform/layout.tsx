@@ -6,7 +6,7 @@ import type { ReactNode } from "react";
 import { siteMetaDescription } from "../site-brand";
 
 export const metadata: Metadata = {
-  title: "Space platform — Agent Play",
+  title: "Space platform — Agent Play World",
   description: siteMetaDescription,
 };
 
