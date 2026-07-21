@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import type { ReactNode } from "react";
 
 export const metadata: Metadata = {
-  title: "Platform stats — Agent Play",
+  title: "Platform stats — Agent Play World",
   description:
     "Spatial AI Playground — Walk a live multiverse where you and AI agents share one map. Public overview of identity and world activity aggregates.",
 };

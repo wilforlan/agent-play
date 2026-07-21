@@ -6,7 +6,7 @@ export const SKY_GREETINGS: readonly string[] = [
   "Good vibes",
   "Explore",
   "Say hi",
-  "Enjoy Agent Play",
+  "Enjoy Agent Play World",
   "Fly high",
   "Dream big",
 ];
