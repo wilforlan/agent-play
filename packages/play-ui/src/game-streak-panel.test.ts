@@ -12,6 +12,22 @@ describe("game streak panel", () => {
     expect(powerUpsToNextBundle(10_000)).toBe(null);
   });
 
+  it("anchors the games streak pill to the bottom of the viewport", () => {
+    const parent = document.createElement("div");
+    const panel = createGameStreakPanel({ parent, onRefresh: () => {} });
+    const style = document.getElementById("preview-game-streak-styles");
+    expect(style?.textContent).toMatch(
+      /\.preview-game-streak-pill \{[\s\S]*?bottom:\s*max\(12px,\s*calc\(12px \+ env\(safe-area-inset-bottom/,
+    );
+    expect(style?.textContent).toMatch(
+      /\.preview-game-streak-pill \{[\s\S]*?top:\s*auto/,
+    );
+    expect(style?.textContent).not.toMatch(
+      /\.preview-game-streak-pill \{[\s\S]*?top:\s*12px/,
+    );
+    panel.destroy();
+  });
+
   it("renders stats and supports dismiss", () => {
     const parent = document.createElement("div");
     const panel = createGameStreakPanel({ parent, onRefresh: () => {} });

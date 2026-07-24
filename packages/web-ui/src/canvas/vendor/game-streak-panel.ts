@@ -39,8 +39,9 @@ const ensureStyles = (): void => {
   style.textContent = `
 .${PANEL_CLASS}-pill {
   position: fixed;
-  top: 12px;
+  top: auto;
   right: 148px;
+  bottom: max(12px, calc(12px + env(safe-area-inset-bottom, 0px)));
   z-index: 13000;
   border: none;
   border-radius: 999px;
