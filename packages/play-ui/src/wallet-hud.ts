@@ -2,8 +2,9 @@
  * @packageDocumentation
  * @module @agent-play/play-ui/wallet-hud
  *
- * Small DOM "pill" overlay anchored top-right of the canvas that shows the
- * player's current wallet balance. The host fetches the balance via
+ * Small DOM "pill" overlay anchored bottom-right of the viewport that shows the
+ * player's current wallet balance. Kept at the footer so it does not cover the
+ * top proximity touch pad. The host fetches the balance via
  * `GET /agent-play/players/:id/wallet` (rewritten to the API route) at
  * bootstrap and then refreshes after every purchase.
  *
@@ -53,8 +54,9 @@ const ensureStyles = (): void => {
   style.textContent = `
 .${HUD_CLASS} {
   position: fixed;
-  top: 12px;
+  top: auto;
   right: 12px;
+  bottom: max(12px, calc(12px + env(safe-area-inset-bottom, 0px)));
   z-index: 13000;
   padding: 6px 14px;
   border: none;

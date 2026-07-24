@@ -9,6 +9,21 @@ const newParent = (): HTMLElement => {
 };
 
 describe("wallet-hud", () => {
+  it("anchors the balance strip to the bottom of the viewport", () => {
+    const hud = createWalletHud({ parent: newParent() });
+    const style = document.getElementById("preview-wallet-hud-styles");
+    expect(style?.textContent).toMatch(
+      /\.preview-wallet-hud \{[\s\S]*?bottom:\s*max\(12px,\s*calc\(12px \+ env\(safe-area-inset-bottom/ ,
+    );
+    expect(style?.textContent).toMatch(
+      /\.preview-wallet-hud \{[\s\S]*?top:\s*auto/,
+    );
+    expect(style?.textContent).not.toMatch(
+      /\.preview-wallet-hud \{[\s\S]*?top:\s*12px/,
+    );
+    hud.destroy();
+  });
+
   it("renders a placeholder balance on mount", () => {
     const hud = createWalletHud({ parent: newParent() });
     expect(hud.root.textContent).toContain("$—");
