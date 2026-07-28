@@ -1,5 +1,5 @@
 import { Container, Graphics, Text } from "pixi.js";
-import type { HouseSlot } from "@agent-play/sdk/browser";
+import type { HouseFixtureSlot, HouseSlot } from "@agent-play/sdk/browser";
 import {
   buildHouseOwnershipPanelLines,
   clampHousePosition,
@@ -12,6 +12,12 @@ import {
   mountExitDoor,
   type AmenityStageBounds,
 } from "./house-stage-base.js";
+import {
+  estimateHouseFixtureCalloutHalfWidthPx,
+  findNearestHouseFixture,
+  houseFixtureDisplayLabel,
+  resolveHouseFixtureCalloutPosition,
+} from "./house-fixture-proximity.js";
 import { buildHouseFixtureGraphic } from "./sprite-house-fixtures.js";
 import type { StageHandle } from "./stage-controller.js";
 
@@ -27,9 +33,11 @@ export type HouseInteriorStageHandle = StageHandle & {
   readonly layoutLabel: string;
   readonly purchaseAnchor: { x: number; y: number } | null;
   readonly ownershipPanelLines: readonly string[];
+  readonly fixtures: readonly HouseFixtureSlot[];
   clampPosition(pos: { x: number; y: number }): { x: number; y: number };
   exitDoorAnchor: { x: number; y: number };
   spawnPosition(): { x: number; y: number };
+  updateFixtureCallouts(player: { x: number; y: number }): string | null;
 };
 
 const buildHouseFloor = (input: {
@@ -99,9 +107,17 @@ const mountOwnershipPanel = (input: {
         fill: index === 0 ? 0x1e3a5f : 0x334155,
       },
     });
-    text.position.set(panelX + input.cellScale * 0.35, panelY + input.cellScale * 0.35 + index * lineHeight);
+    text.position.set(
+      panelX + input.cellScale * 0.35,
+      panelY + input.cellScale * 0.35 + index * lineHeight
+    );
     input.root.addChild(text);
   });
+};
+
+type FixtureCallout = {
+  readonly slot: HouseFixtureSlot;
+  readonly label: Text;
 };
 
 export const buildHouseInteriorStage = (input: {
@@ -120,9 +136,10 @@ export const buildHouseInteriorStage = (input: {
     })
   );
 
+  const fixtures = layoutHouseFixtures(blueprint);
   const fixturesLayer = new Container();
   root.addChild(fixturesLayer);
-  for (const slot of layoutHouseFixtures(blueprint)) {
+  for (const slot of fixtures) {
     const graphic = buildHouseFixtureGraphic({
       kind: slot.kind,
       variant: slot.variant,
@@ -132,7 +149,58 @@ export const buildHouseInteriorStage = (input: {
     fixturesLayer.addChild(graphic);
   }
 
-  const label = new Text({
+  const stageWidthPx =
+    (blueprint.bounds.maxX - blueprint.bounds.minX) * input.cellScale;
+  const stageHeightPx =
+    (blueprint.bounds.maxY - blueprint.bounds.minY) * input.cellScale;
+
+  const placeCallout = (callout: FixtureCallout): void => {
+    if (callout.label.destroyed || callout.label.position === null) {
+      return;
+    }
+    const fontSize = Math.max(12, Math.round(input.cellScale * 0.34));
+    const labelText = houseFixtureDisplayLabel(callout.slot.kind);
+    const halfWidth = estimateHouseFixtureCalloutHalfWidthPx({
+      label: labelText,
+      fontSizePx: fontSize,
+    });
+    const labelHeight = fontSize + 4;
+    const pos = resolveHouseFixtureCalloutPosition({
+      fixtureXPx: callout.slot.x * input.cellScale,
+      fixtureYPx: callout.slot.y * input.cellScale,
+      labelHalfWidthPx: halfWidth,
+      labelHeightPx: labelHeight,
+      stageWidthPx,
+      stageHeightPx,
+      preferAboveOffsetPx: input.cellScale * 0.35,
+      marginPx: Math.max(4, Math.round(input.cellScale * 0.12)),
+    });
+    callout.label.position.set(pos.x, pos.y);
+  };
+
+  const calloutsLayer = new Container();
+  root.addChild(calloutsLayer);
+  const callouts: FixtureCallout[] = fixtures.map((slot) => {
+    const fontSize = Math.max(12, Math.round(input.cellScale * 0.34));
+    const label = new Text({
+      text: houseFixtureDisplayLabel(slot.kind),
+      style: {
+        fontFamily: "system-ui, sans-serif",
+        fontSize,
+        fontWeight: "800",
+        fill: 0xfffbeb,
+        stroke: { color: 0x0f172a, width: 4 },
+      },
+    });
+    label.visible = false;
+    label.anchor.set(0.5, 1);
+    const callout = { slot, label };
+    placeCallout(callout);
+    calloutsLayer.addChild(label);
+    return callout;
+  });
+
+  const title = new Text({
     text: `House ${String(input.house.houseId)} · ${blueprint.label}`,
     style: {
       fontFamily: "system-ui, sans-serif",
@@ -141,14 +209,13 @@ export const buildHouseInteriorStage = (input: {
       fill: 0x1f2937,
     },
   });
-  label.position.set(input.cellScale * 0.4, input.cellScale * 0.2);
-  root.addChild(label);
+  title.position.set(input.cellScale * 0.4, input.cellScale * 0.2);
+  root.addChild(title);
 
   const owned = input.house.ownerNodeId !== null;
   const ownershipPanelLines = buildHouseOwnershipPanelLines(input.house);
   const showOwnershipPanel = owned && ownershipPanelLines.length > 0;
-  const showPurchasePanel =
-    input.mode === "inspect" && !owned;
+  const showPurchasePanel = input.mode === "inspect" && !owned;
   const purchaseAnchor = showPurchasePanel
     ? { x: blueprint.bounds.maxX * 0.55, y: blueprint.bounds.maxY - 1.2 }
     : null;
@@ -190,6 +257,7 @@ export const buildHouseInteriorStage = (input: {
     layoutLabel: blueprint.label,
     purchaseAnchor,
     ownershipPanelLines,
+    fixtures,
     attach: () => {},
     detach: () => {},
     destroy: () => {
@@ -199,5 +267,26 @@ export const buildHouseInteriorStage = (input: {
       clampHousePosition(blueprint, clampToBounds(pos, blueprint.bounds)),
     exitDoorAnchor,
     spawnPosition: () => houseSpawnPosition(blueprint),
+    updateFixtureCallouts: (player) => {
+      if (root.destroyed) {
+        return null;
+      }
+      const nearest = findNearestHouseFixture({ fixtures, player });
+      for (const callout of callouts) {
+        if (callout.label.destroyed) {
+          continue;
+        }
+        const isNear =
+          nearest !== null &&
+          callout.slot.kind === nearest.kind &&
+          callout.slot.x === nearest.x &&
+          callout.slot.y === nearest.y;
+        callout.label.visible = isNear;
+        if (isNear) {
+          placeCallout(callout);
+        }
+      }
+      return nearest?.label ?? null;
+    },
   };
 };

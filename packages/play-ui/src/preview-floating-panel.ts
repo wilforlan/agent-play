@@ -6,6 +6,7 @@
 export type PreviewFloatingPanelPlacement = {
   leftPx: number;
   topPx: number;
+  collapsed: boolean;
 };
 
 export type PreviewFloatingPanelLayoutMode = "floating" | "stationary";
@@ -37,12 +38,15 @@ export function attachPreviewFloatingPanelDrag(options: {
   element: HTMLElement;
   getBoundsElement: () => HTMLElement;
   label: string;
-  initialPlacement: PreviewFloatingPanelPlacement;
+  initialPlacement: { leftPx: number; topPx: number };
+  initialCollapsed?: boolean;
   className?: string;
   layoutMode?: PreviewFloatingPanelLayoutMode;
   resolvePlacement: (
     mode: PreviewFloatingPanelLayoutMode
-  ) => PreviewFloatingPanelPlacement;
+  ) => { leftPx: number; topPx: number };
+  onPlacementCommit?: (placement: PreviewFloatingPanelPlacement) => void;
+  onCollapsedChange?: (collapsed: boolean) => void;
 }): {
   dragHandle: HTMLButtonElement;
   refreshBounds: () => void;
@@ -81,10 +85,19 @@ export function attachPreviewFloatingPanelDrag(options: {
   let movedDuringPointer = false;
   let suppressNextClick = false;
 
-  const setCollapsed = (collapsed: boolean): void => {
-    options.element.classList.toggle("preview-floating-panel--collapsed", collapsed);
+  const readCollapsed = (): boolean =>
+    options.element.classList.contains("preview-floating-panel--collapsed");
+
+  const setCollapsed = (collapsed: boolean, notify: boolean): void => {
+    options.element.classList.toggle(
+      "preview-floating-panel--collapsed",
+      collapsed
+    );
     dragHandle.setAttribute("aria-expanded", collapsed ? "false" : "true");
     body.setAttribute("aria-hidden", collapsed ? "true" : "false");
+    if (notify) {
+      options.onCollapsedChange?.(collapsed);
+    }
   };
 
   const applyPlacementForMode = (
@@ -100,7 +113,7 @@ export function attachPreviewFloatingPanelDrag(options: {
   };
 
   setLayoutMode(options.layoutMode ?? "floating");
-  setCollapsed(false);
+  setCollapsed(options.initialCollapsed === true, false);
 
   const moveToClientPoint = (event: PointerEvent): void => {
     const bounds = options.getBoundsElement().getBoundingClientRect();
@@ -133,7 +146,10 @@ export function attachPreviewFloatingPanelDrag(options: {
     moveToClientPoint(event);
   };
 
-  const finishPointer = (event: PointerEvent, shouldToggleOnTap: boolean): void => {
+  const finishPointer = (
+    event: PointerEvent,
+    shouldToggleOnTap: boolean
+  ): void => {
     dragHandle.removeEventListener("pointermove", onPointerMove);
     dragHandle.removeEventListener("pointerup", onPointerUp);
     dragHandle.removeEventListener("pointercancel", onPointerCancel);
@@ -144,10 +160,19 @@ export function attachPreviewFloatingPanelDrag(options: {
     ) {
       dragHandle.releasePointerCapture(event.pointerId);
     }
+    if (movedDuringPointer) {
+      const leftPx = Number.parseFloat(options.element.style.left || "0");
+      const topPx = Number.parseFloat(options.element.style.top || "0");
+      if (Number.isFinite(leftPx) && Number.isFinite(topPx)) {
+        options.onPlacementCommit?.({
+          leftPx,
+          topPx,
+          collapsed: readCollapsed(),
+        });
+      }
+    }
     if (shouldToggleOnTap && !movedDuringPointer) {
-      setCollapsed(
-        !options.element.classList.contains("preview-floating-panel--collapsed")
-      );
+      setCollapsed(!readCollapsed(), true);
       suppressNextClick = true;
     }
   };
@@ -182,9 +207,7 @@ export function attachPreviewFloatingPanelDrag(options: {
       return;
     }
     if (movedDuringPointer) return;
-    setCollapsed(
-      !options.element.classList.contains("preview-floating-panel--collapsed")
-    );
+    setCollapsed(!readCollapsed(), true);
   });
 
   return { dragHandle, refreshBounds, setLayoutMode };

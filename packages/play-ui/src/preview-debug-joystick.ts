@@ -116,8 +116,8 @@ function ensureJoystickStyles(): void {
   transition: none;
 }
 .preview-debug-joystick--handle-detached .preview-debug-joystick__stick {
-  opacity: 0;
-  transform: translate(0, 0) scale(0.65);
+  opacity: 0.82;
+  transform: translate(0, 0) scale(0.85);
 }
 .preview-debug-joystick--handle-attached .preview-debug-joystick__stick {
   opacity: 1;
@@ -154,7 +154,7 @@ export function createPreviewDebugJoystick(options: {
 
   const root = document.createElement("div");
   root.className =
-    "preview-debug-joystick preview-debug-joystick--hidden preview-debug-joystick--handle-detached";
+    "preview-debug-joystick preview-debug-joystick--hidden preview-debug-joystick--handle-attached";
   root.setAttribute("role", "application");
   root.setAttribute("aria-label", "Move agent");
 
@@ -172,7 +172,7 @@ export function createPreviewDebugJoystick(options: {
   options.parent.appendChild(root);
 
   let active = false;
-  let handleAttached = false;
+  let handleAttached = true;
   let sweepRafId: number | null = null;
   let originCX = 0;
   let originCY = 0;
@@ -290,7 +290,9 @@ export function createPreviewDebugJoystick(options: {
     if (!visible) {
       active = false;
       setHandleAttached(false);
+      return;
     }
+    setHandleAttached(true);
   };
 
   const handlePlayPadInput = (input: PlayPadInput): boolean => {

@@ -60,6 +60,7 @@ import {
 import { createItemTooltip, type ItemTooltipHandle } from "./item-tooltip.js";
 import { executePurchase } from "./purchase-client.js";
 import { createWalletHud, type WalletHudHandle } from "./wallet-hud.js";
+import { createBottomHudDock } from "./bottom-hud-dock.js";
 import { fetchPlayerWallet } from "./wallet-client.js";
 import {
   createWalletInventoryPanel,
@@ -86,6 +87,10 @@ import {
   agentChatHorizontalNudgePx,
   computeAgentChatPanelPosition,
 } from "./agent-chat-panel-position.js";
+import {
+  computeHousePurchasePanelPosition,
+  computeParkingTicketTooltipPosition,
+} from "./overworld-fixed-panel-position.js";
 import {
   clampWorldPosition,
   createWorldLayoutWithParkingRow,
@@ -188,6 +193,14 @@ import {
   attachPreviewFloatingPanelDrag,
   syncPreviewCanvasHostScale,
 } from "./preview-floating-panel.js";
+import {
+  getPanelPlacement,
+  savePanelPlacement,
+} from "./preview-ui-placements.js";
+import {
+  loadHumanWorldPosition,
+  saveHumanWorldPosition,
+} from "./preview-human-world-position.js";
 import {
   getPreviewViewSettings,
   setPreviewViewSettings,
@@ -387,6 +400,30 @@ const PREVIEW_AGENT_CHAT_GAP_PX = 8;
 
 const HUMAN_DEFAULT_SPAWN_UX = 0.1;
 const HUMAN_DEFAULT_SPAWN_UY = 0.12;
+
+let pendingHumanWorldPos: { x: number; y: number } | null = null;
+let humanWorldPosSaveTimer: ReturnType<typeof setTimeout> | null = null;
+
+function flushPersistedHumanWorldPos(): void {
+  if (humanWorldPosSaveTimer !== null) {
+    clearTimeout(humanWorldPosSaveTimer);
+    humanWorldPosSaveTimer = null;
+  }
+  const sid = getSid();
+  const pos = pendingHumanWorldPos;
+  pendingHumanWorldPos = null;
+  if (sid === null || pos === null) return;
+  saveHumanWorldPosition({ sid, x: pos.x, y: pos.y });
+}
+
+function schedulePersistHumanWorldPos(pos: { x: number; y: number }): void {
+  pendingHumanWorldPos = { x: pos.x, y: pos.y };
+  if (humanWorldPosSaveTimer !== null) return;
+  humanWorldPosSaveTimer = setTimeout(() => {
+    humanWorldPosSaveTimer = null;
+    flushPersistedHumanWorldPos();
+  }, 400);
+}
 
 /** Snapshot structure row (subset of server JSON). */
 type Structure = {
@@ -1324,6 +1361,15 @@ function onDocumentKeyDown(e: KeyboardEvent): void {
   }
   if (
     e.key.toLowerCase() === "p" &&
+    activeHouseStage !== null
+  ) {
+    if (toggleHousePurchasePanel()) {
+      e.preventDefault();
+    }
+    return;
+  }
+  if (
+    e.key.toLowerCase() === "p" &&
     activeGameStage !== null &&
     lastGameStageProximityTarget !== null &&
     lastGameStageProximityTarget.activatable !== false
@@ -2186,16 +2232,38 @@ function renderHousePlayer(stage: ActiveHouseStage): void {
   });
 }
 
-function positionHousePurchasePanel(stage: ActiveHouseStage): void {
+function measureFixedPanelSize(root: HTMLElement): {
+  width: number;
+  height: number;
+} {
+  const rect = root.getBoundingClientRect();
+  return {
+    width: rect.width > 0 ? rect.width : 280,
+    height: rect.height > 0 ? rect.height : 240,
+  };
+}
+
+function positionHousePurchasePanel(_stage: ActiveHouseStage): void {
   const panel = housePurchasePanel;
   if (panel === null) {
     return;
   }
   const host = canvasHostRef?.getBoundingClientRect();
-  const offsetX = host?.left ?? 0;
-  const offsetY = host?.top ?? 0;
-  panel.root.style.left = `${String(Math.round(offsetX + VIEW_W * 0.5 - 120))}px`;
-  panel.root.style.top = `${String(Math.round(offsetY + VIEW_H * 0.55))}px`;
+  if (host === undefined) {
+    return;
+  }
+  const size = measureFixedPanelSize(panel.root);
+  const pos = computeHousePurchasePanelPosition({
+    hostRect: host,
+    viewW: VIEW_W,
+    viewH: VIEW_H,
+    panelWidth: size.width,
+    panelHeight: size.height,
+    viewportWidth: window.innerWidth,
+    viewportHeight: window.innerHeight,
+  });
+  panel.root.style.left = `${String(Math.round(pos.left))}px`;
+  panel.root.style.top = `${String(Math.round(pos.top))}px`;
 }
 
 function syncHousePurchasePanel(stage: ActiveHouseStage): void {
@@ -2203,8 +2271,15 @@ function syncHousePurchasePanel(stage: ActiveHouseStage): void {
   if (panel === null) {
     return;
   }
+  panel.hide();
   if (!stage.handle.showPurchasePanel) {
-    panel.hide();
+    return;
+  }
+}
+
+function openHousePurchasePanel(stage: ActiveHouseStage): void {
+  const panel = housePurchasePanel;
+  if (panel === null || !stage.handle.showPurchasePanel) {
     return;
   }
   const house = findHouseSlot(resolveHouseStreetContent(), stage.houseId);
@@ -2222,6 +2297,22 @@ function syncHousePurchasePanel(stage: ActiveHouseStage): void {
     },
   });
   positionHousePurchasePanel(stage);
+}
+
+function toggleHousePurchasePanel(): boolean {
+  const stage = activeHouseStage;
+  const panel = housePurchasePanel;
+  if (stage === null || panel === null || !stage.handle.showPurchasePanel) {
+    return false;
+  }
+  if (panel.isOpen()) {
+    panel.hide();
+    proximityTouchPadHandle?.refresh();
+    return true;
+  }
+  openHousePurchasePanel(stage);
+  proximityTouchPadHandle?.refresh();
+  return true;
 }
 
 async function reenterHouseStageAsOwner(houseId: HouseId): Promise<void> {
@@ -2310,6 +2401,7 @@ function tickHousePlayer(dtSec: number): void {
   }
   housePlayerState.isMoving = isMoving;
   renderHousePlayer(stage);
+  stage.handle.updateFixtureCallouts(housePlayerState.pos);
 
   if (houseExitDebounceMs > 0) {
     houseExitDebounceMs = Math.max(0, houseExitDebounceMs - dtSec * 1000);
@@ -2422,7 +2514,9 @@ async function enterHouseStage(input: {
   };
   lastHouseNearest = null;
   renderHousePlayer(activeHouseStage);
+  activeHouseStage.handle.updateFixtureCallouts(housePlayerState.pos);
   syncHousePurchasePanel(activeHouseStage);
+  proximityTouchPadHandle?.refresh();
 
   try {
     await stageController.enter(handle);
@@ -2873,8 +2967,15 @@ function ingestSnapshot(snap: Snapshot): void {
   paintStreetSigns();
   paintParkingStreet();
   const wbSpawn = getWorldBoundsForClamp();
+  const storedHuman = loadHumanWorldPosition({ sid: getSid() });
   const humanSpawn =
-    wbSpawn !== null ? defaultHumanSpawnInWorld(wbSpawn) : { x: 0, y: 0 };
+    storedHuman !== null
+      ? wbSpawn !== null
+        ? clampWorldPosition(storedHuman, wbSpawn)
+        : storedHuman
+      : wbSpawn !== null
+        ? defaultHumanSpawnInWorld(wbSpawn)
+        : { x: 0, y: 0 };
   let snapshotPlacementIncomplete = false;
   for (const p of listAgentRows(snapshot)) {
     const home = getPlayerHomeCell(p.agentId, snapshot);
@@ -3074,13 +3175,26 @@ function positionParkingTicketTooltip(bay: ParkingBayAnchor): void {
   if (tooltip === null) {
     return;
   }
+  const host = canvasHostRef?.getBoundingClientRect();
+  if (host === undefined) {
+    return;
+  }
   const local = worldToWorldRootLocal(bay.x, bay.y);
   const screen = worldRootLocalToCanvas(local.x, local.y);
-  const host = canvasHostRef?.getBoundingClientRect();
-  const offsetX = host?.left ?? 0;
-  const offsetY = host?.top ?? 0;
-  tooltip.root.style.left = `${String(Math.round(screen.x + offsetX - 110))}px`;
-  tooltip.root.style.top = `${String(Math.round(screen.y + offsetY - 200))}px`;
+  const size = measureFixedPanelSize(tooltip.root);
+  const pos = computeParkingTicketTooltipPosition({
+    hostRect: host,
+    localX: screen.x,
+    localY: screen.y,
+    viewW: VIEW_W,
+    viewH: VIEW_H,
+    panelWidth: size.width,
+    panelHeight: size.height,
+    viewportWidth: window.innerWidth,
+    viewportHeight: window.innerHeight,
+  });
+  tooltip.root.style.left = `${String(Math.round(pos.left))}px`;
+  tooltip.root.style.top = `${String(Math.round(pos.top))}px`;
 }
 
 async function showParkingTicketTooltip(
@@ -4316,6 +4430,9 @@ function onTick(dt: number): void {
       next = clampWorldPosition(next, wb);
     }
     playerWorldPos.set(id, next);
+    if (id === HUMAN_VIEWER_PLAYER_ID) {
+      schedulePersistHumanWorldPos(next);
+    }
     const motion = nextAvatarMotion({
       prevWorld: prev,
       nextWorld: next,
@@ -4478,7 +4595,25 @@ function onFrame(): void {
     }
   }
   if (proximityLegendEl !== null) {
-    if (activeGameStage !== null) {
+    if (
+      activeHouseStage !== null &&
+      stageController?.current()?.id === "houseInterior"
+    ) {
+      const stage = activeHouseStage;
+      const nearbyLabel = stage.handle.updateFixtureCallouts(housePlayerState.pos);
+      if (stage.handle.showPurchasePanel) {
+        const panelOpen = housePurchasePanel?.isOpen() === true;
+        proximityLegendEl.textContent =
+          nearbyLabel !== null
+            ? `Near ${nearbyLabel}. P: ${panelOpen ? "hide buy house" : "buy house"}`
+            : `P: ${panelOpen ? "hide buy house" : "buy house"} · Walk to exit door to leave`;
+      } else if (nearbyLabel !== null) {
+        proximityLegendEl.textContent = `Near ${nearbyLabel}. Walk to exit door to leave`;
+      } else {
+        proximityLegendEl.textContent =
+          "Joystick or arrows to move · Walk to exit door to leave";
+      }
+    } else if (activeGameStage !== null) {
       const gameTarget = lastGameStageProximityTarget;
       if (gameTarget !== null) {
         proximityLegendEl.textContent =
@@ -4924,13 +5059,14 @@ export function bootstrap(): void {
     motionQuery.addEventListener("change", syncSkyMotion);
 
     canvasHost.appendChild(agentChatOverlays.root);
-    // Wallet HUD, inventory panel, and the amenity item tooltip use
+    // Bottom HUD dock, inventory panel, and the amenity item tooltip use
     // `position: fixed` to escape the `centerCol` stacking context (and
     // the `transform` on `canvasHost` which would otherwise constrain
     // fixed-position children). Mounting them on `document.body` keeps
     // their containing block as the viewport, which is what they want.
+    const bottomHudDock = createBottomHudDock({ parent: document.body });
     walletHud = createWalletHud({
-      parent: document.body,
+      parent: bottomHudDock.root,
       onClick: () => openWalletInventoryPanel(),
     });
     walletInventoryPanel = createWalletInventoryPanel({
@@ -4951,6 +5087,7 @@ export function bootstrap(): void {
     gameResultPanel = createGameResultPanel({ parent: document.body });
     gameStreakPanel = createGameStreakPanel({
       parent: document.body,
+      pillParent: bottomHudDock.root,
       onRefresh: () => {
         void refreshGameStreakPanel();
       },
@@ -4998,6 +5135,11 @@ export function bootstrap(): void {
         const buyable = stage.nearestBuyable;
         if (buyable === null) return null;
         return buyable.tooltipModel.sale.status === "sold" ? "View" : "Buy";
+      },
+      getHouseInteriorPurchaseLabel: () => {
+        const stage = activeHouseStage;
+        if (stage === null || !stage.handle.showPurchasePanel) return null;
+        return housePurchasePanel?.isOpen() === true ? "Hide" : "Buy";
       },
       getParkingProximityLabel: () => {
         if (lastParkingBayNearest === null) return null;
@@ -5085,6 +5227,10 @@ export function bootstrap(): void {
         triggerProximityAssistOrChat("chat");
       },
       onPushToTalk: () => {
+        if (activeHouseStage !== null) {
+          toggleHousePurchasePanel();
+          return;
+        }
         if (
           activeGameStage !== null &&
           lastGameStageProximityTarget !== null &&
@@ -5126,6 +5272,10 @@ export function bootstrap(): void {
       onWallet: () => {
         openWalletInventoryPanel();
       },
+      initialPlacement: getPanelPlacement("proximity") ?? undefined,
+      onPlacementCommit: (placement) => {
+        savePanelPlacement("proximity", placement);
+      },
     });
 
     joystickHandle = createPreviewDebugJoystick({ parent: joystickWrap });
@@ -5136,20 +5286,21 @@ export function bootstrap(): void {
     const previewMessagesFloatingPlacement = (): {
       leftPx: number;
       topPx: number;
-    } => ({ leftPx: 16, topPx: 16 });
+    } => getPanelPlacement("messages") ?? { leftPx: 16, topPx: 16 };
 
     const previewSessionFloatingPlacement = (): {
       leftPx: number;
       topPx: number;
-    } => ({
-      leftPx: Math.max(16, window.innerWidth - 376),
-      topPx: 16,
-    });
+    } =>
+      getPanelPlacement("session") ?? {
+        leftPx: Math.max(16, window.innerWidth - 376),
+        topPx: 16,
+      };
 
     const previewDebugFloatingPlacement = (): {
       leftPx: number;
       topPx: number;
-    } => ({ leftPx: 16, topPx: 380 });
+    } => getPanelPlacement("debug") ?? { leftPx: 16, topPx: 380 };
 
     const previewMessagesStationaryPlacement = (): {
       leftPx: number;
@@ -5186,42 +5337,60 @@ export function bootstrap(): void {
         getBoundsElement: () =>
           previewDockStationaryActive() ? leftCol : canvasStage,
         label: "World messages",
-        initialPlacement: { leftPx: 16, topPx: 16 },
+        initialPlacement: previewMessagesFloatingPlacement(),
+        initialCollapsed: getPanelPlacement("messages")?.collapsed === true,
         className: "preview-floating-panel--messages",
         layoutMode: stationaryOnBoot ? "stationary" : "floating",
         resolvePlacement: (mode) =>
           mode === "stationary"
             ? previewMessagesStationaryPlacement()
             : previewMessagesFloatingPlacement(),
+        onPlacementCommit: (placement) => {
+          savePanelPlacement("messages", placement);
+        },
+        onCollapsedChange: (collapsed) => {
+          savePanelPlacement("messages", { collapsed });
+        },
       }),
       session: attachPreviewFloatingPanelDrag({
         element: controlStack,
         getBoundsElement: () =>
           previewDockStationaryActive() ? rightCol : canvasStage,
         label: "Human agent interaction",
-        initialPlacement: {
-          leftPx: Math.max(16, window.innerWidth - 376),
-          topPx: 16,
-        },
+        initialPlacement: previewSessionFloatingPlacement(),
+        initialCollapsed: getPanelPlacement("session")?.collapsed === true,
         className: "preview-floating-panel--session",
         layoutMode: stationaryOnBoot ? "stationary" : "floating",
         resolvePlacement: (mode) =>
           mode === "stationary"
             ? previewSessionStationaryPlacement()
             : previewSessionFloatingPlacement(),
+        onPlacementCommit: (placement) => {
+          savePanelPlacement("session", placement);
+        },
+        onCollapsedChange: (collapsed) => {
+          savePanelPlacement("session", { collapsed });
+        },
       }),
       debug: attachPreviewFloatingPanelDrag({
         element: debugMount,
         getBoundsElement: () =>
           previewDockStationaryActive() ? rightCol : canvasStage,
         label: "Debug",
-        initialPlacement: { leftPx: 16, topPx: 380 },
+        initialPlacement: previewDebugFloatingPlacement(),
+        initialCollapsed: getPanelPlacement("debug")?.collapsed === true,
         className: "preview-floating-panel--debug",
         layoutMode: stationaryOnBoot ? "stationary" : "floating",
         resolvePlacement: (mode) =>
           mode === "stationary"
             ? previewDebugStationaryPlacement()
             : previewDebugFloatingPlacement(),
+        onPlacementCommit: (placement) => {
+          savePanelPlacement("debug", placement);
+        },
+        onCollapsedChange: (collapsed) => {
+          savePanelPlacement("debug", { collapsed });
+        },
       }),
     };
     const floatingPanels = [
@@ -5294,6 +5463,14 @@ export function bootstrap(): void {
     window.addEventListener("resize", () => {
       floatingPanels.forEach((panel) => panel.refreshBounds());
       scheduleSpacesCtaRefresh();
+    });
+    window.addEventListener("pagehide", () => {
+      flushPersistedHumanWorldPos();
+    });
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "hidden") {
+        flushPersistedHumanWorldPos();
+      }
     });
 
     if (globalChatRoom !== null && spacesCtaPanel !== null) {

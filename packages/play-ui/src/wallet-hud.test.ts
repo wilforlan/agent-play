@@ -9,18 +9,15 @@ const newParent = (): HTMLElement => {
 };
 
 describe("wallet-hud", () => {
-  it("anchors the balance strip to the bottom of the viewport", () => {
+  it("renders as an inline pill for placement in the bottom HUD dock", () => {
     const hud = createWalletHud({ parent: newParent() });
     const style = document.getElementById("preview-wallet-hud-styles");
-    expect(style?.textContent).toMatch(
-      /\.preview-wallet-hud \{[\s\S]*?bottom:\s*max\(12px,\s*calc\(12px \+ env\(safe-area-inset-bottom/ ,
-    );
-    expect(style?.textContent).toMatch(
-      /\.preview-wallet-hud \{[\s\S]*?top:\s*auto/,
-    );
-    expect(style?.textContent).not.toMatch(
-      /\.preview-wallet-hud \{[\s\S]*?top:\s*12px/,
-    );
+    const hudBlock = style?.textContent?.match(
+      /\.preview-wallet-hud \{[^}]*\}/,
+    )?.[0];
+    expect(hudBlock).toMatch(/position:\s*relative/);
+    expect(hudBlock).not.toMatch(/position:\s*fixed/);
+    expect(hudBlock).not.toMatch(/right:\s*12px/);
     hud.destroy();
   });
 

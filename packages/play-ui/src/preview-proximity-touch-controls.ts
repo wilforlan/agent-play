@@ -38,6 +38,11 @@ export type CreatePreviewProximityTouchControlsOptions = {
    */
   getAmenityItemActionLabel?: () => string | null | undefined;
   /**
+   * When the human is inside a vacant house inspect stage, returns the
+   * verb for toggling the buy-house modal (`"Buy"` / `"Hide"`).
+   */
+  getHouseInteriorPurchaseLabel?: () => string | null | undefined;
+  /**
    * When the human is on the overworld near a vacant parking bay, returns
    * the bay label for the `P` button.
    */
@@ -91,6 +96,18 @@ export type CreatePreviewProximityTouchControlsOptions = {
    * of proximity state.
    */
   onWallet?: () => void;
+  /**
+   * Optional restored placement from a prior visit. When set, the pad is
+   * positioned immediately instead of using the default centered CSS.
+   */
+  initialPlacement?: { leftPx: number; topPx: number };
+  /**
+   * Called after the user finishes dragging the pad to a new spot.
+   */
+  onPlacementCommit?: (placement: {
+    leftPx: number;
+    topPx: number;
+  }) => void;
 };
 
 export function createPreviewProximityTouchControls(
@@ -165,9 +182,20 @@ export function createPreviewProximityTouchControls(
   options.parent.appendChild(root);
 
   let placedByDrag = false;
+  if (options.initialPlacement !== undefined) {
+    root.style.left = `${options.initialPlacement.leftPx}px`;
+    root.style.top = `${options.initialPlacement.topPx}px`;
+    root.style.transform = "none";
+    placedByDrag = true;
+  }
 
   const applyInteractable = (): void => {
     const can = options.getCanAct();
+    const houseInteriorPurchaseLabel =
+      options.getHouseInteriorPurchaseLabel?.() ?? null;
+    const inHouseInteriorPurchase =
+      typeof houseInteriorPurchaseLabel === "string" &&
+      houseInteriorPurchaseLabel.length > 0;
     const itemActionLabel = options.getAmenityItemActionLabel?.() ?? null;
     const nearAmenityItem =
       typeof itemActionLabel === "string" && itemActionLabel.length > 0;
@@ -186,7 +214,20 @@ export function createPreviewProximityTouchControls(
     const structureLabel = options.getStructureProximityLabel?.() ?? null;
     const nearStructure =
       typeof structureLabel === "string" && structureLabel.length > 0;
-    if (nearAmenityItem) {
+    if (inHouseInteriorPurchase) {
+      btnAssist.disabled = true;
+      subA.textContent = "Assist";
+      btnAssist.removeAttribute("aria-label");
+      btnChat.disabled = true;
+      btnPushToTalk.disabled = false;
+      subP.textContent = houseInteriorPurchaseLabel ?? "Buy";
+      btnPushToTalk.classList.add("preview-proximity-touch-pad__key--proximity-active");
+      btnPushToTalk.classList.remove("preview-proximity-touch-pad__key--proximity-hint");
+      btnPushToTalk.setAttribute(
+        "aria-label",
+        `${houseInteriorPurchaseLabel ?? "Buy"} house`
+      );
+    } else if (nearAmenityItem) {
       btnAssist.disabled = true;
       subA.textContent = "Assist";
       btnAssist.removeAttribute("aria-label");
@@ -372,8 +413,19 @@ export function createPreviewProximityTouchControls(
     dragHandle.removeEventListener("pointermove", onPointerMove);
     dragHandle.removeEventListener("pointerup", onPointerUp);
     dragHandle.removeEventListener("pointercancel", onPointerUp);
-    if (dragHandle.hasPointerCapture(e.pointerId)) {
+    if (
+      typeof dragHandle.hasPointerCapture === "function" &&
+      typeof dragHandle.releasePointerCapture === "function" &&
+      dragHandle.hasPointerCapture(e.pointerId)
+    ) {
       dragHandle.releasePointerCapture(e.pointerId);
+    }
+    if (placedByDrag) {
+      const leftPx = Number.parseFloat(root.style.left || "0");
+      const topPx = Number.parseFloat(root.style.top || "0");
+      if (Number.isFinite(leftPx) && Number.isFinite(topPx)) {
+        options.onPlacementCommit?.({ leftPx, topPx });
+      }
     }
   };
 
@@ -392,7 +444,9 @@ export function createPreviewProximityTouchControls(
     }
     dragOffsetX = e.clientX - padRect.left;
     dragOffsetY = e.clientY - padRect.top;
-    dragHandle.setPointerCapture(e.pointerId);
+    if (typeof dragHandle.setPointerCapture === "function") {
+      dragHandle.setPointerCapture(e.pointerId);
+    }
     dragHandle.addEventListener("pointermove", onPointerMove);
     dragHandle.addEventListener("pointerup", onPointerUp);
     dragHandle.addEventListener("pointercancel", onPointerUp);

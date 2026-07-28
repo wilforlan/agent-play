@@ -554,4 +554,101 @@ describe("createPreviewProximityTouchControls", () => {
     expect(assistBtn.disabled).toBe(true);
     expect(pttBtn.disabled).toBe(false);
   });
+
+  it("enables P to buy or hide the house purchase modal while inside a vacant house", () => {
+    const { root, refresh } = createPreviewProximityTouchControls({
+      parent,
+      getBoundsElement: () => parent,
+      getCanAct: () => false,
+      getHouseInteriorPurchaseLabel: () => "Buy",
+      onAssist,
+      onChat,
+      onPushToTalk,
+    });
+    refresh();
+    const pttBtn = root.querySelector(
+      ".preview-proximity-touch-pad__key--ptt"
+    ) as HTMLButtonElement;
+    expect(pttBtn.disabled).toBe(false);
+    expect(pttBtn.textContent).toContain("Buy");
+    pttBtn.click();
+    expect(onPushToTalk).toHaveBeenCalledTimes(1);
+  });
+
+  it("restores an initial placement and commits after drag", () => {
+    const commits: Array<{ leftPx: number; topPx: number }> = [];
+    parent.getBoundingClientRect = () =>
+      ({
+        x: 0,
+        y: 0,
+        left: 0,
+        top: 0,
+        right: 400,
+        bottom: 300,
+        width: 400,
+        height: 300,
+        toJSON: () => ({}),
+      }) as DOMRect;
+    const { root } = createPreviewProximityTouchControls({
+      parent,
+      getBoundsElement: () => parent,
+      getCanAct: () => true,
+      onAssist,
+      onChat,
+      onPushToTalk,
+      initialPlacement: { leftPx: 24, topPx: 48 },
+      onPlacementCommit: (placement) => {
+        commits.push(placement);
+      },
+    });
+    expect(root.style.left).toBe("24px");
+    expect(root.style.top).toBe("48px");
+    expect(root.style.transform).toBe("none");
+
+    root.getBoundingClientRect = () =>
+      ({
+        x: Number.parseFloat(root.style.left || "0"),
+        y: Number.parseFloat(root.style.top || "0"),
+        left: Number.parseFloat(root.style.left || "0"),
+        top: Number.parseFloat(root.style.top || "0"),
+        right: Number.parseFloat(root.style.left || "0") + 120,
+        bottom: Number.parseFloat(root.style.top || "0") + 40,
+        width: 120,
+        height: 40,
+        toJSON: () => ({}),
+      }) as DOMRect;
+
+    const drag = root.querySelector(
+      ".preview-proximity-touch-pad__drag"
+    ) as HTMLButtonElement;
+    drag.dispatchEvent(
+      new PointerEvent("pointerdown", {
+        bubbles: true,
+        button: 0,
+        clientX: 30,
+        clientY: 55,
+        pointerId: 1,
+      })
+    );
+    drag.dispatchEvent(
+      new PointerEvent("pointermove", {
+        bubbles: true,
+        clientX: 80,
+        clientY: 90,
+        pointerId: 1,
+      })
+    );
+    drag.dispatchEvent(
+      new PointerEvent("pointerup", {
+        bubbles: true,
+        clientX: 80,
+        clientY: 90,
+        pointerId: 1,
+      })
+    );
+
+    expect(commits.length).toBe(1);
+    expect(commits[0]?.leftPx).toBe(74);
+    expect(commits[0]?.topPx).toBe(83);
+  });
 });
