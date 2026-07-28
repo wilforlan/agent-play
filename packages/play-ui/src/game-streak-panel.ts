@@ -15,6 +15,11 @@ export type GameStreakPanelHandle = {
 
 export type CreateGameStreakPanelOptions = {
   readonly parent: HTMLElement;
+  /**
+   * Where to mount the trigger pill. Defaults to `parent`. Pass a shared
+   * bottom HUD dock so the pill stays spaced beside the wallet balance.
+   */
+  readonly pillParent?: HTMLElement;
   readonly onRefresh: () => void;
 };
 
@@ -38,10 +43,7 @@ const ensureStyles = (): void => {
   style.id = id;
   style.textContent = `
 .${PANEL_CLASS}-pill {
-  position: fixed;
-  top: auto;
-  right: 148px;
-  bottom: max(12px, calc(12px + env(safe-area-inset-bottom, 0px)));
+  position: relative;
   z-index: 13000;
   border: none;
   border-radius: 999px;
@@ -52,6 +54,7 @@ const ensureStyles = (): void => {
   font-size: 12px;
   font-weight: 700;
   cursor: pointer;
+  flex-shrink: 0;
   box-shadow: 0 2px 10px rgba(124,45,18,0.35);
 }
 .${PANEL_CLASS}-pill:hover { transform: translateY(-1px); }
@@ -145,12 +148,13 @@ export const createGameStreakPanel = (
 ): GameStreakPanelHandle => {
   ensureStyles();
 
+  const pillParent = options.pillParent ?? options.parent;
   const pill = document.createElement("button");
   pill.type = "button";
   pill.className = `${PANEL_CLASS}-pill`;
   pill.textContent = "Games G";
   pill.setAttribute("aria-label", "Open game streak panel");
-  options.parent.appendChild(pill);
+  pillParent.insertBefore(pill, pillParent.firstChild);
 
   const backdrop = document.createElement("div");
   backdrop.className = `${PANEL_CLASS}-backdrop`;
