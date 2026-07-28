@@ -1,6 +1,8 @@
+// @vitest-environment happy-dom
 import { describe, expect, it } from "vitest";
 import { playPadStickVisualAtDirectionProgress } from "./preview-play-pad-keys.js";
 import {
+  createPreviewDebugJoystick,
   screenDeltaToWorldJoystick,
   shouldClampWorldPositionWhenJoystickDriving,
   shouldClearPrimaryWaypointsWhileJoystickIdle,
@@ -158,5 +160,27 @@ describe("shouldClearPrimaryWaypointsWhileJoystickIdle", () => {
         joyVectorLength: 0,
       })
     ).toBe(false);
+  });
+});
+
+describe("createPreviewDebugJoystick stick visibility", () => {
+  it("keeps the filled stick visible while idle so the play pad reads as a CTA", () => {
+    const parent = document.createElement("div");
+    document.body.appendChild(parent);
+    const joystick = createPreviewDebugJoystick({ parent });
+    joystick.setVisible(true);
+    const style = document.getElementById(
+      "agent-play-preview-debug-joystick-styles"
+    );
+    expect(style?.textContent).toMatch(
+      /\.preview-debug-joystick--handle-detached \.preview-debug-joystick__stick \{[\s\S]*?opacity:\s*0\.[5-9]/,
+    );
+    expect(style?.textContent).not.toMatch(
+      /\.preview-debug-joystick--handle-detached \.preview-debug-joystick__stick \{[\s\S]*?opacity:\s*0[;\s]/,
+    );
+    expect(joystick.root.className).toContain(
+      "preview-debug-joystick--handle-attached"
+    );
+    joystick.root.remove();
   });
 });
