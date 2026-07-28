@@ -60,6 +60,7 @@ import {
 import { createItemTooltip, type ItemTooltipHandle } from "./item-tooltip.js";
 import { executePurchase } from "./purchase-client.js";
 import { createWalletHud, type WalletHudHandle } from "./wallet-hud.js";
+import { createBottomHudDock } from "./bottom-hud-dock.js";
 import { fetchPlayerWallet } from "./wallet-client.js";
 import {
   createWalletInventoryPanel,
@@ -86,6 +87,10 @@ import {
   agentChatHorizontalNudgePx,
   computeAgentChatPanelPosition,
 } from "./agent-chat-panel-position.js";
+import {
+  computeHousePurchasePanelPosition,
+  computeParkingTicketTooltipPosition,
+} from "./overworld-fixed-panel-position.js";
 import {
   clampWorldPosition,
   createWorldLayoutWithParkingRow,
@@ -2186,16 +2191,38 @@ function renderHousePlayer(stage: ActiveHouseStage): void {
   });
 }
 
-function positionHousePurchasePanel(stage: ActiveHouseStage): void {
+function measureFixedPanelSize(root: HTMLElement): {
+  width: number;
+  height: number;
+} {
+  const rect = root.getBoundingClientRect();
+  return {
+    width: rect.width > 0 ? rect.width : 280,
+    height: rect.height > 0 ? rect.height : 240,
+  };
+}
+
+function positionHousePurchasePanel(_stage: ActiveHouseStage): void {
   const panel = housePurchasePanel;
   if (panel === null) {
     return;
   }
   const host = canvasHostRef?.getBoundingClientRect();
-  const offsetX = host?.left ?? 0;
-  const offsetY = host?.top ?? 0;
-  panel.root.style.left = `${String(Math.round(offsetX + VIEW_W * 0.5 - 120))}px`;
-  panel.root.style.top = `${String(Math.round(offsetY + VIEW_H * 0.55))}px`;
+  if (host === undefined) {
+    return;
+  }
+  const size = measureFixedPanelSize(panel.root);
+  const pos = computeHousePurchasePanelPosition({
+    hostRect: host,
+    viewW: VIEW_W,
+    viewH: VIEW_H,
+    panelWidth: size.width,
+    panelHeight: size.height,
+    viewportWidth: window.innerWidth,
+    viewportHeight: window.innerHeight,
+  });
+  panel.root.style.left = `${String(Math.round(pos.left))}px`;
+  panel.root.style.top = `${String(Math.round(pos.top))}px`;
 }
 
 function syncHousePurchasePanel(stage: ActiveHouseStage): void {
@@ -3074,13 +3101,26 @@ function positionParkingTicketTooltip(bay: ParkingBayAnchor): void {
   if (tooltip === null) {
     return;
   }
+  const host = canvasHostRef?.getBoundingClientRect();
+  if (host === undefined) {
+    return;
+  }
   const local = worldToWorldRootLocal(bay.x, bay.y);
   const screen = worldRootLocalToCanvas(local.x, local.y);
-  const host = canvasHostRef?.getBoundingClientRect();
-  const offsetX = host?.left ?? 0;
-  const offsetY = host?.top ?? 0;
-  tooltip.root.style.left = `${String(Math.round(screen.x + offsetX - 110))}px`;
-  tooltip.root.style.top = `${String(Math.round(screen.y + offsetY - 200))}px`;
+  const size = measureFixedPanelSize(tooltip.root);
+  const pos = computeParkingTicketTooltipPosition({
+    hostRect: host,
+    localX: screen.x,
+    localY: screen.y,
+    viewW: VIEW_W,
+    viewH: VIEW_H,
+    panelWidth: size.width,
+    panelHeight: size.height,
+    viewportWidth: window.innerWidth,
+    viewportHeight: window.innerHeight,
+  });
+  tooltip.root.style.left = `${String(Math.round(pos.left))}px`;
+  tooltip.root.style.top = `${String(Math.round(pos.top))}px`;
 }
 
 async function showParkingTicketTooltip(
@@ -4924,13 +4964,14 @@ export function bootstrap(): void {
     motionQuery.addEventListener("change", syncSkyMotion);
 
     canvasHost.appendChild(agentChatOverlays.root);
-    // Wallet HUD, inventory panel, and the amenity item tooltip use
+    // Bottom HUD dock, inventory panel, and the amenity item tooltip use
     // `position: fixed` to escape the `centerCol` stacking context (and
     // the `transform` on `canvasHost` which would otherwise constrain
     // fixed-position children). Mounting them on `document.body` keeps
     // their containing block as the viewport, which is what they want.
+    const bottomHudDock = createBottomHudDock({ parent: document.body });
     walletHud = createWalletHud({
-      parent: document.body,
+      parent: bottomHudDock.root,
       onClick: () => openWalletInventoryPanel(),
     });
     walletInventoryPanel = createWalletInventoryPanel({
@@ -4951,6 +4992,7 @@ export function bootstrap(): void {
     gameResultPanel = createGameResultPanel({ parent: document.body });
     gameStreakPanel = createGameStreakPanel({
       parent: document.body,
+      pillParent: bottomHudDock.root,
       onRefresh: () => {
         void refreshGameStreakPanel();
       },

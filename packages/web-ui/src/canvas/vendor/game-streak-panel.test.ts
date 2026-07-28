@@ -12,19 +12,16 @@ describe("game streak panel", () => {
     expect(powerUpsToNextBundle(10_000)).toBe(null);
   });
 
-  it("anchors the games streak pill to the bottom of the viewport", () => {
+  it("renders the games streak pill as an inline control for the bottom HUD dock", () => {
     const parent = document.createElement("div");
     const panel = createGameStreakPanel({ parent, onRefresh: () => {} });
     const style = document.getElementById("preview-game-streak-styles");
-    expect(style?.textContent).toMatch(
-      /\.preview-game-streak-pill \{[\s\S]*?bottom:\s*max\(12px,\s*calc\(12px \+ env\(safe-area-inset-bottom/,
-    );
-    expect(style?.textContent).toMatch(
-      /\.preview-game-streak-pill \{[\s\S]*?top:\s*auto/,
-    );
-    expect(style?.textContent).not.toMatch(
-      /\.preview-game-streak-pill \{[\s\S]*?top:\s*12px/,
-    );
+    const pillBlock = style?.textContent?.match(
+      /\.preview-game-streak-pill \{[^}]*\}/,
+    )?.[0];
+    expect(pillBlock).toMatch(/position:\s*relative/);
+    expect(pillBlock).not.toMatch(/position:\s*fixed/);
+    expect(pillBlock).not.toMatch(/right:\s*148px/);
     panel.destroy();
   });
 
