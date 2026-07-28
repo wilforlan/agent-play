@@ -194,6 +194,14 @@ import {
   syncPreviewCanvasHostScale,
 } from "./preview-floating-panel.js";
 import {
+  getPanelPlacement,
+  savePanelPlacement,
+} from "./preview-ui-placements.js";
+import {
+  loadHumanWorldPosition,
+  saveHumanWorldPosition,
+} from "./preview-human-world-position.js";
+import {
   getPreviewViewSettings,
   setPreviewViewSettings,
 } from "./preview-view-settings.js";
@@ -392,6 +400,30 @@ const PREVIEW_AGENT_CHAT_GAP_PX = 8;
 
 const HUMAN_DEFAULT_SPAWN_UX = 0.1;
 const HUMAN_DEFAULT_SPAWN_UY = 0.12;
+
+let pendingHumanWorldPos: { x: number; y: number } | null = null;
+let humanWorldPosSaveTimer: ReturnType<typeof setTimeout> | null = null;
+
+function flushPersistedHumanWorldPos(): void {
+  if (humanWorldPosSaveTimer !== null) {
+    clearTimeout(humanWorldPosSaveTimer);
+    humanWorldPosSaveTimer = null;
+  }
+  const sid = getSid();
+  const pos = pendingHumanWorldPos;
+  pendingHumanWorldPos = null;
+  if (sid === null || pos === null) return;
+  saveHumanWorldPosition({ sid, x: pos.x, y: pos.y });
+}
+
+function schedulePersistHumanWorldPos(pos: { x: number; y: number }): void {
+  pendingHumanWorldPos = { x: pos.x, y: pos.y };
+  if (humanWorldPosSaveTimer !== null) return;
+  humanWorldPosSaveTimer = setTimeout(() => {
+    humanWorldPosSaveTimer = null;
+    flushPersistedHumanWorldPos();
+  }, 400);
+}
 
 /** Snapshot structure row (subset of server JSON). */
 type Structure = {
@@ -2900,8 +2932,15 @@ function ingestSnapshot(snap: Snapshot): void {
   paintStreetSigns();
   paintParkingStreet();
   const wbSpawn = getWorldBoundsForClamp();
+  const storedHuman = loadHumanWorldPosition({ sid: getSid() });
   const humanSpawn =
-    wbSpawn !== null ? defaultHumanSpawnInWorld(wbSpawn) : { x: 0, y: 0 };
+    storedHuman !== null
+      ? wbSpawn !== null
+        ? clampWorldPosition(storedHuman, wbSpawn)
+        : storedHuman
+      : wbSpawn !== null
+        ? defaultHumanSpawnInWorld(wbSpawn)
+        : { x: 0, y: 0 };
   let snapshotPlacementIncomplete = false;
   for (const p of listAgentRows(snapshot)) {
     const home = getPlayerHomeCell(p.agentId, snapshot);
@@ -4356,6 +4395,9 @@ function onTick(dt: number): void {
       next = clampWorldPosition(next, wb);
     }
     playerWorldPos.set(id, next);
+    if (id === HUMAN_VIEWER_PLAYER_ID) {
+      schedulePersistHumanWorldPos(next);
+    }
     const motion = nextAvatarMotion({
       prevWorld: prev,
       nextWorld: next,
@@ -5168,6 +5210,10 @@ export function bootstrap(): void {
       onWallet: () => {
         openWalletInventoryPanel();
       },
+      initialPlacement: getPanelPlacement("proximity") ?? undefined,
+      onPlacementCommit: (placement) => {
+        savePanelPlacement("proximity", placement);
+      },
     });
 
     joystickHandle = createPreviewDebugJoystick({ parent: joystickWrap });
@@ -5178,20 +5224,21 @@ export function bootstrap(): void {
     const previewMessagesFloatingPlacement = (): {
       leftPx: number;
       topPx: number;
-    } => ({ leftPx: 16, topPx: 16 });
+    } => getPanelPlacement("messages") ?? { leftPx: 16, topPx: 16 };
 
     const previewSessionFloatingPlacement = (): {
       leftPx: number;
       topPx: number;
-    } => ({
-      leftPx: Math.max(16, window.innerWidth - 376),
-      topPx: 16,
-    });
+    } =>
+      getPanelPlacement("session") ?? {
+        leftPx: Math.max(16, window.innerWidth - 376),
+        topPx: 16,
+      };
 
     const previewDebugFloatingPlacement = (): {
       leftPx: number;
       topPx: number;
-    } => ({ leftPx: 16, topPx: 380 });
+    } => getPanelPlacement("debug") ?? { leftPx: 16, topPx: 380 };
 
     const previewMessagesStationaryPlacement = (): {
       leftPx: number;
@@ -5228,42 +5275,60 @@ export function bootstrap(): void {
         getBoundsElement: () =>
           previewDockStationaryActive() ? leftCol : canvasStage,
         label: "World messages",
-        initialPlacement: { leftPx: 16, topPx: 16 },
+        initialPlacement: previewMessagesFloatingPlacement(),
+        initialCollapsed: getPanelPlacement("messages")?.collapsed === true,
         className: "preview-floating-panel--messages",
         layoutMode: stationaryOnBoot ? "stationary" : "floating",
         resolvePlacement: (mode) =>
           mode === "stationary"
             ? previewMessagesStationaryPlacement()
             : previewMessagesFloatingPlacement(),
+        onPlacementCommit: (placement) => {
+          savePanelPlacement("messages", placement);
+        },
+        onCollapsedChange: (collapsed) => {
+          savePanelPlacement("messages", { collapsed });
+        },
       }),
       session: attachPreviewFloatingPanelDrag({
         element: controlStack,
         getBoundsElement: () =>
           previewDockStationaryActive() ? rightCol : canvasStage,
         label: "Human agent interaction",
-        initialPlacement: {
-          leftPx: Math.max(16, window.innerWidth - 376),
-          topPx: 16,
-        },
+        initialPlacement: previewSessionFloatingPlacement(),
+        initialCollapsed: getPanelPlacement("session")?.collapsed === true,
         className: "preview-floating-panel--session",
         layoutMode: stationaryOnBoot ? "stationary" : "floating",
         resolvePlacement: (mode) =>
           mode === "stationary"
             ? previewSessionStationaryPlacement()
             : previewSessionFloatingPlacement(),
+        onPlacementCommit: (placement) => {
+          savePanelPlacement("session", placement);
+        },
+        onCollapsedChange: (collapsed) => {
+          savePanelPlacement("session", { collapsed });
+        },
       }),
       debug: attachPreviewFloatingPanelDrag({
         element: debugMount,
         getBoundsElement: () =>
           previewDockStationaryActive() ? rightCol : canvasStage,
         label: "Debug",
-        initialPlacement: { leftPx: 16, topPx: 380 },
+        initialPlacement: previewDebugFloatingPlacement(),
+        initialCollapsed: getPanelPlacement("debug")?.collapsed === true,
         className: "preview-floating-panel--debug",
         layoutMode: stationaryOnBoot ? "stationary" : "floating",
         resolvePlacement: (mode) =>
           mode === "stationary"
             ? previewDebugStationaryPlacement()
             : previewDebugFloatingPlacement(),
+        onPlacementCommit: (placement) => {
+          savePanelPlacement("debug", placement);
+        },
+        onCollapsedChange: (collapsed) => {
+          savePanelPlacement("debug", { collapsed });
+        },
       }),
     };
     const floatingPanels = [
@@ -5336,6 +5401,14 @@ export function bootstrap(): void {
     window.addEventListener("resize", () => {
       floatingPanels.forEach((panel) => panel.refreshBounds());
       scheduleSpacesCtaRefresh();
+    });
+    window.addEventListener("pagehide", () => {
+      flushPersistedHumanWorldPos();
+    });
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "hidden") {
+        flushPersistedHumanWorldPos();
+      }
     });
 
     if (globalChatRoom !== null && spacesCtaPanel !== null) {

@@ -11,7 +11,7 @@ const newParent = (): HTMLElement => {
 };
 
 describe("bottom hud dock", () => {
-  it("anchors a flex row with gap at the bottom-right of the viewport", () => {
+  it("anchors a flex row with gap at the bottom-left of the viewport", () => {
     const dock = createBottomHudDock({ parent: newParent() });
     const style = document.getElementById("preview-bottom-hud-dock-styles");
     expect(style?.textContent).toMatch(
@@ -24,7 +24,13 @@ describe("bottom hud dock", () => {
       /\.preview-bottom-hud-dock \{[\s\S]*?bottom:\s*max\(12px,\s*calc\(12px \+ env\(safe-area-inset-bottom/,
     );
     expect(style?.textContent).toMatch(
+      /\.preview-bottom-hud-dock \{[\s\S]*?left:\s*12px/,
+    );
+    expect(style?.textContent).not.toMatch(
       /\.preview-bottom-hud-dock \{[\s\S]*?right:\s*12px/,
+    );
+    expect(style?.textContent).toMatch(
+      /\.preview-bottom-hud-dock \{[\s\S]*?justify-content:\s*flex-start/,
     );
     expect(style?.textContent).toMatch(
       /\.preview-bottom-hud-dock \{[\s\S]*?flex-wrap:\s*wrap/,

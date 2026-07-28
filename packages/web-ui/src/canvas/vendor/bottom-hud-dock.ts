@@ -19,13 +19,13 @@ const ensureStyles = (): void => {
 .${DOCK_CLASS} {
   position: fixed;
   top: auto;
-  right: 12px;
+  left: 12px;
   bottom: max(12px, calc(12px + env(safe-area-inset-bottom, 0px)));
   z-index: 13000;
   display: flex;
   flex-direction: row;
   flex-wrap: wrap;
-  justify-content: flex-end;
+  justify-content: flex-start;
   align-items: center;
   gap: 8px;
   max-width: calc(100vw - 24px);
