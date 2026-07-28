@@ -91,6 +91,18 @@ export type CreatePreviewProximityTouchControlsOptions = {
    * of proximity state.
    */
   onWallet?: () => void;
+  /**
+   * Optional restored placement from a prior visit. When set, the pad is
+   * positioned immediately instead of using the default centered CSS.
+   */
+  initialPlacement?: { leftPx: number; topPx: number };
+  /**
+   * Called after the user finishes dragging the pad to a new spot.
+   */
+  onPlacementCommit?: (placement: {
+    leftPx: number;
+    topPx: number;
+  }) => void;
 };
 
 export function createPreviewProximityTouchControls(
@@ -165,6 +177,12 @@ export function createPreviewProximityTouchControls(
   options.parent.appendChild(root);
 
   let placedByDrag = false;
+  if (options.initialPlacement !== undefined) {
+    root.style.left = `${options.initialPlacement.leftPx}px`;
+    root.style.top = `${options.initialPlacement.topPx}px`;
+    root.style.transform = "none";
+    placedByDrag = true;
+  }
 
   const applyInteractable = (): void => {
     const can = options.getCanAct();
@@ -372,8 +390,19 @@ export function createPreviewProximityTouchControls(
     dragHandle.removeEventListener("pointermove", onPointerMove);
     dragHandle.removeEventListener("pointerup", onPointerUp);
     dragHandle.removeEventListener("pointercancel", onPointerUp);
-    if (dragHandle.hasPointerCapture(e.pointerId)) {
+    if (
+      typeof dragHandle.hasPointerCapture === "function" &&
+      typeof dragHandle.releasePointerCapture === "function" &&
+      dragHandle.hasPointerCapture(e.pointerId)
+    ) {
       dragHandle.releasePointerCapture(e.pointerId);
+    }
+    if (placedByDrag) {
+      const leftPx = Number.parseFloat(root.style.left || "0");
+      const topPx = Number.parseFloat(root.style.top || "0");
+      if (Number.isFinite(leftPx) && Number.isFinite(topPx)) {
+        options.onPlacementCommit?.({ leftPx, topPx });
+      }
     }
   };
 
@@ -392,7 +421,9 @@ export function createPreviewProximityTouchControls(
     }
     dragOffsetX = e.clientX - padRect.left;
     dragOffsetY = e.clientY - padRect.top;
-    dragHandle.setPointerCapture(e.pointerId);
+    if (typeof dragHandle.setPointerCapture === "function") {
+      dragHandle.setPointerCapture(e.pointerId);
+    }
     dragHandle.addEventListener("pointermove", onPointerMove);
     dragHandle.addEventListener("pointerup", onPointerUp);
     dragHandle.addEventListener("pointercancel", onPointerUp);
