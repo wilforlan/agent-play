@@ -28,7 +28,7 @@ const ownedHouse = (houseId: 1 | 2 | 3 | 4): HouseSlot => ({
 });
 
 describe("house-interior-stage", () => {
-  it("builds inspect stage with purchase panel when house is vacant", () => {
+  it("builds inspect stage with purchase eligible when house is vacant", () => {
     const handle = buildHouseInteriorStage({
       cellScale: 32,
       house: vacantHouse(1),
@@ -37,6 +37,7 @@ describe("house-interior-stage", () => {
     expect(handle.id).toBe("houseInterior");
     expect(handle.showPurchasePanel).toBe(true);
     expect(handle.purchaseAnchor).not.toBeNull();
+    expect(handle.fixtures.length).toBeGreaterThan(0);
     handle.destroy();
   });
 
@@ -86,5 +87,46 @@ describe("house-interior-stage", () => {
     expect(clamped.x).toBeLessThan(99);
     expect(clamped.y).toBeGreaterThanOrEqual(0);
     handle.destroy();
+  });
+
+  it("reveals a fixture callout label when the player is nearby", () => {
+    const handle = buildHouseInteriorStage({
+      cellScale: 32,
+      house: vacantHouse(1),
+      mode: "inspect",
+    });
+    const bed = handle.fixtures.find((fixture) => fixture.kind === "bed");
+    expect(bed).toBeDefined();
+    const far = handle.updateFixtureCallouts({ x: 5, y: 5 });
+    expect(far).toBeNull();
+    const near = handle.updateFixtureCallouts({
+      x: bed!.x,
+      y: bed!.y,
+    });
+    expect(near).toBe("Bed");
+    handle.destroy();
+  });
+
+  it("does not throw when updating fixture callouts after the stage is destroyed", () => {
+    const handle = buildHouseInteriorStage({
+      cellScale: 32,
+      house: vacantHouse(1),
+      mode: "inspect",
+    });
+    const bed = handle.fixtures.find((fixture) => fixture.kind === "bed");
+    expect(bed).toBeDefined();
+    handle.destroy();
+    expect(() =>
+      handle.updateFixtureCallouts({
+        x: bed!.x,
+        y: bed!.y,
+      })
+    ).not.toThrow();
+    expect(
+      handle.updateFixtureCallouts({
+        x: bed!.x,
+        y: bed!.y,
+      })
+    ).toBeNull();
   });
 });

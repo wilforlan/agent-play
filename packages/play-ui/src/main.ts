@@ -1361,6 +1361,15 @@ function onDocumentKeyDown(e: KeyboardEvent): void {
   }
   if (
     e.key.toLowerCase() === "p" &&
+    activeHouseStage !== null
+  ) {
+    if (toggleHousePurchasePanel()) {
+      e.preventDefault();
+    }
+    return;
+  }
+  if (
+    e.key.toLowerCase() === "p" &&
     activeGameStage !== null &&
     lastGameStageProximityTarget !== null &&
     lastGameStageProximityTarget.activatable !== false
@@ -2262,8 +2271,15 @@ function syncHousePurchasePanel(stage: ActiveHouseStage): void {
   if (panel === null) {
     return;
   }
+  panel.hide();
   if (!stage.handle.showPurchasePanel) {
-    panel.hide();
+    return;
+  }
+}
+
+function openHousePurchasePanel(stage: ActiveHouseStage): void {
+  const panel = housePurchasePanel;
+  if (panel === null || !stage.handle.showPurchasePanel) {
     return;
   }
   const house = findHouseSlot(resolveHouseStreetContent(), stage.houseId);
@@ -2281,6 +2297,22 @@ function syncHousePurchasePanel(stage: ActiveHouseStage): void {
     },
   });
   positionHousePurchasePanel(stage);
+}
+
+function toggleHousePurchasePanel(): boolean {
+  const stage = activeHouseStage;
+  const panel = housePurchasePanel;
+  if (stage === null || panel === null || !stage.handle.showPurchasePanel) {
+    return false;
+  }
+  if (panel.isOpen()) {
+    panel.hide();
+    proximityTouchPadHandle?.refresh();
+    return true;
+  }
+  openHousePurchasePanel(stage);
+  proximityTouchPadHandle?.refresh();
+  return true;
 }
 
 async function reenterHouseStageAsOwner(houseId: HouseId): Promise<void> {
@@ -2369,6 +2401,7 @@ function tickHousePlayer(dtSec: number): void {
   }
   housePlayerState.isMoving = isMoving;
   renderHousePlayer(stage);
+  stage.handle.updateFixtureCallouts(housePlayerState.pos);
 
   if (houseExitDebounceMs > 0) {
     houseExitDebounceMs = Math.max(0, houseExitDebounceMs - dtSec * 1000);
@@ -2481,7 +2514,9 @@ async function enterHouseStage(input: {
   };
   lastHouseNearest = null;
   renderHousePlayer(activeHouseStage);
+  activeHouseStage.handle.updateFixtureCallouts(housePlayerState.pos);
   syncHousePurchasePanel(activeHouseStage);
+  proximityTouchPadHandle?.refresh();
 
   try {
     await stageController.enter(handle);
@@ -4560,7 +4595,25 @@ function onFrame(): void {
     }
   }
   if (proximityLegendEl !== null) {
-    if (activeGameStage !== null) {
+    if (
+      activeHouseStage !== null &&
+      stageController?.current()?.id === "houseInterior"
+    ) {
+      const stage = activeHouseStage;
+      const nearbyLabel = stage.handle.updateFixtureCallouts(housePlayerState.pos);
+      if (stage.handle.showPurchasePanel) {
+        const panelOpen = housePurchasePanel?.isOpen() === true;
+        proximityLegendEl.textContent =
+          nearbyLabel !== null
+            ? `Near ${nearbyLabel}. P: ${panelOpen ? "hide buy house" : "buy house"}`
+            : `P: ${panelOpen ? "hide buy house" : "buy house"} · Walk to exit door to leave`;
+      } else if (nearbyLabel !== null) {
+        proximityLegendEl.textContent = `Near ${nearbyLabel}. Walk to exit door to leave`;
+      } else {
+        proximityLegendEl.textContent =
+          "Joystick or arrows to move · Walk to exit door to leave";
+      }
+    } else if (activeGameStage !== null) {
       const gameTarget = lastGameStageProximityTarget;
       if (gameTarget !== null) {
         proximityLegendEl.textContent =
@@ -5083,6 +5136,11 @@ export function bootstrap(): void {
         if (buyable === null) return null;
         return buyable.tooltipModel.sale.status === "sold" ? "View" : "Buy";
       },
+      getHouseInteriorPurchaseLabel: () => {
+        const stage = activeHouseStage;
+        if (stage === null || !stage.handle.showPurchasePanel) return null;
+        return housePurchasePanel?.isOpen() === true ? "Hide" : "Buy";
+      },
       getParkingProximityLabel: () => {
         if (lastParkingBayNearest === null) return null;
         return `Bay ${String(lastParkingBayNearest.bay)}`;
@@ -5169,6 +5227,10 @@ export function bootstrap(): void {
         triggerProximityAssistOrChat("chat");
       },
       onPushToTalk: () => {
+        if (activeHouseStage !== null) {
+          toggleHousePurchasePanel();
+          return;
+        }
         if (
           activeGameStage !== null &&
           lastGameStageProximityTarget !== null &&
