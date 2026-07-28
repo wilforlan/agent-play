@@ -38,6 +38,11 @@ export type CreatePreviewProximityTouchControlsOptions = {
    */
   getAmenityItemActionLabel?: () => string | null | undefined;
   /**
+   * When the human is inside a vacant house inspect stage, returns the
+   * verb for toggling the buy-house modal (`"Buy"` / `"Hide"`).
+   */
+  getHouseInteriorPurchaseLabel?: () => string | null | undefined;
+  /**
    * When the human is on the overworld near a vacant parking bay, returns
    * the bay label for the `P` button.
    */
@@ -186,6 +191,11 @@ export function createPreviewProximityTouchControls(
 
   const applyInteractable = (): void => {
     const can = options.getCanAct();
+    const houseInteriorPurchaseLabel =
+      options.getHouseInteriorPurchaseLabel?.() ?? null;
+    const inHouseInteriorPurchase =
+      typeof houseInteriorPurchaseLabel === "string" &&
+      houseInteriorPurchaseLabel.length > 0;
     const itemActionLabel = options.getAmenityItemActionLabel?.() ?? null;
     const nearAmenityItem =
       typeof itemActionLabel === "string" && itemActionLabel.length > 0;
@@ -204,7 +214,20 @@ export function createPreviewProximityTouchControls(
     const structureLabel = options.getStructureProximityLabel?.() ?? null;
     const nearStructure =
       typeof structureLabel === "string" && structureLabel.length > 0;
-    if (nearAmenityItem) {
+    if (inHouseInteriorPurchase) {
+      btnAssist.disabled = true;
+      subA.textContent = "Assist";
+      btnAssist.removeAttribute("aria-label");
+      btnChat.disabled = true;
+      btnPushToTalk.disabled = false;
+      subP.textContent = houseInteriorPurchaseLabel ?? "Buy";
+      btnPushToTalk.classList.add("preview-proximity-touch-pad__key--proximity-active");
+      btnPushToTalk.classList.remove("preview-proximity-touch-pad__key--proximity-hint");
+      btnPushToTalk.setAttribute(
+        "aria-label",
+        `${houseInteriorPurchaseLabel ?? "Buy"} house`
+      );
+    } else if (nearAmenityItem) {
       btnAssist.disabled = true;
       subA.textContent = "Assist";
       btnAssist.removeAttribute("aria-label");

@@ -555,6 +555,26 @@ describe("createPreviewProximityTouchControls", () => {
     expect(pttBtn.disabled).toBe(false);
   });
 
+  it("enables P to buy or hide the house purchase modal while inside a vacant house", () => {
+    const { root, refresh } = createPreviewProximityTouchControls({
+      parent,
+      getBoundsElement: () => parent,
+      getCanAct: () => false,
+      getHouseInteriorPurchaseLabel: () => "Buy",
+      onAssist,
+      onChat,
+      onPushToTalk,
+    });
+    refresh();
+    const pttBtn = root.querySelector(
+      ".preview-proximity-touch-pad__key--ptt"
+    ) as HTMLButtonElement;
+    expect(pttBtn.disabled).toBe(false);
+    expect(pttBtn.textContent).toContain("Buy");
+    pttBtn.click();
+    expect(onPushToTalk).toHaveBeenCalledTimes(1);
+  });
+
   it("restores an initial placement and commits after drag", () => {
     const commits: Array<{ leftPx: number; topPx: number }> = [];
     parent.getBoundingClientRect = () =>
