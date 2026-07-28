@@ -238,6 +238,169 @@ describe("attachPreviewFloatingPanelDrag", () => {
       false
     );
   });
+
+  it("notifies onPlacementCommit after a drag move", () => {
+    const commits: Array<{
+      leftPx: number;
+      topPx: number;
+      collapsed: boolean;
+    }> = [];
+    attachPreviewFloatingPanelDrag({
+      element: panel,
+      getBoundsElement: () => bounds,
+      label: "Debug",
+      initialPlacement: { leftPx: 24, topPx: 32 },
+      resolvePlacement: () => ({ leftPx: 24, topPx: 32 }),
+      onPlacementCommit: (placement) => {
+        commits.push(placement);
+      },
+    });
+    const handle = getButton(panel, ".preview-floating-panel__drag");
+
+    handle.dispatchEvent(
+      new PointerEvent("pointerdown", {
+        bubbles: true,
+        button: 0,
+        clientX: 40,
+        clientY: 60,
+        pointerId: 1,
+      })
+    );
+    handle.dispatchEvent(
+      new PointerEvent("pointermove", {
+        bubbles: true,
+        clientX: 80,
+        clientY: 100,
+        pointerId: 1,
+      })
+    );
+    handle.dispatchEvent(
+      new PointerEvent("pointerup", {
+        bubbles: true,
+        clientX: 80,
+        clientY: 100,
+        pointerId: 1,
+      })
+    );
+
+    expect(commits).toEqual([{ leftPx: 64, topPx: 72, collapsed: false }]);
+  });
+
+  it("does not notify onPlacementCommit for a collapse tap", () => {
+    const commits: Array<{ leftPx: number; topPx: number }> = [];
+    attachPreviewFloatingPanelDrag({
+      element: panel,
+      getBoundsElement: () => bounds,
+      label: "Debug",
+      initialPlacement: { leftPx: 24, topPx: 32 },
+      resolvePlacement: () => ({ leftPx: 24, topPx: 32 }),
+      onPlacementCommit: (placement) => {
+        commits.push(placement);
+      },
+    });
+    const handle = getButton(panel, ".preview-floating-panel__drag");
+
+    handle.dispatchEvent(
+      new PointerEvent("pointerdown", {
+        bubbles: true,
+        button: 0,
+        clientX: 40,
+        clientY: 60,
+        pointerId: 1,
+      })
+    );
+    handle.dispatchEvent(
+      new PointerEvent("pointerup", {
+        bubbles: true,
+        clientX: 40,
+        clientY: 60,
+        pointerId: 1,
+      })
+    );
+
+    expect(commits).toEqual([]);
+  });
+
+  it("restores initialCollapsed and notifies onCollapsedChange when toggled", () => {
+    const collapsedStates: boolean[] = [];
+    attachPreviewFloatingPanelDrag({
+      element: panel,
+      getBoundsElement: () => bounds,
+      label: "Debug",
+      initialPlacement: { leftPx: 24, topPx: 32 },
+      initialCollapsed: true,
+      resolvePlacement: () => ({ leftPx: 24, topPx: 32 }),
+      onCollapsedChange: (collapsed) => {
+        collapsedStates.push(collapsed);
+      },
+    });
+    const handle = getButton(panel, ".preview-floating-panel__drag");
+
+    expect(panel.classList.contains("preview-floating-panel--collapsed")).toBe(
+      true
+    );
+    expect(handle.getAttribute("aria-expanded")).toBe("false");
+
+    handle.click();
+    expect(panel.classList.contains("preview-floating-panel--collapsed")).toBe(
+      false
+    );
+    expect(collapsedStates).toEqual([false]);
+
+    handle.click();
+    expect(panel.classList.contains("preview-floating-panel--collapsed")).toBe(
+      true
+    );
+    expect(collapsedStates).toEqual([false, true]);
+  });
+
+  it("includes collapsed in onPlacementCommit after a drag move", () => {
+    const commits: Array<{
+      leftPx: number;
+      topPx: number;
+      collapsed: boolean;
+    }> = [];
+    attachPreviewFloatingPanelDrag({
+      element: panel,
+      getBoundsElement: () => bounds,
+      label: "Debug",
+      initialPlacement: { leftPx: 24, topPx: 32 },
+      initialCollapsed: true,
+      resolvePlacement: () => ({ leftPx: 24, topPx: 32 }),
+      onPlacementCommit: (placement) => {
+        commits.push(placement);
+      },
+    });
+    const handle = getButton(panel, ".preview-floating-panel__drag");
+
+    handle.dispatchEvent(
+      new PointerEvent("pointerdown", {
+        bubbles: true,
+        button: 0,
+        clientX: 40,
+        clientY: 60,
+        pointerId: 1,
+      })
+    );
+    handle.dispatchEvent(
+      new PointerEvent("pointermove", {
+        bubbles: true,
+        clientX: 80,
+        clientY: 100,
+        pointerId: 1,
+      })
+    );
+    handle.dispatchEvent(
+      new PointerEvent("pointerup", {
+        bubbles: true,
+        clientX: 80,
+        clientY: 100,
+        pointerId: 1,
+      })
+    );
+
+    expect(commits).toEqual([{ leftPx: 64, topPx: 72, collapsed: true }]);
+  });
 });
 
 describe("syncPreviewCanvasHostScale", () => {
