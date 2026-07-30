@@ -1,0 +1,54 @@
+@import "tailwindcss";
+
+@source "../../components/ui/**/*.{ts,tsx}";
+@source "./**/*.{ts,tsx}";
+
+@theme {
+  --color-blog-cream: #f4efe6;
+  --color-blog-cream-deep: #ebe3d4;
+  --color-blog-ink: #1c241c;
+  --color-blog-ink-soft: #3d4a3f;
+  --color-blog-muted: #6b756c;
+  --color-blog-sage: #7a8f7a;
+  --color-blog-sage-soft: #c5d1c4;
+  --color-blog-teal: #3d6b6b;
+  --color-blog-teal-soft: #5f8f8a;
+  --color-blog-honey: #c4923a;
+  --color-blog-honey-soft: #e8c988;
+  --color-blog-paper: #faf7f1;
+  --font-blog-display: var(--blog-font-display), Fraunces, Georgia, serif;
+  --font-blog-body: var(--blog-font-body), "Source Serif 4", Georgia, serif;
+}
+
+:root,
+.blog-newsroom {
+  --blog-cream: #f4efe6;
+  --blog-cream-deep: #ebe3d4;
+  --blog-ink: #1c241c;
+  --blog-ink-soft: #3d4a3f;
+  --blog-muted: #6b756c;
+  --blog-sage: #7a8f7a;
+  --blog-sage-soft: #c5d1c4;
+  --blog-teal: #3d6b6b;
+  --blog-teal-soft: #5f8f8a;
+  --blog-honey: #c4923a;
+  --blog-honey-soft: #e8c988;
+  --blog-paper: #faf7f1;
+  --blog-line: rgba(61, 74, 63, 0.14);
+  --blog-shadow: 0 18px 48px rgba(28, 36, 28, 0.12);
+  --blog-max: 1120px;
+  --blog-measure: 65ch;
+  --blog-post-max: 1280px;
+  --blog-post-measure: 78ch;
+  --blog-nav-offset: 4.75rem;
+}
+
+.blog-newsroom {
+  min-height: 100vh;
+  color: var(--blog-ink);
+  background:
+    radial-gradient(ellipse 90% 55% at 8% -10%, rgba(122, 143, 122, 0.18), transparent 55%),
+    radial-gradient(ellipse 70% 45% at 92% 8%, rgba(232, 201, 136, 0.22), transparent 50%),
+    linear-gradient(180deg, var(--blog-cream) 0%, var(--blog-paper) 48%, var(--blog-cream-deep) 100%);
+  font-family: var(--font-blog-body);
+}

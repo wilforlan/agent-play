@@ -1,43 +1,23 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { notFound } from "next/navigation";
 
+import { Button } from "@/components/ui/button";
 import { getBlogPostBySlug, getBlogPosts } from "@/lib/sanity-blog";
 
-type PortableTextSpan = {
-  _type?: string;
-  text?: string;
-};
-
-type PortableTextBlock = {
-  _type?: string;
-  style?: string;
-  children?: PortableTextSpan[];
-};
-
-const asPortableText = (body: unknown): PortableTextBlock[] => {
-  if (!Array.isArray(body)) {
-    return [];
-  }
-
-  return body
-    .filter((item): item is PortableTextBlock => typeof item === "object" && item !== null)
-    .filter((item) => item._type === "block");
-};
-
-const renderBlock = (block: PortableTextBlock, index: number) => {
-  const text = (block.children ?? [])
-    .filter((child) => child._type === "span")
-    .map((child) => child.text ?? "")
-    .join("");
-
-  if (block.style === "h2") {
-    return <h2 key={index}>{text}</h2>;
-  }
-  if (block.style === "h3") {
-    return <h3 key={index}>{text}</h3>;
-  }
-  return <p key={index}>{text}</p>;
-};
+import { formatBlogPublishedAt } from "../blog-format";
+import { BlogNewsroomChrome } from "../blog-newsroom-chrome";
+import { BlogPortableText, toPortableTextBlocks } from "../blog-portable-text";
+import { BlogPostAuthorAside, BlogPostRecentAside } from "../blog-post-asides";
+import {
+  pickRecentBlogPosts,
+  resolveBlogAuthorDisplay,
+} from "../blog-post-helpers";
+import {
+  buildBlogPostMetadata,
+  resolveSiteOrigin,
+} from "../blog-post-metadata";
+import { BlogPostHero } from "../blog-post-hero";
 
 export async function generateStaticParams(): Promise<{ slug: string }[]> {
   const posts = await getBlogPosts();
@@ -56,10 +36,17 @@ export async function generateMetadata({
     return { title: "Blog post not found" };
   }
 
-  return {
+  return buildBlogPostMetadata({
     title: post.title,
-    description: post.excerpt,
-  };
+    slug: post.slug,
+    excerpt: post.excerpt,
+    body: post.body,
+    imageUrl: post.image.url,
+    imageAlt: post.image.alt || post.title,
+    siteOrigin: resolveSiteOrigin({
+      envValue: process.env.NEXT_PUBLIC_SITE_ORIGIN,
+    }),
+  });
 }
 
 export default async function BlogPostPage({
@@ -68,30 +55,54 @@ export default async function BlogPostPage({
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = await params;
-  const post = await getBlogPostBySlug({ slug });
+  const [post, posts] = await Promise.all([
+    getBlogPostBySlug({ slug }),
+    getBlogPosts(),
+  ]);
 
   if (!post) {
     notFound();
   }
 
-  const blocks = asPortableText(post.body);
+  const blocks = toPortableTextBlocks(post.body);
+  const author = resolveBlogAuthorDisplay(post.author);
+  const recentPosts = pickRecentBlogPosts({
+    posts,
+    currentSlug: post.slug,
+  });
 
   return (
-    <main style={{ maxWidth: 760, margin: "0 auto", padding: "2rem 1rem 4rem" }}>
-      <article>
-        <h1>{post.title}</h1>
-        {post.publishedAt ? (
-          <p style={{ color: "#666" }}>
-            {new Date(post.publishedAt).toLocaleDateString("en-GB", {
-              year: "numeric",
-              month: "long",
-              day: "numeric",
-            })}
-          </p>
-        ) : null}
-        {post.excerpt ? <p>{post.excerpt}</p> : null}
-        {blocks.length === 0 ? <p>Content coming soon.</p> : blocks.map(renderBlock)}
-      </article>
-    </main>
+    <BlogNewsroomChrome>
+      <main className="flex flex-1 flex-col">
+        <BlogPostHero
+          title={post.title}
+          imageUrl={post.image.url}
+          imageAlt={post.image.alt || post.title}
+          publishedLabel={formatBlogPublishedAt(post.publishedAt)}
+        />
+
+        <div className="mx-auto grid w-full max-w-[var(--blog-post-max)] grid-cols-1 gap-10 px-[clamp(1.1rem,3vw,2.4rem)] pt-[clamp(2rem,5vh,3rem)] pb-20 lg:grid-cols-[13rem_minmax(0,1fr)_14rem] lg:gap-12 xl:grid-cols-[14rem_minmax(0,1fr)_15rem]">
+          <div className="lg:sticky lg:top-[calc(var(--blog-nav-offset)+1rem)] lg:self-start">
+            <BlogPostAuthorAside author={author} />
+          </div>
+
+          <article className="min-w-0 max-w-[var(--blog-post-measure)]">
+            <Button asChild variant="ghost" size="sm" className="mb-6 -ml-2">
+              <Link href="/blog">Back to Newsroom</Link>
+            </Button>
+            {post.excerpt ? (
+              <p className="mb-7 text-xl leading-relaxed text-blog-ink-soft italic">
+                {post.excerpt}
+              </p>
+            ) : null}
+            <BlogPortableText value={blocks} />
+          </article>
+
+          <div className="lg:sticky lg:top-[calc(var(--blog-nav-offset)+1rem)] lg:self-start">
+            <BlogPostRecentAside posts={recentPosts} />
+          </div>
+        </div>
+      </main>
+    </BlogNewsroomChrome>
   );
 }

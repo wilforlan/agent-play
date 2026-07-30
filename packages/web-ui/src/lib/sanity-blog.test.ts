@@ -76,9 +76,40 @@ describe("sanity blog content", () => {
           url: "https://cdn.sanity.io/images/project123/production/abc-1200x630.png",
           alt: "Hero image",
         },
+        author: null,
       },
     ]);
     expect(sanityFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("maps sanity author when present on a post", async () => {
+    process.env.NEXT_PUBLIC_SANITY_PROJECT_ID = "project123";
+    process.env.NEXT_PUBLIC_SANITY_DATASET = "production";
+    sanityFetch.mockResolvedValue({
+      _id: "post-3",
+      title: "Authored post",
+      slug: "authored-post",
+      content: [],
+      excerpt: "",
+      publishedAt: "2026-04-27T18:00:00.000Z",
+      featured: false,
+      categories: [],
+      mainImage: null,
+      author: {
+        name: "Ada Lovelace",
+        picture: { _type: "image" },
+      },
+    });
+    urlForImage.mockReturnValue({
+      url: () => "https://cdn.sanity.io/images/project123/production/ada.png",
+    });
+
+    const post = await getBlogPostBySlug({ slug: "authored-post" });
+
+    expect(post?.author).toEqual({
+      name: "Ada Lovelace",
+      pictureUrl: "https://cdn.sanity.io/images/project123/production/ada.png",
+    });
   });
 
   it("fetches a single blog post by slug", async () => {
@@ -124,7 +155,7 @@ describe("sanity blog content", () => {
     );
   });
 
-  it("builds featured, recent and category sections", () => {
+  it("builds featured hero, archive, and top categories by post count", () => {
     const sections = buildBlogSections({
       posts: [
         {
@@ -136,6 +167,7 @@ describe("sanity blog content", () => {
           featured: false,
           categories: [{ title: "Product", slug: "product" }],
           image: { url: null, alt: "" },
+          author: null,
         },
         {
           id: "2",
@@ -146,6 +178,7 @@ describe("sanity blog content", () => {
           featured: true,
           categories: [{ title: "Security", slug: "security" }],
           image: { url: null, alt: "" },
+          author: null,
         },
         {
           id: "3",
@@ -156,15 +189,95 @@ describe("sanity blog content", () => {
           featured: false,
           categories: [{ title: "Product", slug: "product" }],
           image: { url: null, alt: "" },
+          author: null,
+        },
+        {
+          id: "4",
+          title: "Culture notes",
+          slug: "culture-notes",
+          excerpt: "Team culture",
+          publishedAt: "2026-04-24T18:00:00.000Z",
+          featured: false,
+          categories: [{ title: "Culture", slug: "culture" }],
+          image: { url: null, alt: "" },
+          author: null,
+        },
+        {
+          id: "5",
+          title: "Ops checklist",
+          slug: "ops-checklist",
+          excerpt: "Ops details",
+          publishedAt: "2026-04-23T18:00:00.000Z",
+          featured: false,
+          categories: [{ title: "Ops", slug: "ops" }],
+          image: { url: null, alt: "" },
+          author: null,
         },
       ],
     });
 
     expect(sections.featured?.id).toBe("2");
-    expect(sections.recent.map((post) => post.id)).toEqual(["1", "3"]);
-    expect(sections.categories[0]?.name).toBe("Security");
-    expect(sections.categories[0]?.posts.map((post) => post.id)).toEqual(["2"]);
-    expect(sections.categories[1]?.name).toBe("Product");
+    expect(sections.archive.map((post) => post.id)).toEqual(["1", "3", "4", "5"]);
+    expect(sections.categories).toHaveLength(3);
+    expect(sections.categories.map((category) => category.name)).toEqual([
+      "Security",
+      "Product",
+      "Culture",
+    ]);
+    expect(sections.categories[0]).toMatchObject({
+      name: "Security",
+      slug: "security",
+    });
     expect(sections.categories[1]?.posts.map((post) => post.id)).toEqual(["1", "3"]);
+  });
+
+  it("limits category preview sections to three cards", () => {
+    const posts = ["Alpha", "Beta", "Gamma", "Delta"].map((name, index) => ({
+      id: String(index + 1),
+      title: `${name} story`,
+      slug: `${name.toLowerCase()}-story`,
+      excerpt: "",
+      publishedAt: `2026-04-${20 + index}T18:00:00.000Z`,
+      featured: index === 0,
+      categories: [{ title: name, slug: name.toLowerCase() }],
+      image: { url: null, alt: "" },
+      author: null,
+    }));
+
+    const sections = buildBlogSections({ posts });
+
+    expect(sections.categories).toHaveLength(3);
+  });
+
+  it("falls back to the newest post as featured when none are flagged", () => {
+    const sections = buildBlogSections({
+      posts: [
+        {
+          id: "1",
+          title: "Newest",
+          slug: "newest",
+          excerpt: "",
+          publishedAt: "2026-04-28T18:00:00.000Z",
+          featured: false,
+          categories: [],
+          image: { url: null, alt: "" },
+          author: null,
+        },
+        {
+          id: "2",
+          title: "Older",
+          slug: "older",
+          excerpt: "",
+          publishedAt: "2026-04-20T18:00:00.000Z",
+          featured: false,
+          categories: [],
+          image: { url: null, alt: "" },
+          author: null,
+        },
+      ],
+    });
+
+    expect(sections.featured?.id).toBe("1");
+    expect(sections.archive.map((post) => post.id)).toEqual(["2"]);
   });
 });

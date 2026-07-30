@@ -1,21 +1,16 @@
+import type { PortableTextBlock } from "@portabletext/types";
 import type { Image } from "sanity";
 
 import { blogPostBySlugQuery, blogPostsQuery } from "@/sanity/lib/queries";
 import { sanityFetch } from "@/sanity/lib/fetch";
 import { urlForImage } from "@/sanity/lib/utils";
 
-type PortableTextSpan = {
-  _type?: string;
-  text?: string;
-};
-
-type PortableTextBlock = {
-  _type?: string;
-  style?: string;
-  children?: PortableTextSpan[];
-};
-
 type BlogImage = Image & { alt?: string };
+
+type BlogAuthorRecord = {
+  name?: string | null;
+  picture?: BlogImage | null;
+} | null;
 
 type BlogPostRecord = {
   _id: string;
@@ -27,6 +22,7 @@ type BlogPostRecord = {
   content: PortableTextBlock[] | null;
   publishedAt: string;
   mainImage: BlogImage | null;
+  author?: BlogAuthorRecord;
 };
 
 const getImageAlt = (image: BlogImage | null): string => {
@@ -34,6 +30,11 @@ const getImageAlt = (image: BlogImage | null): string => {
     return "";
   }
   return image.alt || "";
+};
+
+export type BlogPostAuthor = {
+  name: string;
+  pictureUrl: string | null;
 };
 
 export type BlogPostPreview = {
@@ -48,6 +49,7 @@ export type BlogPostPreview = {
     url: string | null;
     alt: string;
   };
+  author: BlogPostAuthor | null;
 };
 
 export type BlogPost = BlogPostPreview & {
@@ -56,34 +58,61 @@ export type BlogPost = BlogPostPreview & {
 
 export type BlogCategorySection = {
   name: string;
+  slug: string;
   posts: BlogPostPreview[];
 };
 
 export type BlogSections = {
   featured: BlogPostPreview | null;
-  recent: BlogPostPreview[];
+  archive: BlogPostPreview[];
   categories: BlogCategorySection[];
+};
+
+const CATEGORY_PREVIEW_LIMIT = 3;
+const CATEGORY_POST_PREVIEW_LIMIT = 4;
+
+type CategoryBucket = {
+  name: string;
+  slug: string;
+  posts: BlogPostPreview[];
 };
 
 export const buildBlogSections = (options: { posts: BlogPostPreview[] }): BlogSections => {
   const featured = options.posts.find((post) => post.featured) ?? options.posts[0] ?? null;
-  const recent = options.posts.filter((post) => post.id !== featured?.id).slice(0, 7);
+  const archive = options.posts.filter((post) => post.id !== featured?.id);
 
-  const categoryMap = options.posts.reduce<Map<string, BlogPostPreview[]>>((acc, post) => {
-    const categories = post.categories.length > 0 ? post.categories : [{ title: "General", slug: "general" }];
+  const categoryMap = options.posts.reduce<Map<string, CategoryBucket>>((acc, post) => {
+    const categories =
+      post.categories.length > 0
+        ? post.categories
+        : [{ title: "General", slug: "general" }];
+
     categories.forEach((category) => {
-      const categoryName = category.title;
-      const current = acc.get(categoryName) ?? [];
-      if (current.length >= 4) {
+      const existing = acc.get(category.slug);
+      if (!existing) {
+        acc.set(category.slug, {
+          name: category.title,
+          slug: category.slug,
+          posts: [post],
+        });
         return;
       }
-      acc.set(categoryName, [...current, post]);
-    });
-    return acc;
-  }, new Map<string, BlogPostPreview[]>());
 
-  const categories: BlogCategorySection[] = Array.from(categoryMap.entries())
-    .map(([name, posts]) => ({ name, posts }))
+      if (existing.posts.length >= CATEGORY_POST_PREVIEW_LIMIT) {
+        return;
+      }
+
+      acc.set(category.slug, {
+        ...existing,
+        posts: [...existing.posts, post],
+      });
+    });
+
+    return acc;
+  }, new Map());
+
+  const categories = Array.from(categoryMap.values())
+    .filter((section) => section.posts.length > 0)
     .sort((left, right) => {
       const leftHasFeatured = left.posts.some((post) => post.id === featured?.id);
       const rightHasFeatured = right.posts.some((post) => post.id === featured?.id);
@@ -94,12 +123,31 @@ export const buildBlogSections = (options: { posts: BlogPostPreview[] }): BlogSe
         return 1;
       }
       return right.posts.length - left.posts.length;
-    });
+    })
+    .slice(0, CATEGORY_PREVIEW_LIMIT);
 
   return {
     featured,
-    recent,
-    categories: categories.filter((section) => section.posts.length > 0).slice(0, 6),
+    archive,
+    categories,
+  };
+};
+
+const toAuthor = (author: BlogAuthorRecord): BlogPostAuthor | null => {
+  if (!author || typeof author.name !== "string") {
+    return null;
+  }
+
+  const name = author.name.trim();
+  if (name.length === 0) {
+    return null;
+  }
+
+  return {
+    name,
+    pictureUrl: author.picture
+      ? urlForImage(author.picture)?.url() || null
+      : null,
   };
 };
 
@@ -115,20 +163,25 @@ const toPreview = (record: BlogPostRecord): BlogPostPreview | null => {
     slug,
     excerpt: record.excerpt || "",
     featured: record.featured,
-    categories: (record.categories ?? [])
-      .filter((category) => typeof category.title === "string" && category.title.length > 0)
-      .map((category) => ({
-        title: category.title as string,
-        slug:
-          typeof category.slug === "string" && category.slug.length > 0
-            ? category.slug
-            : (category.title as string).toLowerCase().replace(/\s+/g, "-"),
-      })),
+    categories: (record.categories ?? []).flatMap((category) => {
+      if (typeof category.title !== "string" || category.title.length === 0) {
+        return [];
+      }
+
+      const title = category.title;
+      const slug =
+        typeof category.slug === "string" && category.slug.length > 0
+          ? category.slug
+          : title.toLowerCase().replace(/\s+/g, "-");
+
+      return [{ title, slug }];
+    }),
     publishedAt: record.publishedAt || null,
     image: {
       url: record.mainImage ? urlForImage(record.mainImage)?.url() || null : null,
       alt: getImageAlt(record.mainImage),
     },
+    author: toAuthor(record.author ?? null),
   };
 };
 
