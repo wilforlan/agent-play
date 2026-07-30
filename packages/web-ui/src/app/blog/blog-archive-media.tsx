@@ -1,7 +1,8 @@
 import Image from "next/image";
+import React from "react";
 
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { getTitleInitials } from "@/lib/sanity-blog";
+import { getTitleInitials } from "./blog-format";
 
 type BlogArchiveMediaProps = {
   title: string;
