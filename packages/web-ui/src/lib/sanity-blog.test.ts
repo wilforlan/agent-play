@@ -76,9 +76,40 @@ describe("sanity blog content", () => {
           url: "https://cdn.sanity.io/images/project123/production/abc-1200x630.png",
           alt: "Hero image",
         },
+        author: null,
       },
     ]);
     expect(sanityFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("maps sanity author when present on a post", async () => {
+    process.env.NEXT_PUBLIC_SANITY_PROJECT_ID = "project123";
+    process.env.NEXT_PUBLIC_SANITY_DATASET = "production";
+    sanityFetch.mockResolvedValue({
+      _id: "post-3",
+      title: "Authored post",
+      slug: "authored-post",
+      content: [],
+      excerpt: "",
+      publishedAt: "2026-04-27T18:00:00.000Z",
+      featured: false,
+      categories: [],
+      mainImage: null,
+      author: {
+        name: "Ada Lovelace",
+        picture: { _type: "image" },
+      },
+    });
+    urlForImage.mockReturnValue({
+      url: () => "https://cdn.sanity.io/images/project123/production/ada.png",
+    });
+
+    const post = await getBlogPostBySlug({ slug: "authored-post" });
+
+    expect(post?.author).toEqual({
+      name: "Ada Lovelace",
+      pictureUrl: "https://cdn.sanity.io/images/project123/production/ada.png",
+    });
   });
 
   it("fetches a single blog post by slug", async () => {
@@ -136,6 +167,7 @@ describe("sanity blog content", () => {
           featured: false,
           categories: [{ title: "Product", slug: "product" }],
           image: { url: null, alt: "" },
+          author: null,
         },
         {
           id: "2",
@@ -146,6 +178,7 @@ describe("sanity blog content", () => {
           featured: true,
           categories: [{ title: "Security", slug: "security" }],
           image: { url: null, alt: "" },
+          author: null,
         },
         {
           id: "3",
@@ -156,6 +189,7 @@ describe("sanity blog content", () => {
           featured: false,
           categories: [{ title: "Product", slug: "product" }],
           image: { url: null, alt: "" },
+          author: null,
         },
         {
           id: "4",
@@ -166,6 +200,7 @@ describe("sanity blog content", () => {
           featured: false,
           categories: [{ title: "Culture", slug: "culture" }],
           image: { url: null, alt: "" },
+          author: null,
         },
         {
           id: "5",
@@ -176,6 +211,7 @@ describe("sanity blog content", () => {
           featured: false,
           categories: [{ title: "Ops", slug: "ops" }],
           image: { url: null, alt: "" },
+          author: null,
         },
       ],
     });
@@ -205,6 +241,7 @@ describe("sanity blog content", () => {
       featured: index === 0,
       categories: [{ title: name, slug: name.toLowerCase() }],
       image: { url: null, alt: "" },
+      author: null,
     }));
 
     const sections = buildBlogSections({ posts });
@@ -224,6 +261,7 @@ describe("sanity blog content", () => {
           featured: false,
           categories: [],
           image: { url: null, alt: "" },
+          author: null,
         },
         {
           id: "2",
@@ -234,6 +272,7 @@ describe("sanity blog content", () => {
           featured: false,
           categories: [],
           image: { url: null, alt: "" },
+          author: null,
         },
       ],
     });

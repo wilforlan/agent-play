@@ -8,10 +8,12 @@ vi.mock("next/image", () => ({
   default: ({
     src,
     alt,
+    onError,
   }: {
     src: string;
     alt: string;
-  }) => <img src={src} alt={alt} />,
+    onError?: () => void;
+  }) => <img src={src} alt={alt} onError={onError} />,
 }));
 
 import { BlogArchiveMedia } from "./blog-archive-media";
@@ -60,6 +62,26 @@ describe("BlogArchiveMedia", () => {
     mount(
       <BlogArchiveMedia title="Chat with HR" imageUrl={null} imageAlt="" />,
     );
+
+    expect(container.querySelector("img")).toBeNull();
+    expect(container.textContent).toContain("CW");
+  });
+
+  it("falls back to title initials when the cover image fails to load", () => {
+    mount(
+      <BlogArchiveMedia
+        title="Chat with HR"
+        imageUrl="https://cdn.sanity.io/images/project/cover.jpg"
+        imageAlt="Cover"
+      />,
+    );
+
+    const image = container.querySelector("img");
+    expect(image).not.toBeNull();
+
+    act(() => {
+      image?.dispatchEvent(new Event("error"));
+    });
 
     expect(container.querySelector("img")).toBeNull();
     expect(container.textContent).toContain("CW");

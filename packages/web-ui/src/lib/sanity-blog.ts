@@ -7,6 +7,11 @@ import { urlForImage } from "@/sanity/lib/utils";
 
 type BlogImage = Image & { alt?: string };
 
+type BlogAuthorRecord = {
+  name?: string | null;
+  picture?: BlogImage | null;
+} | null;
+
 type BlogPostRecord = {
   _id: string;
   title: string;
@@ -17,6 +22,7 @@ type BlogPostRecord = {
   content: PortableTextBlock[] | null;
   publishedAt: string;
   mainImage: BlogImage | null;
+  author?: BlogAuthorRecord;
 };
 
 const getImageAlt = (image: BlogImage | null): string => {
@@ -24,6 +30,11 @@ const getImageAlt = (image: BlogImage | null): string => {
     return "";
   }
   return image.alt || "";
+};
+
+export type BlogPostAuthor = {
+  name: string;
+  pictureUrl: string | null;
 };
 
 export type BlogPostPreview = {
@@ -38,6 +49,7 @@ export type BlogPostPreview = {
     url: string | null;
     alt: string;
   };
+  author: BlogPostAuthor | null;
 };
 
 export type BlogPost = BlogPostPreview & {
@@ -121,6 +133,24 @@ export const buildBlogSections = (options: { posts: BlogPostPreview[] }): BlogSe
   };
 };
 
+const toAuthor = (author: BlogAuthorRecord): BlogPostAuthor | null => {
+  if (!author || typeof author.name !== "string") {
+    return null;
+  }
+
+  const name = author.name.trim();
+  if (name.length === 0) {
+    return null;
+  }
+
+  return {
+    name,
+    pictureUrl: author.picture
+      ? urlForImage(author.picture)?.url() || null
+      : null,
+  };
+};
+
 const toPreview = (record: BlogPostRecord): BlogPostPreview | null => {
   const slug = record.slug;
   if (!slug) {
@@ -151,6 +181,7 @@ const toPreview = (record: BlogPostRecord): BlogPostPreview | null => {
       url: record.mainImage ? urlForImage(record.mainImage)?.url() || null : null,
       alt: getImageAlt(record.mainImage),
     },
+    author: toAuthor(record.author ?? null),
   };
 };
 

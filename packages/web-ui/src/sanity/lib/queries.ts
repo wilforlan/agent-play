@@ -1,5 +1,12 @@
 import { defineQuery } from "next-sanity";
 
+const blogAuthorProjection = `
+  "author": author->{
+    name,
+    picture
+  }
+`;
+
 export const blogPostsQuery = defineQuery(`
   *[_type == "post" && defined(slug.current)] | order(coalesce(publishedAt, _updatedAt) desc) {
     _id,
@@ -13,7 +20,8 @@ export const blogPostsQuery = defineQuery(`
     },
     content,
     "publishedAt": coalesce(publishedAt, _updatedAt),
-    "mainImage": coalesce(mainImage, coverImage)
+    "mainImage": coalesce(mainImage, coverImage),
+    ${blogAuthorProjection}
   }
 `);
 
@@ -30,6 +38,7 @@ export const blogPostBySlugQuery = defineQuery(`
     },
     content,
     "publishedAt": coalesce(publishedAt, _updatedAt),
-    "mainImage": coalesce(mainImage, coverImage)
+    "mainImage": coalesce(mainImage, coverImage),
+    ${blogAuthorProjection}
   }
 `);

@@ -38,6 +38,9 @@
   --blog-shadow: 0 18px 48px rgba(28, 36, 28, 0.12);
   --blog-max: 1120px;
   --blog-measure: 65ch;
+  --blog-post-max: 1280px;
+  --blog-post-measure: 78ch;
+  --blog-nav-offset: 4.75rem;
 }
 
 .blog-newsroom {

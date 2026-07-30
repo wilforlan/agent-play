@@ -25,6 +25,12 @@ export default defineType({
       rows: 3,
     }),
     defineField({
+      name: "author",
+      title: "Author",
+      type: "reference",
+      to: [{ type: "author" }],
+    }),
+    defineField({
       name: "coverImage",
       title: "Cover image",
       type: "image",

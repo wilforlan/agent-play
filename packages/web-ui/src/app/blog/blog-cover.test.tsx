@@ -44,18 +44,22 @@ describe("BlogCover", () => {
     });
   };
 
-  it("shows the fallback when the cover image URL is missing", () => {
-    mount(<BlogCover src={null} alt="Story cover" />);
+  it("shows title initials on the dark fallback when the cover image URL is missing", () => {
+    mount(<BlogCover src={null} alt="Story cover" title="Chat with HR" />);
 
-    expect(container.querySelector('[data-testid="blog-cover-fallback"]')).not.toBeNull();
+    expect(
+      container.querySelector('[data-testid="blog-cover-fallback"]'),
+    ).not.toBeNull();
     expect(container.querySelector("img")).toBeNull();
+    expect(container.textContent).toContain("CW");
   });
 
-  it("shows the dark gradient fallback when the cover image fails to load", () => {
+  it("shows title initials on the dark fallback when the cover image fails to load", () => {
     mount(
       <BlogCover
         src="https://cdn.sanity.io/images/project/cover.jpg"
         alt="Story cover"
+        title="Meeting Legal"
       />,
     );
 
@@ -66,7 +70,10 @@ describe("BlogCover", () => {
       image?.dispatchEvent(new Event("error"));
     });
 
-    expect(container.querySelector('[data-testid="blog-cover-fallback"]')).not.toBeNull();
+    expect(
+      container.querySelector('[data-testid="blog-cover-fallback"]'),
+    ).not.toBeNull();
     expect(container.querySelector("img")).toBeNull();
+    expect(container.textContent).toContain("ML");
   });
 });

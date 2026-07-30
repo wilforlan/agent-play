@@ -46,6 +46,7 @@ export default async function BlogPage() {
             <BlogCover
               src={featured.image.url}
               alt={featured.image.alt || featured.title}
+              title={featured.title}
               priority
             />
           </div>
