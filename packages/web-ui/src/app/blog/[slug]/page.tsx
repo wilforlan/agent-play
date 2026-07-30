@@ -1,43 +1,14 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { notFound } from "next/navigation";
 
+import { Button } from "@/components/ui/button";
 import { getBlogPostBySlug, getBlogPosts } from "@/lib/sanity-blog";
 
-type PortableTextSpan = {
-  _type?: string;
-  text?: string;
-};
-
-type PortableTextBlock = {
-  _type?: string;
-  style?: string;
-  children?: PortableTextSpan[];
-};
-
-const asPortableText = (body: unknown): PortableTextBlock[] => {
-  if (!Array.isArray(body)) {
-    return [];
-  }
-
-  return body
-    .filter((item): item is PortableTextBlock => typeof item === "object" && item !== null)
-    .filter((item) => item._type === "block");
-};
-
-const renderBlock = (block: PortableTextBlock, index: number) => {
-  const text = (block.children ?? [])
-    .filter((child) => child._type === "span")
-    .map((child) => child.text ?? "")
-    .join("");
-
-  if (block.style === "h2") {
-    return <h2 key={index}>{text}</h2>;
-  }
-  if (block.style === "h3") {
-    return <h3 key={index}>{text}</h3>;
-  }
-  return <p key={index}>{text}</p>;
-};
+import { BlogCover } from "../blog-cover";
+import { formatBlogPublishedAt } from "../blog-format";
+import { BlogNewsroomChrome } from "../blog-newsroom-chrome";
+import { BlogPortableText, toPortableTextBlocks } from "../blog-portable-text";
 
 export async function generateStaticParams(): Promise<{ slug: string }[]> {
   const posts = await getBlogPosts();
@@ -74,24 +45,54 @@ export default async function BlogPostPage({
     notFound();
   }
 
-  const blocks = asPortableText(post.body);
+  const blocks = toPortableTextBlocks(post.body);
 
   return (
-    <main style={{ maxWidth: 760, margin: "0 auto", padding: "2rem 1rem 4rem" }}>
-      <article>
-        <h1>{post.title}</h1>
-        {post.publishedAt ? (
-          <p style={{ color: "#666" }}>
-            {new Date(post.publishedAt).toLocaleDateString("en-GB", {
-              year: "numeric",
-              month: "long",
-              day: "numeric",
-            })}
-          </p>
-        ) : null}
-        {post.excerpt ? <p>{post.excerpt}</p> : null}
-        {blocks.length === 0 ? <p>Content coming soon.</p> : blocks.map(renderBlock)}
-      </article>
-    </main>
+    <BlogNewsroomChrome>
+      <main className="flex flex-1 flex-col">
+        <header
+          className="relative isolate grid min-h-[clamp(22rem,62vh,36rem)] items-end overflow-hidden"
+          aria-labelledby="post-title"
+        >
+          <div className="absolute inset-0 z-0">
+            <BlogCover
+              src={post.image.url}
+              alt={post.image.alt || post.title}
+              priority
+            />
+          </div>
+          <div
+            className="absolute inset-0 z-[1] bg-[linear-gradient(180deg,rgba(28,36,28,0.12)_0%,rgba(28,36,28,0.35)_45%,rgba(28,36,28,0.78)_100%)]"
+            aria-hidden
+          />
+          <div className="relative z-[2] mx-auto w-full max-w-[var(--blog-max)] px-[clamp(1.1rem,3vw,2.4rem)] pt-[clamp(2.2rem,7vh,4.5rem)] pb-[clamp(2rem,5vh,3.2rem)] text-[#f8f4ec]">
+            <p className="font-blog-display mb-3 text-[clamp(1.35rem,2.6vw,1.8rem)] font-semibold tracking-tight">
+              Agent Play World
+            </p>
+            <h1
+              id="post-title"
+              className="font-blog-display m-0 max-w-[18ch] text-[clamp(2.2rem,5.5vw,3.8rem)] leading-[1.04] font-semibold tracking-tight"
+            >
+              {post.title}
+            </h1>
+            <p className="mt-4 text-[0.95rem] text-[rgba(248,244,236,0.8)]">
+              {formatBlogPublishedAt(post.publishedAt)}
+            </p>
+          </div>
+        </header>
+
+        <article className="mx-auto w-full max-w-[var(--blog-measure)] px-[clamp(1.1rem,3vw,1.5rem)] pt-[clamp(2rem,5vh,3.25rem)] pb-20">
+          <Button asChild variant="ghost" size="sm" className="mb-6 -ml-2">
+            <Link href="/blog">Back to Newsroom</Link>
+          </Button>
+          {post.excerpt ? (
+            <p className="mb-7 text-xl leading-relaxed text-blog-ink-soft italic">
+              {post.excerpt}
+            </p>
+          ) : null}
+          <BlogPortableText value={blocks} />
+        </article>
+      </main>
+    </BlogNewsroomChrome>
   );
 }
