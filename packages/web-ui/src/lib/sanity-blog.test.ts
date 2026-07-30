@@ -124,7 +124,7 @@ describe("sanity blog content", () => {
     );
   });
 
-  it("builds featured, recent and category sections", () => {
+  it("builds featured hero, archive, and top categories by post count", () => {
     const sections = buildBlogSections({
       posts: [
         {
@@ -157,14 +157,88 @@ describe("sanity blog content", () => {
           categories: [{ title: "Product", slug: "product" }],
           image: { url: null, alt: "" },
         },
+        {
+          id: "4",
+          title: "Culture notes",
+          slug: "culture-notes",
+          excerpt: "Team culture",
+          publishedAt: "2026-04-24T18:00:00.000Z",
+          featured: false,
+          categories: [{ title: "Culture", slug: "culture" }],
+          image: { url: null, alt: "" },
+        },
+        {
+          id: "5",
+          title: "Ops checklist",
+          slug: "ops-checklist",
+          excerpt: "Ops details",
+          publishedAt: "2026-04-23T18:00:00.000Z",
+          featured: false,
+          categories: [{ title: "Ops", slug: "ops" }],
+          image: { url: null, alt: "" },
+        },
       ],
     });
 
     expect(sections.featured?.id).toBe("2");
-    expect(sections.recent.map((post) => post.id)).toEqual(["1", "3"]);
-    expect(sections.categories[0]?.name).toBe("Security");
-    expect(sections.categories[0]?.posts.map((post) => post.id)).toEqual(["2"]);
-    expect(sections.categories[1]?.name).toBe("Product");
+    expect(sections.archive.map((post) => post.id)).toEqual(["1", "3", "4", "5"]);
+    expect(sections.categories).toHaveLength(3);
+    expect(sections.categories.map((category) => category.name)).toEqual([
+      "Security",
+      "Product",
+      "Culture",
+    ]);
+    expect(sections.categories[0]).toMatchObject({
+      name: "Security",
+      slug: "security",
+    });
     expect(sections.categories[1]?.posts.map((post) => post.id)).toEqual(["1", "3"]);
+  });
+
+  it("limits category preview sections to three cards", () => {
+    const posts = ["Alpha", "Beta", "Gamma", "Delta"].map((name, index) => ({
+      id: String(index + 1),
+      title: `${name} story`,
+      slug: `${name.toLowerCase()}-story`,
+      excerpt: "",
+      publishedAt: `2026-04-${20 + index}T18:00:00.000Z`,
+      featured: index === 0,
+      categories: [{ title: name, slug: name.toLowerCase() }],
+      image: { url: null, alt: "" },
+    }));
+
+    const sections = buildBlogSections({ posts });
+
+    expect(sections.categories).toHaveLength(3);
+  });
+
+  it("falls back to the newest post as featured when none are flagged", () => {
+    const sections = buildBlogSections({
+      posts: [
+        {
+          id: "1",
+          title: "Newest",
+          slug: "newest",
+          excerpt: "",
+          publishedAt: "2026-04-28T18:00:00.000Z",
+          featured: false,
+          categories: [],
+          image: { url: null, alt: "" },
+        },
+        {
+          id: "2",
+          title: "Older",
+          slug: "older",
+          excerpt: "",
+          publishedAt: "2026-04-20T18:00:00.000Z",
+          featured: false,
+          categories: [],
+          image: { url: null, alt: "" },
+        },
+      ],
+    });
+
+    expect(sections.featured?.id).toBe("1");
+    expect(sections.archive.map((post) => post.id)).toEqual(["2"]);
   });
 });
