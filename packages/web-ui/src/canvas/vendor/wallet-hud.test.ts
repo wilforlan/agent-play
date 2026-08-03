@@ -26,21 +26,25 @@ describe("wallet-hud", () => {
     expect(hud.root.textContent).toContain("$—");
   });
 
-  it("setBalance formats USD with two decimals", () => {
+  it("setBalance formats APW with grouping and two decimals", () => {
     const hud = createWalletHud({ parent: newParent() });
     const amount = hud.root.querySelector(".agent-play-wallet-strip__amount");
     hud.setBalance(70);
     expect(amount?.textContent).toBe("$70.00");
     hud.setBalance(12.345);
     expect(amount?.textContent).toBe("$12.35");
+    hud.setBalance(1234.5);
+    expect(amount?.textContent).toBe("$1,234.50");
   });
 
-  it("setPowerUps renders the diamond count", () => {
+  it("setPowerUps renders the diamond count with grouping", () => {
     const hud = createWalletHud({ parent: newParent() });
     hud.setBalance(10);
     hud.setPowerUps(7);
     expect(hud.root.textContent).toContain("$10.00");
     expect(hud.root.textContent).toContain("7");
+    hud.setPowerUps(1234);
+    expect(hud.root.textContent).toContain("1,234");
   });
 
   it("setPowerUpsLoading shows a placeholder count", () => {

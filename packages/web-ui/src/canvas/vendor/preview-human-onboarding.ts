@@ -16,6 +16,7 @@ import {
   resolveDeploymentServerUrlFromApiBase,
   restoreMainNodeFromCredentials,
 } from "./preview-human-node-restore.js";
+import { requestWatchCanvasFocus } from "./watch-canvas-focus.js";
 
 const ONBOARD_STYLE_ID = "agent-play-human-onboarding-styles";
 
@@ -732,6 +733,7 @@ export async function ensureHumanNodeOnboarding(
 
     const finish = (): void => {
       overlay.remove();
+      requestWatchCanvasFocus();
       resolve();
     };
 
