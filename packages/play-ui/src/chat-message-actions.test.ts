@@ -1,9 +1,13 @@
 // @vitest-environment happy-dom
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { createEmptyMessageReactions } from "./chat-message-reactions.js";
 import { createChatMessageActions } from "./chat-message-actions.js";
 
 describe("createChatMessageActions", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it("renders reply, copy link, love, and like controls with icons", () => {
     const onReply = vi.fn();
     const onCopyLink = vi.fn();
@@ -46,6 +50,35 @@ describe("createChatMessageActions", () => {
     expect(onReact).toHaveBeenCalledWith({ kind: "love", action: "set" });
     like!.click();
     expect(onReact).toHaveBeenCalledWith({ kind: "thumbs_up", action: "set" });
+  });
+
+  it("shows copied feedback on the link control then reverts", () => {
+    vi.useFakeTimers();
+    const onCopyLink = vi.fn();
+    const actions = createChatMessageActions({
+      reactions: createEmptyMessageReactions(),
+      playerId: "main-1",
+      canReply: false,
+      onReply: vi.fn(),
+      onCopyLink,
+      onReact: vi.fn(),
+    });
+    const link = actions.element.querySelector(
+      ".chat-message-actions__link"
+    ) as HTMLButtonElement;
+    const label = link.querySelector(".chat-message-actions__label");
+    expect(label?.textContent).toBe("Copy link");
+    link.click();
+    expect(onCopyLink).toHaveBeenCalledTimes(1);
+    expect(label?.textContent).toBe("Copied");
+    expect(link.classList.contains("chat-message-actions__link--copied")).toBe(
+      true
+    );
+    vi.advanceTimersByTime(2000);
+    expect(label?.textContent).toBe("Copy link");
+    expect(link.classList.contains("chat-message-actions__link--copied")).toBe(
+      false
+    );
   });
 
   it("cancels an existing reaction for the current player", () => {

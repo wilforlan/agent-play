@@ -48,7 +48,7 @@ const COACH_COPY: Readonly<
   },
   wallet_chip: {
     title: "Wallet chip",
-    body: "Bottom-left chip shows APW$ and APU. Tap it to open your inventory.",
+    body: "Wallet chip shows APW$ and APU. Tap it to open your inventory.",
   },
   meet_agent: {
     title: "St. John St.",
