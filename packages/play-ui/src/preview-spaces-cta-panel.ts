@@ -278,17 +278,6 @@ function ensureStyles(): void {
   document.head.appendChild(style);
 }
 
-function safeReadDismissed(): boolean {
-  try {
-    return (
-      window.localStorage.getItem(PREVIEW_SPACES_CTA_DISMISSED_STORAGE_KEY) ===
-      "1"
-    );
-  } catch {
-    return false;
-  }
-}
-
 function safeWriteDismissed(): void {
   try {
     window.localStorage.setItem(
@@ -328,13 +317,13 @@ export type PreviewSpacesCtaPanel = {
 export function createPreviewSpacesCtaPanel(): PreviewSpacesCtaPanel {
   ensureStyles();
 
-  let dismissed = safeReadDismissed();
+  let dismissed = true;
 
   const root = document.createElement("section");
   root.className =
     "preview-floating-panel preview-floating-panel--spaces-cta";
   root.setAttribute("aria-label", "Build your own space");
-  root.hidden = dismissed;
+  root.hidden = true;
 
   const scroll = document.createElement("div");
   scroll.className = "preview-spaces-cta-panel__scroll";

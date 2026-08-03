@@ -224,9 +224,12 @@ export {
   isParkingOccupantActive,
 } from "./lib/parking-pricing.js";
 export {
+  canCarAcquireParkingSpot,
   canNodeAcquireParkingSpot,
   MAX_SLOTS_WITH_FOREVER,
   MAX_TIMED_PARKING_SLOTS_PER_NODE,
+  type ParkingCarLockError,
+  type ParkingCarOccupancyRef,
   type ParkingDurationTier,
   type ParkingOccupancyRef,
   type ParkingOwnershipError,

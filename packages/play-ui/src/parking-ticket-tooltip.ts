@@ -7,6 +7,7 @@ import {
 export type ParkingCarOption = {
   purchaseId: string;
   label: string;
+  disabled?: boolean;
 };
 
 export type ParkingSpotInspectDetails = {
@@ -292,10 +293,18 @@ export const createParkingTicketTooltip = (): ParkingTicketTooltipHandle => {
       return;
     }
     const nick = nickInput.value.trim();
+    const selected = carSelect.selectedOptions[0];
     const carPurchaseId = carSelect.value;
     const tier = tierSelect.value as ParkingDurationTier;
-    if (nick.length === 0 || carPurchaseId.length === 0) {
-      error.textContent = "Enter a nick and pick a car.";
+    if (
+      nick.length === 0 ||
+      carPurchaseId.length === 0 ||
+      selected?.disabled === true
+    ) {
+      error.textContent =
+        selected?.disabled === true
+          ? "That car is already parked."
+          : "Enter a nick and pick a car.";
       error.hidden = false;
       return;
     }
@@ -345,15 +354,24 @@ export const createParkingTicketTooltip = (): ParkingTicketTooltipHandle => {
         blocked.textContent = input.ownershipBlocked;
       }
       carSelect.replaceChildren();
+      let firstSelectable: string | null = null;
       for (const car of input.cars) {
         const opt = document.createElement("option");
         opt.value = car.purchaseId;
         opt.textContent = car.label;
+        opt.disabled = car.disabled === true;
+        if (car.disabled !== true && firstSelectable === null) {
+          firstSelectable = car.purchaseId;
+        }
         carSelect.appendChild(opt);
       }
+      if (firstSelectable !== null) {
+        carSelect.value = firstSelectable;
+      }
       onBuy = input.onBuy;
+      const hasSelectableCar = input.cars.some((car) => car.disabled !== true);
       buyBtn.disabled =
-        input.cars.length === 0 || input.ownershipBlocked !== undefined;
+        !hasSelectableCar || input.ownershipBlocked !== undefined;
       root.classList.add("preview-parking-ticket-tooltip--open");
     },
     showLoading() {

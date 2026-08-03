@@ -15,6 +15,7 @@ export type BuyParkingTicketResult =
       error:
         | "NO_WALLET_CAR"
         | "SPOT_OCCUPIED"
+        | "CAR_ALREADY_PARKED"
         | "PARKING_OWNERSHIP_LIMIT"
         | "PARKING_FOREVER_LIMIT"
         | "INSUFFICIENT_FUNDS"
@@ -104,6 +105,7 @@ export const buyParkingTicket = async (input: {
   const knownErrors = [
     "NO_WALLET_CAR",
     "SPOT_OCCUPIED",
+    "CAR_ALREADY_PARKED",
     "PARKING_OWNERSHIP_LIMIT",
     "PARKING_FOREVER_LIMIT",
     "INSUFFICIENT_FUNDS",

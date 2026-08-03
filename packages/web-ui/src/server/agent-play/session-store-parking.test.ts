@@ -95,6 +95,103 @@ describe("session-store: parking street", () => {
     expect(result).toEqual({ ok: false, error: "NO_WALLET_CAR" });
   });
 
+  it("rejects parking the same car elsewhere while still parked", async () => {
+    const store = new TestSessionStore();
+    await store.loadOrCreateSessionId();
+    await store.setPlayerWalletBalance({ playerId: "node-a", balanceUsd: 200 });
+    await store.upsertCarWashCar(baseCar({ id: "car-1", slot: 1 }));
+    await store.upsertCarWashCar(
+      baseCar({ id: "car-2", slot: 2, colorHex: "#00ff00" })
+    );
+    const p1 = await store.executePurchase({
+      spaceId: "space-1",
+      amenityKind: "car_wash",
+      itemRef: { kind: "carwash", id: "car-1" },
+      playerId: "node-a",
+      now: ISO,
+      recordId: "p1",
+    });
+    const p2 = await store.executePurchase({
+      spaceId: "space-1",
+      amenityKind: "car_wash",
+      itemRef: { kind: "carwash", id: "car-2" },
+      playerId: "node-a",
+      now: ISO,
+      recordId: "p2",
+    });
+    if (!p1.ok || !p2.ok) {
+      throw new Error("seed failed");
+    }
+    const first = await store.buyParkingTicket({
+      nodeId: "node-a",
+      bay: 1,
+      layer: 1,
+      carPurchaseId: p1.record.id,
+      durationTier: "1h",
+      displayNick: "A",
+      now: ISO,
+      recordId: "park-a",
+    });
+    expect(first.ok).toBe(true);
+    const elsewhere = await store.buyParkingTicket({
+      nodeId: "node-a",
+      bay: 2,
+      layer: 1,
+      carPurchaseId: p1.record.id,
+      durationTier: "1h",
+      displayNick: "A again",
+      now: ISO,
+      recordId: "park-a-elsewhere",
+    });
+    expect(elsewhere).toEqual({ ok: false, error: "CAR_ALREADY_PARKED" });
+    const otherCar = await store.buyParkingTicket({
+      nodeId: "node-a",
+      bay: 2,
+      layer: 1,
+      carPurchaseId: p2.record.id,
+      durationTier: "1h",
+      displayNick: "B",
+      now: ISO,
+      recordId: "park-b",
+    });
+    expect(otherCar.ok).toBe(true);
+  });
+
+  it("allows parking the same car again after expiry", async () => {
+    const store = new TestSessionStore();
+    await store.loadOrCreateSessionId();
+    const carPurchaseId = await seedWalletCar(store, "node-a");
+    const first = await store.buyParkingTicket({
+      nodeId: "node-a",
+      bay: 1,
+      layer: 1,
+      carPurchaseId,
+      durationTier: "1h",
+      displayNick: "Temp",
+      now: "2026-01-01T00:00:00.000Z",
+      recordId: "park-exp-1",
+    });
+    expect(first.ok).toBe(true);
+    await store.tickParkingExpiry("2026-01-01T02:00:00.000Z");
+    const again = await store.buyParkingTicket({
+      nodeId: "node-a",
+      bay: 3,
+      layer: 1,
+      carPurchaseId,
+      durationTier: "1h",
+      displayNick: "Back",
+      now: "2026-01-01T02:00:00.000Z",
+      recordId: "park-exp-2",
+    });
+    expect(again.ok).toBe(true);
+    if (!again.ok) {
+      return;
+    }
+    expect(findParkingSpot(again.parkingStreet, 3, 1)?.occupant?.carPurchaseId).toBe(
+      carPurchaseId
+    );
+  });
+
   it("rejects third timed spot for same node", async () => {
     const store = new TestSessionStore();
     await store.loadOrCreateSessionId();

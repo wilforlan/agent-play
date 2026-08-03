@@ -166,7 +166,11 @@ export type SessionStore = {
     message: string;
     ts: string;
     parentRequestId?: string;
-  }): Promise<{ message: WorldChatMessage; totalCount: number }>;
+  }): Promise<{
+    message: WorldChatMessage;
+    totalCount: number;
+    parentFromPlayerId?: string;
+  }>;
   listWorldChatMessages(input: {
     limit: number;
     beforeSeq?: number;
@@ -376,6 +380,7 @@ export type BuyParkingTicketResult =
       error:
         | "NO_WALLET_CAR"
         | "SPOT_OCCUPIED"
+        | "CAR_ALREADY_PARKED"
         | "PARKING_OWNERSHIP_LIMIT"
         | "PARKING_FOREVER_LIMIT"
         | "INSUFFICIENT_FUNDS"

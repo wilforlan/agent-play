@@ -5,7 +5,9 @@ import {
   createEmptyParkingStreetContent,
   effectiveParkingStreet,
   findParkingSpot,
+  listActiveParkingOccupancies,
 } from "./parking-content-model.js";
+import { canCarAcquireParkingSpot } from "./parking-ownership.js";
 
 describe("ParkingStreetContentSchema", () => {
   it("parses default empty street with eight spots", () => {
@@ -103,5 +105,75 @@ describe("effectiveParkingStreet", () => {
       findParkingSpot(effective, foreverSpot.bay, foreverSpot.layer)?.occupant
         ?.tier
     ).toBe("forever");
+  });
+});
+
+describe("listActiveParkingOccupancies car lock", () => {
+  const occupant = {
+    nodeId: "node-1",
+    carPurchaseId: "purchase-1",
+    displayNick: "Red Coupe",
+    colorHex: "#ff0000",
+    model: "GT",
+    tier: "1h" as const,
+    purchasedAt: "2026-01-01T00:00:00.000Z",
+    expiresAt: "2026-01-01T01:00:00.000Z",
+  };
+
+  it("lists actively parked car purchase ids during the parking period", () => {
+    const content = createEmptyParkingStreetContent();
+    const spot = content.spots[0];
+    if (spot === undefined) {
+      throw new Error("spot");
+    }
+    const street = ParkingStreetContentSchema.parse({
+      ...content,
+      spots: content.spots.map((s) =>
+        s.id === spot.id ? { ...s, occupant } : s
+      ),
+    });
+    const active = listActiveParkingOccupancies(
+      street,
+      "2026-01-01T00:30:00.000Z"
+    );
+    expect(active).toEqual([
+      {
+        nodeId: "node-1",
+        carPurchaseId: "purchase-1",
+        tier: "1h",
+        expiresAt: "2026-01-01T01:00:00.000Z",
+      },
+    ]);
+    expect(
+      canCarAcquireParkingSpot({
+        carPurchaseId: "purchase-1",
+        activeCars: active,
+      })
+    ).toEqual({ ok: false, error: "CAR_ALREADY_PARKED" });
+  });
+
+  it("omits expired cars so they become parkable again", () => {
+    const content = createEmptyParkingStreetContent();
+    const spot = content.spots[0];
+    if (spot === undefined) {
+      throw new Error("spot");
+    }
+    const street = ParkingStreetContentSchema.parse({
+      ...content,
+      spots: content.spots.map((s) =>
+        s.id === spot.id ? { ...s, occupant } : s
+      ),
+    });
+    const active = listActiveParkingOccupancies(
+      street,
+      "2026-01-01T02:00:00.000Z"
+    );
+    expect(active).toEqual([]);
+    expect(
+      canCarAcquireParkingSpot({
+        carPurchaseId: "purchase-1",
+        activeCars: active,
+      })
+    ).toEqual({ ok: true });
   });
 });

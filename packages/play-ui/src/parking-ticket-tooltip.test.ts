@@ -46,6 +46,60 @@ describe("parking-ticket-tooltip", () => {
     tooltip.destroy();
   });
 
+  it("disables parked cars in the select and blocks buying them", () => {
+    const tooltip = createParkingTicketTooltip();
+    const onBuy = vi.fn();
+    tooltip.show({
+      cars: [
+        {
+          purchaseId: "car-parked",
+          label: "GT 350 — parked until ticket expires",
+          disabled: true,
+        },
+        { purchaseId: "car-free", label: "Sedan" },
+      ],
+      onBuy,
+    });
+    const select = tooltip.root.querySelector("select");
+    expect(select).toBeInstanceOf(HTMLSelectElement);
+    if (!(select instanceof HTMLSelectElement)) {
+      return;
+    }
+    const parked = [...select.options].find((opt) => opt.value === "car-parked");
+    const free = [...select.options].find((opt) => opt.value === "car-free");
+    expect(parked?.disabled).toBe(true);
+    expect(free?.disabled).toBe(false);
+    expect(select.value).toBe("car-free");
+    const nick = tooltip.root.querySelector("input");
+    if (nick instanceof HTMLInputElement) {
+      nick.value = "Free Ride";
+    }
+    tooltip.root.querySelector("button")?.click();
+    expect(onBuy).toHaveBeenCalledWith({
+      carPurchaseId: "car-free",
+      durationTier: "1h",
+      displayNick: "Free Ride",
+    });
+    tooltip.destroy();
+  });
+
+  it("disables buy when every listed car is parked", () => {
+    const tooltip = createParkingTicketTooltip();
+    tooltip.show({
+      cars: [
+        {
+          purchaseId: "car-parked",
+          label: "GT 350 — parked",
+          disabled: true,
+        },
+      ],
+      onBuy: vi.fn(),
+    });
+    const btn = tooltip.root.querySelector("button");
+    expect(btn?.hasAttribute("disabled")).toBe(true);
+    tooltip.destroy();
+  });
+
   it("setError restores the buy button", () => {
     const tooltip = createParkingTicketTooltip();
     tooltip.show({

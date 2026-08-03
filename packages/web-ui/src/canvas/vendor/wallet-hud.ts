@@ -4,7 +4,7 @@
  *
  * Small DOM "pill" for the player's wallet balance. Mount inside
  * {@link createBottomHudDock} so it stays spaced beside the games streak
- * control at the footer (away from the top proximity touch pad). The host
+ * control (bottom-left on mobile, top-right on desktop). The host
  * fetches the balance via `GET /agent-play/players/:id/wallet` (rewritten to
  * the API route) at bootstrap and then refreshes after every purchase.
  *
@@ -12,6 +12,7 @@
  *      the source endpoint.
  */
 
+import { formatApwBalance } from "./format-wallet-money.js";
 import { createWalletDisplayStrip } from "./wallet-display-strip.js";
 
 /**
@@ -100,12 +101,6 @@ const ensureStyles = (): void => {
   document.head.appendChild(style);
 };
 
-const formatUsd = (balanceUsd: number): string => {
-  if (!Number.isFinite(balanceUsd)) return "$—";
-  const rounded = Math.round(balanceUsd * 100) / 100;
-  return `$${rounded.toFixed(2)}`;
-};
-
 /**
  * Mount the wallet HUD pill inside the supplied parent.
  *
@@ -150,7 +145,7 @@ export const createWalletHud = (
       root.classList.remove(`${HUD_CLASS}--loading`);
       root.classList.remove(`${HUD_CLASS}--error`);
       strip.setBalance(balanceUsd);
-      root.title = `Wallet balance: ${formatUsd(balanceUsd)} — click to view items`;
+      root.title = `Wallet balance: ${formatApwBalance(balanceUsd)} — click to view items`;
     },
     setPowerUps: (n: number) => {
       strip.setPowerUps(n);

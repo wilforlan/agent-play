@@ -22,6 +22,28 @@ export type ParkingOwnershipError =
   | "PARKING_OWNERSHIP_LIMIT"
   | "PARKING_FOREVER_LIMIT";
 
+export type ParkingCarLockError = "CAR_ALREADY_PARKED";
+
+export type ParkingCarOccupancyRef = {
+  readonly carPurchaseId: string;
+  readonly expiresAt: string | null;
+};
+
+export const canCarAcquireParkingSpot = (input: {
+  carPurchaseId: string;
+  activeCars: ReadonlyArray<ParkingCarOccupancyRef>;
+}):
+  | { ok: true }
+  | { ok: false; error: ParkingCarLockError } => {
+  const alreadyParked = input.activeCars.some(
+    (occupancy) => occupancy.carPurchaseId === input.carPurchaseId
+  );
+  if (alreadyParked) {
+    return { ok: false, error: "CAR_ALREADY_PARKED" };
+  }
+  return { ok: true };
+};
+
 export const canNodeAcquireParkingSpot = (input: {
   nodeId: string;
   tier: ParkingDurationTier;

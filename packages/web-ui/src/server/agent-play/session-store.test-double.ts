@@ -24,6 +24,7 @@ import type {
 import {
   ApplyGameOutcomeInputSchema,
   PurchaseRecordSchema,
+  canCarAcquireParkingSpot,
   canNodeAcquireParkingSpot,
   computeParkingExpiresAt,
   createEmptyParkingStreetContent,
@@ -211,7 +212,13 @@ export class TestSessionStore implements SessionStore {
       reactions: { love: [], thumbs_up: [] },
     };
     this.worldChat.unshift(message);
-    return { message, totalCount: this.worldChat.length };
+    return {
+      message,
+      totalCount: this.worldChat.length,
+      ...(parent !== undefined
+        ? { parentFromPlayerId: parent.fromPlayerId }
+        : {}),
+    };
   }
 
   async listWorldChatMessages(input: {
@@ -1291,6 +1298,13 @@ export class TestSessionStore implements SessionStore {
       return { ok: false, error: "NO_WALLET_CAR" };
     }
     const active = listActiveParkingOccupancies(street, input.now);
+    const carLock = canCarAcquireParkingSpot({
+      carPurchaseId: input.carPurchaseId,
+      activeCars: active,
+    });
+    if (!carLock.ok) {
+      return { ok: false, error: carLock.error };
+    }
     const ownership = canNodeAcquireParkingSpot({
       nodeId: input.nodeId,
       tier: input.durationTier,

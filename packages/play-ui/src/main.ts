@@ -61,6 +61,12 @@ import { createItemTooltip, type ItemTooltipHandle } from "./item-tooltip.js";
 import { executePurchase } from "./purchase-client.js";
 import { createWalletHud, type WalletHudHandle } from "./wallet-hud.js";
 import { createBottomHudDock } from "./bottom-hud-dock.js";
+import { createNotificationTray } from "./notification-tray.js";
+import {
+  ingestIntercomNotificationResult,
+  ingestRoomJoinNotification,
+} from "./notification-intake.js";
+import { createJoinBubbleSound } from "./join-bubble-sound.js";
 import { fetchPlayerWallet } from "./wallet-client.js";
 import {
   createWalletInventoryPanel,
@@ -140,6 +146,7 @@ import {
   getPreviewSessionIdSync,
 } from "./preview-session-id.js";
 import { ensureHumanNodeOnboarding } from "./preview-human-onboarding.js";
+import { requestWatchCanvasFocus } from "./watch-canvas-focus.js";
 import {
   clearHumanCredentials,
   getMainNodeIdForIntercom,
@@ -287,6 +294,7 @@ import {
   type ParkingTicketTooltipHandle,
 } from "./parking-ticket-tooltip.js";
 import { buyParkingTicket } from "./parking-ticket-client.js";
+import { buildParkingCarSelectionOptions } from "./parking-car-selection.js";
 import { createParkingExpiryScheduler } from "./parking-expiry-schedule.js";
 import {
   clampCameraToWorldRect,
@@ -1529,6 +1537,8 @@ const worldRoot = new Container();
 let canvasHostRef: HTMLElement | null = null;
 let stageController: StageController | null = null;
 let walletHud: WalletHudHandle | null = null;
+let notificationTray: ReturnType<typeof createNotificationTray> | null = null;
+let joinBubbleSound: ReturnType<typeof createJoinBubbleSound> | null = null;
 let walletInventoryPanel: WalletInventoryPanelHandle | null = null;
 let walletBalanceCached: number | null = null;
 
@@ -3306,7 +3316,7 @@ async function showParkingTicketTooltip(
   parkingTooltipOpenForBay = { bay: target.bay, layer: target.layer };
   positionParkingTicketTooltip(target);
   const purchaseResult = await fetchPurchases({ sid, playerId: nodeId });
-  const cars = purchaseResult.purchases
+  const ownedCars = purchaseResult.purchases
     .filter((record) => record.amenityKind === "car_wash")
     .map((record) => {
       const key = buildPurchaseItemKey({
@@ -3327,6 +3337,11 @@ async function showParkingTicketTooltip(
             : "Car";
       return { purchaseId: record.id, label };
     });
+  const cars = buildParkingCarSelectionOptions({
+    cars: ownedCars,
+    parkingStreet: resolveParkingStreetContent(),
+    nowIso: new Date().toISOString(),
+  });
   tooltip.show({
     cars,
     ownershipBlocked: resolveParkingOwnershipBlocked(nodeId),
@@ -3438,6 +3453,7 @@ async function buyParkingTicketAtBay(input: {
   const messages: Record<string, string> = {
     NO_WALLET_CAR: "You need a wallet-owned car",
     SPOT_OCCUPIED: "Spot already taken",
+    CAR_ALREADY_PARKED: "That car is already parked",
     PARKING_OWNERSHIP_LIMIT: "Timed parking limit reached",
     PARKING_FOREVER_LIMIT: "Forever parking blocks other spots",
     INSUFFICIENT_FUNDS: "Insufficient funds",
@@ -3600,7 +3616,52 @@ function connectSse(sid: string): void {
     void handleWorldMapSse(sid, (ev as MessageEvent).data as string);
   });
   es.addEventListener("world:player_added", (ev) => {
-    void handleWorldMapSse(sid, (ev as MessageEvent).data as string);
+    const raw = (ev as MessageEvent).data as string;
+    void handleWorldMapSse(sid, raw);
+    let data: unknown;
+    try {
+      data = JSON.parse(raw) as unknown;
+    } catch {
+      return;
+    }
+    if (typeof data !== "object" || data === null || !("player" in data)) {
+      return;
+    }
+    const player = (data as { player?: unknown }).player;
+    if (typeof player !== "object" || player === null) {
+      return;
+    }
+    const row = player as {
+      agentId?: unknown;
+      nodeId?: unknown;
+      name?: unknown;
+    };
+    const playerId =
+      typeof row.agentId === "string"
+        ? row.agentId
+        : typeof row.nodeId === "string"
+          ? row.nodeId
+          : "";
+    if (playerId.length === 0) {
+      return;
+    }
+    const displayName =
+      typeof row.name === "string" && row.name.trim().length > 0
+        ? row.name.trim()
+        : undefined;
+    ingestRoomJoinNotification({
+      playerId,
+      ...(displayName !== undefined ? { displayName } : {}),
+      viewerPlayerId: getViewerWalletPlayerId(),
+      createdAt: new Date().toISOString(),
+      notificationId: `join-${playerId}-${String(Date.now())}`,
+      push: (notification) => {
+        notificationTray?.push(notification);
+      },
+      onJoinSound: (join) => {
+        void joinBubbleSound?.playForJoin(join);
+      },
+    });
   });
   es.addEventListener(WORLD_GEOGRAPHY_SSE, (ev) => {
     if (!getPreviewViewSettings().worldGeographyEnabled) {
@@ -3713,8 +3774,22 @@ function connectSse(sid: string): void {
           reactions: resultRecord?.reactions,
           reactionUpdate: resultRecord?.reactionUpdate === true,
         });
+        ingestIntercomNotificationResult({
+          result: resultRecord,
+          viewerPlayerId: getViewerWalletPlayerId(),
+          push: (notification) => {
+            notificationTray?.push(notification);
+          },
+        });
         return;
       }
+      ingestIntercomNotificationResult({
+        result: row.result,
+        viewerPlayerId: getViewerWalletPlayerId(),
+        push: (notification) => {
+          notificationTray?.push(notification);
+        },
+      });
     }
     sessionInteractionPanel?.applyIntercomEvent(data);
   });
@@ -4909,6 +4984,7 @@ export function bootstrap(): void {
         getSid: () => sid,
       });
     }
+    requestWatchCanvasFocus();
     if (previewBootstrapStarted) return;
     previewBootstrapStarted = true;
     const theme = getActiveSceneTheme();
@@ -5081,6 +5157,7 @@ export function bootstrap(): void {
           apiBase: API_BASE,
           getSid: () => sid,
         });
+        requestWatchCanvasFocus();
         setArrivalControlsMuted(false);
         maybeStartArrivalQuestAfterOnboarding();
         sessionInteractionPanel?.refresh();
@@ -5196,6 +5273,15 @@ export function bootstrap(): void {
     walletHud = createWalletHud({
       parent: bottomHudDock.root,
       onClick: () => openWalletInventoryPanel(),
+    });
+    notificationTray = createNotificationTray({
+      parent: document.body,
+      syncLayoutToViewport: true,
+    });
+    joinBubbleSound = createJoinBubbleSound({
+      getLocalPlayerId: () => getViewerWalletPlayerId(),
+      getMuted: () =>
+        typeof document !== "undefined" && document.hidden === true,
     });
     walletInventoryPanel = createWalletInventoryPanel({
       parent: document.body,
@@ -5586,8 +5672,33 @@ export function bootstrap(): void {
         },
       });
     };
+    const refreshNotificationTrayPlacement = (): void => {
+      const room = globalChatRoom;
+      const tray = notificationTray;
+      if (room === null || tray === null) {
+        return;
+      }
+      tray.root.hidden =
+        tray.getLayoutMode() === "panel" && room.element.hidden;
+      const anchorRect = room.element.getBoundingClientRect();
+      tray.refreshPlacement({
+        anchorRect: {
+          left: anchorRect.left,
+          top: anchorRect.top,
+          width: anchorRect.width,
+          height: anchorRect.height,
+        },
+        viewport: {
+          width: window.innerWidth,
+          height: window.innerHeight,
+        },
+      });
+    };
     const scheduleSpacesCtaRefresh = (): void => {
-      requestAnimationFrame(refreshSpacesCtaPlacement);
+      requestAnimationFrame(() => {
+        refreshSpacesCtaPlacement();
+        refreshNotificationTrayPlacement();
+      });
     };
 
     applyPreviewPanelLayout();
@@ -5605,7 +5716,7 @@ export function bootstrap(): void {
       }
     });
 
-    if (globalChatRoom !== null && spacesCtaPanel !== null) {
+    if (globalChatRoom !== null) {
       const messagesElement = globalChatRoom.element;
       if (typeof ResizeObserver !== "undefined") {
         const resizeObs = new ResizeObserver(() => {
@@ -5636,6 +5747,7 @@ export function bootstrap(): void {
       if (spacesCtaPanel !== null && !spacesCtaPanel.isDismissed()) {
         spacesCtaPanel.element.hidden = !messagesPanelVisible;
       }
+      refreshNotificationTrayPlacement();
       debugMount.classList.toggle(
         "preview-debug-mount--messages-hidden",
         !messagesPanelVisible
