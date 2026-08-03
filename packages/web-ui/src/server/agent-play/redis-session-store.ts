@@ -39,6 +39,7 @@ import {
   ParkingStreetContentSchema,
   HouseStreetContentSchema,
   TALK_PRICE_PER_SECOND_USD,
+  canCarAcquireParkingSpot,
   canNodeAcquireParkingSpot,
   computeParkingExpiresAt,
   createEmptyParkingStreetContent,
@@ -438,9 +439,14 @@ export class RedisSessionStore implements SessionStore {
     message: string;
     ts: string;
     parentRequestId?: string;
-  }): Promise<{ message: WorldChatMessage; totalCount: number }> {
+  }): Promise<{
+    message: WorldChatMessage;
+    totalCount: number;
+    parentFromPlayerId?: string;
+  }> {
     const key = worldChatKey(this.hostId);
     let depth: 0 | 1 | 2 = 0;
+    let parentFromPlayerId: string | undefined;
     if (typeof input.parentRequestId === "string") {
       const rows = await this.redis.lrange(key, 0, WORLD_CHAT_MAX - 1);
       const parentRow = rows
@@ -459,6 +465,7 @@ export class RedisSessionStore implements SessionStore {
         throw new Error("invalid parentRequestId");
       }
       depth = (parentRow.depth + 1) as 0 | 1 | 2;
+      parentFromPlayerId = parentRow.fromPlayerId;
     }
     const seq = await this.redis.hincrby(
       sessionHashKey(this.hostId),
@@ -487,7 +494,11 @@ export class RedisSessionStore implements SessionStore {
     const totalCountRaw = result?.[3]?.[1];
     const totalCount =
       typeof totalCountRaw === "number" ? totalCountRaw : await this.redis.llen(key);
-    return { message, totalCount };
+    return {
+      message,
+      totalCount,
+      ...(parentFromPlayerId !== undefined ? { parentFromPlayerId } : {}),
+    };
   }
 
   async listWorldChatMessages(input: {
@@ -2284,6 +2295,14 @@ export class RedisSessionStore implements SessionStore {
         return { ok: false, error: "NO_WALLET_CAR" };
       }
       const active = listActiveParkingOccupancies(street, input.now);
+      const carLock = canCarAcquireParkingSpot({
+        carPurchaseId: input.carPurchaseId,
+        activeCars: active,
+      });
+      if (!carLock.ok) {
+        await this.redis.unwatch();
+        return { ok: false, error: carLock.error };
+      }
       const ownership = canNodeAcquireParkingSpot({
         nodeId: input.nodeId,
         tier: input.durationTier,
