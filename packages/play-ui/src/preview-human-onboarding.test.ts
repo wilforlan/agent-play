@@ -158,6 +158,47 @@ describe("citizen induction onboarding", () => {
     expect(readHumanCredentials()?.nodeId).toContain("citizen-node-id");
   });
 
+  it("requests watch-canvas focus when Enter Agent Play World is clicked", async () => {
+    const focusSpy = vi.fn();
+    window.addEventListener("agent-play:scroll-to-game", focusSpy);
+    const done = ensureHumanNodeOnboarding({
+      apiBase: "https://example.com/api",
+      getSid: () => "sid-test",
+    });
+    await Promise.resolve();
+    Array.from(document.querySelectorAll("button"))
+      .find((b) => b.textContent === "Start citizenship")
+      ?.click();
+    await Promise.resolve();
+    const consent = document.querySelector(
+      '.human-onboard-panel input[type="checkbox"]'
+    ) as HTMLInputElement | null;
+    if (consent !== null) {
+      consent.checked = true;
+    }
+    Array.from(document.querySelectorAll("button"))
+      .find((b) => b.textContent === "Become a citizen")
+      ?.click();
+    await vi.waitFor(() => {
+      expect(document.querySelector(".human-onboard-title")?.textContent).toBe(
+        "Citizenship sealed"
+      );
+    });
+    const saved = document.querySelector(
+      'input[data-onboard-saved-key="1"]'
+    ) as HTMLInputElement | null;
+    if (saved !== null) {
+      saved.checked = true;
+      saved.dispatchEvent(new Event("change", { bubbles: true }));
+    }
+    Array.from(document.querySelectorAll("button"))
+      .find((b) => b.textContent === "Enter Agent Play World")
+      ?.click();
+    await done;
+    expect(focusSpy).toHaveBeenCalledTimes(1);
+    window.removeEventListener("agent-play:scroll-to-game", focusSpy);
+  });
+
   it("keeps mobile sheet and touch-target contracts", async () => {
     const pending = ensureHumanNodeOnboarding({
       apiBase: "https://example.com/api",

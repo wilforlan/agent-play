@@ -140,6 +140,7 @@ import {
   getPreviewSessionIdSync,
 } from "./preview-session-id.js";
 import { ensureHumanNodeOnboarding } from "./preview-human-onboarding.js";
+import { requestWatchCanvasFocus } from "./watch-canvas-focus.js";
 import {
   clearHumanCredentials,
   getMainNodeIdForIntercom,
@@ -4909,6 +4910,7 @@ export function bootstrap(): void {
         getSid: () => sid,
       });
     }
+    requestWatchCanvasFocus();
     if (previewBootstrapStarted) return;
     previewBootstrapStarted = true;
     const theme = getActiveSceneTheme();
@@ -5081,6 +5083,7 @@ export function bootstrap(): void {
           apiBase: API_BASE,
           getSid: () => sid,
         });
+        requestWatchCanvasFocus();
         setArrivalControlsMuted(false);
         maybeStartArrivalQuestAfterOnboarding();
         sessionInteractionPanel?.refresh();

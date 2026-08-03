@@ -62,7 +62,18 @@ describe("createPreviewSpacesCtaPanel", () => {
     expect(text).toContain("aql");
   });
 
-  it("dismisses the panel and remembers the dismissal in localStorage", () => {
+  it("stays hidden by default on load without requiring a prior dismissal", () => {
+    const panel = createPreviewSpacesCtaPanel();
+    document.body.append(panel.element);
+
+    expect(panel.element.hidden).toBe(true);
+    expect(panel.isDismissed()).toBe(true);
+    expect(
+      window.localStorage.getItem(PREVIEW_SPACES_CTA_DISMISSED_STORAGE_KEY)
+    ).toBeNull();
+  });
+
+  it("keeps the panel hidden after an explicit dismiss and remembers it", () => {
     const panel = createPreviewSpacesCtaPanel();
     document.body.append(panel.element);
 
@@ -71,7 +82,7 @@ describe("createPreviewSpacesCtaPanel", () => {
     );
 
     expect(dismiss).not.toBeNull();
-    expect(panel.element.hidden).toBe(false);
+    expect(panel.element.hidden).toBe(true);
 
     dismiss?.click();
 
@@ -92,10 +103,10 @@ describe("createPreviewSpacesCtaPanel", () => {
     expect(panel.element.hidden).toBe(true);
   });
 
-  it("exposes an isDismissed predicate that mirrors visibility", () => {
+  it("exposes an isDismissed predicate that stays true by default", () => {
     const panel = createPreviewSpacesCtaPanel();
 
-    expect(panel.isDismissed()).toBe(false);
+    expect(panel.isDismissed()).toBe(true);
 
     panel.element
       .querySelector<HTMLButtonElement>(
@@ -192,7 +203,7 @@ describe("createPreviewSpacesCtaPanel positioning", () => {
     ).toBe(true);
   });
 
-  it("refresh() writes the computed placement to inline styles", () => {
+  it("refresh() is a no-op while the panel stays dismissed by default", () => {
     const panel = createPreviewSpacesCtaPanel();
     document.body.append(panel.element);
 
@@ -201,18 +212,19 @@ describe("createPreviewSpacesCtaPanel positioning", () => {
       boundsRect: { left: 0, top: 0, width: 800, height: 600 },
     });
 
-    expect(panel.element.style.left).toBe("24px");
-    expect(panel.element.style.top).toBe("264px");
-    expect(panel.element.style.maxHeight.length).toBeGreaterThan(0);
+    expect(panel.element.style.left).toBe("");
+    expect(panel.element.style.top).toBe("");
+    expect(panel.element.style.maxHeight).toBe("");
   });
 
-  it("refresh() is a no-op when the panel has been dismissed", () => {
-    window.localStorage.setItem(
-      PREVIEW_SPACES_CTA_DISMISSED_STORAGE_KEY,
-      "1"
-    );
+  it("refresh() remains a no-op after an explicit dismiss", () => {
     const panel = createPreviewSpacesCtaPanel();
     document.body.append(panel.element);
+    panel.element
+      .querySelector<HTMLButtonElement>(
+        "button[data-testid='preview-spaces-cta-dismiss']"
+      )
+      ?.click();
 
     panel.refresh({
       anchorRect: { left: 24, top: 32, width: 360, height: 220 },
