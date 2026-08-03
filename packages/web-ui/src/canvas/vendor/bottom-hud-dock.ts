@@ -20,6 +20,7 @@ const ensureStyles = (): void => {
   position: fixed;
   top: auto;
   left: 12px;
+  right: auto;
   bottom: max(12px, calc(12px + env(safe-area-inset-bottom, 0px)));
   z-index: 13000;
   display: flex;
@@ -33,6 +34,15 @@ const ensureStyles = (): void => {
 }
 .${DOCK_CLASS} > * {
   pointer-events: auto;
+}
+@media (min-width: 1024px) {
+  .${DOCK_CLASS} {
+    top: max(12px, calc(12px + env(safe-area-inset-top, 0px)));
+    right: 12px;
+    left: auto;
+    bottom: auto;
+    justify-content: flex-end;
+  }
 }
 `;
   document.head.appendChild(style);

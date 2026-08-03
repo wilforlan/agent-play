@@ -11,29 +11,39 @@ const newParent = (): HTMLElement => {
 };
 
 describe("bottom hud dock", () => {
-  it("anchors a flex row with gap at the bottom-left of the viewport", () => {
+  it("anchors a flex row with gap at the bottom-left on mobile and top-right on desktop", () => {
     const dock = createBottomHudDock({ parent: newParent() });
     const style = document.getElementById("preview-bottom-hud-dock-styles");
-    expect(style?.textContent).toMatch(
+    const css = style?.textContent ?? "";
+    expect(css).toMatch(
       /\.preview-bottom-hud-dock \{[\s\S]*?display:\s*flex/,
     );
-    expect(style?.textContent).toMatch(
+    expect(css).toMatch(
       /\.preview-bottom-hud-dock \{[\s\S]*?gap:\s*8px/,
     );
-    expect(style?.textContent).toMatch(
+    expect(css).toMatch(
       /\.preview-bottom-hud-dock \{[\s\S]*?bottom:\s*max\(12px,\s*calc\(12px \+ env\(safe-area-inset-bottom/,
     );
-    expect(style?.textContent).toMatch(
+    expect(css).toMatch(
       /\.preview-bottom-hud-dock \{[\s\S]*?left:\s*12px/,
     );
-    expect(style?.textContent).not.toMatch(
-      /\.preview-bottom-hud-dock \{[\s\S]*?right:\s*12px/,
-    );
-    expect(style?.textContent).toMatch(
+    expect(css).toMatch(
       /\.preview-bottom-hud-dock \{[\s\S]*?justify-content:\s*flex-start/,
     );
-    expect(style?.textContent).toMatch(
+    expect(css).toMatch(
       /\.preview-bottom-hud-dock \{[\s\S]*?flex-wrap:\s*wrap/,
+    );
+    expect(css).toMatch(
+      /@media \(min-width:\s*1024px\) \{[\s\S]*?\.preview-bottom-hud-dock \{[\s\S]*?top:\s*max\(12px,\s*calc\(12px \+ env\(safe-area-inset-top/,
+    );
+    expect(css).toMatch(
+      /@media \(min-width:\s*1024px\) \{[\s\S]*?\.preview-bottom-hud-dock \{[\s\S]*?right:\s*12px/,
+    );
+    expect(css).toMatch(
+      /@media \(min-width:\s*1024px\) \{[\s\S]*?\.preview-bottom-hud-dock \{[\s\S]*?left:\s*auto/,
+    );
+    expect(css).toMatch(
+      /@media \(min-width:\s*1024px\) \{[\s\S]*?\.preview-bottom-hud-dock \{[\s\S]*?bottom:\s*auto/,
     );
     dock.destroy();
   });

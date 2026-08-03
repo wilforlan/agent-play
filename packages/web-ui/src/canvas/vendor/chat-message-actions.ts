@@ -11,6 +11,9 @@ import {
 } from "./chat-message-reactions.js";
 
 const STYLE_ID = "agent-play-chat-message-actions-styles";
+const COPY_LINK_LABEL = "Copy link";
+const COPIED_LINK_LABEL = "Copied";
+const COPIED_FEEDBACK_MS = 2000;
 
 type ActionIconId = "reply" | "link" | "love" | "like";
 
@@ -72,6 +75,15 @@ function ensureStyles(): void {
 }
 .chat-message-actions__label {
   white-space: nowrap;
+  transition: opacity 160ms ease, color 160ms ease;
+}
+.chat-message-actions__link--copied {
+  border-color: rgba(52, 211, 153, 0.7);
+  background: rgba(6, 78, 59, 0.55);
+  color: #d1fae5;
+}
+.chat-message-actions__link--copied .chat-message-actions__label {
+  opacity: 1;
 }
 .chat-message-actions__count {
   margin-left: 2px;
@@ -127,8 +139,29 @@ export function createChatMessageActions(options: {
   const link = document.createElement("button");
   link.type = "button";
   link.className = "chat-message-actions__btn chat-message-actions__link";
-  appendLabeledControl({ button: link, icon: "link", label: "Copy link" });
-  link.addEventListener("click", options.onCopyLink);
+  appendLabeledControl({ button: link, icon: "link", label: COPY_LINK_LABEL });
+  let copiedResetTimer: ReturnType<typeof setTimeout> | null = null;
+  const linkLabel = link.querySelector(".chat-message-actions__label");
+  const showCopiedFeedback = (): void => {
+    if (linkLabel !== null) {
+      linkLabel.textContent = COPIED_LINK_LABEL;
+    }
+    link.classList.add("chat-message-actions__link--copied");
+    if (copiedResetTimer !== null) {
+      clearTimeout(copiedResetTimer);
+    }
+    copiedResetTimer = setTimeout(() => {
+      if (linkLabel !== null) {
+        linkLabel.textContent = COPY_LINK_LABEL;
+      }
+      link.classList.remove("chat-message-actions__link--copied");
+      copiedResetTimer = null;
+    }, COPIED_FEEDBACK_MS);
+  };
+  link.addEventListener("click", () => {
+    options.onCopyLink();
+    showCopiedFeedback();
+  });
   root.append(link);
 
   const makeReactionButton = (
