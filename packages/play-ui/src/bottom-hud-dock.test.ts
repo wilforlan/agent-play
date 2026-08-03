@@ -13,6 +13,7 @@ const newParent = (): HTMLElement => {
 describe("bottom hud dock", () => {
   it("anchors a flex row with gap at the bottom-left on mobile and top-right on desktop", () => {
     const dock = createBottomHudDock({ parent: newParent() });
+    expect(dock.root.getAttribute("aria-label")).toContain("Wallet");
     const style = document.getElementById("preview-bottom-hud-dock-styles");
     const css = style?.textContent ?? "";
     expect(css).toMatch(
