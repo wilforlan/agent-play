@@ -5,6 +5,10 @@
 
 export type CreatePreviewProximityTouchControlsOptions = {
   parent: HTMLElement;
+  /**
+   * Kept for call-site compatibility. Drag left/top are always computed
+   * against {@link parent}, which is the pad’s positioning containing block.
+   */
   getBoundsElement: () => HTMLElement;
   getCanAct: () => boolean;
   /**
@@ -392,8 +396,11 @@ export function createPreviewProximityTouchControls(
   let dragOffsetX = 0;
   let dragOffsetY = 0;
 
+  const positionBoundsRect = (): DOMRect =>
+    options.parent.getBoundingClientRect();
+
   const onPointerMove = (e: PointerEvent): void => {
-    const bounds = options.getBoundsElement().getBoundingClientRect();
+    const bounds = positionBoundsRect();
     const padRect = root.getBoundingClientRect();
     const w = padRect.width;
     const h = padRect.height;
@@ -432,13 +439,13 @@ export function createPreviewProximityTouchControls(
   dragHandle.addEventListener("pointerdown", (e: PointerEvent) => {
     if (e.button !== 0) return;
     e.preventDefault();
-    const bounds = options.getBoundsElement().getBoundingClientRect();
+    const bounds = positionBoundsRect();
     const padRect = root.getBoundingClientRect();
     if (!placedByDrag) {
       const currentLeft = padRect.left - bounds.left;
       const currentTop = padRect.top - bounds.top;
-      root.style.left = `${currentLeft}px`;
-      root.style.top = `${currentTop}px`;
+      root.style.left = `${Math.max(0, currentLeft)}px`;
+      root.style.top = `${Math.max(0, currentTop)}px`;
       root.style.transform = "none";
       placedByDrag = true;
     }

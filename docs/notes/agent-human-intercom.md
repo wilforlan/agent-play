@@ -12,9 +12,12 @@ This note describes how chat and assist traffic flows between the browser human 
 ## Human node (kind main)
 
 - One reusable **human node** per human after explicit consent.
-- Browser flow: consent modal, `createHumanNode` RPC with `{ consent: true, passw }`, server persists via `createNodeAccount` when a repository is available.
-- Credentials: `sessionStorage` (`agent-play.humanCredentials`) plus optional `credentials.json` download; passphrase shown once in onboarding.
-- **Restore**: onboarding modal accepts an uploaded `credentials.json` (CLI or prior browser backup). The browser hashes the passphrase with **@agent-play/node-tools** and calls `POST /api/nodes/validate` with **`x-node-id`** / **`x-node-passw`** (no bootstrap fetch). The server checks derivation and compares `passwHash` to Redis before writing session credentials (no `createHumanNode` RPC).
+- Browser first-run UX is **citizen induction** before the world shell: an opaque full-stage passport flow (**Become a citizen** / restore / quiet guest path) with forced recovery-key backup on create. After enter, an in-world quest coach teaches watch screen → touch controls → play pad → wallet chip → meet agent → Maple arcade, then a Day-1 citizen card with Econext CTA for citizens. Coach **Dismiss** hides tips for the rest of the tour (progress still tracks); **Next** advances a step.
+- Wire create path is unchanged: `createHumanNode` RPC with `{ consent: true, nodeId, passwHash }`, server persists via `createNodeAccount` when a repository is available.
+- Credentials: `sessionStorage` (`agent-play.humanCredentials`) plus `credentials.json` download; recovery key shown once. Continue after create requires download or “I saved my recovery key.”
+- **Guest walk**: synthetic `session-*` / `preview-local-node` credentials (look around only — no earn / no chat). Honesty-labeled in UI.
+- **Restore**: passport accepts an uploaded `credentials.json` (CLI or prior browser backup). The browser hashes the passphrase with **@agent-play/node-tools** and calls `POST /api/nodes/validate` with **`x-node-id`** / **`x-node-passw`** (no bootstrap fetch). The server checks derivation and compares `passwHash` to Redis before writing session credentials (no `createHumanNode` RPC).
+- Quest progress: `localStorage` key `agent-play:arrival-quest:v2` (`packages/play-ui/src/arrival-quest.ts`).
 - `mainNodeId` in `intercomCommand` must match this node id. Use the same value for `fromPlayerId` (not `__human__`) so the agent’s `intercomResponse` targets the human node and the watch UI receives completions.
 
 ## Channel keys
@@ -92,9 +95,19 @@ Includes `status: "forwarded"`, `channelKey`, and `command` (original payload).
 | Command forwarded, no completion | SDK must run `subscribeIntercomCommands` with correct `playerId`; agent must call `sendIntercomResponse`. |
 | Missing/duplicate `requestId` patches | Ensure only one pending row per `requestId`; ignore stray SSE events without matching pending state. |
 | SSE ok, panel not updating | Confirm `EventSource` listens on `world:intercom` and `applyIntercomEvent` receives raw JSON. |
-| Human node missing | Finish onboarding or use Skip flow; `getMainNodeIdForIntercom` must return a value. |
+| Human node missing | Finish Arrival Quest passport (citizen create/restore) or Guest walk; `getMainNodeIdForIntercom` must return a value. |
 | `sessionStorage` cleared | Re-run onboarding or restore `credentials.json` into storage manually in dev. |
 | Stable key mismatch | Align `toPlayerId` with occupant `agentId`; channel helper prefixes `agent:` when needed. |
+
+## World chat room messaging
+
+World chat (`worldChatPublish` / `worldChatHistory` / `worldChatReact`) is the shared room surface beside P2A:
+
+- **Replies** — optional `parentRequestId` with max depth **2** (root → reply → reply-to-reply).
+- **Reactions** — `love` / `thumbs_up` with `action: "set" | "cancel"` via `worldChatReact`.
+- **Deep links** — `?message=<requestId>` (or `#msg=<requestId>`) highlights the row for ~2.5s on load.
+- **Composer** — multiline input, 50-emoji picker, reply chip; panel edge-resize on viewports ≥900px.
+- **P2A default** — human view setting `p2aEnabled` defaults to **on** (still toggleable).
 
 ## Files (reference)
 
@@ -104,5 +117,7 @@ Includes `status: "forwarded"`, `channelKey`, and `command` (original payload).
 - `packages/web-ui/src/server/agent-play/intercom/handle-intercom-response.ts`
 - `packages/web-ui/src/app/api/agent-play/sdk/rpc/route.ts`
 - `packages/play-ui/src/preview-session-interaction-panel.ts`
+- `packages/play-ui/src/preview-global-chat-room.ts`
+- `packages/play-ui/src/chat-composer.ts`
 - `packages/play-ui/src/preview-human-onboarding.ts`
 - `packages/sdk/src/lib/remote-play-world.ts`

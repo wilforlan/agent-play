@@ -1,6 +1,6 @@
 /**
  * @module @agent-play/play-ui/preview-human-onboarding
- * preview human onboarding — preview canvas module (Pixi + DOM).
+ * Citizen induction onboarding — opaque full-stage passport for Agent Play World.
  */
 import { CREATE_HUMAN_NODE_OP } from "@agent-play/intercom";
 import { nodeCredentialFromHumanPhrase } from "@agent-play/node-tools/browser";
@@ -26,43 +26,252 @@ function ensureOnboardingStyles(): void {
   const s = document.createElement("style");
   s.id = ONBOARD_STYLE_ID;
   s.textContent = `
+@import url("https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap");
+
 .human-onboard-overlay {
   position: fixed;
   inset: 0;
   z-index: 12000;
   display: grid;
   place-items: center;
-  background: rgba(15, 23, 42, 0.72);
-  font-family: ui-sans-serif, system-ui, sans-serif;
+  background: #071018;
+  font-family: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+  color: #e8eef5;
+  padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+  box-sizing: border-box;
+  overflow: auto;
 }
-.human-onboard-card {
-  max-width: 420px;
-  padding: 20px;
-  border-radius: 12px;
-  background: #0f172a;
-  color: #e2e8f0;
-  border: 1px solid rgba(148, 163, 184, 0.4);
+.human-onboard-overlay--opaque {
+  background: #071018;
+}
+.human-onboard-stage {
+  position: relative;
+  width: min(920px, 100%);
   display: grid;
-  gap: 12px;
+  grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
+  gap: 28px;
+  align-items: stretch;
 }
-.human-onboard-card h2 { margin: 0; font-size: 16px; }
-.human-onboard-card p { margin: 0; font-size: 12px; line-height: 1.45; color: #cbd5e1; }
-.human-onboard-card label { font-size: 12px; display: flex; gap: 8px; align-items: flex-start; }
+.human-onboard-hero {
+  position: relative;
+  border-radius: 28px;
+  padding: 28px 26px 30px;
+  overflow: hidden;
+  background:
+    radial-gradient(120% 80% at 10% 0%, rgba(200, 245, 66, 0.18), transparent 55%),
+    radial-gradient(90% 70% at 90% 100%, rgba(56, 189, 248, 0.16), transparent 50%),
+    linear-gradient(160deg, #0d1a24 0%, #0a141c 55%, #081018 100%);
+  border: 1px solid rgba(232, 238, 245, 0.1);
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.45);
+  display: grid;
+  gap: 18px;
+  align-content: start;
+  min-height: 420px;
+}
+.human-onboard-hero::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(90deg, transparent 0 12%, rgba(200, 245, 66, 0.08) 12% 13%, transparent 13% 42%, rgba(56, 189, 248, 0.08) 42% 43%, transparent 43% 71%, rgba(232, 238, 245, 0.06) 71% 72%, transparent 72%),
+    linear-gradient(0deg, transparent 0 28%, rgba(232, 238, 245, 0.04) 28% 29%, transparent 29% 58%, rgba(200, 245, 66, 0.05) 58% 59%, transparent 59%);
+  pointer-events: none;
+}
+.human-onboard-brand {
+  position: relative;
+  margin: 0;
+  font-family: "Fraunces", Georgia, serif;
+  font-size: clamp(2rem, 4vw, 2.75rem);
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  line-height: 0.95;
+  color: #f7fafc;
+}
+.human-onboard-kicker {
+  position: relative;
+  margin: 0;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: #c8f542;
+}
+.human-onboard-hero-copy {
+  position: relative;
+  margin: 0;
+  max-width: 28ch;
+  font-size: 15px;
+  line-height: 1.55;
+  color: rgba(232, 238, 245, 0.78);
+}
+.human-onboard-street-rail {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: auto;
+}
+.human-onboard-street-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  padding: 8px 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(232, 238, 245, 0.14);
+  background: rgba(7, 16, 24, 0.55);
+  font-size: 12px;
+  font-weight: 600;
+  color: #dbe7f3;
+}
+.human-onboard-street-chip::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #c8f542;
+  box-shadow: 0 0 0 3px rgba(200, 245, 66, 0.15);
+}
+.human-onboard-street-chip:nth-child(2)::before { background: #38bdf8; box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.15); }
+.human-onboard-street-chip:nth-child(3)::before { background: #fbbf24; box-shadow: 0 0 0 3px rgba(251, 191, 36, 0.15); }
+.human-onboard-steps {
+  position: relative;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.human-onboard-step {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: rgba(232, 238, 245, 0.45);
+  border: 1px solid rgba(232, 238, 245, 0.08);
+}
+.human-onboard-step.is-active {
+  color: #071018;
+  background: #c8f542;
+  border-color: #c8f542;
+}
+.human-onboard-step.is-done {
+  color: #c8f542;
+  border-color: rgba(200, 245, 66, 0.35);
+}
+.human-onboard-panel {
+  position: relative;
+  border-radius: 28px;
+  padding: 26px 24px;
+  background: linear-gradient(180deg, #101c28 0%, #0c1620 100%);
+  border: 1px solid rgba(232, 238, 245, 0.12);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.4);
+  display: grid;
+  gap: 14px;
+  align-content: start;
+  max-height: min(85dvh, 720px);
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.human-onboard-panel::after {
+  content: "";
+  position: absolute;
+  top: 18px;
+  right: 18px;
+  width: 54px;
+  height: 54px;
+  border-radius: 50%;
+  border: 2px dashed rgba(200, 245, 66, 0.35);
+  opacity: 0.7;
+  pointer-events: none;
+}
+.human-onboard-title {
+  margin: 0;
+  font-family: "Fraunces", Georgia, serif;
+  font-size: clamp(1.55rem, 3vw, 2rem);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+  color: #f7fafc;
+  padding-right: 48px;
+}
+.human-onboard-lead {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.5;
+  color: rgba(232, 238, 245, 0.72);
+}
+.human-onboard-panel label {
+  font-size: 13px;
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  min-height: 44px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: rgba(7, 16, 24, 0.55);
+  border: 1px solid rgba(232, 238, 245, 0.1);
+  box-sizing: border-box;
+  cursor: pointer;
+  color: rgba(232, 238, 245, 0.88);
+}
+.human-onboard-panel label input {
+  margin-top: 2px;
+  accent-color: #c8f542;
+}
+.human-onboard-panel textarea,
 .human-onboard-card textarea {
   width: 100%;
-  min-height: 72px;
-  border-radius: 8px;
-  border: 1px solid rgba(148, 163, 184, 0.45);
-  background: #020617;
-  color: #f8fafc;
-  padding: 8px;
-  font-size: 12px;
+  min-height: 96px;
+  border-radius: 16px;
+  border: 1px solid rgba(200, 245, 66, 0.28);
+  background: #071018;
+  color: #f7fafc;
+  padding: 14px;
+  font-size: 16px;
+  line-height: 1.45;
   box-sizing: border-box;
+  font-family: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
 }
-.human-onboard-file-picker {
+.human-onboard-phrase-label {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(200, 245, 66, 0.85);
+}
+.human-onboard-node-id {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  word-break: break-all;
+  padding: 14px 16px;
+  border-radius: 16px;
+  background: rgba(200, 245, 66, 0.08);
+  border: 1px solid rgba(200, 245, 66, 0.22);
+  color: #e8f8b0;
+}
+.human-onboard-seal {
   display: grid;
-  gap: 8px;
+  place-items: center;
+  width: 72px;
+  height: 72px;
+  margin: 4px 0 2px;
+  border-radius: 50%;
+  border: 3px solid #c8f542;
+  color: #c8f542;
+  font-family: "Fraunces", Georgia, serif;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  transform: rotate(-8deg);
+  box-shadow: inset 0 0 0 4px rgba(200, 245, 66, 0.12);
 }
+.human-onboard-file-picker { display: grid; gap: 8px; }
 .human-onboard-file-input {
   position: absolute;
   width: 1px;
@@ -79,34 +288,24 @@ function ensureOnboardingStyles(): void {
   display: grid;
   justify-items: center;
   gap: 8px;
-  padding: 20px 16px;
-  border-radius: 10px;
-  border: 1px dashed rgba(148, 163, 184, 0.5);
-  background: linear-gradient(180deg, rgba(2, 6, 23, 0.6) 0%, rgba(15, 23, 42, 0.35) 100%);
+  min-height: 96px;
+  padding: 22px 16px;
+  border-radius: 18px;
+  border: 1px dashed rgba(200, 245, 66, 0.35);
+  background: rgba(7, 16, 24, 0.65);
   cursor: pointer;
-  transition: border-color 0.15s ease, background 0.15s ease, box-shadow 0.15s ease;
   text-align: center;
+  transition: border-color 0.15s ease, background 0.15s ease, box-shadow 0.15s ease;
 }
-.human-onboard-file-zone:hover {
-  border-color: rgba(96, 165, 250, 0.75);
-  background: linear-gradient(180deg, rgba(2, 6, 23, 0.85) 0%, rgba(30, 58, 138, 0.2) 100%);
-  box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.15);
-}
+.human-onboard-file-zone:hover,
+.human-onboard-file-picker.is-dragover .human-onboard-file-zone,
 .human-onboard-file-zone:focus-within {
-  outline: none;
-  border-color: rgba(96, 165, 250, 0.9);
-  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.35);
-}
-.human-onboard-file-picker.is-dragover .human-onboard-file-zone {
-  border-color: rgba(96, 165, 250, 0.95);
-  background: linear-gradient(180deg, rgba(2, 6, 23, 0.9) 0%, rgba(30, 58, 138, 0.32) 100%);
-  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.3);
+  border-color: rgba(200, 245, 66, 0.8);
+  box-shadow: 0 0 0 3px rgba(200, 245, 66, 0.12);
 }
 .human-onboard-file-zone.has-file {
   border-style: solid;
-  border-color: rgba(34, 197, 94, 0.55);
-  background: linear-gradient(180deg, rgba(2, 6, 23, 0.75) 0%, rgba(20, 83, 45, 0.18) 100%);
-  padding: 14px 16px;
+  border-color: rgba(56, 189, 248, 0.55);
 }
 .human-onboard-file-picker.is-disabled .human-onboard-file-zone {
   pointer-events: none;
@@ -116,83 +315,50 @@ function ensureOnboardingStyles(): void {
 .human-onboard-file-badge {
   display: grid;
   place-items: center;
-  width: 44px;
-  height: 52px;
-  border-radius: 8px;
-  border: 1px solid rgba(148, 163, 184, 0.45);
-  background: rgba(15, 23, 42, 0.9);
-  position: relative;
-  overflow: hidden;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
-}
-.human-onboard-file-badge::before {
-  content: "";
-  position: absolute;
-  top: 0;
-  right: 0;
-  width: 14px;
-  height: 14px;
-  background: rgba(148, 163, 184, 0.25);
-  border-bottom-left-radius: 4px;
+  width: 48px;
+  height: 56px;
+  border-radius: 10px;
+  border: 1px solid rgba(200, 245, 66, 0.35);
+  background: rgba(200, 245, 66, 0.08);
 }
 .human-onboard-file-badge span {
   font-size: 10px;
   font-weight: 700;
-  letter-spacing: 0.06em;
-  color: #93c5fd;
-}
-.human-onboard-file-zone.has-file .human-onboard-file-badge {
-  border-color: rgba(74, 222, 128, 0.45);
-}
-.human-onboard-file-zone.has-file .human-onboard-file-badge span {
-  color: #86efac;
+  letter-spacing: 0.08em;
+  color: #c8f542;
 }
 .human-onboard-file-prompt {
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 600;
-  color: #e2e8f0;
-}
-.human-onboard-file-sub {
-  font-size: 11px;
-  line-height: 1.4;
-  color: #94a3b8;
-  max-width: 280px;
-}
-.human-onboard-file-zone.has-file .human-onboard-file-sub,
-.human-onboard-file-zone.has-file .human-onboard-file-cta {
-  display: none;
+  color: #f7fafc;
 }
 .human-onboard-file-cta {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  margin-top: 2px;
-  padding: 6px 14px;
-  border-radius: 6px;
-  font-size: 11px;
-  font-weight: 600;
-  color: #dbeafe;
-  background: rgba(37, 99, 235, 0.35);
-  border: 1px solid rgba(59, 130, 246, 0.5);
+  min-height: 44px;
+  padding: 10px 14px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #071018;
+  background: #c8f542;
   pointer-events: none;
+  touch-action: manipulation;
 }
 .human-onboard-file-meta {
   display: flex;
   align-items: center;
   gap: 8px;
-  min-height: 32px;
-  padding: 7px 10px;
-  border-radius: 8px;
-  background: rgba(2, 6, 23, 0.65);
-  border: 1px solid rgba(148, 163, 184, 0.25);
-  font-size: 11px;
-  color: #94a3b8;
+  min-height: 44px;
+  padding: 8px 12px;
+  border-radius: 12px;
+  background: rgba(7, 16, 24, 0.65);
+  border: 1px solid rgba(232, 238, 245, 0.1);
+  font-size: 12px;
+  color: rgba(232, 238, 245, 0.7);
 }
-.human-onboard-file-meta.has-file {
-  color: #cbd5e1;
-  border-color: rgba(74, 222, 128, 0.35);
-  background: rgba(20, 83, 45, 0.1);
-}
+.human-onboard-file-meta.has-file { color: #dbe7f3; border-color: rgba(56, 189, 248, 0.35); }
 .human-onboard-file-meta-dot {
   flex-shrink: 0;
   width: 8px;
@@ -201,8 +367,7 @@ function ensureOnboardingStyles(): void {
   background: rgba(148, 163, 184, 0.5);
 }
 .human-onboard-file-meta.has-file .human-onboard-file-meta-dot {
-  background: #4ade80;
-  box-shadow: 0 0 0 2px rgba(74, 222, 128, 0.25);
+  background: #38bdf8;
 }
 .human-onboard-file-meta-name {
   flex: 1;
@@ -211,55 +376,85 @@ function ensureOnboardingStyles(): void {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.human-onboard-file-meta:not(.has-file) .human-onboard-file-clear {
-  display: none;
-}
+.human-onboard-file-meta:not(.has-file) .human-onboard-file-clear { display: none; }
 .human-onboard-file-clear {
   flex-shrink: 0;
   border: none;
   background: transparent;
-  color: #93c5fd;
-  font-size: 11px;
-  font-weight: 500;
+  color: #c8f542;
+  font-size: 12px;
+  font-weight: 600;
   cursor: pointer;
-  padding: 2px 6px;
-  border-radius: 4px;
-}
-.human-onboard-file-clear:hover {
-  background: rgba(59, 130, 246, 0.15);
-}
-.human-onboard-file-clear:disabled {
-  cursor: not-allowed;
-  opacity: 0.5;
+  min-height: 44px;
+  padding: 10px 14px;
+  border-radius: 8px;
+  touch-action: manipulation;
 }
 .human-onboard-link {
   background: none;
   border: none;
-  padding: 0;
-  font-size: 11px;
-  color: #93c5fd;
+  min-height: 44px;
+  padding: 10px 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: #7dd3fc;
   cursor: pointer;
   text-align: left;
   text-decoration: underline;
+  text-underline-offset: 3px;
+  touch-action: manipulation;
 }
-.human-onboard-actions { display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; }
-.human-onboard-actions button {
-  border-radius: 8px;
-  padding: 8px 12px;
-  font-size: 12px;
+.human-onboard-link--quiet {
+  color: rgba(232, 238, 245, 0.55);
+  font-weight: 500;
+  text-decoration: none;
+}
+.human-onboard-link--quiet:hover { color: rgba(232, 238, 245, 0.85); }
+.human-onboard-link-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  min-height: 48px;
+  padding: 12px 16px;
+  border-radius: 14px;
+  font-size: 14px;
+  font-weight: 700;
+  text-decoration: none;
   cursor: pointer;
-  border: 1px solid rgba(59, 130, 246, 0.55);
-  background: rgba(37, 99, 235, 0.85);
-  color: #fff;
+  border: 1px solid #c8f542;
+  background: #c8f542;
+  color: #071018;
+  touch-action: manipulation;
+}
+.human-onboard-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-start;
+  flex-wrap: wrap;
+  margin-top: 4px;
+}
+.human-onboard-actions button,
+.human-onboard-actions .human-onboard-link-btn {
+  border-radius: 14px;
+  min-height: 48px;
+  padding: 12px 16px;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  border: 1px solid #c8f542;
+  background: #c8f542;
+  color: #071018;
+  touch-action: manipulation;
 }
 .human-onboard-actions button.secondary {
   background: transparent;
-  color: #cbd5e1;
-  border-color: rgba(148, 163, 184, 0.45);
+  color: #e8eef5;
+  border-color: rgba(232, 238, 245, 0.22);
 }
 .human-onboard-actions button:disabled {
   cursor: not-allowed;
-  opacity: 0.85;
+  opacity: 0.45;
 }
 .human-onboard-btn-wrap {
   position: relative;
@@ -271,25 +466,83 @@ function ensureOnboardingStyles(): void {
   inset: 0;
   align-items: center;
   justify-content: center;
-  background: rgba(15, 23, 42, 0.72);
-  border-radius: 8px;
+  background: rgba(7, 16, 24, 0.55);
+  border-radius: 14px;
   pointer-events: none;
 }
-.human-onboard-btn-wrap.is-loading .human-onboard-btn-loading {
-  display: flex;
-}
+.human-onboard-btn-wrap.is-loading .human-onboard-btn-loading { display: flex; }
 .human-onboard-spinner {
   width: 22px;
   height: 22px;
-  border: 2px solid rgba(255, 255, 255, 0.2);
-  border-top-color: #fff;
+  border: 2px solid rgba(7, 16, 24, 0.25);
+  border-top-color: #071018;
   border-radius: 50%;
   animation: human-onboard-spin 0.65s linear infinite;
 }
 @keyframes human-onboard-spin {
   to { transform: rotate(360deg); }
 }
-.human-onboard-error { font-size: 11px; color: #fca5a5; }
+.human-onboard-error { font-size: 12px; color: #fda4af; }
+.arrival-citizen-node {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  word-break: break-all;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: rgba(94, 124, 110, 0.12);
+  color: #0f172a;
+}
+.human-onboard-card {
+  display: contents;
+}
+@media (max-width: 860px) {
+  .human-onboard-stage {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+  .human-onboard-hero {
+    min-height: 0;
+    padding: 22px 20px;
+  }
+}
+@media (max-width: 767px) {
+  .human-onboard-overlay {
+    place-items: end center;
+    align-items: end;
+    padding-left: max(0px, env(safe-area-inset-left));
+    padding-right: max(0px, env(safe-area-inset-right));
+    padding-bottom: 0;
+    padding-top: max(12px, env(safe-area-inset-top));
+  }
+  .human-onboard-stage {
+    width: 100%;
+    gap: 0;
+  }
+  .human-onboard-hero {
+    display: none;
+  }
+  .human-onboard-panel {
+    width: 100%;
+    max-width: none;
+    border-radius: 22px 22px 0 0;
+    max-height: min(85dvh, 640px);
+    padding: 22px 16px max(16px, env(safe-area-inset-bottom));
+  }
+  .human-onboard-actions,
+  .human-onboard-actions--citizen {
+    flex-direction: column;
+    align-items: stretch;
+    width: 100%;
+  }
+  .human-onboard-actions .human-onboard-btn-wrap,
+  .human-onboard-actions button,
+  .human-onboard-actions .human-onboard-link-btn {
+    width: 100%;
+  }
+  .human-onboard-actions .human-onboard-btn-wrap button {
+    width: 100%;
+  }
+}
 `;
   document.head.append(s);
 }
@@ -297,42 +550,161 @@ function ensureOnboardingStyles(): void {
 export type HumanOnboardingOptions = {
   apiBase: string;
   getSid: () => string | null;
+  onOverlayShown?: () => void;
+};
+
+type InductionStep = "welcome" | "papers" | "sealed";
+
+const truncateNodeId = (nodeId: string): string => {
+  if (nodeId.length <= 18) {
+    return nodeId;
+  }
+  return `${nodeId.slice(0, 8)}…${nodeId.slice(-6)}`;
+};
+
+const createStepRail = (active: InductionStep): HTMLElement => {
+  const rail = document.createElement("div");
+  rail.className = "human-onboard-steps";
+  const steps: Array<{ id: InductionStep; label: string }> = [
+    { id: "welcome", label: "1 Welcome" },
+    { id: "papers", label: "2 Papers" },
+    { id: "sealed", label: "3 Seal" },
+  ];
+  const activeIndex = steps.findIndex((step) => step.id === active);
+  for (const [index, step] of steps.entries()) {
+    const el = document.createElement("span");
+    el.className = "human-onboard-step";
+    if (index < activeIndex) {
+      el.classList.add("is-done");
+    }
+    if (index === activeIndex) {
+      el.classList.add("is-active");
+    }
+    el.textContent = step.label;
+    rail.append(el);
+  }
+  return rail;
+};
+
+const fillHero = (hero: HTMLElement): void => {
+  hero.replaceChildren();
+  const kicker = document.createElement("p");
+  kicker.className = "human-onboard-kicker";
+  kicker.textContent = "Citizen induction";
+  const brand = document.createElement("h1");
+  brand.className = "human-onboard-brand";
+  brand.textContent = "Agent Play";
+  const copy = document.createElement("p");
+  copy.className = "human-onboard-hero-copy";
+  copy.textContent =
+    "Claim citizenship before you enter the spatial AI agent metaverse. Your Player ID unlocks wallet, agent talk, and Econext.";
+  const streets = document.createElement("div");
+  streets.className = "human-onboard-street-rail";
+  for (const label of [
+    "St. John St · agents",
+    "Peterson St · amenities",
+    "Maple Ave · arcade",
+  ]) {
+    const chip = document.createElement("span");
+    chip.className = "human-onboard-street-chip";
+    chip.textContent = label;
+    streets.append(chip);
+  }
+  hero.append(kicker, brand, copy, streets);
 };
 
 function showOnboardingSuccessCard(options: {
-  card: HTMLElement;
-  heading: string;
-  copy: string;
+  panel: HTMLElement;
+  hero: HTMLElement;
   nodeId: string;
   passw: string;
   serverUrl: string;
+  requireBackup: boolean;
+  copy: string;
   onContinue: () => void;
 }): void {
-  options.card.replaceChildren();
-  const successHeading = document.createElement("h2");
-  successHeading.textContent = options.heading;
-  const successCopy = document.createElement("p");
-  successCopy.textContent = options.copy;
+  fillHero(options.hero);
+  options.panel.replaceChildren();
+  options.panel.append(createStepRail("sealed"));
+  let backupReady = !options.requireBackup;
+  const seal = document.createElement("div");
+  seal.className = "human-onboard-seal";
+  seal.textContent = "Sealed";
+  const title = document.createElement("h2");
+  title.className = "human-onboard-title";
+  title.textContent = "Citizenship sealed";
+  const lead = document.createElement("p");
+  lead.className = "human-onboard-lead";
+  lead.textContent = options.copy;
+  const nodeEl = document.createElement("div");
+  nodeEl.className = "human-onboard-node-id";
+  nodeEl.textContent = truncateNodeId(options.nodeId);
+  nodeEl.title = options.nodeId;
+  const friendsCopy = document.createElement("p");
+  friendsCopy.className = "human-onboard-lead";
+  friendsCopy.textContent = "Friends send APU to this node id.";
   const downloadBtn = document.createElement("button");
   downloadBtn.type = "button";
   downloadBtn.textContent = "Download credentials.json";
+  const savedLabel = document.createElement("label");
+  const savedBox = document.createElement("input");
+  savedBox.type = "checkbox";
+  savedBox.dataset.onboardSavedKey = "1";
+  const savedText = document.createElement("span");
+  savedText.textContent = "I saved my recovery key";
+  savedLabel.append(savedBox, savedText);
   const continueBtn = document.createElement("button");
   continueBtn.type = "button";
   continueBtn.className = "secondary";
-  continueBtn.textContent = "Continue";
-  const successActions = document.createElement("div");
-  successActions.className = "human-onboard-actions";
-  successActions.append(downloadBtn, continueBtn);
-  options.card.append(successHeading, successCopy, successActions);
+  continueBtn.textContent = "Enter Agent Play World";
+  continueBtn.disabled = options.requireBackup;
+  const syncContinue = (): void => {
+    backupReady = !options.requireBackup || savedBox.checked;
+    continueBtn.disabled = options.requireBackup && !backupReady;
+  };
+  const actions = document.createElement("div");
+  actions.className = "human-onboard-actions";
+  actions.append(downloadBtn, continueBtn);
+  options.panel.append(
+    seal,
+    title,
+    lead,
+    nodeEl,
+    friendsCopy,
+    ...(options.requireBackup ? [savedLabel] : []),
+    actions
+  );
   downloadBtn.addEventListener("click", () => {
     downloadHumanCredentialsJson({
       nodeId: options.nodeId,
       passw: options.passw,
       serverUrl: options.serverUrl,
     });
+    if (options.requireBackup) {
+      savedBox.checked = true;
+      syncContinue();
+    }
   });
-  continueBtn.addEventListener("click", options.onContinue);
+  savedBox.addEventListener("change", syncContinue);
+  continueBtn.addEventListener("click", () => {
+    if (options.requireBackup && !savedBox.checked) {
+      return;
+    }
+    options.onContinue();
+  });
 }
+
+const writeGuestCredentials = (
+  options: HumanOnboardingOptions,
+  passw: string
+): void => {
+  const sid = options.getSid();
+  writeHumanCredentials({
+    nodeId:
+      sid !== null ? `session-${sid.slice(0, 12)}` : "preview-local-node",
+    passw,
+  });
+};
 
 export async function ensureHumanNodeOnboarding(
   options: HumanOnboardingOptions
@@ -345,174 +717,37 @@ export async function ensureHumanNodeOnboarding(
   const serverUrl = resolveDeploymentServerUrlFromApiBase(options.apiBase);
   await new Promise<void>((resolve) => {
     const overlay = document.createElement("div");
-    overlay.className = "human-onboard-overlay";
-    const card = document.createElement("div");
-    card.className = "human-onboard-card";
+    overlay.className = "human-onboard-overlay human-onboard-overlay--opaque";
+    overlay.setAttribute("data-arrival-onboarding", "1");
+    const stage = document.createElement("div");
+    stage.className = "human-onboard-stage";
+    const hero = document.createElement("aside");
+    hero.className = "human-onboard-hero";
+    const panel = document.createElement("section");
+    panel.className = "human-onboard-panel";
     const err = document.createElement("div");
     err.className = "human-onboard-error";
+    stage.append(hero, panel);
+    overlay.append(stage);
 
-    const renderCreateView = (): void => {
-      card.replaceChildren();
-      const heading = document.createElement("h2");
-      heading.textContent = "Human node on player chain";
-      const copy = document.createElement("p");
-      copy.textContent =
-        "Consent places a reusable main node for this browser tab. Your passphrase is generated locally; we hash it in the browser and send only that material to register the node (same rules as agent-play create-main-node). Save the passphrase and credentials before continuing.";
-      const restoreLink = document.createElement("button");
-      restoreLink.type = "button";
-      restoreLink.className = "human-onboard-link";
-      restoreLink.textContent =
-        "Already have credentials.json? Restore your main node";
-      const consentLabel = document.createElement("label");
-      const consentBox = document.createElement("input");
-      consentBox.type = "checkbox";
-      const consentText = document.createElement("span");
-      consentText.textContent =
-        "I agree to create a main node for Agent Play World in this session.";
-      consentLabel.append(consentBox, consentText);
-      const phraseLabel = document.createElement("div");
-      phraseLabel.style.fontSize = "11px";
-      phraseLabel.style.color = "#94a3b8";
-      phraseLabel.textContent = "Generated passphrase (save this once):";
-      const phraseArea = document.createElement("textarea");
-      phraseArea.readOnly = true;
-      phraseArea.value = passw;
-      const actions = document.createElement("div");
-      actions.className = "human-onboard-actions";
-      const createBtnWrap = document.createElement("div");
-      createBtnWrap.className = "human-onboard-btn-wrap";
-      const createBtn = document.createElement("button");
-      createBtn.type = "button";
-      createBtn.textContent = "Create main node";
-      const createLoading = document.createElement("div");
-      createLoading.className = "human-onboard-btn-loading";
-      createLoading.setAttribute("aria-hidden", "true");
-      const createSpinner = document.createElement("div");
-      createSpinner.className = "human-onboard-spinner";
-      createLoading.appendChild(createSpinner);
-      createBtnWrap.append(createBtn, createLoading);
-      const skipBtn = document.createElement("button");
-      skipBtn.type = "button";
-      skipBtn.className = "secondary";
-      skipBtn.textContent = "Skip (limited intercom)";
-      actions.append(skipBtn, createBtnWrap);
-      card.append(
-        heading,
-        copy,
-        restoreLink,
-        consentLabel,
-        phraseLabel,
-        phraseArea,
-        err,
-        actions
-      );
-
-      restoreLink.addEventListener("click", () => {
-        err.textContent = "";
-        renderRestoreView();
-      });
-
-      skipBtn.addEventListener("click", () => {
-        const sid = options.getSid();
-        writeHumanCredentials({
-          nodeId:
-            sid !== null
-              ? `session-${sid.slice(0, 12)}`
-              : "preview-local-node",
-          passw,
-        });
-        overlay.remove();
-        resolve();
-      });
-
-      createBtn.addEventListener("click", () => {
-        err.textContent = "";
-        if (!consentBox.checked) {
-          err.textContent = "Consent is required.";
-          return;
-        }
-        const sid = options.getSid();
-        if (sid === null) {
-          err.textContent = "Session not ready.";
-          return;
-        }
-        const setCreating = (busy: boolean): void => {
-          createBtn.disabled = busy;
-          skipBtn.disabled = busy;
-          restoreLink.disabled = busy;
-          createBtn.setAttribute("aria-busy", busy ? "true" : "false");
-          createBtnWrap.classList.toggle("is-loading", busy);
-        };
-        void (async () => {
-          setCreating(true);
-          try {
-            const rootKey = await resolveAgentPlayRootKeyForBrowser({
-              apiBase: options.apiBase,
-            });
-            const credential = nodeCredentialFromHumanPhrase({
-              phrase: passw,
-              rootKey,
-            });
-            const res = await fetch(
-              `${options.apiBase}/sdk/rpc?sid=${encodeURIComponent(sid)}`,
-              {
-                method: "POST",
-                headers: { "content-type": "application/json" },
-                body: JSON.stringify({
-                  op: CREATE_HUMAN_NODE_OP,
-                  payload: {
-                    consent: true,
-                    nodeId: credential.nodeId,
-                    passwHash: credential.passwHash,
-                  },
-                }),
-              }
-            );
-            const text = await res.text();
-            if (!res.ok) {
-              throw new Error(text);
-            }
-            const json = JSON.parse(text) as { nodeId?: unknown };
-            if (typeof json.nodeId !== "string") {
-              throw new Error("invalid createHumanNode response");
-            }
-            const nodeId = json.nodeId;
-            if (nodeId !== credential.nodeId) {
-              throw new Error(
-                "createHumanNode: server node id does not match local derivation"
-              );
-            }
-            writeHumanCredentials({ nodeId, passw });
-            showOnboardingSuccessCard({
-              card,
-              heading: "Main node created",
-              copy: "Your node id is stored for this tab. Download credentials.json to keep a backup (includes your passphrase).",
-              nodeId,
-              passw,
-              serverUrl,
-              onContinue: () => {
-                overlay.remove();
-                resolve();
-              },
-            });
-          } catch (e) {
-            err.textContent =
-              e instanceof Error ? e.message : "createHumanNode failed";
-            setCreating(false);
-          }
-        })();
-      });
+    const finish = (): void => {
+      overlay.remove();
+      resolve();
     };
 
     const renderRestoreView = (): void => {
-      card.replaceChildren();
+      fillHero(hero);
+      panel.replaceChildren();
+      panel.append(createStepRail("papers"));
       let uploadedJson: unknown = null;
       let uploadedFileName = "";
-      const heading = document.createElement("h2");
-      heading.textContent = "Restore main node";
-      const copy = document.createElement("p");
-      copy.textContent =
-        "Upload credentials.json from agent-play create-main-node or a previous browser backup. We verify your passphrase locally, then confirm the main node exists on this server before reconnecting this tab.";
+      const title = document.createElement("h2");
+      title.className = "human-onboard-title";
+      title.textContent = "Restore citizenship";
+      const lead = document.createElement("p");
+      lead.className = "human-onboard-lead";
+      lead.textContent =
+        "Upload credentials.json from a previous backup. We verify your recovery key locally, then reconnect this tab.";
       const filePicker = document.createElement("div");
       filePicker.className = "human-onboard-file-picker";
       const fileZone = document.createElement("label");
@@ -597,7 +832,7 @@ export async function ensureHumanNodeOnboarding(
       connectBtnWrap.className = "human-onboard-btn-wrap";
       const connectBtn = document.createElement("button");
       connectBtn.type = "button";
-      connectBtn.textContent = "Connect";
+      connectBtn.textContent = "Reconnect";
       connectBtn.disabled = true;
       const connectLoading = document.createElement("div");
       connectLoading.className = "human-onboard-btn-loading";
@@ -606,12 +841,12 @@ export async function ensureHumanNodeOnboarding(
       connectSpinner.className = "human-onboard-spinner";
       connectLoading.appendChild(connectSpinner);
       connectBtnWrap.append(connectBtn, connectLoading);
-      const skipBtn = document.createElement("button");
-      skipBtn.type = "button";
-      skipBtn.className = "secondary";
-      skipBtn.textContent = "Skip (limited intercom)";
-      actions.append(backBtn, skipBtn, connectBtnWrap);
-      card.append(heading, copy, filePicker, err, actions);
+      const guestBtn = document.createElement("button");
+      guestBtn.type = "button";
+      guestBtn.className = "human-onboard-link human-onboard-link--quiet";
+      guestBtn.textContent = "Continue as guest (no earn / no chat)";
+      actions.append(connectBtnWrap, backBtn);
+      panel.append(title, lead, filePicker, err, actions, guestBtn);
 
       fileInput.addEventListener("change", () => {
         err.textContent = "";
@@ -622,13 +857,14 @@ export async function ensureHumanNodeOnboarding(
         }
         applySelectedFile(file);
       });
-
+      fileInput.addEventListener("focus", () => {
+        fileZone.scrollIntoView({ block: "nearest" });
+      });
       fileClearBtn.addEventListener("click", (e) => {
         e.preventDefault();
         err.textContent = "";
         resetFileSelection();
       });
-
       fileZone.addEventListener("dragenter", (e) => {
         e.preventDefault();
         if (!filePicker.classList.contains("is-disabled")) {
@@ -657,25 +893,14 @@ export async function ensureHumanNodeOnboarding(
         }
         applySelectedFile(file);
       });
-
       backBtn.addEventListener("click", () => {
         err.textContent = "";
-        renderCreateView();
+        renderArrivalView();
       });
-
-      skipBtn.addEventListener("click", () => {
-        const sid = options.getSid();
-        writeHumanCredentials({
-          nodeId:
-            sid !== null
-              ? `session-${sid.slice(0, 12)}`
-              : "preview-local-node",
-          passw,
-        });
-        overlay.remove();
-        resolve();
+      guestBtn.addEventListener("click", () => {
+        writeGuestCredentials(options, passw);
+        finish();
       });
-
       connectBtn.addEventListener("click", () => {
         err.textContent = "";
         if (uploadedJson === null) {
@@ -691,7 +916,7 @@ export async function ensureHumanNodeOnboarding(
         const setConnecting = (busy: boolean): void => {
           connectBtn.disabled = busy || uploadedJson === null;
           backBtn.disabled = busy;
-          skipBtn.disabled = busy;
+          guestBtn.disabled = busy;
           fileInput.disabled = busy;
           setFilePickerDisabled(busy);
           connectBtn.setAttribute("aria-busy", busy ? "true" : "false");
@@ -714,19 +939,17 @@ export async function ensureHumanNodeOnboarding(
               passw: parsed.passw,
             });
             showOnboardingSuccessCard({
-              card,
-              heading: "Main node restored",
+              panel,
+              hero,
               copy:
                 uploadedFileName.length > 0
-                  ? `Connected using ${uploadedFileName}. Your node id is stored for this tab.`
-                  : "Your node id is stored for this tab.",
+                  ? `Reconnected with ${uploadedFileName}. Keep a backup of your papers.`
+                  : "Your citizenship is restored for this tab.",
               nodeId: restored.nodeId,
               passw: parsed.passw,
               serverUrl,
-              onContinue: () => {
-                overlay.remove();
-                resolve();
-              },
+              requireBackup: false,
+              onContinue: finish,
             });
           } catch (e) {
             err.textContent =
@@ -737,8 +960,186 @@ export async function ensureHumanNodeOnboarding(
       });
     };
 
-    overlay.append(card);
+    const renderPassportView = (): void => {
+      fillHero(hero);
+      panel.replaceChildren();
+      panel.append(createStepRail("papers"));
+      const title = document.createElement("h2");
+      title.className = "human-onboard-title";
+      title.textContent = "Issue your papers";
+      const lead = document.createElement("p");
+      lead.className = "human-onboard-lead";
+      lead.textContent =
+        "This creates your Player ID — the passport for wallet, agent chat, and Econext banking.";
+      const restoreLink = document.createElement("button");
+      restoreLink.type = "button";
+      restoreLink.className = "human-onboard-link";
+      restoreLink.textContent = "Already a citizen? Restore papers";
+      const consentLabel = document.createElement("label");
+      const consentBox = document.createElement("input");
+      consentBox.type = "checkbox";
+      const consentText = document.createElement("span");
+      consentText.textContent =
+        "I agree to issue my Player ID for Agent Play World in this session.";
+      consentLabel.append(consentBox, consentText);
+      const phraseLabel = document.createElement("div");
+      phraseLabel.className = "human-onboard-phrase-label";
+      phraseLabel.textContent = "Recovery key";
+      const phraseArea = document.createElement("textarea");
+      phraseArea.readOnly = true;
+      phraseArea.value = passw;
+      phraseArea.addEventListener("focus", () => {
+        phraseArea.scrollIntoView({ block: "nearest" });
+      });
+      const actions = document.createElement("div");
+      actions.className = "human-onboard-actions";
+      const createBtnWrap = document.createElement("div");
+      createBtnWrap.className = "human-onboard-btn-wrap";
+      const createBtn = document.createElement("button");
+      createBtn.type = "button";
+      createBtn.textContent = "Become a citizen";
+      const createLoading = document.createElement("div");
+      createLoading.className = "human-onboard-btn-loading";
+      createLoading.setAttribute("aria-hidden", "true");
+      const createSpinner = document.createElement("div");
+      createSpinner.className = "human-onboard-spinner";
+      createLoading.appendChild(createSpinner);
+      createBtnWrap.append(createBtn, createLoading);
+      const guestBtn = document.createElement("button");
+      guestBtn.type = "button";
+      guestBtn.className = "human-onboard-link human-onboard-link--quiet";
+      guestBtn.textContent = "Continue as guest (no earn / no chat)";
+      actions.append(createBtnWrap);
+      panel.append(
+        title,
+        lead,
+        restoreLink,
+        consentLabel,
+        phraseLabel,
+        phraseArea,
+        err,
+        actions,
+        guestBtn
+      );
+
+      restoreLink.addEventListener("click", () => {
+        err.textContent = "";
+        renderRestoreView();
+      });
+      guestBtn.addEventListener("click", () => {
+        writeGuestCredentials(options, passw);
+        finish();
+      });
+      createBtn.addEventListener("click", () => {
+        err.textContent = "";
+        if (!consentBox.checked) {
+          err.textContent = "Consent is required.";
+          return;
+        }
+        const sid = options.getSid();
+        if (sid === null) {
+          err.textContent = "Session not ready.";
+          return;
+        }
+        const setCreating = (busy: boolean): void => {
+          createBtn.disabled = busy;
+          guestBtn.disabled = busy;
+          restoreLink.disabled = busy;
+          createBtn.setAttribute("aria-busy", busy ? "true" : "false");
+          createBtnWrap.classList.toggle("is-loading", busy);
+        };
+        void (async () => {
+          setCreating(true);
+          try {
+            const rootKey = await resolveAgentPlayRootKeyForBrowser({
+              apiBase: options.apiBase,
+            });
+            const credential = nodeCredentialFromHumanPhrase({
+              phrase: passw,
+              rootKey,
+            });
+            const res = await fetch(
+              `${options.apiBase}/sdk/rpc?sid=${encodeURIComponent(sid)}`,
+              {
+                method: "POST",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({
+                  op: CREATE_HUMAN_NODE_OP,
+                  payload: {
+                    consent: true,
+                    nodeId: credential.nodeId,
+                    passwHash: credential.passwHash,
+                  },
+                }),
+              }
+            );
+            const text = await res.text();
+            if (!res.ok) {
+              throw new Error(text);
+            }
+            const json = JSON.parse(text) as { nodeId?: unknown };
+            if (typeof json.nodeId !== "string") {
+              throw new Error("invalid createHumanNode response");
+            }
+            const nodeId = json.nodeId;
+            if (nodeId !== credential.nodeId) {
+              throw new Error(
+                "createHumanNode: server node id does not match local derivation"
+              );
+            }
+            writeHumanCredentials({ nodeId, passw });
+            showOnboardingSuccessCard({
+              panel,
+              hero,
+              copy: "Download your papers before entering. Your recovery key is inside credentials.json.",
+              nodeId,
+              passw,
+              serverUrl,
+              requireBackup: true,
+              onContinue: finish,
+            });
+          } catch (e) {
+            err.textContent =
+              e instanceof Error ? e.message : "createHumanNode failed";
+            setCreating(false);
+          }
+        })();
+      });
+    };
+
+    const renderArrivalView = (): void => {
+      fillHero(hero);
+      panel.replaceChildren();
+      err.textContent = "";
+      panel.append(createStepRail("welcome"));
+      const title = document.createElement("h2");
+      title.className = "human-onboard-title";
+      title.textContent = "Become a citizen";
+      const lead = document.createElement("p");
+      lead.className = "human-onboard-lead";
+      lead.textContent =
+        "Citizenship is your ticket in. Issue papers once, keep your recovery key, then enter the world to earn, talk, and bank.";
+      const actions = document.createElement("div");
+      actions.className = "human-onboard-actions";
+      const enterBtn = document.createElement("button");
+      enterBtn.type = "button";
+      enterBtn.textContent = "Start citizenship";
+      const restoreLink = document.createElement("button");
+      restoreLink.type = "button";
+      restoreLink.className = "human-onboard-link";
+      restoreLink.textContent = "I already have credentials";
+      actions.append(enterBtn);
+      panel.append(title, lead, restoreLink, actions);
+      enterBtn.addEventListener("click", () => {
+        renderPassportView();
+      });
+      restoreLink.addEventListener("click", () => {
+        renderRestoreView();
+      });
+    };
+
     document.body.append(overlay);
-    renderCreateView();
+    options.onOverlayShown?.();
+    renderArrivalView();
   });
 }

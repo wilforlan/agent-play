@@ -1,10 +1,35 @@
 import { reportPresentationEvent } from "./presentation-analytics.js";
+import { createChatComposer } from "./chat-composer.js";
+import { createChatMessageActions } from "./chat-message-actions.js";
+import {
+  buildMessageDeepLink,
+  highlightMessageElement,
+  parseMessageDeepLink,
+} from "./chat-message-deep-link.js";
+import {
+  applyMessageReaction,
+  createEmptyMessageReactions,
+  normalizeMessageReactions,
+  type MessageReactionAction,
+  type MessageReactionKind,
+  type MessageReactions,
+} from "./chat-message-reactions.js";
+import {
+  attachChatPanelResize,
+  isLargeScreenForPanelResize,
+} from "./chat-panel-resize.js";
+import {
+  canReplyToDepth,
+  sortThreadedMessages,
+  type ReplyDepth,
+} from "./chat-reply-threading.js";
 
 const STYLE_ID = "agent-play-preview-global-chat-room-styles";
 const INITIAL_PAGE_SIZE = 100;
 const MAX_GLOBAL_LINES = 5000;
 const WORLD_CHAT_PUBLISH_OP = "worldChatPublish";
 const WORLD_CHAT_HISTORY_OP = "worldChatHistory";
+const WORLD_CHAT_REACT_OP = "worldChatReact";
 const P2A_HELP_PATH = "/agent-play-p2a-implementation";
 
 export type GlobalChatLine = {
@@ -25,6 +50,9 @@ export type GlobalChatLine = {
     title?: string;
   };
   ts: string;
+  parentRequestId: string | null;
+  depth: ReplyDepth;
+  reactions: MessageReactions;
 };
 
 type WorldChatHistoryResponse = {
@@ -34,6 +62,9 @@ type WorldChatHistoryResponse = {
     fromPlayerId: string;
     message: string;
     ts: string;
+    parentRequestId?: string;
+    depth?: number;
+    reactions?: unknown;
   }>;
   hasMore: boolean;
   totalCount: number;
@@ -64,11 +95,28 @@ function ensureStyles(): void {
   flex-direction: column;
   gap: 8px;
   min-height: 280px;
-  max-height: min(70vh, 560px);
+  max-height: min(70vh, 640px);
   padding: 10px;
   border-radius: 12px;
   border: 1px solid rgba(56, 189, 248, 0.35);
   background: linear-gradient(180deg, rgba(15, 23, 42, 0.92), rgba(30, 41, 59, 0.9));
+  font-family: "Source Sans 3", "Segoe UI", ui-sans-serif, system-ui, sans-serif;
+}
+.preview-global-chat-room.preview-floating-panel {
+  width: var(--world-chat-panel-w, min(360px, calc(100vw - 24px)));
+  max-height: var(--world-chat-panel-h, min(70vh, 640px));
+  height: auto;
+  min-height: 0;
+}
+.preview-global-chat-room.preview-floating-panel--collapsed {
+  width: min(360px, calc(100vw - 24px));
+  height: auto;
+  min-height: 0;
+  max-height: 58px;
+  overflow: hidden;
+}
+.preview-global-chat-room.preview-floating-panel--collapsed .chat-panel-resize__handle {
+  display: none;
 }
 .preview-global-chat-room__title-row {
   display: flex;
@@ -78,16 +126,18 @@ function ensureStyles(): void {
 }
 .preview-global-chat-room__title {
   margin: 0;
-  font-size: 12px;
+  font-size: 13px;
   color: #f8fafc;
-  letter-spacing: 0.03em;
+  letter-spacing: 0.02em;
   text-transform: uppercase;
-  font-family: "Press Start 2P", ui-monospace, monospace;
+  font-family: "Source Sans 3", "Segoe UI", ui-sans-serif, system-ui, sans-serif;
+  font-weight: 700;
 }
 .preview-global-chat-room__count {
-  font-size: 10px;
+  font-size: 12px;
   color: #fde68a;
-  font-family: "Press Start 2P", ui-monospace, monospace;
+  font-family: "Source Sans 3", "Segoe UI", ui-sans-serif, system-ui, sans-serif;
+  font-variant-numeric: tabular-nums;
 }
 .preview-global-chat-room__title-tools {
   display: inline-flex;
@@ -98,9 +148,9 @@ function ensureStyles(): void {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  font-size: 10px;
+  font-size: 11px;
   color: #dbeafe;
-  font-family: ui-sans-serif, system-ui, sans-serif;
+  font-family: "Source Sans 3", "Segoe UI", ui-sans-serif, system-ui, sans-serif;
 }
 .preview-global-chat-room__p2a-toggle {
   margin: 0;
@@ -127,8 +177,9 @@ function ensureStyles(): void {
   padding: 8px;
 }
 .preview-global-chat-room__p2a-copy {
-  font-size: 11px;
+  font-size: 12px;
   color: #bfdbfe;
+  line-height: 1.4;
 }
 .preview-global-chat-room__address-row {
   display: grid;
@@ -140,7 +191,7 @@ function ensureStyles(): void {
   border: 1px solid rgba(125, 211, 252, 0.4);
   background: rgba(15, 23, 42, 0.9);
   color: #e2e8f0;
-  font-size: 11px;
+  font-size: 12px;
   padding: 6px;
 }
 .preview-global-chat-room__address-copy,
@@ -149,8 +200,8 @@ function ensureStyles(): void {
   border: 1px solid rgba(147, 197, 253, 0.65);
   background: rgba(30, 64, 175, 0.48);
   color: #eff6ff;
-  font-size: 10px;
-  font-family: "Press Start 2P", ui-monospace, monospace;
+  font-size: 11px;
+  font-family: "Source Sans 3", "Segoe UI", ui-sans-serif, system-ui, sans-serif;
   padding: 6px 8px;
   cursor: pointer;
 }
@@ -159,12 +210,12 @@ function ensureStyles(): void {
   min-height: 0;
   overflow-y: auto;
   display: grid;
-  gap: 6px;
+  gap: 8px;
   padding-right: 4px;
 }
 .preview-global-chat-room__line {
-  padding: 7px 9px;
-  border-radius: 8px;
+  padding: 9px 11px;
+  border-radius: 10px;
   border: 1px solid rgba(125, 211, 252, 0.35);
   background: rgba(15, 23, 42, 0.7);
   color: #e2e8f0;
@@ -173,42 +224,34 @@ function ensureStyles(): void {
   border-color: rgba(74, 222, 128, 0.45);
   background: rgba(20, 83, 45, 0.42);
 }
+.preview-global-chat-room__line--depth-1 {
+  margin-left: 14px;
+  border-left: 2px solid rgba(125, 211, 252, 0.55);
+}
+.preview-global-chat-room__line--depth-2 {
+  margin-left: 28px;
+  border-left: 2px solid rgba(167, 139, 250, 0.55);
+}
 .preview-global-chat-room__meta {
   display: block;
-  font-size: 10px;
+  font-size: 11px;
   color: #bae6fd;
   margin-bottom: 4px;
-  font-family: "Press Start 2P", ui-monospace, monospace;
+  letter-spacing: 0.01em;
+}
+.preview-global-chat-room__reply-ref {
+  display: block;
+  font-size: 11px;
+  color: #93c5fd;
+  margin-bottom: 4px;
 }
 .preview-global-chat-room__message {
-  font-size: 13px;
+  font-size: 14px;
   color: #f8fafc;
-  line-height: 1.35;
+  line-height: 1.5;
+  letter-spacing: 0.01em;
   white-space: pre-wrap;
   word-break: break-word;
-}
-.preview-global-chat-room__composer {
-  display: grid;
-  grid-template-columns: 1fr auto;
-  gap: 6px;
-}
-.preview-global-chat-room__input {
-  border-radius: 8px;
-  border: 1px solid rgba(125, 211, 252, 0.4);
-  background: rgba(15, 23, 42, 0.9);
-  color: #f8fafc;
-  padding: 8px;
-}
-.preview-global-chat-room__send {
-  border-radius: 8px;
-  border: 1px solid rgba(147, 197, 253, 0.65);
-  background: linear-gradient(180deg, #1d4ed8, #2563eb);
-  color: #eff6ff;
-  font-weight: 700;
-  cursor: pointer;
-  padding: 8px 12px;
-  font-family: "Press Start 2P", ui-monospace, monospace;
-  font-size: 10px;
 }
 `;
   document.head.append(style);
@@ -231,6 +274,11 @@ function isValidIntercomAddress(value: string | null): value is string {
 function toTimestampLabel(ts: string): string {
   const date = new Date(ts);
   return Number.isNaN(date.valueOf()) ? ts : date.toLocaleTimeString();
+}
+
+function toReplyDepth(value: unknown): ReplyDepth {
+  if (value === 1 || value === 2) return value;
+  return 0;
 }
 
 export function createPreviewGlobalChatRoom(options: {
@@ -262,9 +310,14 @@ export function createPreviewGlobalChatRoom(options: {
     };
     ts: string;
     totalCount?: number;
+    parentRequestId?: string | null;
+    depth?: number;
+    reactions?: unknown;
+    reactionUpdate?: boolean;
   }) => void;
   getLines: () => readonly GlobalChatLine[];
   refreshP2a: () => void;
+  focusMessage: (requestId: string) => boolean;
 } {
   ensureStyles();
   const root = document.createElement("section");
@@ -322,17 +375,6 @@ export function createPreviewGlobalChatRoom(options: {
   p2aPanel.append(p2aCopy, addressRow);
   const list = document.createElement("div");
   list.className = "preview-global-chat-room__list";
-  const composer = document.createElement("div");
-  composer.className = "preview-global-chat-room__composer";
-  const input = document.createElement("input");
-  input.className = "preview-global-chat-room__input";
-  input.placeholder = "Say something to everyone...";
-  const send = document.createElement("button");
-  send.type = "button";
-  send.className = "preview-global-chat-room__send";
-  send.textContent = "Send";
-  composer.append(input, send);
-  root.append(titleRow, p2aPanel, list, composer);
 
   let lines: GlobalChatLine[] = [];
   let knownRequestIds = new Set<string>();
@@ -340,6 +382,17 @@ export function createPreviewGlobalChatRoom(options: {
   let hasMore = false;
   let loadingOlder = false;
   let loadingInitial = false;
+  let panelWidthPx = 360;
+  let panelHeightPx = 420;
+
+  const composer = createChatComposer({
+    placeholder: "Say something to everyone...",
+    onSubmit: ({ text, parentRequestId }) => {
+      void sendMessage(text, parentRequestId);
+    },
+  });
+
+  root.append(titleRow, p2aPanel, list, composer.element);
 
   const renderCount = (): void => {
     count.textContent = formatCompactCount(totalCount);
@@ -361,9 +414,101 @@ export function createPreviewGlobalChatRoom(options: {
     addressShare.disabled = !enabled || !validAddress;
   };
 
+  const applyPanelSize = (): void => {
+    root.style.removeProperty("width");
+    root.style.removeProperty("height");
+    root.style.removeProperty("max-height");
+    root.style.setProperty("--world-chat-panel-w", `${panelWidthPx}px`);
+    root.style.setProperty("--world-chat-panel-h", `${panelHeightPx}px`);
+  };
+
+  attachChatPanelResize({
+    panel: root,
+    enabled: isLargeScreenForPanelResize(window.innerWidth),
+    getSize: () => ({ widthPx: panelWidthPx, heightPx: panelHeightPx }),
+    onResize: (next) => {
+      panelWidthPx = next.widthPx;
+      panelHeightPx = next.heightPx;
+      applyPanelSize();
+    },
+    minWidthPx: 280,
+    maxWidthPx: 560,
+    minHeightPx: 280,
+    maxHeightPx: 640,
+  });
+  applyPanelSize();
+
+  const focusMessage = (requestId: string): boolean => {
+    const rows = list.querySelectorAll<HTMLElement>("[data-request-id]");
+    let row: HTMLElement | null = null;
+    for (const candidate of rows) {
+      if (candidate.dataset.requestId === requestId) {
+        row = candidate;
+        break;
+      }
+    }
+    if (row === null) return false;
+    row.scrollIntoView({ behavior: "smooth", block: "center" });
+    highlightMessageElement(row);
+    return true;
+  };
+
+  const copyMessageLink = async (requestId: string): Promise<void> => {
+    const link = buildMessageDeepLink({
+      requestId,
+      baseUrl: window.location.href,
+    });
+    await navigator.clipboard?.writeText(link);
+  };
+
+  const reactToMessage = async (input: {
+    requestId: string;
+    kind: MessageReactionKind;
+    action: MessageReactionAction;
+  }): Promise<void> => {
+    const sid = options.getSid();
+    const mainNodeId = options.getMainNodeId();
+    if (sid === null || mainNodeId === null) return;
+    lines = lines.map((line) => {
+      if (line.requestId !== input.requestId) return line;
+      return {
+        ...line,
+        reactions: applyMessageReaction({
+          reactions: line.reactions,
+          kind: input.kind,
+          playerId: mainNodeId,
+          action: input.action,
+        }),
+      };
+    });
+    renderAll(false);
+    await fetch(`${options.apiBase}/sdk/rpc?sid=${encodeURIComponent(sid)}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        op: WORLD_CHAT_REACT_OP,
+        payload: {
+          requestId: input.requestId,
+          mainNodeId,
+          fromPlayerId: mainNodeId,
+          kind: input.kind,
+          action: input.action,
+        },
+      }),
+    });
+  };
+
   const lineElement = (line: GlobalChatLine): HTMLElement => {
     const row = document.createElement("article");
     row.className = "preview-global-chat-room__line";
+    row.dataset.requestId = line.requestId;
+    row.id = `world-msg-${line.requestId}`;
+    if (line.depth === 1) {
+      row.classList.add("preview-global-chat-room__line--depth-1");
+    }
+    if (line.depth === 2) {
+      row.classList.add("preview-global-chat-room__line--depth-2");
+    }
     const selfId = options.getMainNodeId();
     if (selfId !== null && line.fromPlayerId === selfId) {
       row.classList.add("preview-global-chat-room__line--self");
@@ -371,6 +516,16 @@ export function createPreviewGlobalChatRoom(options: {
     const meta = document.createElement("span");
     meta.className = "preview-global-chat-room__meta";
     meta.textContent = `${line.senderName} · ${toTimestampLabel(line.ts)}`;
+    row.append(meta);
+    if (line.parentRequestId !== null) {
+      const parent = lines.find((item) => item.requestId === line.parentRequestId);
+      const replyRef = document.createElement("span");
+      replyRef.className = "preview-global-chat-room__reply-ref";
+      replyRef.textContent = parent
+        ? `↩ ${parent.senderName}: ${parent.message.slice(0, 64)}`
+        : "↩ reply";
+      row.append(replyRef);
+    }
     const body = document.createElement("div");
     body.className = "preview-global-chat-room__message";
     if (line.messageKind === "audio") {
@@ -401,13 +556,40 @@ export function createPreviewGlobalChatRoom(options: {
     } else {
       body.textContent = line.message;
     }
-    row.append(meta, body);
+    row.append(body);
+    const actions = createChatMessageActions({
+      reactions: line.reactions,
+      playerId: options.getMainNodeId(),
+      canReply: canReplyToDepth(line.depth),
+      onReply: () => {
+        composer.setReplyTarget({
+          requestId: line.requestId,
+          previewText: line.message,
+        });
+      },
+      onCopyLink: () => {
+        void copyMessageLink(line.requestId);
+      },
+      onReact: ({ kind, action }) => {
+        void reactToMessage({ requestId: line.requestId, kind, action });
+      },
+    });
+    row.append(actions.element);
     return row;
   };
 
-  const renderAll = (): void => {
-    list.replaceChildren(...lines.map(lineElement));
-    list.scrollTop = list.scrollHeight;
+  const renderAll = (stickToBottom: boolean): void => {
+    const previousTop = list.scrollTop;
+    const previousHeight = list.scrollHeight;
+    const nearBottom =
+      list.scrollHeight - list.scrollTop - list.clientHeight < 48;
+    const ordered = sortThreadedMessages(lines);
+    list.replaceChildren(...ordered.map(lineElement));
+    if (stickToBottom || nearBottom) {
+      list.scrollTop = list.scrollHeight;
+    } else {
+      list.scrollTop = list.scrollHeight - previousHeight + previousTop;
+    }
     renderCount();
     renderP2aPanel();
   };
@@ -416,17 +598,42 @@ export function createPreviewGlobalChatRoom(options: {
     knownRequestIds = new Set(lines.map((line) => line.requestId));
   };
 
+  const resolveDepthForParent = (
+    parentRequestId: string | null
+  ): ReplyDepth => {
+    if (parentRequestId === null) return 0;
+    const parent = lines.find((line) => line.requestId === parentRequestId);
+    if (parent === undefined) return 1;
+    return parent.depth >= 1 ? 2 : 1;
+  };
+
   const appendSingleLine = (line: GlobalChatLine): void => {
     if (line.messageKind === "text" && trimToNonEmpty(line.message).length === 0) {
       return;
     }
-    if (knownRequestIds.has(line.requestId)) return;
+    if (knownRequestIds.has(line.requestId)) {
+      lines = lines.map((existing) =>
+        existing.requestId === line.requestId
+          ? {
+              ...existing,
+              ...line,
+              reactions: line.reactions,
+            }
+          : existing
+      );
+      renderAll(false);
+      return;
+    }
     lines = [...lines, line];
     knownRequestIds.add(line.requestId);
     if (lines.length > MAX_GLOBAL_LINES) {
       lines = lines.slice(lines.length - MAX_GLOBAL_LINES);
       updateKnownIds();
-      renderAll();
+      renderAll(true);
+      return;
+    }
+    if (line.parentRequestId !== null) {
+      renderAll(true);
       return;
     }
     list.append(lineElement(line));
@@ -445,6 +652,9 @@ export function createPreviewGlobalChatRoom(options: {
         message: row.message,
         messageKind: "text" as const,
         ts: row.ts,
+        parentRequestId: row.parentRequestId ?? null,
+        depth: toReplyDepth(row.depth),
+        reactions: normalizeMessageReactions(row.reactions),
       }))
       .sort((a, b) => a.seq - b.seq);
 
@@ -474,14 +684,11 @@ export function createPreviewGlobalChatRoom(options: {
       const existing = lines.filter((line) => !pageIds.has(line.requestId));
       lines = [...page, ...existing];
       updateKnownIds();
-      renderAll();
+      renderAll(true);
     } else if (page.length > 0) {
-      const prevHeight = list.scrollHeight;
-      const prevTop = list.scrollTop;
       lines = [...page, ...lines];
       updateKnownIds();
-      list.replaceChildren(...lines.map(lineElement));
-      list.scrollTop = list.scrollHeight - prevHeight + prevTop;
+      renderAll(false);
     }
     totalCount = body.totalCount;
     hasMore = body.hasMore;
@@ -493,6 +700,10 @@ export function createPreviewGlobalChatRoom(options: {
     loadingInitial = true;
     try {
       await loadHistory();
+      const deepLinked = parseMessageDeepLink(window.location.href);
+      if (deepLinked !== null) {
+        focusMessage(deepLinked);
+      }
     } finally {
       loadingInitial = false;
     }
@@ -510,12 +721,20 @@ export function createPreviewGlobalChatRoom(options: {
     }
   };
 
-  const sendMessage = async (): Promise<void> => {
-    const message = trimToNonEmpty(input.value);
+  const sendMessage = async (
+    message: string,
+    parentRequestId: string | null
+  ): Promise<void> => {
     if (message.length === 0) return;
     const sid = options.getSid();
     const mainNodeId = options.getMainNodeId();
     if (sid === null || mainNodeId === null) return;
+    if (parentRequestId !== null) {
+      const parent = lines.find((line) => line.requestId === parentRequestId);
+      if (parent === undefined || !canReplyToDepth(parent.depth)) {
+        return;
+      }
+    }
     reportPresentationEvent("WorldMessageAction");
     const requestId = crypto.randomUUID();
     appendSingleLine({
@@ -526,10 +745,12 @@ export function createPreviewGlobalChatRoom(options: {
       message,
       messageKind: "text",
       ts: new Date().toISOString(),
+      parentRequestId,
+      depth: resolveDepthForParent(parentRequestId),
+      reactions: createEmptyMessageReactions(),
     });
     totalCount = Math.max(totalCount + 1, lines.length);
     renderCount();
-    input.value = "";
     await fetch(`${options.apiBase}/sdk/rpc?sid=${encodeURIComponent(sid)}`, {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -540,6 +761,7 @@ export function createPreviewGlobalChatRoom(options: {
           mainNodeId,
           fromPlayerId: mainNodeId,
           message,
+          ...(parentRequestId !== null ? { parentRequestId } : {}),
         },
       }),
     });
@@ -549,9 +771,6 @@ export function createPreviewGlobalChatRoom(options: {
     if (list.scrollTop <= 24) {
       void loadOlderHistory();
     }
-  });
-  send.addEventListener("click", () => {
-    void sendMessage();
   });
   p2aToggle.addEventListener("change", () => {
     options.setP2aEnabled(p2aToggle.checked);
@@ -574,10 +793,13 @@ export function createPreviewGlobalChatRoom(options: {
     }
     void navigator.clipboard?.writeText(address);
   });
-  input.addEventListener("keydown", (event) => {
-    if (event.key === "Enter") {
-      event.preventDefault();
-      void sendMessage();
+  window.addEventListener("resize", () => {
+    const enabled = isLargeScreenForPanelResize(window.innerWidth);
+    const handle = root.querySelector(
+      ".chat-panel-resize__handle"
+    ) as HTMLButtonElement | null;
+    if (handle !== null) {
+      handle.hidden = !enabled;
     }
   });
 
@@ -599,6 +821,19 @@ export function createPreviewGlobalChatRoom(options: {
       if (typeof event.totalCount === "number" && event.totalCount >= 0) {
         totalCount = event.totalCount;
       }
+      if (event.reactionUpdate === true && knownRequestIds.has(event.requestId)) {
+        lines = lines.map((line) =>
+          line.requestId === event.requestId
+            ? {
+                ...line,
+                reactions: normalizeMessageReactions(event.reactions),
+              }
+            : line
+        );
+        renderAll(false);
+        renderCount();
+        return;
+      }
       appendSingleLine({
         seq: typeof event.seq === "number" ? event.seq : Number.MAX_SAFE_INTEGER,
         requestId: event.requestId,
@@ -609,6 +844,9 @@ export function createPreviewGlobalChatRoom(options: {
         audio: event.audio,
         media: event.media,
         ts: event.ts,
+        parentRequestId: event.parentRequestId ?? null,
+        depth: toReplyDepth(event.depth),
+        reactions: normalizeMessageReactions(event.reactions),
       });
       renderCount();
     },
@@ -616,5 +854,6 @@ export function createPreviewGlobalChatRoom(options: {
     refreshP2a: () => {
       renderP2aPanel();
     },
+    focusMessage,
   };
 }

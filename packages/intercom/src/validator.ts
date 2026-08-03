@@ -95,6 +95,17 @@ const WorldChatPublishPayloadSchema = z
     mainNodeId: NonEmpty,
     fromPlayerId: NonEmpty,
     message: NonEmpty,
+    parentRequestId: NonEmpty.optional(),
+  })
+  .strict();
+
+const WorldChatReactPayloadSchema = z
+  .object({
+    requestId: NonEmpty,
+    mainNodeId: NonEmpty,
+    fromPlayerId: NonEmpty,
+    kind: z.enum(["love", "thumbs_up"]),
+    action: z.enum(["set", "cancel"]),
   })
   .strict();
 
@@ -109,6 +120,7 @@ export type CreateHumanNodePayload = z.infer<typeof CreateHumanNodePayloadSchema
 export type WorldChatPublishPayload = z.infer<
   typeof WorldChatPublishPayloadSchema
 >;
+export type WorldChatReactPayload = z.infer<typeof WorldChatReactPayloadSchema>;
 export type IntercomMessageKind = "text" | "audio" | "media";
 
 type IntercomResultRecord = Record<string, unknown>;
@@ -180,4 +192,10 @@ export function parseWorldChatPublishPayload(
   payload: unknown
 ): WorldChatPublishPayload {
   return WorldChatPublishPayloadSchema.parse(payload);
+}
+
+export function parseWorldChatReactPayload(
+  payload: unknown
+): WorldChatReactPayload {
+  return WorldChatReactPayloadSchema.parse(payload);
 }

@@ -175,9 +175,9 @@ export function createPreviewChatSettingsPanel(options: {
   };
 
   panel.append(
-    mkRow("Font size", "fontSizePx", 5, 18, 1),
-    mkRow("Panel width", "panelWidthPx", 100, 400, 4),
-    mkRow("Panel scroll height", "scrollMaxHeightPx", 24, 200, 4)
+    mkRow("Font size", "fontSizePx", 10, 22, 1),
+    mkRow("Panel width", "panelWidthPx", 180, 560, 4),
+    mkRow("Panel scroll height", "scrollMaxHeightPx", 80, 420, 4)
   );
 
   const actions = document.createElement("div");

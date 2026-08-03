@@ -38,11 +38,26 @@ describe("createPreviewBottomBar", () => {
     expect(styleText).toContain("position: absolute");
     expect(styleText).toContain(".preview-global-chat-room.preview-floating-panel");
     expect(styleText).toContain("min-height: 0");
+    expect(styleText).toContain(
+      ".preview-global-chat-room.preview-floating-panel--collapsed"
+    );
+    expect(styleText).toMatch(
+      /\.preview-global-chat-room\.preview-floating-panel--collapsed \{[\s\S]*?max-height:\s*58px/
+    );
     expect(styleText).toMatch(
       /@media \(max-width: 1023px\)[\s\S]*?\.preview-bottom-bar \{[\s\S]*?flex-direction:\s*column/
     );
     expect(styleText).toMatch(
       /@media \(max-width: 1023px\)[\s\S]*?\.preview-bottom-bar__collapse-toggle \{[\s\S]*?width:\s*28px/
+    );
+    expect(styleText).toMatch(
+      /@media \(max-width: 1023px\)[\s\S]*?\.preview-menu-bar \.preview-chat-settings-panel[\s\S]*?max-height:\s*75vh/
+    );
+    expect(styleText).toMatch(
+      /@media \(max-width: 1023px\)[\s\S]*?\.preview-proximity-touch-pad \{[\s\S]*?z-index:\s*70/
+    );
+    expect(styleText).toMatch(
+      /@media \(max-width: 1023px\)[\s\S]*?\.preview-floating-panel \{[\s\S]*?max-height:\s*min\(75dvh,\s*calc\(100dvh - 160px\)\)/
     );
     expect(styleText).toContain("preview-canvas-stage--stationary-panels");
     expect(styleText).toContain(
@@ -92,7 +107,7 @@ describe("createPreviewBottomBar", () => {
     expect(languageToggle?.textContent?.trim()).toBe("Language - Igbo");
   });
 
-  it("collapses and expands the toolbar menu from the caret control", () => {
+  it("starts with the toolbar menu collapsed and expands from the caret control", () => {
     resetPreviewViewSettings();
     const chatPanel = document.createElement("div");
     const sessionToolsPanel = document.createElement("div");
@@ -109,15 +124,10 @@ describe("createPreviewBottomBar", () => {
     ) as HTMLButtonElement | null;
 
     expect(toggle).not.toBeNull();
-    expect(toggle?.getAttribute("aria-expanded")).toBe("true");
-    const caret = toggle?.querySelector(".preview-bottom-bar__collapse-caret");
-    expect(caret).not.toBeNull();
-    expect(
-      caret?.classList.contains("preview-bottom-bar__collapse-caret--collapsed")
-    ).toBe(false);
-    toggle?.click();
     expect(bar.classList.contains("preview-bottom-bar--collapsed")).toBe(true);
     expect(toggle?.getAttribute("aria-expanded")).toBe("false");
+    const caret = toggle?.querySelector(".preview-bottom-bar__collapse-caret");
+    expect(caret).not.toBeNull();
     expect(
       caret?.classList.contains("preview-bottom-bar__collapse-caret--collapsed")
     ).toBe(true);
@@ -127,6 +137,12 @@ describe("createPreviewBottomBar", () => {
     expect(
       caret?.classList.contains("preview-bottom-bar__collapse-caret--collapsed")
     ).toBe(false);
+    toggle?.click();
+    expect(bar.classList.contains("preview-bottom-bar--collapsed")).toBe(true);
+    expect(toggle?.getAttribute("aria-expanded")).toBe("false");
+    expect(
+      caret?.classList.contains("preview-bottom-bar__collapse-caret--collapsed")
+    ).toBe(true);
   });
 
   it("updates and persists language from the toolbar select", () => {

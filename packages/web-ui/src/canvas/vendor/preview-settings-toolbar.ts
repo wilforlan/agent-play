@@ -157,7 +157,20 @@ body > .preview-shell {
   display: none;
 }
 .preview-floating-panel--collapsed {
+  height: auto;
+  min-height: 0;
   max-height: 58px;
+  overflow: hidden;
+}
+.preview-global-chat-room.preview-floating-panel--collapsed {
+  height: auto;
+  min-height: 0;
+  max-height: 58px;
+  overflow: hidden;
+  padding-bottom: 6px;
+}
+.preview-global-chat-room.preview-floating-panel--collapsed .chat-panel-resize__handle {
+  display: none;
 }
 .preview-floating-panel--session {
   width: min(380px, calc(100vw - 24px));
@@ -600,9 +613,13 @@ body > .preview-shell {
   .preview-proximity-legend {
     display: none;
   }
+  .preview-proximity-touch-pad {
+    z-index: 70;
+  }
   .preview-floating-panel {
+    z-index: 40;
     width: min(320px, calc(100vw - 20px));
-    max-height: min(58dvh, 520px);
+    max-height: min(75dvh, calc(100dvh - 160px));
   }
   .preview-floating-panel--session {
     width: min(340px, calc(100vw - 20px));
@@ -614,6 +631,7 @@ body > .preview-shell {
     top: auto;
   }
   .preview-bottom-bar {
+    z-index: 65;
     left: max(10px, env(safe-area-inset-left, 0px));
     right: max(10px, env(safe-area-inset-right, 0px));
     bottom: max(10px, env(safe-area-inset-bottom, 0px));
@@ -697,7 +715,7 @@ body > .preview-shell {
     right: 0;
     width: auto;
     max-width: none;
-    max-height: min(55vh, 400px);
+    max-height: 75vh;
     margin-bottom: 10px;
   }
 }
@@ -879,14 +897,15 @@ export function createPreviewBottomBar(options: {
 }): HTMLElement {
   ensurePreviewLayoutStyles();
   const bar = document.createElement("div");
-  bar.className = "preview-bottom-bar";
+  bar.className = "preview-bottom-bar preview-bottom-bar--collapsed";
   const collapseToggle = document.createElement("button");
   collapseToggle.type = "button";
   collapseToggle.className = "preview-bottom-bar__collapse-toggle";
-  collapseToggle.setAttribute("aria-label", "Hide toolbar menu");
-  collapseToggle.setAttribute("aria-expanded", "true");
+  collapseToggle.setAttribute("aria-label", "Show toolbar menu");
+  collapseToggle.setAttribute("aria-expanded", "false");
   const collapseCaret = document.createElement("span");
-  collapseCaret.className = "preview-bottom-bar__collapse-caret";
+  collapseCaret.className =
+    "preview-bottom-bar__collapse-caret preview-bottom-bar__collapse-caret--collapsed";
   collapseCaret.setAttribute("aria-hidden", "true");
   collapseToggle.appendChild(collapseCaret);
   const informatics = document.createElement("div");

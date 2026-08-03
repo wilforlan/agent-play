@@ -184,8 +184,19 @@ export class TestSessionStore implements SessionStore {
     fromPlayerId: string;
     message: string;
     ts: string;
+    parentRequestId?: string;
   }): Promise<{ message: WorldChatMessage; totalCount: number }> {
     this.worldChatSeq += 1;
+    const parent =
+      typeof input.parentRequestId === "string"
+        ? this.worldChat.find((m) => m.requestId === input.parentRequestId)
+        : undefined;
+    if (
+      typeof input.parentRequestId === "string" &&
+      (parent === undefined || parent.depth >= 2)
+    ) {
+      throw new Error("invalid parentRequestId");
+    }
     const message: WorldChatMessage = {
       seq: this.worldChatSeq,
       requestId: input.requestId,
@@ -193,6 +204,11 @@ export class TestSessionStore implements SessionStore {
       fromPlayerId: input.fromPlayerId,
       message: input.message,
       ts: input.ts,
+      ...(typeof input.parentRequestId === "string"
+        ? { parentRequestId: input.parentRequestId }
+        : {}),
+      depth: parent === undefined ? 0 : ((parent.depth + 1) as 0 | 1 | 2),
+      reactions: { love: [], thumbs_up: [] },
     };
     this.worldChat.unshift(message);
     return { message, totalCount: this.worldChat.length };
@@ -209,11 +225,58 @@ export class TestSessionStore implements SessionStore {
       beforeSeq !== undefined
         ? this.worldChat.filter((m) => m.seq < beforeSeq)
         : this.worldChat;
-    const messages = filtered.slice(0, safeLimit).map((m) => ({ ...m }));
+    const messages = filtered.slice(0, safeLimit).map((m) => ({
+      ...m,
+      reactions: {
+        love: [...m.reactions.love],
+        thumbs_up: [...m.reactions.thumbs_up],
+      },
+    }));
     return {
       messages,
       hasMore: filtered.length > safeLimit,
       totalCount: this.worldChat.length,
+    };
+  }
+
+  async reactWorldChatMessage(input: {
+    requestId: string;
+    fromPlayerId: string;
+    kind: "love" | "thumbs_up";
+    action: "set" | "cancel";
+  }): Promise<WorldChatMessage | null> {
+    const index = this.worldChat.findIndex(
+      (m) => m.requestId === input.requestId
+    );
+    if (index < 0) return null;
+    const current = this.worldChat[index]!;
+    const love = current.reactions.love.filter(
+      (id) => id !== input.fromPlayerId
+    );
+    const thumbsUp = current.reactions.thumbs_up.filter(
+      (id) => id !== input.fromPlayerId
+    );
+    const nextReactions =
+      input.action === "cancel"
+        ? { love, thumbs_up: thumbsUp }
+        : {
+            love: input.kind === "love" ? [...love, input.fromPlayerId] : love,
+            thumbs_up:
+              input.kind === "thumbs_up"
+                ? [...thumbsUp, input.fromPlayerId]
+                : thumbsUp,
+          };
+    const updated: WorldChatMessage = {
+      ...current,
+      reactions: nextReactions,
+    };
+    this.worldChat[index] = updated;
+    return {
+      ...updated,
+      reactions: {
+        love: [...updated.reactions.love],
+        thumbs_up: [...updated.reactions.thumbs_up],
+      },
     };
   }
 

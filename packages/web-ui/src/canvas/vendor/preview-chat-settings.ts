@@ -11,9 +11,9 @@ export type AgentChatDisplaySettings = {
 };
 
 const DEFAULT_SETTINGS: AgentChatDisplaySettings = {
-  fontSizePx: 8,
-  panelWidthPx: 200,
-  scrollMaxHeightPx: 148,
+  fontSizePx: 13,
+  panelWidthPx: 280,
+  scrollMaxHeightPx: 220,
 };
 
 function clamp(n: number, min: number, max: number): number {
@@ -63,9 +63,9 @@ function sanitize(
   s: AgentChatDisplaySettings
 ): AgentChatDisplaySettings {
   return {
-    fontSizePx: clamp(Math.round(s.fontSizePx), 5, 18),
-    panelWidthPx: clamp(Math.round(s.panelWidthPx), 100, 400),
-    scrollMaxHeightPx: clamp(Math.round(s.scrollMaxHeightPx), 24, 200),
+    fontSizePx: clamp(Math.round(s.fontSizePx), 10, 22),
+    panelWidthPx: clamp(Math.round(s.panelWidthPx), 180, 560),
+    scrollMaxHeightPx: clamp(Math.round(s.scrollMaxHeightPx), 80, 420),
   };
 }
 

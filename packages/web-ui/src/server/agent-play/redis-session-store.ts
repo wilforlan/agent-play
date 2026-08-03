@@ -111,6 +111,27 @@ const EVENT_LOG_MAX = 200;
 const WORLD_CHAT_MAX = 5000;
 const SPACE_AMENITY_LOG_MAX = 500;
 
+function normalizeWorldChatMessage(value: WorldChatMessage): WorldChatMessage {
+  const depth =
+    value.depth === 1 || value.depth === 2 ? value.depth : 0;
+  const love = Array.isArray(value.reactions?.love)
+    ? value.reactions.love.filter((id): id is string => typeof id === "string")
+    : [];
+  const thumbsUp = Array.isArray(value.reactions?.thumbs_up)
+    ? value.reactions.thumbs_up.filter(
+        (id): id is string => typeof id === "string"
+      )
+    : [];
+  return {
+    ...value,
+    depth,
+    reactions: {
+      love: [...new Set(love)],
+      thumbs_up: [...new Set(thumbsUp)],
+    },
+  };
+}
+
 function sessionHashKey(hostId: string): string {
   return `agent-play:${hostId}:session`;
 }
@@ -416,7 +437,29 @@ export class RedisSessionStore implements SessionStore {
     fromPlayerId: string;
     message: string;
     ts: string;
+    parentRequestId?: string;
   }): Promise<{ message: WorldChatMessage; totalCount: number }> {
+    const key = worldChatKey(this.hostId);
+    let depth: 0 | 1 | 2 = 0;
+    if (typeof input.parentRequestId === "string") {
+      const rows = await this.redis.lrange(key, 0, WORLD_CHAT_MAX - 1);
+      const parentRow = rows
+        .map((row) => {
+          try {
+            return normalizeWorldChatMessage(JSON.parse(row) as WorldChatMessage);
+          } catch {
+            return null;
+          }
+        })
+        .find(
+          (row) =>
+            row !== null && row.requestId === input.parentRequestId
+        );
+      if (parentRow === undefined || parentRow === null || parentRow.depth >= 2) {
+        throw new Error("invalid parentRequestId");
+      }
+      depth = (parentRow.depth + 1) as 0 | 1 | 2;
+    }
     const seq = await this.redis.hincrby(
       sessionHashKey(this.hostId),
       "worldChatSeq",
@@ -429,8 +472,12 @@ export class RedisSessionStore implements SessionStore {
       fromPlayerId: input.fromPlayerId,
       message: input.message,
       ts: input.ts,
+      ...(typeof input.parentRequestId === "string"
+        ? { parentRequestId: input.parentRequestId }
+        : {}),
+      depth,
+      reactions: { love: [], thumbs_up: [] },
     };
-    const key = worldChatKey(this.hostId);
     const pipe = this.redis.multi();
     pipe.lpush(key, JSON.stringify(message));
     pipe.ltrim(key, 0, WORLD_CHAT_MAX - 1);
@@ -463,7 +510,7 @@ export class RedisSessionStore implements SessionStore {
           typeof value.message === "string" &&
           typeof value.ts === "string"
         ) {
-          parsed.push(value);
+          parsed.push(normalizeWorldChatMessage(value));
         }
       } catch {
         continue;
@@ -481,6 +528,55 @@ export class RedisSessionStore implements SessionStore {
       hasMore: filtered.length > safeLimit,
       totalCount,
     };
+  }
+
+  async reactWorldChatMessage(input: {
+    requestId: string;
+    fromPlayerId: string;
+    kind: "love" | "thumbs_up";
+    action: "set" | "cancel";
+  }): Promise<WorldChatMessage | null> {
+    const key = worldChatKey(this.hostId);
+    const rows = await this.redis.lrange(key, 0, WORLD_CHAT_MAX - 1);
+    let targetIndex = -1;
+    let current: WorldChatMessage | null = null;
+    for (let i = 0; i < rows.length; i += 1) {
+      try {
+        const value = JSON.parse(rows[i]!) as WorldChatMessage;
+        if (value.requestId === input.requestId) {
+          targetIndex = i;
+          current = normalizeWorldChatMessage(value);
+          break;
+        }
+      } catch {
+        continue;
+      }
+    }
+    if (targetIndex < 0 || current === null) {
+      return null;
+    }
+    const love = current.reactions.love.filter(
+      (id) => id !== input.fromPlayerId
+    );
+    const thumbsUp = current.reactions.thumbs_up.filter(
+      (id) => id !== input.fromPlayerId
+    );
+    const nextReactions =
+      input.action === "cancel"
+        ? { love, thumbs_up: thumbsUp }
+        : {
+            love: input.kind === "love" ? [...love, input.fromPlayerId] : love,
+            thumbs_up:
+              input.kind === "thumbs_up"
+                ? [...thumbsUp, input.fromPlayerId]
+                : thumbsUp,
+          };
+    const updated: WorldChatMessage = {
+      ...current,
+      reactions: nextReactions,
+    };
+    await this.redis.lset(key, targetIndex, JSON.stringify(updated));
+    return updated;
   }
 
   async persistSnapshot(snapshot: PreviewSnapshotJson): Promise<void> {

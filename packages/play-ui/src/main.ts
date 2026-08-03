@@ -143,7 +143,18 @@ import { ensureHumanNodeOnboarding } from "./preview-human-onboarding.js";
 import {
   clearHumanCredentials,
   getMainNodeIdForIntercom,
+  readHumanCredentials,
 } from "./preview-human-credentials.js";
+import {
+  createArrivalQuestCoach,
+  isGuestNodeId,
+  markArrivalQuestStep,
+  readArrivalQuestProgress,
+  shouldShowCitizenCard,
+  showCitizenCard,
+  startArrivalQuest,
+  type ArrivalQuestCoachHandle,
+} from "./arrival-quest.js";
 import { createPreviewAgentChatOverlays } from "./preview-agent-chat-overlays.js";
 import { ensurePreviewChatStyles } from "./preview-chat-panel.js";
 import { createPreviewChatSettingsPanel } from "./preview-chat-settings-panel.js";
@@ -1185,10 +1196,12 @@ async function sendProximityAction(
 }
 
 function triggerProximityAssistOrChat(action: "assist" | "chat"): void {
+  if (arrivalControlsMuted) return;
   const partner = registeredAgentPartnerForProximityOrNull(
     lastProximityPartnerId
   );
   if (partner === null || partner === HUMAN_VIEWER_PLAYER_ID) return;
+  noteArrivalQuestStep("meet_agent");
   sessionInteractionPanel?.setContext(partner);
   sessionInteractionPanel?.setMode(action);
   if (action === "chat") {
@@ -1306,6 +1319,9 @@ function onDocumentKeyDown(e: KeyboardEvent): void {
     e.target instanceof HTMLInputElement ||
     e.target instanceof HTMLTextAreaElement ||
     (e.target instanceof HTMLElement && e.target.isContentEditable);
+  if (arrivalControlsMuted && !inField) {
+    return;
+  }
   if (
     e.key === "ArrowUp" ||
     e.key === "ArrowDown" ||
@@ -1574,6 +1590,7 @@ async function refreshWalletInventoryPanel(): Promise<void> {
 function openWalletInventoryPanel(): void {
   if (walletInventoryPanel === null) return;
   walletInventoryPanel.open();
+  noteArrivalQuestStep("wallet_chip");
 }
 
 function featuredGameIdFromStats(value: string): GameId {
@@ -1656,6 +1673,7 @@ async function handleGameRoundComplete(
 async function enterGameFromProximity(
   target: StructureProximityTarget
 ): Promise<void> {
+  if (arrivalControlsMuted) return;
   if (target.gameId === undefined || stageController === null) return;
   const current = stageController.current();
   if (current !== null && current.id !== "overworld") return;
@@ -1707,6 +1725,7 @@ async function enterGameFromProximity(
   try {
     await stageController.enter(wrapped.handle);
     void refreshWalletHud();
+    noteArrivalQuestStep("maple_arcade");
     deepLogText("stage:enter:game", {
       cabinetGameId: target.gameId,
       playableGameId,
@@ -2655,6 +2674,77 @@ function tryHandlePlayPadKeyPress(char: string): boolean {
 }
 let previewBootstrapStarted = false;
 let previewBootstrapLock: Promise<void> | null = null;
+let arrivalControlsMuted = false;
+let arrivalQuestCoach: ArrivalQuestCoachHandle | null = null;
+let arrivalQuestWalkOrigin: { x: number; y: number } | null = null;
+const ARRIVAL_QUEST_WALK_DISTANCE = 1.25;
+
+function setArrivalControlsMuted(muted: boolean): void {
+  arrivalControlsMuted = muted;
+  const shell = document.querySelector(".preview-shell");
+  shell?.classList.toggle("preview-shell--arrival-muted", muted);
+  const joystickWrap = document.querySelector(".preview-joystick-wrap");
+  if (joystickWrap instanceof HTMLElement) {
+    joystickWrap.style.pointerEvents = muted ? "none" : "";
+  }
+  const proximityPad = document.querySelector(".preview-proximity-touch-pad");
+  if (proximityPad instanceof HTMLElement) {
+    proximityPad.style.pointerEvents = muted ? "none" : "";
+  }
+  const bottomHud = document.querySelector(".preview-bottom-hud-dock");
+  if (bottomHud instanceof HTMLElement) {
+    bottomHud.style.pointerEvents = muted ? "none" : "";
+  }
+}
+
+function syncArrivalQuestUi(): void {
+  arrivalQuestCoach?.sync();
+  if (!shouldShowCitizenCard()) {
+    return;
+  }
+  const creds = readHumanCredentials();
+  if (creds === null || isGuestNodeId(creds.nodeId)) {
+    return;
+  }
+  showCitizenCard({
+    nodeId: creds.nodeId,
+    parent: document.body,
+  });
+}
+
+function noteArrivalQuestStep(
+  step:
+    | "watch_screen"
+    | "touch_control"
+    | "play_pad"
+    | "wallet_chip"
+    | "meet_agent"
+    | "maple_arcade"
+): void {
+  if (!markArrivalQuestStep(step)) {
+    return;
+  }
+  syncArrivalQuestUi();
+}
+
+function maybeStartArrivalQuestAfterOnboarding(): void {
+  const creds = readHumanCredentials();
+  if (creds === null) {
+    return;
+  }
+  const guest = isGuestNodeId(creds.nodeId);
+  startArrivalQuest({ guest });
+  if (arrivalQuestCoach === null) {
+    arrivalQuestCoach = createArrivalQuestCoach({ parent: document.body });
+  } else {
+    arrivalQuestCoach.sync();
+  }
+  const humanPos = playerWorldPos.get(HUMAN_VIEWER_PLAYER_ID);
+  if (humanPos !== undefined) {
+    arrivalQuestWalkOrigin = { x: humanPos.x, y: humanPos.y };
+  }
+  syncArrivalQuestUi();
+}
 
 /**
  * Resolves a stable display name for chat labels (“You” for the human viewer).
@@ -3612,6 +3702,16 @@ function connectSse(sid: string): void {
             typeof resultRecord?.totalCount === "number"
               ? (resultRecord.totalCount ?? undefined)
               : undefined,
+          parentRequestId:
+            typeof resultRecord?.parentRequestId === "string"
+              ? resultRecord.parentRequestId
+              : null,
+          depth:
+            typeof resultRecord?.depth === "number"
+              ? resultRecord.depth
+              : undefined,
+          reactions: resultRecord?.reactions,
+          reactionUpdate: resultRecord?.reactionUpdate === true,
         });
         return;
       }
@@ -4361,11 +4461,14 @@ function onTick(dt: number): void {
     stageController === null ||
     stageController.current()?.id === "overworld";
   const joystickActive =
-    settings.joystickEnabled && primaryId !== null;
+    !arrivalControlsMuted &&
+    settings.joystickEnabled &&
+    primaryId !== null;
   const jv = joystickActive ? getJoystickVector() : { x: 0, y: 0 };
   const joyLen = Math.hypot(jv.x, jv.y);
   const anyArrow =
-    arrowKeys.up || arrowKeys.down || arrowKeys.left || arrowKeys.right;
+    !arrivalControlsMuted &&
+    (arrowKeys.up || arrowKeys.down || arrowKeys.left || arrowKeys.right);
 
   if (
     overworldActive &&
@@ -4432,6 +4535,19 @@ function onTick(dt: number): void {
     playerWorldPos.set(id, next);
     if (id === HUMAN_VIEWER_PLAYER_ID) {
       schedulePersistHumanWorldPos(next);
+      if (
+        !arrivalControlsMuted &&
+        arrivalQuestWalkOrigin !== null &&
+        readArrivalQuestProgress()?.step === "play_pad"
+      ) {
+        const dist = Math.hypot(
+          next.x - arrivalQuestWalkOrigin.x,
+          next.y - arrivalQuestWalkOrigin.y
+        );
+        if (dist >= ARRIVAL_QUEST_WALK_DISTANCE) {
+          noteArrivalQuestStep("play_pad");
+        }
+      }
     }
     const motion = nextAvatarMotion({
       prevWorld: prev,
@@ -4541,6 +4657,13 @@ function onFrame(): void {
     });
   } else {
     lastProximityPartnerId = null;
+  }
+  if (
+    !arrivalControlsMuted &&
+    lastProximityPartnerId !== null &&
+    registeredAgentPartnerForProximityOrNull(lastProximityPartnerId) !== null
+  ) {
+    noteArrivalQuestStep("meet_agent");
   }
   if (
     prevProximityPartnerId !== null &&
@@ -4780,10 +4903,12 @@ export function bootstrap(): void {
         typeof window !== "undefined" ? window.location.hostname : "unknown",
       settings: getPreviewViewSettings(),
     });
-    await ensureHumanNodeOnboarding({
-      apiBase: API_BASE,
-      getSid: () => sid,
-    });
+    if (readHumanCredentials() === null) {
+      await ensureHumanNodeOnboarding({
+        apiBase: API_BASE,
+        getSid: () => sid,
+      });
+    }
     if (previewBootstrapStarted) return;
     previewBootstrapStarted = true;
     const theme = getActiveSceneTheme();
@@ -4951,10 +5076,13 @@ export function bootstrap(): void {
         if (action === "replace") {
           clearHumanCredentials();
         }
+        setArrivalControlsMuted(true);
         await ensureHumanNodeOnboarding({
           apiBase: API_BASE,
           getSid: () => sid,
         });
+        setArrivalControlsMuted(false);
+        maybeStartArrivalQuestAfterOnboarding();
         sessionInteractionPanel?.refresh();
       },
       onClosePanel: () => {
@@ -5105,7 +5233,7 @@ export function bootstrap(): void {
 
     proximityTouchPadHandle = createPreviewProximityTouchControls({
       parent: canvasWrap,
-      getBoundsElement: () => canvasHost,
+      getBoundsElement: () => canvasWrap,
       getCanAct: () => {
         const partner = registeredAgentPartnerForProximityOrNull(
           lastProximityPartnerId
@@ -5190,6 +5318,7 @@ export function bootstrap(): void {
         return target.activatable !== false;
       },
       onAssist: () => {
+        noteArrivalQuestStep("touch_control");
         if (lastHouseNearest !== null) {
           const house = findHouseSlot(
             resolveHouseStreetContent(),
@@ -5224,9 +5353,11 @@ export function bootstrap(): void {
         triggerProximityAssistOrChat("assist");
       },
       onChat: () => {
+        noteArrivalQuestStep("touch_control");
         triggerProximityAssistOrChat("chat");
       },
       onPushToTalk: () => {
+        noteArrivalQuestStep("touch_control");
         if (activeHouseStage !== null) {
           toggleHousePurchasePanel();
           return;
@@ -5270,6 +5401,7 @@ export function bootstrap(): void {
         void triggerProximityPushToTalk();
       },
       onWallet: () => {
+        noteArrivalQuestStep("touch_control");
         openWalletInventoryPanel();
       },
       initialPlacement: getPanelPlacement("proximity") ?? undefined,
@@ -5558,7 +5690,9 @@ export function bootstrap(): void {
     window.addEventListener("keydown", onDocumentKeyDown);
     window.addEventListener("keyup", onDocumentKeyUp);
 
-    void loadSnapshot(sid).then(() => connectSse(sid));
+    await loadSnapshot(sid);
+    connectSse(sid);
+    maybeStartArrivalQuestAfterOnboarding();
   })().finally(() => {
     previewBootstrapLock = null;
   });

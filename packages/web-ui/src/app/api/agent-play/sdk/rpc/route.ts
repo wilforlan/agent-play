@@ -73,9 +73,11 @@ import {
   parseCreateHumanNodePayload,
   parseWorldChatHistoryPayload,
   parseWorldChatPublishPayload,
+  parseWorldChatReactPayload,
   normalizeIntercomResult,
   WORLD_CHAT_HISTORY_OP,
   WORLD_CHAT_PUBLISH_OP,
+  WORLD_CHAT_REACT_OP,
 } from "@/server/agent-play/intercom/shared-intercom";
 import { createNodeAccount } from "@/server/agent-play/create-node-account";
 import { getRepository } from "@/server/get-world";
@@ -352,13 +354,25 @@ export async function POST(req: NextRequest) {
       }
       case WORLD_CHAT_PUBLISH_OP: {
         const p = parseWorldChatPublishPayload(body.payload);
-        const appended = await store.appendWorldChatMessage({
-          requestId: p.requestId,
-          mainNodeId: p.mainNodeId,
-          fromPlayerId: p.fromPlayerId,
-          message: p.message,
-          ts: new Date().toISOString(),
-        });
+        let appended: Awaited<
+          ReturnType<typeof store.appendWorldChatMessage>
+        >;
+        try {
+          appended = await store.appendWorldChatMessage({
+            requestId: p.requestId,
+            mainNodeId: p.mainNodeId,
+            fromPlayerId: p.fromPlayerId,
+            message: p.message,
+            ts: new Date().toISOString(),
+            ...(p.parentRequestId !== undefined
+              ? { parentRequestId: p.parentRequestId }
+              : {}),
+          });
+        } catch (error) {
+          const message =
+            error instanceof Error ? error.message : "invalid world chat publish";
+          return Response.json({ error: message }, { status: 400 });
+        }
         await publishWorldIntercomEvent({
           store,
           payload: {
@@ -374,6 +388,9 @@ export async function POST(req: NextRequest) {
               result: {
                 seq: appended.message.seq,
                 totalCount: appended.totalCount,
+                parentRequestId: appended.message.parentRequestId,
+                depth: appended.message.depth,
+                reactions: appended.message.reactions,
               },
             }),
             channelKey: "intercom:world:global",
@@ -381,6 +398,43 @@ export async function POST(req: NextRequest) {
           },
         });
         return Response.json({ ok: true });
+      }
+      case WORLD_CHAT_REACT_OP: {
+        const p = parseWorldChatReactPayload(body.payload);
+        const updated = await store.reactWorldChatMessage({
+          requestId: p.requestId,
+          fromPlayerId: p.fromPlayerId,
+          kind: p.kind,
+          action: p.action,
+        });
+        if (updated === null) {
+          return Response.json({ error: "message not found" }, { status: 404 });
+        }
+        await publishWorldIntercomEvent({
+          store,
+          payload: {
+            requestId: updated.requestId,
+            mainNodeId: updated.mainNodeId,
+            toPlayerId: "__world__",
+            fromPlayerId: p.fromPlayerId,
+            kind: "chat",
+            status: "completed",
+            message: updated.message,
+            result: normalizeIntercomResult({
+              message: updated.message,
+              result: {
+                seq: updated.seq,
+                reactionUpdate: true,
+                reactions: updated.reactions,
+                parentRequestId: updated.parentRequestId,
+                depth: updated.depth,
+              },
+            }),
+            channelKey: "intercom:world:global",
+            ts: new Date().toISOString(),
+          },
+        });
+        return Response.json({ ok: true, reactions: updated.reactions });
       }
       case WORLD_CHAT_HISTORY_OP: {
         const p = parseWorldChatHistoryPayload(body.payload);
