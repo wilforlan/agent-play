@@ -91,11 +91,13 @@ export const listActiveParkingOccupancies = (
   nowIso: string
 ): Array<{
   nodeId: string;
+  carPurchaseId: string;
   tier: ParkingDurationTier;
   expiresAt: string | null;
 }> => {
   const active: Array<{
     nodeId: string;
+    carPurchaseId: string;
     tier: ParkingDurationTier;
     expiresAt: string | null;
   }> = [];
@@ -104,11 +106,17 @@ export const listActiveParkingOccupancies = (
     if (occupant === null) {
       continue;
     }
-    if (occupant.expiresAt !== null && new Date(occupant.expiresAt).getTime() <= new Date(nowIso).getTime()) {
+    if (
+      !isParkingOccupantActive({
+        expiresAt: occupant.expiresAt,
+        nowIso,
+      })
+    ) {
       continue;
     }
     active.push({
       nodeId: occupant.nodeId,
+      carPurchaseId: occupant.carPurchaseId,
       tier: occupant.tier,
       expiresAt: occupant.expiresAt,
     });
