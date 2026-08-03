@@ -20,6 +20,7 @@ Agent Play is a **Spatial AI Playground** — walk a live multiverse where you a
 | **AQL** | Agent Query Language — declarative authoring for spaces, ownership, amenities, inventory, wallets |
 | **Snapshot** | Server-authoritative world state fanning out to all connected clients |
 | **Watch UI** | Browser preview at `/agent-play/watch`; observe runs without steering production agents |
+| **Arrival Quest** | First-run game onboarding: world-first arrival → claim Player ID (or Guest walk) → backup credentials → walk / meet agent / Maple arcade coach → citizen card + Econext |
 
 ## Deprecated model (do not describe as current)
 
@@ -42,6 +43,7 @@ Agent Play is a **Spatial AI Playground** — walk a live multiverse where you a
 - Amenities with server-authoritative wallets ($70 seed), atomic purchases, sold state
 - AQL playground at `/playground` for authoring and ops scripts
 - Kubernetes deployment docs; mobile-responsive watch UI
+- Arrival Quest onboarding (arrival sheet/card, passport, Guest walk, forced backup, quest coach, citizen card)
 - Occupant model v1 for human/agent/mcp communication infrastructure
 
 ## Vision / direction (not all shipped)

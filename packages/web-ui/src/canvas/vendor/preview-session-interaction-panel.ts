@@ -26,6 +26,7 @@ import { reportPresentationEvent } from "./presentation-analytics.js";
 import { createPlayPadKeysHelpSection } from "./preview-play-pad-keys.js";
 import { getPreviewViewSettings } from "./preview-view-settings.js";
 import type { WalletHudHandle } from "./wallet-hud.js";
+import { createChatComposer } from "./chat-composer.js";
 
 const STYLE_ID = "agent-play-preview-session-interaction-styles";
 
@@ -983,7 +984,7 @@ export function createPreviewSessionInteractionPanel(options: {
   let talkBillingAgentId: string | null = null;
   let shouldAutoStartRecording = false;
   let shouldFocusChatInput = false;
-  let chatInputEl: HTMLInputElement | null = null;
+  let chatInputEl: HTMLTextAreaElement | HTMLInputElement | null = null;
 
   type ReplyWaitState = {
     requestId: string;
@@ -1582,25 +1583,11 @@ export function createPreviewSessionInteractionPanel(options: {
     }
     const compose = document.createElement("form");
     compose.className = "preview-session-interaction__chat-compose";
-    const input = document.createElement("input");
-    input.className = "preview-session-interaction__chat-input";
-    input.placeholder = "Type a message...";
-    input.autocomplete = "off";
-    const send = document.createElement("button");
-    send.type = "submit";
-    send.className = "preview-session-interaction__send-btn";
-    send.textContent = "Send";
-    compose.append(input, send);
-    chatInputEl = input;
-    if (shouldFocusChatInput) {
-      input.focus();
-      shouldFocusChatInput = false;
-    }
-    compose.addEventListener("submit", (e) => {
-      e.preventDefault();
+    let clearComposer: (() => void) | null = null;
+    const submitChat = (rawText: string): void => {
       logSessionInteraction("chat:submit:precheck", "start", {
         activeAgentId,
-        textLength: input.value.trim().length,
+        textLength: rawText.trim().length,
       });
       if (activeAgentId === null) {
         logSessionInteraction("chat:submit", "skip", {
@@ -1613,7 +1600,7 @@ export function createPreviewSessionInteractionPanel(options: {
         });
         return;
       }
-      const text = input.value.trim();
+      const text = rawText.trim();
       if (text.length === 0) {
         logSessionInteraction("chat:submit", "skip", {
           reason: "empty_message",
@@ -1671,7 +1658,7 @@ export function createPreviewSessionInteractionPanel(options: {
         role: "user",
         text,
       });
-      input.value = "";
+      clearComposer?.();
       startReplyWait({
         requestId,
         mode: "chat",
@@ -1729,6 +1716,40 @@ export function createPreviewSessionInteractionPanel(options: {
           setBusy(false);
           render();
         });
+    };
+    const chatComposer = createChatComposer({
+      placeholder: "Type a message...",
+      onSubmit: ({ text }) => {
+        submitChat(text);
+      },
+    });
+    clearComposer = () => {
+      chatComposer.setValue("");
+    };
+    chatComposer.element.classList.add(
+      "preview-session-interaction__chat-composer"
+    );
+    const input = chatComposer.element.querySelector(
+      ".chat-composer__input"
+    ) as HTMLTextAreaElement | null;
+    if (input !== null) {
+      input.classList.add("preview-session-interaction__chat-input");
+    }
+    const send = chatComposer.element.querySelector(
+      ".chat-composer__send"
+    ) as HTMLButtonElement | null;
+    if (send !== null) {
+      send.classList.add("preview-session-interaction__send-btn");
+    }
+    compose.append(chatComposer.element);
+    chatInputEl = input;
+    if (shouldFocusChatInput) {
+      chatComposer.focus();
+      shouldFocusChatInput = false;
+    }
+    compose.addEventListener("submit", (e) => {
+      e.preventDefault();
+      submitChat(chatComposer.getValue());
     });
     body.append(log, compose);
   };

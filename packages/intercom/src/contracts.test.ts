@@ -5,6 +5,7 @@ import {
   parseIntercomCommandPayload,
   parseIntercomResponsePayload,
   parseWorldChatPublishPayload,
+  parseWorldChatReactPayload,
   parseWorldIntercomEventPayload,
 } from "./validator.js";
 
@@ -164,8 +165,10 @@ describe("intercom contracts", () => {
       mainNodeId: "main-1",
       fromPlayerId: "__human__",
       message: "hello world",
+      parentRequestId: "room-root",
     });
     expect(payload.message).toBe("hello world");
+    expect(payload.parentRequestId).toBe("room-root");
   });
 
   it("rejects world chat publish payload with empty message", () => {
@@ -177,6 +180,18 @@ describe("intercom contracts", () => {
         message: "   ",
       })
     ).toThrow();
+  });
+
+  it("accepts world chat react payload", () => {
+    const payload = parseWorldChatReactPayload({
+      requestId: "room-1",
+      mainNodeId: "main-1",
+      fromPlayerId: "main-1",
+      kind: "love",
+      action: "cancel",
+    });
+    expect(payload.kind).toBe("love");
+    expect(payload.action).toBe("cancel");
   });
 
   it("normalizes intercom text result with messageKind=text", () => {

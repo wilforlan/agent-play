@@ -26,7 +26,7 @@ function ensureAgentChatOverlayStyles(): void {
 .preview-agent-chat-card {
   position: absolute;
   box-sizing: border-box;
-  width: var(--agent-chat-panel-w, 200px);
+  width: var(--agent-chat-panel-w, 280px);
   max-width: calc(100% - 12px);
   pointer-events: auto;
   border-radius: 8px;
@@ -36,23 +36,26 @@ function ensureAgentChatOverlayStyles(): void {
   visibility: hidden;
 }
 .preview-agent-chat-scroll {
-  max-height: var(--agent-chat-scroll-max, 148px);
+  max-height: var(--agent-chat-scroll-max, 220px);
   overflow-y: auto;
   overflow-x: hidden;
-  padding: 3px 5px;
+  padding: 6px 8px;
   scroll-behavior: smooth;
-  font-family: "Cinzel", "Palatino Linotype", Palatino, "Times New Roman", serif;
-  font-size: var(--agent-chat-font, 8px);
-  line-height: 1.35;
+  font-family: "Source Serif 4", "Iowan Old Style", "Palatino Linotype", Palatino, "Times New Roman", serif;
+  font-size: var(--agent-chat-font, 13px);
+  line-height: 1.45;
+  letter-spacing: 0.01em;
   color: #0f172a;
 }
 .preview-agent-chat-card .preview-chat-meta {
-  font-size: var(--agent-chat-meta, 6px);
-  margin-bottom: 2px;
-  letter-spacing: 0.04em;
+  font-size: var(--agent-chat-meta, 10px);
+  margin-bottom: 3px;
+  letter-spacing: 0.03em;
+  color: #475569;
+  font-family: "Source Sans 3", "Segoe UI", ui-sans-serif, system-ui, sans-serif;
 }
 .preview-agent-chat-card .preview-chat-body {
-  font-size: var(--agent-chat-font, 8px);
+  font-size: var(--agent-chat-font, 13px);
 }
 .preview-agent-chat-card .preview-chat-body p {
   margin: 0 0 0.2em 0;
@@ -61,8 +64,9 @@ function ensureAgentChatOverlayStyles(): void {
 .preview-agent-chat-card .preview-chat-body h2,
 .preview-agent-chat-card .preview-chat-body h3,
 .preview-agent-chat-card .preview-chat-body h4 {
-  margin: 0.15em 0 0.1em 0;
-  font-size: var(--agent-chat-font, 8px);
+  margin: 0.2em 0 0.12em 0;
+  font-size: calc(var(--agent-chat-font, 13px) * 1.05);
+  font-weight: 700;
 }
 .preview-agent-chat-card .preview-chat-body ul,
 .preview-agent-chat-card .preview-chat-body ol {
@@ -70,22 +74,22 @@ function ensureAgentChatOverlayStyles(): void {
   padding-left: 1em;
 }
 .preview-agent-chat-card .preview-chat-body pre {
-  margin: 0.2em 0;
-  padding: 3px 4px;
-  font-size: var(--agent-chat-code, 7px);
-  line-height: 1.3;
+  margin: 0.25em 0;
+  padding: 6px 7px;
+  font-size: var(--agent-chat-code, 11px);
+  line-height: 1.35;
 }
 .preview-agent-chat-card .preview-chat-body code {
-  font-size: var(--agent-chat-code, 7px);
-  padding: 0.05em 0.2em;
+  font-size: var(--agent-chat-code, 11px);
+  padding: 0.05em 0.25em;
 }
 .preview-agent-chat-card .preview-chat-body table {
-  font-size: var(--agent-chat-code, 7px);
-  margin: 0.2em 0;
+  font-size: var(--agent-chat-code, 11px);
+  margin: 0.25em 0;
 }
 .preview-agent-chat-card .preview-chat-bubble {
-  margin-bottom: 3px;
-  padding: 3px 5px;
+  margin-bottom: 5px;
+  padding: 6px 8px;
 }
 .preview-agent-chat-scroll::-webkit-scrollbar {
   width: 5px;

@@ -287,4 +287,38 @@ describe("createWalletInventoryPanel", () => {
     panel.setData({ balanceUsd: 10, powerUps: 0, purchases: [], items: {} });
     expect(parent.textContent).toContain("No wallet activity yet");
   });
+
+  it("wraps long transaction detail text in list and detail views", () => {
+    const parent = newParent();
+    const panel = createWalletInventoryPanel({
+      parent,
+      onRefresh: () => {},
+    });
+    panel.open();
+    const longDetail =
+      "Very-long-transaction-detail-that-must-wrap-across-multiple-lines-instead-of-overflowing-the-wallet-activity-panel";
+    panel.setData({
+      balanceUsd: 10,
+      powerUps: 0,
+      purchases: [
+        carPurchase({
+          amenityKind: "apu_credit",
+          detail: longDetail,
+          powerUpsDelta: 5,
+          itemRef: { kind: "shop", id: "apu-1" },
+        }),
+      ],
+      items: {},
+    });
+    const styleText =
+      document.getElementById("preview-wallet-inventory-styles")?.textContent ??
+      "";
+    expect(styleText).toMatch(
+      /\.preview-wallet-inventory__sub \{[\s\S]*?overflow-wrap:\s*anywhere/
+    );
+    expect(styleText).toMatch(
+      /\.preview-wallet-inventory__meta > :not\(\.preview-wallet-inventory__meta-key\) \{[\s\S]*?overflow-wrap:\s*anywhere/
+    );
+    expect(parent.textContent).toContain(longDetail);
+  });
 });

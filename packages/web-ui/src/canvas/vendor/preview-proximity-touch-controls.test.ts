@@ -575,6 +575,86 @@ describe("createPreviewProximityTouchControls", () => {
     expect(onPushToTalk).toHaveBeenCalledTimes(1);
   });
 
+  it("keeps the pad inside its parent when drag bounds element is offset from the parent", () => {
+    const scaledHost = document.createElement("div");
+    parent.appendChild(scaledHost);
+    parent.getBoundingClientRect = () =>
+      ({
+        x: 0,
+        y: 0,
+        left: 0,
+        top: 0,
+        right: 400,
+        bottom: 300,
+        width: 400,
+        height: 300,
+        toJSON: () => ({}),
+      }) as DOMRect;
+    scaledHost.getBoundingClientRect = () =>
+      ({
+        x: 40,
+        y: 60,
+        left: 40,
+        top: 60,
+        right: 280,
+        bottom: 240,
+        width: 240,
+        height: 180,
+        toJSON: () => ({}),
+      }) as DOMRect;
+
+    const { root } = createPreviewProximityTouchControls({
+      parent,
+      getBoundsElement: () => scaledHost,
+      getCanAct: () => true,
+      onAssist,
+      onChat,
+      onPushToTalk,
+    });
+
+    root.getBoundingClientRect = () =>
+      ({
+        x: 140,
+        y: 8,
+        left: 140,
+        top: 8,
+        right: 260,
+        bottom: 48,
+        width: 120,
+        height: 40,
+        toJSON: () => ({}),
+      }) as DOMRect;
+
+    const drag = root.querySelector(
+      ".preview-proximity-touch-pad__drag"
+    ) as HTMLButtonElement;
+    drag.dispatchEvent(
+      new PointerEvent("pointerdown", {
+        bubbles: true,
+        button: 0,
+        clientX: 150,
+        clientY: 20,
+        pointerId: 1,
+      })
+    );
+    drag.dispatchEvent(
+      new PointerEvent("pointerup", {
+        bubbles: true,
+        clientX: 150,
+        clientY: 20,
+        pointerId: 1,
+      })
+    );
+
+    const leftPx = Number.parseFloat(root.style.left || "0");
+    const topPx = Number.parseFloat(root.style.top || "0");
+    expect(leftPx).toBe(140);
+    expect(topPx).toBe(8);
+    expect(leftPx).toBeGreaterThanOrEqual(0);
+    expect(topPx).toBeGreaterThanOrEqual(0);
+    expect(leftPx + 120).toBeLessThanOrEqual(400);
+  });
+
   it("restores an initial placement and commits after drag", () => {
     const commits: Array<{ leftPx: number; topPx: number }> = [];
     parent.getBoundingClientRect = () =>

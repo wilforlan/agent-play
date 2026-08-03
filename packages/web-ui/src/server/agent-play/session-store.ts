@@ -70,6 +70,13 @@ export type PresenceLease = {
   lastSeenAt: string;
 };
 
+export type WorldChatReactionKind = "love" | "thumbs_up";
+
+export type WorldChatReactions = {
+  love: string[];
+  thumbs_up: string[];
+};
+
 export type WorldChatMessage = {
   seq: number;
   requestId: string;
@@ -77,6 +84,9 @@ export type WorldChatMessage = {
   fromPlayerId: string;
   message: string;
   ts: string;
+  parentRequestId?: string;
+  depth: 0 | 1 | 2;
+  reactions: WorldChatReactions;
 };
 
 export type SpaceAmenityLogEntry = {
@@ -155,11 +165,18 @@ export type SessionStore = {
     fromPlayerId: string;
     message: string;
     ts: string;
+    parentRequestId?: string;
   }): Promise<{ message: WorldChatMessage; totalCount: number }>;
   listWorldChatMessages(input: {
     limit: number;
     beforeSeq?: number;
   }): Promise<{ messages: WorldChatMessage[]; hasMore: boolean; totalCount: number }>;
+  reactWorldChatMessage(input: {
+    requestId: string;
+    fromPlayerId: string;
+    kind: WorldChatReactionKind;
+    action: "set" | "cancel";
+  }): Promise<WorldChatMessage | null>;
   appendSpaceAmenityLog(input: {
     spaceId: string;
     amenityKind: string;

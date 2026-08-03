@@ -40,6 +40,7 @@ describe("createPreviewGlobalChatRoom", () => {
     p2aEnabled = false;
     intercomAddress = null;
     reportPresentationEventMock.mockClear();
+    window.history.replaceState({}, "", "/watch");
     vi.stubGlobal(
       "fetch",
       vi.fn(async (_input: unknown, init?: RequestInit) => {
@@ -77,10 +78,10 @@ describe("createPreviewGlobalChatRoom", () => {
   it("sends worldChatPublish RPC and appends local message", async () => {
     const room = createRoom();
     const input = room.element.querySelector(
-      ".preview-global-chat-room__input"
-    ) as HTMLInputElement | null;
+      ".chat-composer__input"
+    ) as HTMLTextAreaElement | null;
     const send = room.element.querySelector(
-      ".preview-global-chat-room__send"
+      ".chat-composer__send"
     ) as HTMLButtonElement | null;
     expect(input).not.toBeNull();
     expect(send).not.toBeNull();
@@ -197,5 +198,92 @@ describe("createPreviewGlobalChatRoom", () => {
       clipboard: { writeText: ReturnType<typeof vi.fn> };
     };
     expect(nav.clipboard.writeText).toHaveBeenCalledWith(intercomAddress);
+  });
+
+  it("sizes the room with CSS variables so floating collapse can shrink to the header", () => {
+    const room = createRoom();
+    expect(room.element.style.height).toBe("");
+    expect(room.element.style.maxHeight).toBe("");
+    expect(room.element.style.getPropertyValue("--world-chat-panel-w")).toMatch(
+      /^\d+px$/
+    );
+    expect(room.element.style.getPropertyValue("--world-chat-panel-h")).toMatch(
+      /^\d+px$/
+    );
+    room.element.classList.add(
+      "preview-floating-panel",
+      "preview-floating-panel--collapsed"
+    );
+    expect(room.element.style.height).toBe("");
+    expect(room.element.style.maxHeight).toBe("");
+  });
+
+  it("supports two-layer replies, reactions, and message highlight links", async () => {
+    const room = createRoom();
+    room.appendFromIntercomEvent({
+      requestId: "root-1",
+      fromPlayerId: "main-2",
+      message: "root message",
+      ts: "2026-04-13T09:00:00.000Z",
+      seq: 1,
+      depth: 0,
+    });
+    const replyButton = room.element.querySelector(
+      ".chat-message-actions__reply"
+    ) as HTMLButtonElement | null;
+    expect(replyButton).not.toBeNull();
+    replyButton!.click();
+    const input = room.element.querySelector(
+      ".chat-composer__input"
+    ) as HTMLTextAreaElement;
+    input.value = "layer one";
+    (
+      room.element.querySelector(".chat-composer__send") as HTMLButtonElement
+    ).click();
+    await Promise.resolve();
+    await Promise.resolve();
+    const publishCall = vi
+      .mocked(fetch)
+      .mock.calls.map((call) => {
+        const init = call[1] as RequestInit | undefined;
+        if (typeof init?.body !== "string") return null;
+        return JSON.parse(init.body) as {
+          op: string;
+          payload: { parentRequestId?: string; message?: string };
+        };
+      })
+      .find((body) => body?.op === "worldChatPublish");
+    expect(publishCall?.payload.parentRequestId).toBe("root-1");
+    expect(publishCall?.payload.message).toBe("layer one");
+
+    const love = room.element.querySelector(
+      ".chat-message-actions__love"
+    ) as HTMLButtonElement;
+    love.click();
+    await Promise.resolve();
+    const reactCall = vi
+      .mocked(fetch)
+      .mock.calls.map((call) => {
+        const init = call[1] as RequestInit | undefined;
+        if (typeof init?.body !== "string") return null;
+        return JSON.parse(init.body) as {
+          op: string;
+          payload: { kind?: string; action?: string; requestId?: string };
+        };
+      })
+      .find((body) => body?.op === "worldChatReact");
+    expect(reactCall?.payload).toMatchObject({
+      requestId: "root-1",
+      kind: "love",
+      action: "set",
+    });
+
+    expect(room.focusMessage("root-1")).toBe(true);
+    const highlighted = room.element.querySelector(
+      "[data-request-id='root-1']"
+    );
+    expect(highlighted?.classList.contains("chat-message--highlight")).toBe(
+      true
+    );
   });
 });

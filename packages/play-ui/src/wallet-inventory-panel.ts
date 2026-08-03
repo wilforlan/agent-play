@@ -182,9 +182,9 @@ const ensureStyles = (): void => {
 }
 .${PANEL_CLASS}__row {
   display: grid;
-  grid-template-columns: 44px 1fr auto auto;
+  grid-template-columns: 44px minmax(0, 1fr) auto auto;
   gap: 12px;
-  align-items: center;
+  align-items: start;
   padding: 12px 14px;
   border-radius: 12px;
   background: #ffffff;
@@ -289,16 +289,29 @@ const ensureStyles = (): void => {
   opacity: 0.45;
   cursor: not-allowed;
 }
-.${PANEL_CLASS}__name { font-weight: 700; font-size: 14px; }
+.${PANEL_CLASS}__name {
+  font-weight: 700;
+  font-size: 14px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
 .${PANEL_CLASS}__sub {
   font-size: 11px;
   color: #64748b;
   margin-top: 2px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 .${PANEL_CLASS}__price {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-weight: 700;
   font-size: 13px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  max-width: 9rem;
 }
 .${PANEL_CLASS}__open {
   border: none;
@@ -349,12 +362,23 @@ const ensureStyles = (): void => {
 }
 .${PANEL_CLASS}__meta {
   display: grid;
-  grid-template-columns: max-content 1fr;
+  grid-template-columns: minmax(0, max-content) minmax(0, 1fr);
   gap: 6px 14px;
   font-size: 13px;
   margin-bottom: 16px;
 }
-.${PANEL_CLASS}__meta-key { color: #64748b; }
+.${PANEL_CLASS}__meta-key {
+  color: #64748b;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.${PANEL_CLASS}__meta > :not(.${PANEL_CLASS}__meta-key) {
+  min-width: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
 .${PANEL_CLASS}__detail-actions {
   display: flex;
   justify-content: flex-end;

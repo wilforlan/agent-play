@@ -119,7 +119,7 @@ export function getDefaultViewSettings(): PreviewViewSettings {
     worldGeographyEnabled: false,
     joystickEnabled: true,
     stationaryPanels: false,
-    p2aEnabled: false,
+    p2aEnabled: true,
     deepLogsEnabled: defaultDeepLogsForHost(),
     profileAvatarPresetId: "default",
     profileGender: "unspecified",

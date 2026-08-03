@@ -17,19 +17,20 @@ describe("setPreviewViewSettings", () => {
     expect(getPreviewViewSettings().themeId).toBe("tokyo");
   });
 
-  it("toggles showChatUi, debugMode, joystickEnabled, and p2aEnabled", () => {
+  it("defaults P2A on and toggles showChatUi, debugMode, joystickEnabled, and p2aEnabled", () => {
+    expect(getDefaultViewSettings().p2aEnabled).toBe(true);
     setPreviewViewSettings({
       showChatUi: false,
       debugMode: true,
       joystickEnabled: true,
-      p2aEnabled: true,
+      p2aEnabled: false,
       deepLogsEnabled: true,
     });
     const s = getPreviewViewSettings();
     expect(s.showChatUi).toBe(false);
     expect(s.debugMode).toBe(true);
     expect(s.joystickEnabled).toBe(true);
-    expect(s.p2aEnabled).toBe(true);
+    expect(s.p2aEnabled).toBe(false);
     expect(s.deepLogsEnabled).toBe(true);
   });
 
