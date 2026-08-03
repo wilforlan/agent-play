@@ -1,10 +1,6 @@
-const STRIP_STYLE_ID = "agent-play-wallet-display-strip-styles";
+import { formatApwBalance, formatApuCount } from "./format-wallet-money.js";
 
-const formatUsd = (balanceUsd: number): string => {
-  if (!Number.isFinite(balanceUsd)) return "$—";
-  const rounded = Math.round(balanceUsd * 100) / 100;
-  return `$${rounded.toFixed(2)}`;
-};
+const STRIP_STYLE_ID = "agent-play-wallet-display-strip-styles";
 
 const ensureWalletStripStyles = (): void => {
   if (typeof document === "undefined") return;
@@ -77,17 +73,13 @@ export const createWalletDisplayStrip = (): WalletDisplayStrip => {
   return {
     root,
     setBalance: (balanceUsd: number) => {
-      amount.textContent = formatUsd(balanceUsd);
+      amount.textContent = formatApwBalance(balanceUsd);
     },
     setBalanceLoading: () => {
       amount.textContent = "$…";
     },
     setPowerUps: (n: number) => {
-      if (!Number.isFinite(n) || n < 0) {
-        powerCount.textContent = "0";
-        return;
-      }
-      powerCount.textContent = String(Math.floor(n));
+      powerCount.textContent = formatApuCount(n);
     },
     setPowerUpsLoading: () => {
       powerCount.textContent = "—";

@@ -199,6 +199,7 @@ export const HOME_LANDING_CONTROLS = [
   { key: "Esc", label: "Leave stage" },
 ] as const;
 
+/** Shared with play-ui `WATCH_CANVAS_FOCUS_EVENT` / onboarding enter-world. */
 export const HOME_LANDING_SCROLL_EVENT = "agent-play:scroll-to-game";
 
 export const dispatchScrollToGame = (): void => {
