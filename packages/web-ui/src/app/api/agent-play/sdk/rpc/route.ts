@@ -75,6 +75,10 @@ import {
   parseWorldChatPublishPayload,
   parseWorldChatReactPayload,
   normalizeIntercomResult,
+  buildMessageLikeNotification,
+  buildMessageLoveNotification,
+  buildMessageReplyNotification,
+  wrapNotificationInIntercomResult,
   WORLD_CHAT_HISTORY_OP,
   WORLD_CHAT_PUBLISH_OP,
   WORLD_CHAT_REACT_OP,
@@ -373,6 +377,25 @@ export async function POST(req: NextRequest) {
             error instanceof Error ? error.message : "invalid world chat publish";
           return Response.json({ error: message }, { status: 400 });
         }
+        const publishBaseResult = {
+          seq: appended.message.seq,
+          totalCount: appended.totalCount,
+          parentRequestId: appended.message.parentRequestId,
+          depth: appended.message.depth,
+          reactions: appended.message.reactions,
+        };
+        const replyNotification =
+          typeof appended.parentFromPlayerId === "string" &&
+          appended.parentFromPlayerId !== appended.message.fromPlayerId
+            ? buildMessageReplyNotification({
+                id: `reply-${appended.message.requestId}`,
+                createdAt: appended.message.ts,
+                actorPlayerId: appended.message.fromPlayerId,
+                targetPlayerId: appended.parentFromPlayerId,
+                messageRequestId: appended.message.requestId,
+                replyPreview: appended.message.message,
+              })
+            : null;
         await publishWorldIntercomEvent({
           store,
           payload: {
@@ -385,13 +408,13 @@ export async function POST(req: NextRequest) {
             message: appended.message.message,
             result: normalizeIntercomResult({
               message: appended.message.message,
-              result: {
-                seq: appended.message.seq,
-                totalCount: appended.totalCount,
-                parentRequestId: appended.message.parentRequestId,
-                depth: appended.message.depth,
-                reactions: appended.message.reactions,
-              },
+              result:
+                replyNotification === null
+                  ? publishBaseResult
+                  : wrapNotificationInIntercomResult(
+                      replyNotification,
+                      publishBaseResult
+                    ),
             }),
             channelKey: "intercom:world:global",
             ts: appended.message.ts,
@@ -410,6 +433,38 @@ export async function POST(req: NextRequest) {
         if (updated === null) {
           return Response.json({ error: "message not found" }, { status: 404 });
         }
+        const reactTs = new Date().toISOString();
+        const reactBaseResult = {
+          seq: updated.seq,
+          reactionUpdate: true,
+          reactions: updated.reactions,
+          parentRequestId: updated.parentRequestId,
+          depth: updated.depth,
+        };
+        let reactResult: Record<string, unknown> = reactBaseResult;
+        if (p.action === "set" && updated.fromPlayerId !== p.fromPlayerId) {
+          const shared = {
+            createdAt: reactTs,
+            actorPlayerId: p.fromPlayerId,
+            targetPlayerId: updated.fromPlayerId,
+            messageRequestId: updated.requestId,
+            messagePreview: updated.message,
+          };
+          const reactionNotification =
+            p.kind === "love"
+              ? buildMessageLoveNotification({
+                  id: `love-${updated.requestId}-${p.fromPlayerId}-${reactTs}`,
+                  ...shared,
+                })
+              : buildMessageLikeNotification({
+                  id: `like-${updated.requestId}-${p.fromPlayerId}-${reactTs}`,
+                  ...shared,
+                });
+          reactResult = wrapNotificationInIntercomResult(
+            reactionNotification,
+            reactBaseResult
+          );
+        }
         await publishWorldIntercomEvent({
           store,
           payload: {
@@ -422,16 +477,10 @@ export async function POST(req: NextRequest) {
             message: updated.message,
             result: normalizeIntercomResult({
               message: updated.message,
-              result: {
-                seq: updated.seq,
-                reactionUpdate: true,
-                reactions: updated.reactions,
-                parentRequestId: updated.parentRequestId,
-                depth: updated.depth,
-              },
+              result: reactResult,
             }),
             channelKey: "intercom:world:global",
-            ts: new Date().toISOString(),
+            ts: reactTs,
           },
         });
         return Response.json({ ok: true, reactions: updated.reactions });

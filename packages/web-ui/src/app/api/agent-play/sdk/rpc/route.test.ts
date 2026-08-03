@@ -102,6 +102,129 @@ describe("POST /api/agent-play/sdk/rpc", () => {
     expect(world.recordInteraction).not.toHaveBeenCalled();
   });
 
+  it("embeds a reply notification on world chat publish when parent author differs", async () => {
+    const world = {
+      recordInteraction: vi.fn(async () => null),
+    };
+    const store = {
+      getSnapshotRev: vi.fn(async () => 41),
+      appendWorldChatMessage: vi.fn(async () => ({
+        message: {
+          seq: 8,
+          requestId: "reply-1",
+          mainNodeId: "main-1",
+          fromPlayerId: "alice",
+          message: "thanks",
+          ts: "2026-04-13T09:00:00.000Z",
+          parentRequestId: "room-1",
+          depth: 1,
+          reactions: { love: [], thumbs_up: [] },
+        },
+        totalCount: 2,
+        parentFromPlayerId: "bob",
+      })),
+      listWorldChatMessages: vi.fn(async () => ({
+        messages: [],
+        hasMore: false,
+        totalCount: 0,
+      })),
+      publishWorldFanout: vi.fn(async () => {}),
+    };
+    getPlayWorld.mockResolvedValue(world);
+    getSessionStore.mockReturnValue(store);
+    getRepository.mockResolvedValue(null);
+    validateAgentPlaySession.mockResolvedValue(true);
+
+    const res = await POST(
+      new NextRequest("http://localhost/api/agent-play/sdk/rpc?sid=s1", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          op: "worldChatPublish",
+          payload: {
+            requestId: "reply-1",
+            mainNodeId: "main-1",
+            fromPlayerId: "alice",
+            message: "thanks",
+            parentRequestId: "room-1",
+          },
+        }),
+      })
+    );
+
+    expect(res.status).toBe(200);
+    expect(store.publishWorldFanout).toHaveBeenCalledWith(
+      expect.any(Number),
+      "world:intercom",
+      expect.objectContaining({
+        result: expect.objectContaining({
+          notification: expect.objectContaining({
+            kind: "message_reply",
+            targetPlayerId: "bob",
+            actorPlayerId: "alice",
+          }),
+        }),
+      })
+    );
+  });
+
+  it("embeds a like notification on worldChatReact set", async () => {
+    const world = {
+      recordInteraction: vi.fn(async () => null),
+    };
+    const store = {
+      getSnapshotRev: vi.fn(async () => 41),
+      reactWorldChatMessage: vi.fn(async () => ({
+        seq: 7,
+        requestId: "room-1",
+        mainNodeId: "main-1",
+        fromPlayerId: "bob",
+        message: "hello room",
+        ts: "2026-04-13T09:00:00.000Z",
+        depth: 0,
+        reactions: { love: [], thumbs_up: ["alice"] },
+      })),
+      publishWorldFanout: vi.fn(async () => {}),
+    };
+    getPlayWorld.mockResolvedValue(world);
+    getSessionStore.mockReturnValue(store);
+    getRepository.mockResolvedValue(null);
+    validateAgentPlaySession.mockResolvedValue(true);
+
+    const res = await POST(
+      new NextRequest("http://localhost/api/agent-play/sdk/rpc?sid=s1", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          op: "worldChatReact",
+          payload: {
+            requestId: "room-1",
+            mainNodeId: "main-1",
+            fromPlayerId: "alice",
+            kind: "thumbs_up",
+            action: "set",
+          },
+        }),
+      })
+    );
+
+    expect(res.status).toBe(200);
+    expect(store.publishWorldFanout).toHaveBeenCalledWith(
+      expect.any(Number),
+      "world:intercom",
+      expect.objectContaining({
+        result: expect.objectContaining({
+          reactionUpdate: true,
+          notification: expect.objectContaining({
+            kind: "message_like",
+            targetPlayerId: "bob",
+            actorPlayerId: "alice",
+          }),
+        }),
+      })
+    );
+  });
+
   it("returns world chat history page", async () => {
     const world = {
       recordInteraction: vi.fn(async () => null),
