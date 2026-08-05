@@ -86,6 +86,12 @@ const CreateHumanNodePayloadSchema = z
     consent: z.literal(true),
     nodeId: NonEmpty,
     passwHash: NonEmpty,
+    referralCode: z
+      .string()
+      .trim()
+      .toUpperCase()
+      .regex(/^[A-Z0-9]{8}$/)
+      .optional(),
   })
   .strict();
 

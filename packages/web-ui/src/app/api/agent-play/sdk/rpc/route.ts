@@ -56,7 +56,12 @@ import { logAgentPlayApi } from "@/server/agent-play/log-agent-play-api";
 import type { Journey } from "@/server/agent-play/@types/world";
 import { readResolvedSnapshotWithMeta } from "@/server/agent-play/read-resolved-snapshot";
 import { readPlayerChainNode } from "@/server/agent-play/read-player-chain-node";
-import { getPlayWorld, getSessionStore, getSharedRedisClient } from "@/server/get-world";
+import {
+  getPlayWorld,
+  getRepository,
+  getSessionStore,
+  getSharedRedisClient,
+} from "@/server/get-world";
 import { safeTrackAnalyticsEvent } from "@/server/scanner/scanner-hooks";
 import { validateAgentPlaySession } from "@/server/agent-play/session-validation";
 import { handleIntercomCommand } from "@/server/agent-play/intercom/intercom-router";
@@ -84,7 +89,7 @@ import {
   WORLD_CHAT_REACT_OP,
 } from "@/server/agent-play/intercom/shared-intercom";
 import { createNodeAccount } from "@/server/agent-play/create-node-account";
-import { getRepository } from "@/server/get-world";
+import { attributeReferralReward } from "@/server/referrals/attribute-referral-reward";
 import { publishWorldIntercomEvent } from "@/server/agent-play/intercom/fanout";
 import { isSpaceAmenityKind } from "@/server/agent-play/space-amenity";
 import { resolveSpaceOwnerWalletPlayerId } from "@/server/agent-play/resolve-space-owner-wallet";
@@ -339,6 +344,24 @@ export async function POST(req: NextRequest) {
           nodeId: p.nodeId,
           passwHash: p.passwHash,
         });
+        const redis = getSharedRedisClient();
+        if (redis !== null && p.referralCode !== undefined) {
+          const hostId = process.env.AGENT_PLAY_HOST_ID ?? "default";
+          try {
+            await attributeReferralReward({
+              redis,
+              hostId,
+              refereeNodeId: nodeId,
+              referralCode: p.referralCode,
+              now: new Date().toISOString(),
+            });
+          } catch (error) {
+            agentPlayVerbose("api", "createHumanNode referral attribution failed", {
+              nodeId,
+              error: error instanceof Error ? error.message : String(error),
+            });
+          }
+        }
         return Response.json({ ok: true, nodeId });
       }
       case INTERCOM_COMMAND_OP: {

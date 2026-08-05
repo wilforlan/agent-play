@@ -131,6 +131,27 @@ describe("intercom contracts", () => {
     expect(p.passwHash).toBe("0123456789abcdef".repeat(4));
   });
 
+  it("parses createHumanNode with optional referralCode", () => {
+    const p = parseCreateHumanNodePayload({
+      consent: true,
+      nodeId: "node-id-123",
+      passwHash: "0123456789abcdef".repeat(4),
+      referralCode: "ab12cd34",
+    });
+    expect(p.referralCode).toBe("AB12CD34");
+  });
+
+  it("rejects createHumanNode with malformed referralCode", () => {
+    expect(() =>
+      parseCreateHumanNodePayload({
+        consent: true,
+        nodeId: "node-id-123",
+        passwHash: "0123456789abcdef".repeat(4),
+        referralCode: "bad",
+      }),
+    ).toThrow();
+  });
+
   it("rejects createHumanNode without consent", () => {
     expect(() =>
       parseCreateHumanNodePayload({

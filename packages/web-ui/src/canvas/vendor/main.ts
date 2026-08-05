@@ -145,6 +145,7 @@ import {
   ensurePreviewSessionId,
   getPreviewSessionIdSync,
 } from "./preview-session-id.js";
+import { capturePreviewReferralCodeFromUrl } from "./preview-referral-code.js";
 import { ensureHumanNodeOnboarding } from "./preview-human-onboarding.js";
 import { requestWatchCanvasFocus } from "./watch-canvas-focus.js";
 import {
@@ -4969,6 +4970,7 @@ export function bootstrap(): void {
     return;
   }
   previewBootstrapLock = (async () => {
+    capturePreviewReferralCodeFromUrl();
     const sid = await ensurePreviewSessionId();
     if (!sid) return;
     deepLogText("bootstrap:start", {

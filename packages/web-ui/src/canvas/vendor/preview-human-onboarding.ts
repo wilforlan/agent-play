@@ -6,6 +6,7 @@ import { CREATE_HUMAN_NODE_OP } from "@agent-play/intercom";
 import { nodeCredentialFromHumanPhrase } from "@agent-play/node-tools/browser";
 import { generateNodePassphraseWordCount } from "./passphrase-passw.js";
 import { resolveAgentPlayRootKeyForBrowser } from "./preview-agent-play-root-key.js";
+import { readPreviewReferralCode } from "./preview-referral-code.js";
 import {
   downloadHumanCredentialsJson,
   readHumanCredentials,
@@ -1060,6 +1061,7 @@ export async function ensureHumanNodeOnboarding(
               phrase: passw,
               rootKey,
             });
+            const referralCode = readPreviewReferralCode();
             const res = await fetch(
               `${options.apiBase}/sdk/rpc?sid=${encodeURIComponent(sid)}`,
               {
@@ -1071,6 +1073,7 @@ export async function ensureHumanNodeOnboarding(
                     consent: true,
                     nodeId: credential.nodeId,
                     passwHash: credential.passwHash,
+                    ...(referralCode !== null ? { referralCode } : {}),
                   },
                 }),
               }
