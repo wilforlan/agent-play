@@ -11,6 +11,7 @@ export type MemoryRedis = {
     value: string,
     mode?: string,
   ) => Promise<"OK" | null>;
+  del: (key: string) => Promise<number>;
   incr: (key: string) => Promise<number>;
   incrby: (key: string, amount: number) => Promise<number>;
   lpush: (key: string, value: string) => Promise<number>;
@@ -52,6 +53,13 @@ export const createMemoryRedis = (): MemoryRedis => {
       touch(key);
       store.set(key, value);
       return "OK";
+    },
+    del: async (key) => {
+      const existed = store.delete(key) ? 1 : 0;
+      if (existed === 1) {
+        touch(key);
+      }
+      return existed;
     },
     incr: async (key) => {
       const next = (Number.parseInt(store.get(key) ?? "0", 10) || 0) + 1;

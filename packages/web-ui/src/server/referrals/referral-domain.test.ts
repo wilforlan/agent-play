@@ -4,7 +4,9 @@ import {
   REFERRAL_MONTHLY_APU_CAP,
   REFERRAL_REWARD_APU,
   applyReferralBankableCredit,
+  buildReferralLink,
   decideReferralReward,
+  generateReferralCode,
   monthKeyUtc,
   monthlyApuRemaining,
   parseReferralCode,
@@ -15,6 +17,20 @@ describe("referral domain (agent-play)", () => {
     expect(REFERRAL_REWARD_APU).toBe(25);
     expect(REFERRAL_MONTHLY_APU_CAP).toBe(1000);
     expect(REFERRAL_CREDIT_SOURCE).toBe("referral:bonus");
+  });
+
+  it("generates 8-character referral codes from entropy", () => {
+    expect(generateReferralCode(() => "a1b2c3d4e5f6")).toBe("A1B2C3D4");
+    expect(parseReferralCode(generateReferralCode())).not.toBeNull();
+  });
+
+  it("builds play-world referral links with trailing slash stripped", () => {
+    expect(
+      buildReferralLink({
+        playWorldBaseUrl: "https://agent-play.com/",
+        code: "AB12CD34",
+      }),
+    ).toBe("https://agent-play.com/?rc=AB12CD34");
   });
 
   it("parses valid referral codes", () => {
