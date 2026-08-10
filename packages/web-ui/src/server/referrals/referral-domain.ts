@@ -6,6 +6,22 @@ export const REFERRAL_SESSION_STORAGE_KEY = "agent-play:referral-code";
 
 const REFERRAL_CODE_PATTERN = /^[A-Z0-9]{8}$/;
 
+export const generateReferralCode = (
+  entropy: () => string = () =>
+    `${Date.now().toString(36)}${Math.random().toString(36).slice(2)}`,
+): string => {
+  const source = normalizeReferralCode(entropy().replace(/[^a-z0-9]/gi, ""));
+  return `${source}ABCDEFGH01234567`.slice(0, REFERRAL_CODE_LENGTH);
+};
+
+export const buildReferralLink = (input: {
+  playWorldBaseUrl: string;
+  code: string;
+}): string => {
+  const base = input.playWorldBaseUrl.replace(/\/$/, "");
+  return `${base}/?rc=${input.code}`;
+};
+
 export type ReferralAttributionStatus = "awarded" | "capped" | "invalid";
 
 export type ReferralAttribution = {

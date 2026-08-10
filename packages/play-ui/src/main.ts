@@ -163,6 +163,10 @@ import {
   startArrivalQuest,
   type ArrivalQuestCoachHandle,
 } from "./arrival-quest.js";
+import {
+  shouldShowInviteFriendsModal,
+  showInviteFriendsModal,
+} from "./invite-friends-modal.js";
 import { createPreviewAgentChatOverlays } from "./preview-agent-chat-overlays.js";
 import { ensurePreviewChatStyles } from "./preview-chat-panel.js";
 import { createPreviewChatSettingsPanel } from "./preview-chat-settings-panel.js";
@@ -2738,6 +2742,27 @@ function noteArrivalQuestStep(
   syncArrivalQuestUi();
 }
 
+function maybeShowInviteFriendsModal(): void {
+  const creds = readHumanCredentials();
+  if (creds === null) {
+    return;
+  }
+  const guest = isGuestNodeId(creds.nodeId);
+  if (
+    !shouldShowInviteFriendsModal({
+      guest,
+      hasCredentials: true,
+    })
+  ) {
+    return;
+  }
+  showInviteFriendsModal({
+    nodeId: creds.nodeId,
+    parent: document.body,
+    playWorldBaseUrl: window.location.origin,
+  });
+}
+
 function maybeStartArrivalQuestAfterOnboarding(): void {
   const creds = readHumanCredentials();
   if (creds === null) {
@@ -2755,6 +2780,7 @@ function maybeStartArrivalQuestAfterOnboarding(): void {
     arrivalQuestWalkOrigin = { x: humanPos.x, y: humanPos.y };
   }
   syncArrivalQuestUi();
+  maybeShowInviteFriendsModal();
 }
 
 /**
