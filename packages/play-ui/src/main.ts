@@ -5509,7 +5509,7 @@ export function bootstrap(): void {
         walletHud?.setBalance(wallet.balanceUsd);
       },
       onError: (message) => {
-        deepLogText("peer-call", message);
+        deepLogText("peer-call", { message });
       },
       onCallUiChange: () => {
         proximityTouchPadHandle?.refresh();
