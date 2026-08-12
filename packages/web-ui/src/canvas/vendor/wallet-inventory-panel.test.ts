@@ -113,6 +113,20 @@ describe("buildPurchaseSubtitle", () => {
     expect(subtitle).toContain("House 1");
     expect(subtitle).toContain("Studio layout");
   });
+
+  it("uses detail for peer talk purchases", () => {
+    const subtitle = buildPurchaseSubtitle({
+      record: carPurchase({
+        amenityKind: "peer_talk_time",
+        spaceId: "__peer_talk__",
+        itemRef: { kind: "peer_talk", id: "peer-webrtc" },
+        detail: "Peer voice · 7s · callee callee-1",
+        priceUsd: 0.014,
+      }),
+      fields: {},
+    });
+    expect(subtitle).toContain("Peer voice · 7s · callee callee-1");
+  });
 });
 
 describe("createWalletInventoryPanel", () => {
