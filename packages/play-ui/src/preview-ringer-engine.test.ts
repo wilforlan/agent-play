@@ -37,18 +37,20 @@ describe("createPreviewRingerEngine", () => {
   });
 
   it("loops ringtone until stopIncomingCallRing", async () => {
+    vi.useFakeTimers();
     const playRingtone = vi.fn(async () => {});
     const ringer = createPreviewRingerEngine({
       getIsPresent: () => true,
       playRingtone,
     });
     const loop = ringer.startIncomingCallRing();
-    await Promise.resolve();
+    await vi.advanceTimersByTimeAsync(0);
     expect(playRingtone).toHaveBeenCalled();
     ringer.stopIncomingCallRing();
     const callsAfterStop = playRingtone.mock.calls.length;
-    await new Promise((resolve) => setTimeout(resolve, 20));
+    await vi.advanceTimersByTimeAsync(5000);
     expect(playRingtone.mock.calls.length).toBe(callsAfterStop);
     await loop;
+    vi.useRealTimers();
   });
 });

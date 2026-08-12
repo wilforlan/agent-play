@@ -30,6 +30,7 @@ export type PeerCallControllerOptions = {
   stopAgentPtt: () => void | Promise<void>;
   onWalletUpdate?: (wallet: PlayerWallet) => void;
   onError?: (message: string) => void;
+  onCallUiChange?: () => void;
   ringer: PreviewRingerEngine;
 };
 
@@ -73,6 +74,13 @@ export const createPeerCallController = (
   let active: ActiveCallState | null = null;
   let pendingOutgoing: PeerCallRecord | null = null;
   let ringingInviteId: string | null = null;
+  let pendingSignals: ReturnType<
+    typeof PeerCallSignalBodySchema.parse
+  >[] = [];
+
+  const notifyUi = (): void => {
+    options.onCallUiChange?.();
+  };
 
   const clearBilling = (): void => {
     if (active?.billingTimer !== null && active?.billingTimer !== undefined) {
@@ -126,40 +134,94 @@ export const createPeerCallController = (
     scheduleBillingTick();
   };
 
-  const startMedia = async (call: PeerCallRecord, role: "caller" | "callee"): Promise<void> => {
-    const sid = options.getSid();
-    const localId = options.getLocalHumanId();
-    if (sid === null || localId === null) {
-      throw new Error("Not signed in");
+  const flushPendingSignals = (voice: PeerVoiceSessionHandle): void => {
+    const queued = pendingSignals;
+    pendingSignals = [];
+    for (const signal of queued) {
+      void voice.handleSignal(signal);
     }
-    const remoteId = role === "caller" ? call.calleeId : call.callerId;
+  };
+
+  const attachVoice = (input: {
+    call: PeerCallRecord;
+    role: "caller" | "callee";
+    localId: string;
+    remoteId: string;
+    sid: string;
+  }): PeerVoiceSessionHandle => {
     const voice = createPeerVoiceSession({
-      callId: call.callId,
-      localHumanId: localId,
-      remoteHumanId: remoteId,
+      callId: input.call.callId,
+      localHumanId: input.localId,
+      remoteHumanId: input.remoteId,
       apiBase: options.getApiBase(),
-      sid,
-      isOfferer: role === "caller",
+      sid: input.sid,
+      isOfferer: input.role === "caller",
     });
-    await voice.start();
-    active = {
-      call,
-      role,
-      voice,
+    if (active !== null && active.call.callId === input.call.callId) {
+      active.voice = voice;
+    }
+    flushPendingSignals(voice);
+    return voice;
+  };
+
+  const beginActiveHud = (input: {
+    call: PeerCallRecord;
+    role: "caller" | "callee";
+    remoteId: string;
+  }): ActiveCallState => {
+    clearHudTimer();
+    const state: ActiveCallState = {
+      call: input.call,
+      role: input.role,
+      voice: null,
       billingTimer: null,
       hudTimer: null,
       startedAtMs: Date.now(),
     };
-    hud.setPeerName(options.getPeerDisplayName(remoteId));
+    active = state;
+    hud.setPeerName(options.getPeerDisplayName(input.remoteId));
     hud.setElapsedSeconds(0);
     hud.setVisible(true);
-    active.hudTimer = window.setInterval(() => {
+    state.hudTimer = window.setInterval(() => {
       if (active === null) {
         return;
       }
       const elapsed = Math.floor((Date.now() - active.startedAtMs) / 1000);
       hud.setElapsedSeconds(elapsed);
     }, 1000);
+    notifyUi();
+    return state;
+  };
+
+  const startMedia = async (
+    call: PeerCallRecord,
+    role: "caller" | "callee"
+  ): Promise<void> => {
+    const sid = options.getSid();
+    const localId = options.getLocalHumanId();
+    if (sid === null || localId === null) {
+      throw new Error("Not signed in");
+    }
+    const remoteId = role === "caller" ? call.calleeId : call.callerId;
+    const state =
+      active !== null && active.call.callId === call.callId
+        ? active
+        : beginActiveHud({ call, role, remoteId });
+    state.call = call;
+    state.role = role;
+
+    const voice = attachVoice({
+      call,
+      role,
+      localId,
+      remoteId,
+      sid,
+    });
+    await voice.start();
+    if (active !== state) {
+      voice.stop();
+      return;
+    }
     if (role === "caller") {
       scheduleBillingTick();
     }
@@ -168,16 +230,20 @@ export const createPeerCallController = (
   const hangup = async (): Promise<void> => {
     options.ringer.stopIncomingCallRing();
     ringingInviteId = null;
+    pendingSignals = [];
     const outgoing = pendingOutgoing;
     pendingOutgoing = null;
     const current = active;
-    active = null;
-    clearBilling();
+    if (current?.billingTimer !== null && current?.billingTimer !== undefined) {
+      window.clearTimeout(current.billingTimer);
+    }
     if (current?.hudTimer !== null && current?.hudTimer !== undefined) {
       window.clearInterval(current.hudTimer);
     }
+    active = null;
     current?.voice?.stop();
     hud.setVisible(false);
+    notifyUi();
     const sid = options.getSid();
     const localId = options.getLocalHumanId();
     const callId = current?.call.callId ?? outgoing?.callId;
@@ -192,7 +258,7 @@ export const createPeerCallController = (
   };
 
   const startCallWithNearest = async (): Promise<void> => {
-    if (active !== null) {
+    if (active !== null || pendingOutgoing !== null) {
       await hangup();
       return;
     }
@@ -221,6 +287,7 @@ export const createPeerCallController = (
     hud.setPeerName(options.getPeerDisplayName(peerId));
     hud.setElapsedSeconds(0);
     hud.setVisible(true);
+    notifyUi();
   };
 
   const acceptInvite = async (
@@ -249,6 +316,11 @@ export const createPeerCallController = (
     if (accepted.billing?.wallet !== undefined) {
       options.onWalletUpdate?.(accepted.billing.wallet);
     }
+    beginActiveHud({
+      call: accepted.call,
+      role: "callee",
+      remoteId: accepted.call.callerId,
+    });
     try {
       await startMedia(accepted.call, "callee");
     } catch (error) {
@@ -285,6 +357,7 @@ export const createPeerCallController = (
       ) {
         pendingOutgoing = null;
         hud.setVisible(false);
+        notifyUi();
         options.onError?.("Call declined");
       }
       return;
@@ -317,6 +390,11 @@ export const createPeerCallController = (
       active === null
     ) {
       pendingOutgoing = null;
+      beginActiveHud({
+        call,
+        role: "caller",
+        remoteId: call.calleeId,
+      });
       void startMedia(call, "caller").catch(async (error: unknown) => {
         options.onError?.(
           error instanceof Error ? error.message : "Could not start call media"
@@ -330,8 +408,8 @@ export const createPeerCallController = (
         call.status === "declined" ||
         call.status === "missed" ||
         call.status === "failed") &&
-      active !== null &&
-      call.callId === active.call.callId
+      ((active !== null && call.callId === active.call.callId) ||
+        (pendingOutgoing !== null && call.callId === pendingOutgoing.callId))
     ) {
       void hangup();
     }
@@ -346,7 +424,14 @@ export const createPeerCallController = (
       return;
     }
     const parsed = PeerCallSignalBodySchema.safeParse(data);
-    if (!parsed.success || active?.voice === null || active === undefined) {
+    if (!parsed.success) {
+      return;
+    }
+    if (active === null) {
+      return;
+    }
+    if (active.voice === null) {
+      pendingSignals = [...pendingSignals, parsed.data];
       return;
     }
     void active.voice.handleSignal(parsed.data);
@@ -366,7 +451,7 @@ export const createPeerCallController = (
     setNearestHumanId: (humanId) => {
       nearestHumanId = humanId;
     },
-    isInCall: () => active !== null,
+    isInCall: () => active !== null || pendingOutgoing !== null,
     startCallWithNearest,
     hangup,
     handleIncomingInvite,
@@ -379,6 +464,7 @@ export const createPeerCallController = (
       clearHudTimer();
       active?.voice?.stop();
       active = null;
+      pendingOutgoing = null;
       ringingInviteId = null;
       hud.destroy();
     },

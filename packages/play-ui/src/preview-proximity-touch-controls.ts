@@ -288,6 +288,16 @@ export function createPreviewProximityTouchControls(
         "aria-label",
         `${houseInteriorPurchaseLabel ?? "Buy"} house`
       );
+    } else if (nearPeerTalk && peerTalkLabel === "End") {
+      btnAssist.disabled = true;
+      subA.textContent = "Assist";
+      btnAssist.removeAttribute("aria-label");
+      btnChat.disabled = true;
+      btnPushToTalk.disabled = false;
+      subP.textContent = "End";
+      btnPushToTalk.classList.add("preview-proximity-touch-pad__key--proximity-active");
+      btnPushToTalk.classList.remove("preview-proximity-touch-pad__key--proximity-hint");
+      btnPushToTalk.setAttribute("aria-label", "End peer call");
     } else if (nearAmenityItem) {
       btnAssist.disabled = true;
       subA.textContent = "Assist";
