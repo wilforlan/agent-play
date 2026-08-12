@@ -1,0 +1,9 @@
+export const GEOGRAPHY_MEMBER_CAP = 100;
+export const GEOGRAPHY_MESH_DEGREE_MAX = 16;
+export const GEOGRAPHY_POSE_PUBLISH_MAX_HZ = 20;
+export const GEOGRAPHY_COARSE_MAX_HZ = 1;
+export const GEOGRAPHY_AOI_HYSTERESIS_MS = 2500;
+export const GEOGRAPHY_MAP_KEY = "geography";
+export const WORLD_GEOGRAPHY_SIGNAL_EVENT = "world:geography-signal";
+export const WORLD_GEOGRAPHY_NEIGHBORS_EVENT = "world:geography-neighbors";
+export const WORLD_GEOGRAPHY_MEMBERSHIP_EVENT = "world:geography-membership";
