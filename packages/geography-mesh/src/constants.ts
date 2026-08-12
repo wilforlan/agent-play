@@ -7,3 +7,4 @@ export const GEOGRAPHY_MAP_KEY = "geography";
 export const WORLD_GEOGRAPHY_SIGNAL_EVENT = "world:geography-signal";
 export const WORLD_GEOGRAPHY_NEIGHBORS_EVENT = "world:geography-neighbors";
 export const WORLD_GEOGRAPHY_MEMBERSHIP_EVENT = "world:geography-membership";
+export const WORLD_PEER_CALL_SIGNAL_EVENT = "world:peer-call-signal";
