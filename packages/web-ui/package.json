@@ -17,6 +17,7 @@
     "sanity:typegen": "sanity schema extract --path=schema.json && sanity typegen generate"
   },
   "dependencies": {
+    "@agent-play/geography-mesh": "^0.1.0",
     "@agent-play/intercom": "^3.3.6",
     "@agent-play/node-tools": "^3.2.1",
     "@agent-play/sdk": "^3.4.6",
@@ -36,6 +37,7 @@
     "dompurify": "^3.3.3",
     "ioredis": "^5.6.0",
     "isomorphic-dompurify": "^3.7.1",
+    "lib0": "^0.2.117",
     "lucide-react": "^1.28.0",
     "marked": "^17.0.5",
     "next": "^15.1.0",
@@ -51,7 +53,9 @@
     "tailwindcss": "^4.3.3",
     "tsx": "^4.21.0",
     "typescript": "~5.9.3",
-    "ws": "^8.18.0"
+    "ws": "^8.18.0",
+    "y-protocols": "^1.0.7",
+    "yjs": "^13.6.27"
   },
   "devDependencies": {
     "@types/dompurify": "^3.0.5",
