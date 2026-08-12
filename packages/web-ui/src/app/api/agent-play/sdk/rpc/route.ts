@@ -83,6 +83,9 @@ import {
   buildMessageLikeNotification,
   buildMessageLoveNotification,
   buildMessageReplyNotification,
+  buildPeerCallDeclinedNotification,
+  buildPeerCallInviteNotification,
+  buildNotificationIntercomEvent,
   wrapNotificationInIntercomResult,
   WORLD_CHAT_HISTORY_OP,
   WORLD_CHAT_PUBLISH_OP,
@@ -1578,6 +1581,287 @@ export async function POST(req: NextRequest) {
           now,
         });
         return Response.json(out);
+      }
+      case "peerTalkSessionStart": {
+        const p = body.payload as {
+          callerId?: unknown;
+          calleeId?: unknown;
+          callId?: unknown;
+        };
+        if (
+          typeof p.callerId !== "string" ||
+          p.callerId.trim().length === 0 ||
+          typeof p.calleeId !== "string" ||
+          p.calleeId.trim().length === 0 ||
+          typeof p.callId !== "string" ||
+          p.callId.trim().length === 0
+        ) {
+          return Response.json({ error: "invalid payload" }, { status: 400 });
+        }
+        const now = new Date().toISOString();
+        const out = await store.startPeerTalkSession({
+          callerId: p.callerId.trim(),
+          calleeId: p.calleeId.trim(),
+          callId: p.callId.trim(),
+          now,
+        });
+        return Response.json(out);
+      }
+      case "peerTalkSessionTick": {
+        const p = body.payload as {
+          callerId?: unknown;
+          calleeId?: unknown;
+          callId?: unknown;
+        };
+        if (
+          typeof p.callerId !== "string" ||
+          p.callerId.trim().length === 0 ||
+          typeof p.calleeId !== "string" ||
+          p.calleeId.trim().length === 0 ||
+          typeof p.callId !== "string" ||
+          p.callId.trim().length === 0
+        ) {
+          return Response.json({ error: "invalid payload" }, { status: 400 });
+        }
+        const now = new Date().toISOString();
+        const out = await store.tickPeerTalkSession({
+          callerId: p.callerId.trim(),
+          calleeId: p.calleeId.trim(),
+          callId: p.callId.trim(),
+          now,
+        });
+        return Response.json(out);
+      }
+      case "peerTalkSessionStop": {
+        const p = body.payload as {
+          callerId?: unknown;
+          calleeId?: unknown;
+          callId?: unknown;
+        };
+        if (
+          typeof p.callerId !== "string" ||
+          p.callerId.trim().length === 0 ||
+          typeof p.calleeId !== "string" ||
+          p.calleeId.trim().length === 0 ||
+          typeof p.callId !== "string" ||
+          p.callId.trim().length === 0
+        ) {
+          return Response.json({ error: "invalid payload" }, { status: 400 });
+        }
+        const now = new Date().toISOString();
+        const out = await store.stopPeerTalkSession({
+          callerId: p.callerId.trim(),
+          calleeId: p.calleeId.trim(),
+          callId: p.callId.trim(),
+          now,
+        });
+        return Response.json(out);
+      }
+      case "peerCallInvite": {
+        const p = body.payload as {
+          callerId?: unknown;
+          calleeId?: unknown;
+          callerDisplayName?: unknown;
+        };
+        if (
+          typeof p.callerId !== "string" ||
+          p.callerId.trim().length === 0 ||
+          typeof p.calleeId !== "string" ||
+          p.calleeId.trim().length === 0
+        ) {
+          return Response.json({ error: "invalid payload" }, { status: 400 });
+        }
+        const now = new Date().toISOString();
+        const out = await store.invitePeerCall({
+          callerId: p.callerId.trim(),
+          calleeId: p.calleeId.trim(),
+          now,
+        });
+        if (!out.ok) {
+          return Response.json(out);
+        }
+        const callerDisplayName =
+          typeof p.callerDisplayName === "string" &&
+          p.callerDisplayName.trim().length > 0
+            ? p.callerDisplayName.trim()
+            : undefined;
+        const notification = buildPeerCallInviteNotification({
+          id: `peer-call-invite-${out.call.callId}`,
+          createdAt: now,
+          callerId: out.call.callerId,
+          calleeId: out.call.calleeId,
+          callId: out.call.callId,
+          ...(callerDisplayName !== undefined ? { callerDisplayName } : {}),
+        });
+        await publishWorldIntercomEvent({
+          store,
+          payload: buildNotificationIntercomEvent({
+            notification,
+            mainNodeId: out.call.calleeId,
+          }),
+        });
+        return Response.json({ ok: true, call: out.call });
+      }
+      case "peerCallAccept": {
+        const p = body.payload as {
+          callId?: unknown;
+          calleeId?: unknown;
+        };
+        if (
+          typeof p.callId !== "string" ||
+          p.callId.trim().length === 0 ||
+          typeof p.calleeId !== "string" ||
+          p.calleeId.trim().length === 0
+        ) {
+          return Response.json({ error: "invalid payload" }, { status: 400 });
+        }
+        const callId = p.callId.trim();
+        const calleeId = p.calleeId.trim();
+        const existing = await store.getPeerCall(callId);
+        if (existing === null || existing.calleeId !== calleeId) {
+          return Response.json(
+            { ok: false, error: "NOT_FOUND" },
+            { status: 404 }
+          );
+        }
+        const now = new Date().toISOString();
+        const transitioned = await store.transitionPeerCall({
+          callId,
+          fromStatus: "ringing",
+          toStatus: "active",
+          answeredAt: now,
+        });
+        if (!transitioned.ok) {
+          return Response.json(transitioned);
+        }
+        const billing = await store.startPeerTalkSession({
+          callerId: transitioned.call.callerId,
+          calleeId: transitioned.call.calleeId,
+          callId: transitioned.call.callId,
+          now,
+        });
+        const rev = await store.getSnapshotRev();
+        await store.publishWorldFanout(rev, "world:peer-call-state", {
+          call: transitioned.call,
+        });
+        return Response.json({
+          ok: true,
+          call: transitioned.call,
+          billing,
+        });
+      }
+      case "peerCallDecline": {
+        const p = body.payload as {
+          callId?: unknown;
+          calleeId?: unknown;
+        };
+        if (
+          typeof p.callId !== "string" ||
+          p.callId.trim().length === 0 ||
+          typeof p.calleeId !== "string" ||
+          p.calleeId.trim().length === 0
+        ) {
+          return Response.json({ error: "invalid payload" }, { status: 400 });
+        }
+        const callId = p.callId.trim();
+        const calleeId = p.calleeId.trim();
+        const existing = await store.getPeerCall(callId);
+        if (existing === null || existing.calleeId !== calleeId) {
+          return Response.json(
+            { ok: false, error: "NOT_FOUND" },
+            { status: 404 }
+          );
+        }
+        const now = new Date().toISOString();
+        const transitioned = await store.transitionPeerCall({
+          callId,
+          fromStatus: "ringing",
+          toStatus: "declined",
+          endedAt: now,
+          endReason: "decline",
+        });
+        if (!transitioned.ok) {
+          return Response.json(transitioned);
+        }
+        const notification = buildPeerCallDeclinedNotification({
+          id: `peer-call-declined-${callId}`,
+          createdAt: now,
+          callerId: existing.callerId,
+          calleeId: existing.calleeId,
+          callId,
+        });
+        await publishWorldIntercomEvent({
+          store,
+          payload: buildNotificationIntercomEvent({
+            notification,
+            mainNodeId: existing.callerId,
+          }),
+        });
+        await store.clearPeerCall(callId);
+        return Response.json({ ok: true, call: transitioned.call });
+      }
+      case "peerCallHangup": {
+        const p = body.payload as {
+          callId?: unknown;
+          actorId?: unknown;
+        };
+        if (
+          typeof p.callId !== "string" ||
+          p.callId.trim().length === 0 ||
+          typeof p.actorId !== "string" ||
+          p.actorId.trim().length === 0
+        ) {
+          return Response.json({ error: "invalid payload" }, { status: 400 });
+        }
+        const callId = p.callId.trim();
+        const actorId = p.actorId.trim();
+        const existing = await store.getPeerCall(callId);
+        if (
+          existing === null ||
+          (existing.callerId !== actorId && existing.calleeId !== actorId)
+        ) {
+          return Response.json(
+            { ok: false, error: "NOT_FOUND" },
+            { status: 404 }
+          );
+        }
+        const now = new Date().toISOString();
+        let billing: Awaited<
+          ReturnType<typeof store.stopPeerTalkSession>
+        > | null = null;
+        if (existing.status === "active") {
+          billing = await store.stopPeerTalkSession({
+            callerId: existing.callerId,
+            calleeId: existing.calleeId,
+            callId: existing.callId,
+            now,
+          });
+        }
+        const fromStatus =
+          existing.status === "ringing" || existing.status === "active"
+            ? existing.status
+            : ("active" as const);
+        const transitioned = await store.transitionPeerCall({
+          callId,
+          fromStatus,
+          toStatus: "ended",
+          endedAt: now,
+          endReason: "hangup",
+        });
+        if (!transitioned.ok) {
+          await store.clearPeerCall(callId);
+          return Response.json({
+            ok: true,
+            call: { ...existing, status: "ended", endedAt: now, endReason: "hangup" },
+            billing,
+          });
+        }
+        await store.clearPeerCall(callId);
+        return Response.json({
+          ok: true,
+          call: transitioned.call,
+          billing,
+        });
       }
       default:
         return Response.json({ error: "unknown op" }, { status: 400 });

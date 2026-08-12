@@ -67,6 +67,10 @@ import {
   ingestRoomJoinNotification,
 } from "./notification-intake.js";
 import { createJoinBubbleSound } from "./join-bubble-sound.js";
+import { createPreviewRingerEngine } from "./preview-ringer-engine.js";
+import { createPeerCallController } from "./peer-call-controller.js";
+import { findNearestHumanPartner } from "./peer-human-proximity.js";
+import { WORLD_PEER_CALL_SIGNAL_EVENT } from "./peer-voice-session.js";
 import { fetchPlayerWallet } from "./wallet-client.js";
 import {
   createWalletInventoryPanel,
@@ -1330,6 +1334,9 @@ async function triggerProximityPushToTalk(): Promise<void> {
     lastProximityPartnerId
   );
   if (partner === null || partner === HUMAN_VIEWER_PLAYER_ID) return;
+  if (peerCallController?.isInCall() === true) {
+    return;
+  }
   if (!getPreviewViewSettings().p2aEnabled) {
     showP2aRequiredModal();
     return;
@@ -2654,6 +2661,9 @@ let activeIntercomAddress: string | null = null;
 let sessionInteractionPanel:
   | ReturnType<typeof createPreviewSessionInteractionPanel>
   | null = null;
+let peerCallController: ReturnType<typeof createPeerCallController> | null =
+  null;
+let peerCallRinger: ReturnType<typeof createPreviewRingerEngine> | null = null;
 let mobileSidePanelControls:
   | ReturnType<typeof attachMobileSidePanelControls>
   | null = null;
@@ -3841,6 +3851,22 @@ function connectSse(sid: string): void {
       /* ignore */
     }
   });
+  es.addEventListener(WORLD_PEER_CALL_SIGNAL_EVENT, (ev) => {
+    try {
+      const data = JSON.parse((ev as MessageEvent).data as string) as unknown;
+      peerCallController?.handleSseEvent(WORLD_PEER_CALL_SIGNAL_EVENT, data);
+    } catch {
+      /* ignore */
+    }
+  });
+  es.addEventListener("world:peer-call-state", (ev) => {
+    try {
+      const data = JSON.parse((ev as MessageEvent).data as string) as unknown;
+      peerCallController?.handleSseEvent("world:peer-call-state", data);
+    } catch {
+      /* ignore */
+    }
+  });
   es.addEventListener(WORLD_INTERACTION_SSE, (ev) => {
     const data = JSON.parse((ev as MessageEvent).data) as {
       agentId?: string;
@@ -3951,6 +3977,7 @@ function connectSse(sid: string): void {
           viewerPlayerId: getViewerWalletPlayerId(),
           push: (notification) => {
             notificationTray?.push(notification);
+            peerCallController?.handleIncomingInvite(notification);
           },
         });
         return;
@@ -3960,6 +3987,7 @@ function connectSse(sid: string): void {
         viewerPlayerId: getViewerWalletPlayerId(),
         push: (notification) => {
           notificationTray?.push(notification);
+          peerCallController?.handleIncomingInvite(notification);
         },
       });
     }
@@ -4908,6 +4936,18 @@ function onFrame(): void {
   } else {
     lastProximityPartnerId = null;
   }
+  const localHumanId = getLocalGeographyHumanId();
+  if (onOverworld && localHumanId !== null && remoteGeographyHumanIds.size > 0) {
+    peerCallController?.setNearestHumanId(
+      findNearestHumanPartner({
+        localHumanId,
+        positions: playerWorldPos,
+        remoteHumanIds: remoteGeographyHumanIds,
+      })
+    );
+  } else {
+    peerCallController?.setNearestHumanId(null);
+  }
   if (
     !arrivalControlsMuted &&
     lastProximityPartnerId !== null &&
@@ -5453,9 +5493,35 @@ export function bootstrap(): void {
       parent: bottomHudDock.root,
       onClick: () => openWalletInventoryPanel(),
     });
+    peerCallRinger = createPreviewRingerEngine();
+    peerCallController = createPeerCallController({
+      parent: document.body,
+      getSid,
+      getApiBase: () => API_BASE,
+      getLocalHumanId: () => getLocalGeographyHumanId(),
+      getPeerDisplayName: (humanId) => formatShortNodeId(humanId),
+      isAgentPttActive: () =>
+        sessionInteractionPanel?.isVoiceConnectionActive() === true,
+      stopAgentPtt: () => {
+        sessionInteractionPanel?.closeVoiceConnection();
+      },
+      onWalletUpdate: (wallet) => {
+        walletHud?.setBalance(wallet.balanceUsd);
+      },
+      onError: (message) => {
+        deepLogText("peer-call", message);
+      },
+      ringer: peerCallRinger,
+    });
     notificationTray = createNotificationTray({
       parent: document.body,
       syncLayoutToViewport: true,
+      onAcceptPeerCall: (notification) => {
+        void peerCallController?.acceptInvite(notification);
+      },
+      onDeclinePeerCall: (notification) => {
+        void peerCallController?.declineInvite(notification);
+      },
     });
     joinBubbleSound = createJoinBubbleSound({
       getLocalPlayerId: () => getViewerWalletPlayerId(),
@@ -5582,6 +5648,7 @@ export function bootstrap(): void {
         if (target === null) return false;
         return target.activatable !== false;
       },
+      getPeerTalkLabel: () => peerCallController?.getPeerTalkLabel() ?? null,
       onAssist: () => {
         noteArrivalQuestStep("touch_control");
         if (lastHouseNearest !== null) {
@@ -5661,6 +5728,18 @@ export function bootstrap(): void {
         }
         if (lastYardAmenityPadTarget !== null) {
           void enterAmenityFromYardPad(lastYardAmenityPadTarget);
+          return;
+        }
+        const peerLabel = peerCallController?.getPeerTalkLabel() ?? null;
+        if (peerLabel !== null) {
+          if (peerCallController?.isInCall() === true || peerLabel === "End") {
+            void peerCallController?.hangup();
+          } else {
+            void peerCallController?.startCallWithNearest();
+          }
+          return;
+        }
+        if (peerCallController?.isInCall() === true) {
           return;
         }
         void triggerProximityPushToTalk();
