@@ -91,6 +91,12 @@ import {
   parseGeographyHumanState,
   type GeographyHumanState,
 } from "./world-geography.js";
+import {
+  GEOGRAPHY_MEMBER_CAP,
+  type GeographyMember,
+  GeographyMemberSchema,
+} from "@agent-play/geography-mesh";
+import { GEOGRAPHY_MEMBERSHIP_REDIS_TTL_SECONDS } from "./geography-membership.js";
 import type {
   BuyParkingTicketResult,
   BuyHouseResult,
@@ -163,6 +169,10 @@ function presenceLeaseKey(hostId: string, playerId: string): string {
 
 function geographyHumansKey(hostId: string, sid: string): string {
   return `agent-play:${hostId}:geography:${sid}`;
+}
+
+function geographyMembersKey(hostId: string, sid: string): string {
+  return `agent-play:${hostId}:geography:members:${sid}`;
 }
 
 function spaceAmenityLogKey(
@@ -2195,6 +2205,109 @@ export class RedisSessionStore implements SessionStore {
       pipe.del(key);
     } else {
       pipe.expire(key, GEOGRAPHY_REDIS_TTL_SECONDS);
+    }
+    await pipe.exec();
+    return { prev, next };
+  }
+
+  async getGeographyMembers(): Promise<Map<string, GeographyMember>> {
+    const sid = this.getSessionId();
+    const key = geographyMembersKey(this.hostId, sid);
+    const raw = await this.redis.hgetall(key);
+    const out = new Map<string, GeographyMember>();
+    for (const [fieldId, json] of Object.entries(raw)) {
+      if (json.length === 0) continue;
+      try {
+        const parsed = JSON.parse(json) as Record<string, unknown>;
+        out.set(
+          fieldId,
+          GeographyMemberSchema.parse({ ...parsed, humanId: fieldId })
+        );
+      } catch {
+        continue;
+      }
+    }
+    return out;
+  }
+
+  async joinGeographyMember(member: GeographyMember): Promise<
+    | {
+        ok: true;
+        joined: boolean;
+        prev: Map<string, GeographyMember>;
+        next: Map<string, GeographyMember>;
+      }
+    | { ok: false; error: "cap_reached"; memberCount: number; cap: number }
+  > {
+    const sid = this.getSessionId();
+    const key = geographyMembersKey(this.hostId, sid);
+    const prev = await this.getGeographyMembers();
+    if (!prev.has(member.humanId) && prev.size >= GEOGRAPHY_MEMBER_CAP) {
+      return {
+        ok: false,
+        error: "cap_reached",
+        memberCount: prev.size,
+        cap: GEOGRAPHY_MEMBER_CAP,
+      };
+    }
+    const joined = !prev.has(member.humanId);
+    const next = new Map(prev);
+    next.set(member.humanId, member);
+    const pipe = this.redis.multi();
+    pipe.hset(key, member.humanId, JSON.stringify(member));
+    pipe.expire(key, GEOGRAPHY_MEMBERSHIP_REDIS_TTL_SECONDS);
+    await pipe.exec();
+    return { ok: true, joined, prev, next };
+  }
+
+  async updateGeographyMemberCoarse(input: {
+    humanId: string;
+    x: number;
+    y: number;
+    stage?: "overworld" | "space" | "amenity";
+    coarseRevisedAt: number;
+  }): Promise<{
+    prev: Map<string, GeographyMember>;
+    next: Map<string, GeographyMember>;
+  } | null> {
+    const sid = this.getSessionId();
+    const key = geographyMembersKey(this.hostId, sid);
+    const prev = await this.getGeographyMembers();
+    const existing = prev.get(input.humanId);
+    if (existing === undefined) {
+      return null;
+    }
+    const updated: GeographyMember = {
+      ...existing,
+      x: input.x,
+      y: input.y,
+      coarseRevisedAt: input.coarseRevisedAt,
+      ...(input.stage !== undefined ? { stage: input.stage } : {}),
+    };
+    const next = new Map(prev);
+    next.set(input.humanId, updated);
+    const pipe = this.redis.multi();
+    pipe.hset(key, input.humanId, JSON.stringify(updated));
+    pipe.expire(key, GEOGRAPHY_MEMBERSHIP_REDIS_TTL_SECONDS);
+    await pipe.exec();
+    return { prev, next };
+  }
+
+  async leaveGeographyMember(humanId: string): Promise<{
+    prev: Map<string, GeographyMember>;
+    next: Map<string, GeographyMember>;
+  }> {
+    const sid = this.getSessionId();
+    const key = geographyMembersKey(this.hostId, sid);
+    const prev = await this.getGeographyMembers();
+    const next = new Map(prev);
+    next.delete(humanId);
+    const pipe = this.redis.multi();
+    pipe.hdel(key, humanId);
+    if (next.size === 0) {
+      pipe.del(key);
+    } else {
+      pipe.expire(key, GEOGRAPHY_MEMBERSHIP_REDIS_TTL_SECONDS);
     }
     await pipe.exec();
     return { prev, next };

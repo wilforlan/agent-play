@@ -36,6 +36,7 @@ import type { PlayerChainFanoutNotify } from "./player-chain/index.js";
 import type { PreviewSnapshotJson } from "./preview-serialize.js";
 import type { SessionEventLogEntry } from "./redis-session-store.js";
 import type { GeographyHumanState } from "./world-geography.js";
+import type { GeographyMember } from "@agent-play/geography-mesh";
 
 export type PublishedSessionMetadata = {
   sid: string | null;
@@ -136,6 +137,30 @@ export type SessionStore = {
   removeGeographyHuman(humanId: string): Promise<{
     prev: Map<string, GeographyHumanState>;
     next: Map<string, GeographyHumanState>;
+  }>;
+  getGeographyMembers(): Promise<Map<string, GeographyMember>>;
+  joinGeographyMember(member: GeographyMember): Promise<
+    | {
+        ok: true;
+        joined: boolean;
+        prev: Map<string, GeographyMember>;
+        next: Map<string, GeographyMember>;
+      }
+    | { ok: false; error: "cap_reached"; memberCount: number; cap: number }
+  >;
+  updateGeographyMemberCoarse(input: {
+    humanId: string;
+    x: number;
+    y: number;
+    stage?: "overworld" | "space" | "amenity";
+    coarseRevisedAt: number;
+  }): Promise<{
+    prev: Map<string, GeographyMember>;
+    next: Map<string, GeographyMember>;
+  } | null>;
+  leaveGeographyMember(humanId: string): Promise<{
+    prev: Map<string, GeographyMember>;
+    next: Map<string, GeographyMember>;
   }>;
   mergeSettings(partial: Record<string, string>): Promise<void>;
   appendEventLog(entry: SessionEventLogEntry): Promise<void>;

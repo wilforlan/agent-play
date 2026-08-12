@@ -58,6 +58,8 @@ import { getPlayerChainGenesisSync } from "./load-player-chain-genesis.js";
 import { buildPlayerChainFromSnapshot, diffPlayerChainLeaves } from "./player-chain/index.js";
 import { dispatchWorldFanoutLocal } from "./world-fanout-subscriber.js";
 import type { GeographyHumanState } from "./world-geography.js";
+import type { GeographyMember } from "@agent-play/geography-mesh";
+import { GEOGRAPHY_MEMBER_CAP } from "@agent-play/geography-mesh";
 import {
   createTestDoubleScannerMirror,
   mirrorBlock,
@@ -116,6 +118,7 @@ export class TestSessionStore implements SessionStore {
   private readonly playerWallets = new Map<string, PlayerWallet>();
   private readonly playerPurchases = new Map<string, PurchaseRecord[]>();
   private readonly geographyHumans = new Map<string, GeographyHumanState>();
+  private readonly geographyMembers = new Map<string, GeographyMember>();
   private readonly talkSessions = new Map<
     string,
     {
@@ -418,6 +421,74 @@ export class TestSessionStore implements SessionStore {
     const next = new Map(prev);
     next.delete(humanId);
     this.geographyHumans.delete(humanId);
+    return { prev, next };
+  }
+
+  async getGeographyMembers(): Promise<Map<string, GeographyMember>> {
+    return new Map(this.geographyMembers);
+  }
+
+  async joinGeographyMember(member: GeographyMember): Promise<
+    | {
+        ok: true;
+        joined: boolean;
+        prev: Map<string, GeographyMember>;
+        next: Map<string, GeographyMember>;
+      }
+    | { ok: false; error: "cap_reached"; memberCount: number; cap: number }
+  > {
+    const prev = new Map(this.geographyMembers);
+    if (!prev.has(member.humanId) && prev.size >= GEOGRAPHY_MEMBER_CAP) {
+      return {
+        ok: false,
+        error: "cap_reached",
+        memberCount: prev.size,
+        cap: GEOGRAPHY_MEMBER_CAP,
+      };
+    }
+    const joined = !prev.has(member.humanId);
+    const next = new Map(prev);
+    next.set(member.humanId, member);
+    this.geographyMembers.set(member.humanId, member);
+    return { ok: true, joined, prev, next };
+  }
+
+  async updateGeographyMemberCoarse(input: {
+    humanId: string;
+    x: number;
+    y: number;
+    stage?: "overworld" | "space" | "amenity";
+    coarseRevisedAt: number;
+  }): Promise<{
+    prev: Map<string, GeographyMember>;
+    next: Map<string, GeographyMember>;
+  } | null> {
+    const prev = new Map(this.geographyMembers);
+    const existing = prev.get(input.humanId);
+    if (existing === undefined) {
+      return null;
+    }
+    const updated: GeographyMember = {
+      ...existing,
+      x: input.x,
+      y: input.y,
+      coarseRevisedAt: input.coarseRevisedAt,
+      ...(input.stage !== undefined ? { stage: input.stage } : {}),
+    };
+    const next = new Map(prev);
+    next.set(input.humanId, updated);
+    this.geographyMembers.set(input.humanId, updated);
+    return { prev, next };
+  }
+
+  async leaveGeographyMember(humanId: string): Promise<{
+    prev: Map<string, GeographyMember>;
+    next: Map<string, GeographyMember>;
+  }> {
+    const prev = new Map(this.geographyMembers);
+    const next = new Map(prev);
+    next.delete(humanId);
+    this.geographyMembers.delete(humanId);
     return { prev, next };
   }
 
