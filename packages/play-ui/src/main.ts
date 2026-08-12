@@ -5511,6 +5511,9 @@ export function bootstrap(): void {
       onError: (message) => {
         deepLogText("peer-call", message);
       },
+      onCallUiChange: () => {
+        proximityTouchPadHandle?.refresh();
+      },
       ringer: peerCallRinger,
     });
     notificationTray = createNotificationTray({
@@ -5690,6 +5693,11 @@ export function bootstrap(): void {
       },
       onPushToTalk: () => {
         noteArrivalQuestStep("touch_control");
+        const peerLabel = peerCallController?.getPeerTalkLabel() ?? null;
+        if (peerLabel === "End" || peerCallController?.isInCall() === true) {
+          void peerCallController?.hangup();
+          return;
+        }
         if (activeHouseStage !== null) {
           toggleHousePurchasePanel();
           return;
@@ -5730,13 +5738,8 @@ export function bootstrap(): void {
           void enterAmenityFromYardPad(lastYardAmenityPadTarget);
           return;
         }
-        const peerLabel = peerCallController?.getPeerTalkLabel() ?? null;
         if (peerLabel !== null) {
-          if (peerCallController?.isInCall() === true || peerLabel === "End") {
-            void peerCallController?.hangup();
-          } else {
-            void peerCallController?.startCallWithNearest();
-          }
+          void peerCallController?.startCallWithNearest();
           return;
         }
         if (peerCallController?.isInCall() === true) {
