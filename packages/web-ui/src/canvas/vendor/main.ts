@@ -193,9 +193,19 @@ import {
 import { createPreviewDebugPanel } from "./preview-debug-panel.js";
 import {
   GEOGRAPHY_PUBLISH_INTERVAL_MS,
+  formatShortNodeId,
   postGeographyLeave,
-  postGeographyPresence,
+  resolveWorldGeographyPresenceTick,
+  shouldEnsureWorldGeographyMesh,
 } from "./preview-world-geography.js";
+import {
+  GeographyMeshSession,
+  type GeographyMeshRemotePose,
+} from "./geography-mesh-session.js";
+import {
+  WORLD_GEOGRAPHY_NEIGHBORS_EVENT,
+  WORLD_GEOGRAPHY_SIGNAL_EVENT,
+} from "@agent-play/geography-mesh";
 import {
   mountStreetSignPosts,
   type StreetSignZone,
@@ -409,6 +419,8 @@ const WORLD_INTERACTION_SSE = "world:interaction";
 const WORLD_AGENT_SIGNAL_SSE = "world:agent_signal";
 const WORLD_INTERCOM_SSE = "world:intercom";
 const WORLD_GEOGRAPHY_SSE = "world:geography";
+const WORLD_GEOGRAPHY_NEIGHBORS_SSE = WORLD_GEOGRAPHY_NEIGHBORS_EVENT;
+const WORLD_GEOGRAPHY_SIGNAL_SSE = WORLD_GEOGRAPHY_SIGNAL_EVENT;
 const WORLD_GLOBAL_CHAT_CHANNEL = "intercom:world:global";
 const AP_INTERCOM_PROTOCOL = "ap-intercom";
 function buildIntercomAddress(nodeId: string): string {
@@ -694,14 +706,29 @@ function listMapRenderableRows(s: Snapshot): AgentRow[] {
     return agents;
   }
   const localId = getLocalGeographyHumanId();
-  const remoteHumans = listHumanRows(s)
+  const fromSnapshot = listHumanRows(s)
     .filter((h) => localId === null || h.id !== localId)
     .map((h) => ({
       agentId: h.id,
-      name: h.name,
+      name: formatShortNodeId(h.name.length > 0 ? h.name : h.id),
       structures: [] as Structure[],
     }));
-  return [...agents, ...remoteHumans];
+  const seen = new Set(fromSnapshot.map((r) => r.agentId));
+  const fromMesh: AgentRow[] = [];
+  for (const id of remoteGeographyHumanIds) {
+    if (seen.has(id)) {
+      continue;
+    }
+    if (localId !== null && id === localId) {
+      continue;
+    }
+    fromMesh.push({
+      agentId: id,
+      name: formatShortNodeId(id),
+      structures: [],
+    });
+  }
+  return [...agents, ...fromSnapshot, ...fromMesh];
 }
 
 function listAgentRows(s: Snapshot): AgentRow[] {
@@ -941,6 +968,10 @@ let proximityTouchPadHandle: { refresh: () => void } | null = null;
 const playerWorldPos = new Map<string, { x: number; y: number }>();
 let geographyLastPublishMs = 0;
 const remoteGeographyHumanIds = new Set<string>();
+let geographyMeshSession: GeographyMeshSession | null = null;
+let geographyMeshStatusDetail = "";
+let geographyMeshTruncated = false;
+let geographyMeshMemberCount = 0;
 const waypointQueues = new Map<string, Array<{ x: number; y: number }>>();
 const lastTickWorldPos = new Map<string, { x: number; y: number }>();
 const walkPhaseByPlayer = new Map<string, number>();
@@ -2789,14 +2820,14 @@ function maybeStartArrivalQuestAfterOnboarding(): void {
  */
 function playerDisplayName(playerId: string): string {
   if (playerId === HUMAN_VIEWER_PLAYER_ID) return "You";
-  if (snapshot === null) return playerId;
+  if (snapshot === null) return formatShortNodeId(playerId);
   const human = listHumanRows(snapshot).find((h) => h.id === playerId);
   if (human !== undefined) {
-    return human.name;
+    return formatShortNodeId(human.name.length > 0 ? human.name : human.id);
   }
   return (
     listAgentRows(snapshot).find((p) => p.agentId === playerId)?.name ??
-    playerId
+    formatShortNodeId(playerId)
   );
 }
 
@@ -2990,8 +3021,45 @@ function clearRemoteGeographyPresence(): void {
   remoteGeographyHumanIds.clear();
 }
 
+function applyMeshRemotePoses(poses: GeographyMeshRemotePose[]): void {
+  if (!getPreviewViewSettings().worldGeographyEnabled) {
+    return;
+  }
+  const wb = getWorldBoundsForClamp();
+  const seen = new Set<string>();
+  for (const h of poses) {
+    seen.add(h.id);
+    remoteGeographyHumanIds.add(h.id);
+    const clamped =
+      wb !== null
+        ? clampWorldPosition({ x: h.x, y: h.y }, wb)
+        : { x: h.x, y: h.y };
+    playerWorldPos.set(h.id, clamped);
+    if (h.facing === "left" || h.facing === "right") {
+      facingByPlayer.set(h.id, h.facing);
+    }
+    if (typeof h.isMoving === "boolean") {
+      movingByPlayer.set(h.id, h.isMoving);
+    }
+  }
+  for (const id of [...remoteGeographyHumanIds]) {
+    if (!seen.has(id)) {
+      remoteGeographyHumanIds.delete(id);
+      playerWorldPos.delete(id);
+      waypointQueues.delete(id);
+      walkPhaseByPlayer.delete(id);
+      facingByPlayer.delete(id);
+      movingByPlayer.delete(id);
+      lastTickWorldPos.delete(id);
+    }
+  }
+}
+
 function applyWorldGeographyOccupants(snap: Snapshot): void {
   if (!getPreviewViewSettings().worldGeographyEnabled) {
+    return;
+  }
+  if (geographyMeshSession !== null) {
     return;
   }
   const wb = getWorldBoundsForClamp();
@@ -3028,26 +3096,55 @@ function applyWorldGeographyOccupants(snap: Snapshot): void {
   }
 }
 
-async function publishLocalGeographyPresence(): Promise<void> {
-  if (!getPreviewViewSettings().worldGeographyEnabled) {
-    return;
+async function stopGeographyMeshSession(): Promise<void> {
+  const session = geographyMeshSession;
+  geographyMeshSession = null;
+  geographyMeshStatusDetail = "";
+  geographyMeshTruncated = false;
+  geographyMeshMemberCount = 0;
+  if (session !== null) {
+    await session.stop();
   }
+}
+
+async function startGeographyMeshSession(): Promise<void> {
   const sid = getPreviewSessionIdSync();
   const humanId = getLocalGeographyHumanId();
-  if (sid === null || humanId === null) {
-    return;
-  }
   const pos = playerWorldPos.get(HUMAN_VIEWER_PLAYER_ID);
-  if (pos === undefined) {
+  if (sid === null || humanId === null || pos === undefined) {
     return;
   }
-  const displayName =
-    humanId.length > 16 ? `${humanId.slice(0, 12)}…` : humanId;
-  await postGeographyPresence({
+  await stopGeographyMeshSession();
+  const displayName = formatShortNodeId(humanId);
+  const session = new GeographyMeshSession({
     apiBase: API_BASE,
     sid,
     humanId,
-    name: displayName,
+    displayName,
+    callbacks: {
+      onRemotePoses: (poses) => {
+        applyMeshRemotePoses(poses);
+      },
+      onStatus: (status, detail) => {
+        geographyMeshStatusDetail =
+          detail ??
+          (status === "cap_reached"
+            ? "Geography membership is full (100)."
+            : status === "error"
+              ? "Geography mesh error"
+              : "");
+        if (status === "cap_reached" || status === "error") {
+          clearRemoteGeographyPresence();
+        }
+      },
+      onNeighborsChanged: (payload) => {
+        geographyMeshTruncated = payload.truncated;
+        geographyMeshMemberCount = payload.memberCount;
+      },
+    },
+  });
+  geographyMeshSession = session;
+  await session.start({
     x: pos.x,
     y: pos.y,
     facing: facingByPlayer.get(HUMAN_VIEWER_PLAYER_ID) ?? "right",
@@ -3060,23 +3157,46 @@ async function syncWorldGeographyEnabled(enabled: boolean): Promise<void> {
   const humanId = getLocalGeographyHumanId();
   if (!enabled) {
     clearRemoteGeographyPresence();
+    await stopGeographyMeshSession();
     if (sid !== null && humanId !== null) {
       await postGeographyLeave({ apiBase: API_BASE, sid, humanId });
     }
     return;
   }
-  await publishLocalGeographyPresence();
+  await startGeographyMeshSession();
 }
 
 function maybePublishGeographyPresence(nowMs: number): void {
-  if (!getPreviewViewSettings().worldGeographyEnabled) {
+  const tick = resolveWorldGeographyPresenceTick({
+    worldGeographyEnabled: getPreviewViewSettings().worldGeographyEnabled,
+    meshSessionActive: geographyMeshSession !== null,
+  });
+  if (tick === "noop") {
+    return;
+  }
+  if (tick === "tick_mesh") {
+    const mesh = geographyMeshSession;
+    if (mesh === null) {
+      return;
+    }
+    const pos = playerWorldPos.get(HUMAN_VIEWER_PLAYER_ID);
+    if (pos === undefined) {
+      return;
+    }
+    mesh.tickLocalPose({
+      x: pos.x,
+      y: pos.y,
+      facing: facingByPlayer.get(HUMAN_VIEWER_PLAYER_ID) ?? "right",
+      isMoving: movingByPlayer.get(HUMAN_VIEWER_PLAYER_ID) ?? false,
+      nowMs,
+    });
     return;
   }
   if (nowMs - geographyLastPublishMs < GEOGRAPHY_PUBLISH_INTERVAL_MS) {
     return;
   }
   geographyLastPublishMs = nowMs;
-  void publishLocalGeographyPresence();
+  void syncWorldGeographyEnabled(true);
 }
 
 function ingestSnapshot(snap: Snapshot): void {
@@ -3694,7 +3814,32 @@ function connectSse(sid: string): void {
     if (!getPreviewViewSettings().worldGeographyEnabled) {
       return;
     }
+    if (geographyMeshSession !== null) {
+      return;
+    }
     void handleWorldMapSse(sid, (ev as MessageEvent).data as string);
+  });
+  es.addEventListener(WORLD_GEOGRAPHY_NEIGHBORS_SSE, (ev) => {
+    if (geographyMeshSession === null) {
+      return;
+    }
+    try {
+      const data = JSON.parse((ev as MessageEvent).data as string) as unknown;
+      geographyMeshSession.handleSseEvent(WORLD_GEOGRAPHY_NEIGHBORS_SSE, data);
+    } catch {
+      /* ignore */
+    }
+  });
+  es.addEventListener(WORLD_GEOGRAPHY_SIGNAL_SSE, (ev) => {
+    if (geographyMeshSession === null) {
+      return;
+    }
+    try {
+      const data = JSON.parse((ev as MessageEvent).data as string) as unknown;
+      geographyMeshSession.handleSseEvent(WORLD_GEOGRAPHY_SIGNAL_SSE, data);
+    } catch {
+      /* ignore */
+    }
   });
   es.addEventListener(WORLD_INTERACTION_SSE, (ev) => {
     const data = JSON.parse((ev as MessageEvent).data) as {
@@ -4716,11 +4861,14 @@ function onFrame(): void {
       isMoving: movingByPlayer.get(id) ?? false,
     });
     const displayName =
-      snapshot === null
-        ? id
-        : listAgentRows(snapshot).find((pl) => pl.agentId === id)?.name ??
-          listHumanRows(snapshot).find((h) => h.id === id)?.name ??
-          id;
+      id === HUMAN_VIEWER_PLAYER_ID
+        ? "You"
+        : snapshot === null
+          ? formatShortNodeId(id)
+          : listAgentRows(snapshot).find((pl) => pl.agentId === id)?.name ??
+            formatShortNodeId(
+              listHumanRows(snapshot).find((h) => h.id === id)?.name ?? id
+            );
     v.nameTag.text = displayName;
     v.nameTag.position.set(-v.nameTag.width / 2, box * 0.45);
     if (getPreviewViewSettings().showChatUi) {
@@ -5058,6 +5206,9 @@ export function bootstrap(): void {
         getSettings: () => ({
           worldGeographyEnabled:
             getPreviewViewSettings().worldGeographyEnabled,
+          meshStatusDetail: geographyMeshStatusDetail,
+          meshTruncated: geographyMeshTruncated,
+          meshMemberCount: geographyMeshMemberCount,
         }),
         setSettings: (partial) => {
           const prev = getPreviewViewSettings().worldGeographyEnabled;
@@ -5832,6 +5983,14 @@ export function bootstrap(): void {
 
     await loadSnapshot(sid);
     connectSse(sid);
+    if (
+      shouldEnsureWorldGeographyMesh({
+        worldGeographyEnabled: getPreviewViewSettings().worldGeographyEnabled,
+        meshSessionActive: geographyMeshSession !== null,
+      })
+    ) {
+      void syncWorldGeographyEnabled(true);
+    }
     maybeStartArrivalQuestAfterOnboarding();
   })().finally(() => {
     previewBootstrapLock = null;

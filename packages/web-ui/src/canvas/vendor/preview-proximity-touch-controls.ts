@@ -185,12 +185,60 @@ export function createPreviewProximityTouchControls(
   root.append(dragHandle, row);
   options.parent.appendChild(root);
 
+  const FALLBACK_PAD_WIDTH_PX = 280;
+  const FALLBACK_PAD_HEIGHT_PX = 64;
+
   let placedByDrag = false;
-  if (options.initialPlacement !== undefined) {
-    root.style.left = `${options.initialPlacement.leftPx}px`;
-    root.style.top = `${options.initialPlacement.topPx}px`;
+
+  const applyAbsolutePlacement = (leftPx: number, topPx: number): void => {
+    root.style.left = `${leftPx}px`;
+    root.style.top = `${topPx}px`;
+    root.style.right = "auto";
+    root.style.marginLeft = "0px";
+    root.style.marginRight = "0px";
     root.style.transform = "none";
     placedByDrag = true;
+  };
+
+  const clampPlacementIntoParent = (optionsClamp?: {
+    commit?: boolean;
+    allowFallbackSize?: boolean;
+  }): void => {
+    if (!placedByDrag) return;
+    const bounds = options.parent.getBoundingClientRect();
+    const padRect = root.getBoundingClientRect();
+    const measured = padRect.width > 1 && padRect.height > 1;
+    if (!measured && optionsClamp?.allowFallbackSize !== true) {
+      return;
+    }
+    const w = measured ? padRect.width : FALLBACK_PAD_WIDTH_PX;
+    const h = measured ? padRect.height : FALLBACK_PAD_HEIGHT_PX;
+    const maxLeft = Math.max(0, bounds.width - w);
+    const maxTop = Math.max(0, bounds.height - h);
+    let left = Number.parseFloat(root.style.left || "0");
+    let top = Number.parseFloat(root.style.top || "0");
+    if (!Number.isFinite(left)) left = 0;
+    if (!Number.isFinite(top)) top = 0;
+    const nextLeft = Math.min(Math.max(0, left), maxLeft);
+    const nextTop = Math.min(Math.max(0, top), maxTop);
+    if (nextLeft === left && nextTop === top) {
+      root.style.right = "auto";
+      root.style.marginLeft = "0px";
+      root.style.marginRight = "0px";
+      return;
+    }
+    applyAbsolutePlacement(nextLeft, nextTop);
+    if (optionsClamp?.commit === true) {
+      options.onPlacementCommit?.({ leftPx: nextLeft, topPx: nextTop });
+    }
+  };
+
+  if (options.initialPlacement !== undefined) {
+    applyAbsolutePlacement(
+      options.initialPlacement.leftPx,
+      options.initialPlacement.topPx
+    );
+    clampPlacementIntoParent({ commit: true, allowFallbackSize: true });
   }
 
   const applyInteractable = (): void => {
@@ -374,6 +422,7 @@ export function createPreviewProximityTouchControls(
   };
 
   const refresh = (): void => {
+    clampPlacementIntoParent({ commit: true });
     applyInteractable();
   };
 
@@ -410,10 +459,7 @@ export function createPreviewProximityTouchControls(
     const maxTop = Math.max(0, bounds.height - h);
     left = Math.min(Math.max(0, left), maxLeft);
     top = Math.min(Math.max(0, top), maxTop);
-    root.style.left = `${left}px`;
-    root.style.top = `${top}px`;
-    root.style.transform = "none";
-    placedByDrag = true;
+    applyAbsolutePlacement(left, top);
   };
 
   const onPointerUp = (e: PointerEvent): void => {
@@ -444,10 +490,10 @@ export function createPreviewProximityTouchControls(
     if (!placedByDrag) {
       const currentLeft = padRect.left - bounds.left;
       const currentTop = padRect.top - bounds.top;
-      root.style.left = `${Math.max(0, currentLeft)}px`;
-      root.style.top = `${Math.max(0, currentTop)}px`;
-      root.style.transform = "none";
-      placedByDrag = true;
+      applyAbsolutePlacement(
+        Math.max(0, currentLeft),
+        Math.max(0, currentTop)
+      );
     }
     dragOffsetX = e.clientX - padRect.left;
     dragOffsetY = e.clientY - padRect.top;

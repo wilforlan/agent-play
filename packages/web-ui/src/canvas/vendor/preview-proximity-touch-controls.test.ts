@@ -730,5 +730,74 @@ describe("createPreviewProximityTouchControls", () => {
     expect(commits.length).toBe(1);
     expect(commits[0]?.leftPx).toBe(74);
     expect(commits[0]?.topPx).toBe(83);
+    expect(root.style.right).toBe("auto");
+  });
+
+  it("clears stylesheet right/margins when restoring placement", () => {
+    parent.getBoundingClientRect = () =>
+      ({
+        x: 0,
+        y: 0,
+        left: 0,
+        top: 0,
+        right: 400,
+        bottom: 300,
+        width: 400,
+        height: 300,
+        toJSON: () => ({}),
+      }) as DOMRect;
+    const { root } = createPreviewProximityTouchControls({
+      parent,
+      getBoundsElement: () => parent,
+      getCanAct: () => true,
+      onAssist,
+      onChat,
+      onPushToTalk,
+      initialPlacement: { leftPx: 40, topPx: 12 },
+    });
+    expect(root.style.left).toBe("40px");
+    expect(root.style.top).toBe("12px");
+    expect(root.style.right).toBe("auto");
+    expect(root.style.marginLeft).toBe("0px");
+    expect(root.style.marginRight).toBe("0px");
+  });
+
+  it("clamps an out-of-bounds restored placement into the parent", () => {
+    const commits: Array<{ leftPx: number; topPx: number }> = [];
+    parent.getBoundingClientRect = () =>
+      ({
+        x: 0,
+        y: 0,
+        left: 0,
+        top: 0,
+        right: 400,
+        bottom: 300,
+        width: 400,
+        height: 300,
+        toJSON: () => ({}),
+      }) as DOMRect;
+    const { root } = createPreviewProximityTouchControls({
+      parent,
+      getBoundsElement: () => parent,
+      getCanAct: () => true,
+      onAssist,
+      onChat,
+      onPushToTalk,
+      initialPlacement: { leftPx: 980, topPx: 720 },
+      onPlacementCommit: (placement) => {
+        commits.push(placement);
+      },
+    });
+
+    const leftPx = Number.parseFloat(root.style.left || "0");
+    const topPx = Number.parseFloat(root.style.top || "0");
+    expect(leftPx).toBeGreaterThanOrEqual(0);
+    expect(topPx).toBeGreaterThanOrEqual(0);
+    expect(leftPx).toBeLessThan(400);
+    expect(topPx).toBeLessThan(300);
+    expect(leftPx).toBe(120);
+    expect(topPx).toBe(236);
+    expect(root.style.right).toBe("auto");
+    expect(commits.at(-1)).toEqual({ leftPx: 120, topPx: 236 });
   });
 });
