@@ -31,6 +31,9 @@ import type {
   HouseId,
   ApplyGameOutcomeInput,
   GameStats,
+  PeerCallEndReason,
+  PeerCallRecord,
+  PeerCallStatus,
 } from "@agent-play/sdk";
 import type { PlayerChainFanoutNotify } from "./player-chain/index.js";
 import type { PreviewSnapshotJson } from "./preview-serialize.js";
@@ -343,6 +346,83 @@ export type SessionStore = {
         wallet: PlayerWallet;
       }
     | { ok: false; error: "NO_SESSION" }
+  >;
+  startPeerTalkSession(input: {
+    callerId: string;
+    calleeId: string;
+    callId: string;
+    now: string;
+  }): Promise<
+    | {
+        ok: true;
+        startedAt: string;
+        ratePerSecondUsd: number;
+        wallet: PlayerWallet;
+      }
+    | { ok: false; error: "ALREADY_ACTIVE" | "INSUFFICIENT_FUNDS" }
+  >;
+  tickPeerTalkSession(input: {
+    callerId: string;
+    calleeId: string;
+    callId: string;
+    now: string;
+  }): Promise<
+    | {
+        ok: true;
+        secondsBilledThisTick: number;
+        secondsBilledTotal: number;
+        costUsd: number;
+        wallet: PlayerWallet;
+      }
+    | { ok: false; error: "NO_SESSION" | "INSUFFICIENT_FUNDS" }
+  >;
+  stopPeerTalkSession(input: {
+    callerId: string;
+    calleeId: string;
+    callId: string;
+    now: string;
+  }): Promise<
+    | {
+        ok: true;
+        totalCostUsd: number;
+        secondsBilledTotal: number;
+        wallet: PlayerWallet;
+      }
+    | { ok: false; error: "NO_SESSION" }
+  >;
+  createPeerCall(
+    record: PeerCallRecord
+  ): Promise<{ ok: true } | { ok: false; error: "BUSY" }>;
+  getPeerCall(callId: string): Promise<PeerCallRecord | null>;
+  getPeerCallIdForHuman(humanId: string): Promise<string | null>;
+  transitionPeerCall(input: {
+    callId: string;
+    fromStatus: PeerCallStatus | readonly PeerCallStatus[];
+    toStatus: PeerCallStatus;
+    answeredAt?: string;
+    endedAt?: string;
+    endReason?: PeerCallEndReason;
+  }): Promise<
+    | { ok: true; call: PeerCallRecord }
+    | { ok: false; error: "NOT_FOUND" | "INVALID_STATUS" }
+  >;
+  clearPeerCall(callId: string): Promise<void>;
+  invitePeerCall(input: {
+    callerId: string;
+    calleeId: string;
+    now: string;
+    callId?: string;
+  }): Promise<
+    | { ok: true; call: PeerCallRecord }
+    | {
+        ok: false;
+        error:
+          | "NOT_MEMBERS"
+          | "TOO_FAR"
+          | "BUSY"
+          | "INSUFFICIENT_FUNDS"
+          | "SELF_CALL";
+      }
   >;
   getParkingStreet(): Promise<ParkingStreetContent>;
   setParkingStreet(content: ParkingStreetContent): Promise<void>;

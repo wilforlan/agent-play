@@ -34,7 +34,9 @@ export const amenityKindToScannerOp = (
   if (amenityKind === "apu_credit" || amenityKind === "apu_debit") {
     return "applyGameOutcome";
   }
-  if (amenityKind === "talk_time") return "talkTick";
+  if (amenityKind === "talk_time" || amenityKind === "peer_talk_time") {
+    return "talkTick";
+  }
   return "purchase";
 };
 
