@@ -10,8 +10,9 @@
     "packages/*"
   ],
   "scripts": {
-    "build": "npm run build:node-tools && npm run build:intercom && npm run build:sdk && npm run build:agents && npm run build:cli && npm run build:web-ui && npm run build:play-ui",
+    "build": "npm run build:node-tools && npm run build:intercom && npm run build:geography-mesh && npm run build:sdk && npm run build:agents && npm run build:cli && npm run build:web-ui && npm run build:play-ui",
     "build:intercom": "npm run build -w @agent-play/intercom",
+    "build:geography-mesh": "npm run build -w @agent-play/geography-mesh",
     "build:node-tools": "npm run build -w @agent-play/node-tools",
     "build:sdk": "npm run build -w @agent-play/sdk",
     "build:agents": "npm run build -w @agent-play/agents",

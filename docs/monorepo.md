@@ -18,8 +18,9 @@ See [Local linking for downstream projects](development.md#local-linking-for-dow
 
 1. **`@agent-play/node-tools`** — identity and credentials helpers.
 2. **`@agent-play/intercom`** — intercom wire types and Zod parsers (depends only on **zod**; conceptually second after node-tools for release planning).
-3. **`@agent-play/sdk`** — depends on node-tools and intercom.
-4. **`@agent-play/cli`**, **`@agent-play/play-ui`**, and other consumers.
+3. **`@agent-play/geography-mesh`** — AOI / Yjs geography helpers (depends on **yjs** + **zod**; required by play-ui).
+4. **`@agent-play/sdk`** — depends on node-tools and intercom.
+5. **`@agent-play/cli`**, **`@agent-play/play-ui`**, and other consumers.
 
 The GitHub Action **`.github/workflows/publish-npm.yml`** builds and publishes in that order when the corresponding path filters or manual toggles apply.
 
