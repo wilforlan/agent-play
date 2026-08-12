@@ -752,6 +752,7 @@ export function createPreviewSessionInteractionPanel(options: {
   setMode: (mode: Mode) => void;
   preparePushToTalkConnection: (agentId: string) => Promise<boolean>;
   closeVoiceConnection: () => void;
+  isVoiceConnectionActive: () => boolean;
   focusChatInput: () => void;
   scrollToBottom: () => void;
   refresh: () => void;
@@ -2389,6 +2390,7 @@ export function createPreviewSessionInteractionPanel(options: {
       closeRealtimeConnection();
       render();
     },
+    isVoiceConnectionActive: () => realtimeSession !== null,
     applyIntercomEvent,
   };
 }

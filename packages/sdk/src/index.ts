@@ -247,6 +247,28 @@ export {
   costForSeconds,
 } from "./lib/talk-billing.js";
 export {
+  PEER_TALK_PRICE_PER_60S_USD,
+  PEER_TALK_PRICE_PER_SECOND_USD,
+  PEER_TALK_TICK_MAX_SECONDS,
+  PEER_TALK_TICK_MIN_SECONDS,
+  nextPeerTalkTickSeconds,
+  peerCostForSeconds,
+  type NextPeerTalkTickSecondsOptions,
+} from "./lib/peer-talk-billing.js";
+export {
+  PEER_CALL_INVITE_TIMEOUT_MS,
+  PEER_CALL_PROXIMITY_RADIUS,
+  PeerCallEndReasonSchema,
+  PeerCallRecordSchema,
+  PeerCallStatusSchema,
+  arePeersWithinCallProximity,
+  parsePeerCallRecord,
+  peerCallDistance,
+  type PeerCallEndReason,
+  type PeerCallRecord,
+  type PeerCallStatus,
+} from "./lib/peer-call-model.js";
+export {
   TALK_AGENT_PU_BILLED_SECONDS_PER_UNIT,
   TALK_AGENT_PU_MAX_PER_LEG,
   computeTalkAgentPowerUpsEarned,

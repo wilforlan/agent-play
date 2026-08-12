@@ -48,16 +48,23 @@ async function defaultPlayRingtone(input: { durationMs: number }): Promise<void>
   await ctx.close();
 }
 
+export type PreviewRingerEngine = {
+  playIncomingMessage: (input: RingerInput) => Promise<void>;
+  startIncomingCallRing: () => Promise<void>;
+  stopIncomingCallRing: () => void;
+};
+
 export function createPreviewRingerEngine(options?: {
   getIsPresent?: () => boolean;
   playText?: RingerPlayText;
   playRingtone?: RingerPlayRingtone;
-}): {
-  playIncomingMessage: (input: RingerInput) => Promise<void>;
-} {
+  ringtoneDurationMs?: number;
+}): PreviewRingerEngine {
   const getIsPresent = options?.getIsPresent ?? defaultGetIsPresent;
   const playText = options?.playText ?? defaultPlayText;
   const playRingtone = options?.playRingtone ?? defaultPlayRingtone;
+  const ringtoneDurationMs = options?.ringtoneDurationMs ?? 1500;
+  let ringGeneration = 0;
 
   const playIncomingMessage = async (input: RingerInput): Promise<void> => {
     const message = input.message.trim();
@@ -72,5 +79,24 @@ export function createPreviewRingerEngine(options?: {
     );
   };
 
-  return { playIncomingMessage };
+  const stopIncomingCallRing = (): void => {
+    ringGeneration += 1;
+  };
+
+  const startIncomingCallRing = async (): Promise<void> => {
+    const generation = ringGeneration + 1;
+    ringGeneration = generation;
+    while (ringGeneration === generation) {
+      await playRingtone({ durationMs: ringtoneDurationMs });
+      if (ringGeneration !== generation) {
+        return;
+      }
+    }
+  };
+
+  return {
+    playIncomingMessage,
+    startIncomingCallRing,
+    stopIncomingCallRing,
+  };
 }

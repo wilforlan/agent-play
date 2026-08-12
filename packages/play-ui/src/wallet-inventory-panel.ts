@@ -241,6 +241,11 @@ const ensureStyles = (): void => {
   color: #0f172a;
   border: 1px solid rgba(15,23,42,0.2);
 }
+.${PANEL_CLASS}__chip--peer_talk_time {
+  background: linear-gradient(135deg, #64748b, #cbd5e1 55%, #475569);
+  color: #0f172a;
+  border: 1px solid rgba(15,23,42,0.2);
+}
 .${PANEL_CLASS}__chip--wallet_bundle {
   background: linear-gradient(135deg, #34d399, #6ee7b7 50%, #059669);
   color: #022c22;
@@ -449,10 +454,19 @@ const AMENITY_LABEL: Record<string, string> = {
   parking: "Parking",
   house: "House",
   talk_time: "Voice",
+  peer_talk_time: "Peer Voice",
   wallet_bundle: "Bundle",
   apu_credit: "APU Credit",
   apu_debit: "APU Debit",
 };
+
+const isVoiceTalkAmenity = (
+  kind: PurchaseRecordDto["amenityKind"]
+): boolean => kind === "talk_time" || kind === "peer_talk_time";
+
+const voiceTalkDisplayName = (
+  kind: PurchaseRecordDto["amenityKind"]
+): string => (kind === "peer_talk_time" ? "Peer voice" : "Realtime voice");
 
 const formatParkingExpiry = (input: {
   tier: ParkingDurationTier;
@@ -504,11 +518,11 @@ export const buildPurchaseSubtitle = (input: {
   fields: InventoryItemFields;
 }): string => {
   const at = formatTimestamp(input.record.at);
-  if (input.record.amenityKind === "talk_time") {
+  if (isVoiceTalkAmenity(input.record.amenityKind)) {
     const detail =
       typeof input.record.detail === "string" && input.record.detail.length > 0
         ? input.record.detail
-        : "Realtime voice";
+        : voiceTalkDisplayName(input.record.amenityKind);
     return `${detail} · ${at}`;
   }
   if (input.record.amenityKind === "wallet_bundle") {
@@ -753,8 +767,8 @@ export const createWalletInventoryPanel = (
       const nameEl = document.createElement("div");
       nameEl.className = `${PANEL_CLASS}__name`;
       nameEl.textContent =
-        record.amenityKind === "talk_time"
-          ? "Realtime voice"
+        isVoiceTalkAmenity(record.amenityKind)
+          ? voiceTalkDisplayName(record.amenityKind)
           : record.amenityKind === "wallet_bundle"
             ? `+${formatUsd(record.priceUsd ?? 0)} balance`
             : record.amenityKind === "apu_credit" ||
@@ -785,7 +799,7 @@ export const createWalletInventoryPanel = (
         renderCurrent();
       });
       if (
-        record.amenityKind !== "talk_time" &&
+        !isVoiceTalkAmenity(record.amenityKind) &&
         record.amenityKind !== "wallet_bundle" &&
         record.amenityKind !== "apu_credit" &&
         record.amenityKind !== "apu_debit"
@@ -820,8 +834,8 @@ export const createWalletInventoryPanel = (
     name.className = `${PANEL_CLASS}__name`;
     name.style.fontSize = "16px";
     name.textContent =
-      record.amenityKind === "talk_time"
-        ? "Realtime voice"
+      isVoiceTalkAmenity(record.amenityKind)
+        ? voiceTalkDisplayName(record.amenityKind)
         : record.amenityKind === "wallet_bundle"
           ? `+${formatUsd(record.priceUsd ?? 0)} balance`
           : record.amenityKind === "apu_credit" ||
@@ -835,7 +849,7 @@ export const createWalletInventoryPanel = (
     const hero = document.createElement("div");
     hero.className = `${PANEL_CLASS}__hero`;
     const heroColor =
-      record.amenityKind === "talk_time"
+      isVoiceTalkAmenity(record.amenityKind)
         ? "#334155"
         : record.amenityKind === "wallet_bundle"
           ? "#047857"
@@ -850,8 +864,10 @@ export const createWalletInventoryPanel = (
                   : "#0f766e";
     hero.style.background = heroColor;
     hero.textContent =
-      record.amenityKind === "talk_time"
-        ? "VOICE"
+      isVoiceTalkAmenity(record.amenityKind)
+        ? record.amenityKind === "peer_talk_time"
+          ? "PEER"
+          : "VOICE"
         : record.amenityKind === "wallet_bundle"
           ? "BUNDLE"
           : record.amenityKind === "apu_credit" ||
@@ -871,12 +887,18 @@ export const createWalletInventoryPanel = (
       meta.append(k, v);
     };
     pushMeta("Amenity", amenityLabelForDisplay(record.amenityKind));
-    if (record.amenityKind === "talk_time") {
+    if (isVoiceTalkAmenity(record.amenityKind)) {
       if (
         typeof record.detail === "string" &&
         record.detail.trim().length > 0
       ) {
         pushMeta("Detail", record.detail);
+      }
+      if (
+        record.amenityKind === "peer_talk_time" &&
+        typeof record.counterpartyNodeId === "string"
+      ) {
+        pushMeta("Callee", record.counterpartyNodeId);
       }
     }
     if (record.amenityKind === "wallet_bundle") {
