@@ -39,6 +39,15 @@ const defaultIceServers = (): RTCIceServer[] => {
   return servers;
 };
 
+const defaultCreateRemoteAudioElement = (): HTMLAudioElement => {
+  const audio = document.createElement("audio");
+  audio.autoplay = true;
+  audio.setAttribute("playsinline", "true");
+  audio.style.display = "none";
+  document.body.appendChild(audio);
+  return audio;
+};
+
 export type PeerVoiceSessionOptions = {
   callId: string;
   localHumanId: string;
@@ -50,6 +59,7 @@ export type PeerVoiceSessionOptions = {
   getUserMedia?: (constraints: MediaStreamConstraints) => Promise<MediaStream>;
   createPeerConnection?: (config: RTCConfiguration) => RTCPeerConnection;
   postSignal?: (body: PeerCallSignalBody) => Promise<void>;
+  createRemoteAudioElement?: () => HTMLAudioElement;
 };
 
 export type PeerVoiceSessionHandle = {
@@ -81,7 +91,12 @@ export const createPeerVoiceSession = (
 ): PeerVoiceSessionHandle => {
   let pc: RTCPeerConnection | null = null;
   let localStream: MediaStream | null = null;
-  let active = false;
+  let remoteAudio: HTMLAudioElement | null = null;
+  let started = false;
+  let stopped = false;
+  let remoteDescriptionSet = false;
+  let pendingSignals: PeerCallSignalBody[] = [];
+  let pendingIce: RTCIceCandidateInit[] = [];
 
   const postSignal =
     options.postSignal ??
@@ -98,14 +113,86 @@ export const createPeerVoiceSession = (
   const createPeerConnection =
     options.createPeerConnection ??
     ((config) => new RTCPeerConnection(config));
+  const createRemoteAudioElement =
+    options.createRemoteAudioElement ?? defaultCreateRemoteAudioElement;
+
+  const attachRemoteTrack = (event: RTCTrackEvent): void => {
+    const stream =
+      event.streams[0] ??
+      (() => {
+        const created = new MediaStream();
+        created.addTrack(event.track);
+        return created;
+      })();
+    if (remoteAudio === null) {
+      remoteAudio = createRemoteAudioElement();
+    }
+    remoteAudio.srcObject = stream;
+    void remoteAudio.play().catch(() => undefined);
+  };
+
+  const flushPendingIce = async (): Promise<void> => {
+    if (pc === null) {
+      return;
+    }
+    const queued = pendingIce;
+    pendingIce = [];
+    for (const candidate of queued) {
+      await pc.addIceCandidate(candidate);
+    }
+  };
+
+  const processSignal = async (body: PeerCallSignalBody): Promise<void> => {
+    if (pc === null) {
+      return;
+    }
+    if (body.kind === "offer") {
+      await pc.setRemoteDescription(body.payload as RTCSessionDescriptionInit);
+      remoteDescriptionSet = true;
+      await flushPendingIce();
+      const answer = await pc.createAnswer();
+      await pc.setLocalDescription(answer);
+      await postSignal({
+        callId: options.callId,
+        fromHumanId: options.localHumanId,
+        toHumanId: options.remoteHumanId,
+        kind: "answer",
+        payload: answer,
+      });
+      return;
+    }
+    if (body.kind === "answer") {
+      await pc.setRemoteDescription(body.payload as RTCSessionDescriptionInit);
+      remoteDescriptionSet = true;
+      await flushPendingIce();
+      return;
+    }
+    if (body.kind === "ice") {
+      const candidate = body.payload as RTCIceCandidateInit;
+      if (!remoteDescriptionSet) {
+        pendingIce = [...pendingIce, candidate];
+        return;
+      }
+      await pc.addIceCandidate(candidate);
+    }
+  };
 
   const stop = (): void => {
-    active = false;
+    stopped = true;
+    started = false;
+    pendingSignals = [];
+    pendingIce = [];
+    remoteDescriptionSet = false;
     if (localStream !== null) {
       for (const track of localStream.getTracks()) {
         track.stop();
       }
       localStream = null;
+    }
+    if (remoteAudio !== null) {
+      remoteAudio.srcObject = null;
+      remoteAudio.remove();
+      remoteAudio = null;
     }
     if (pc !== null) {
       pc.close();
@@ -114,14 +201,22 @@ export const createPeerVoiceSession = (
   };
 
   const start = async (): Promise<void> => {
-    if (active) {
+    if (stopped || (started && pc !== null)) {
       return;
     }
-    active = true;
+    started = true;
     localStream = await getUserMedia({ audio: true, video: false });
+    if (stopped) {
+      for (const track of localStream.getTracks()) {
+        track.stop();
+      }
+      localStream = null;
+      return;
+    }
     pc = createPeerConnection({
       iceServers: options.iceServers ?? defaultIceServers(),
     });
+    pc.ontrack = attachRemoteTrack;
     for (const track of localStream.getTracks()) {
       pc.addTrack(track, localStream);
     }
@@ -137,6 +232,13 @@ export const createPeerVoiceSession = (
         payload: event.candidate.toJSON(),
       });
     };
+
+    const queued = pendingSignals;
+    pendingSignals = [];
+    for (const signal of queued) {
+      await processSignal(signal);
+    }
+
     if (options.isOfferer) {
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
@@ -151,7 +253,7 @@ export const createPeerVoiceSession = (
   };
 
   const handleSignal = async (body: PeerCallSignalBody): Promise<void> => {
-    if (!active || pc === null) {
+    if (stopped) {
       return;
     }
     if (body.callId !== options.callId) {
@@ -160,32 +262,17 @@ export const createPeerVoiceSession = (
     if (body.toHumanId !== options.localHumanId) {
       return;
     }
-    if (body.kind === "offer") {
-      await pc.setRemoteDescription(body.payload as RTCSessionDescriptionInit);
-      const answer = await pc.createAnswer();
-      await pc.setLocalDescription(answer);
-      await postSignal({
-        callId: options.callId,
-        fromHumanId: options.localHumanId,
-        toHumanId: options.remoteHumanId,
-        kind: "answer",
-        payload: answer,
-      });
+    if (pc === null) {
+      pendingSignals = [...pendingSignals, body];
       return;
     }
-    if (body.kind === "answer") {
-      await pc.setRemoteDescription(body.payload as RTCSessionDescriptionInit);
-      return;
-    }
-    if (body.kind === "ice") {
-      await pc.addIceCandidate(body.payload as RTCIceCandidateInit);
-    }
+    await processSignal(body);
   };
 
   return {
     start,
     handleSignal,
     stop,
-    isActive: () => active,
+    isActive: () => started && !stopped,
   };
 };

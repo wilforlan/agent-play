@@ -33,18 +33,37 @@ async function defaultPlayRingtone(input: { durationMs: number }): Promise<void>
     return;
   }
   const ctx = new window.AudioContext();
-  const oscillator = ctx.createOscillator();
-  const gain = ctx.createGain();
-  oscillator.type = "sine";
-  oscillator.frequency.value = 880;
-  gain.gain.value = 0.04;
-  oscillator.connect(gain);
-  gain.connect(ctx.destination);
-  oscillator.start();
+  const master = ctx.createGain();
+  master.gain.value = 0;
+  master.connect(ctx.destination);
+
+  const createTone = (frequencyHz: number): OscillatorNode => {
+    const oscillator = ctx.createOscillator();
+    oscillator.type = "sine";
+    oscillator.frequency.value = frequencyHz;
+    oscillator.connect(master);
+    return oscillator;
+  };
+
+  const low = createTone(440);
+  const high = createTone(480);
+  const startedAt = ctx.currentTime;
+  const durationSec = Math.max(input.durationMs, 1) / 1000;
+  let pulseAt = startedAt;
+  while (pulseAt < startedAt + durationSec) {
+    master.gain.setValueAtTime(0.0001, pulseAt);
+    master.gain.linearRampToValueAtTime(0.05, pulseAt + 0.02);
+    master.gain.setValueAtTime(0.05, pulseAt + 0.32);
+    master.gain.linearRampToValueAtTime(0.0001, pulseAt + 0.38);
+    pulseAt += 0.55;
+  }
+  low.start(startedAt);
+  high.start(startedAt);
   await new Promise<void>((resolve) => {
     setTimeout(() => resolve(), input.durationMs);
   });
-  oscillator.stop();
+  low.stop();
+  high.stop();
   await ctx.close();
 }
 
@@ -63,7 +82,7 @@ export function createPreviewRingerEngine(options?: {
   const getIsPresent = options?.getIsPresent ?? defaultGetIsPresent;
   const playText = options?.playText ?? defaultPlayText;
   const playRingtone = options?.playRingtone ?? defaultPlayRingtone;
-  const ringtoneDurationMs = options?.ringtoneDurationMs ?? 1500;
+  const ringtoneDurationMs = options?.ringtoneDurationMs ?? 1800;
   let ringGeneration = 0;
 
   const playIncomingMessage = async (input: RingerInput): Promise<void> => {
@@ -91,6 +110,9 @@ export function createPreviewRingerEngine(options?: {
       if (ringGeneration !== generation) {
         return;
       }
+      await new Promise<void>((resolve) => {
+        setTimeout(() => resolve(), 2200);
+      });
     }
   };
 
