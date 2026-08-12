@@ -45,6 +45,8 @@ export type CreateNotificationTrayOptions = {
   readonly now?: () => number;
   readonly layoutMode?: NotificationTrayLayoutMode;
   readonly syncLayoutToViewport?: boolean;
+  readonly onAcceptPeerCall?: (notification: WorldNotificationPayload) => void;
+  readonly onDeclinePeerCall?: (notification: WorldNotificationPayload) => void;
 };
 
 const STYLE_ID = "preview-notification-tray-styles";
@@ -165,6 +167,33 @@ const ensureStyles = (): void => {
   overflow-wrap: anywhere;
   word-break: break-word;
 }
+.${TRAY_CLASS}__actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+.${TRAY_CLASS}__action {
+  flex: 1;
+  border: none;
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  color: #f8fafc;
+}
+.${TRAY_CLASS}__action--accept {
+  background: #15803d;
+}
+.${TRAY_CLASS}__action--accept:hover {
+  background: #16a34a;
+}
+.${TRAY_CLASS}__action--decline {
+  background: #b91c1c;
+}
+.${TRAY_CLASS}__action--decline:hover {
+  background: #dc2626;
+}
 `;
   document.head.appendChild(style);
 };
@@ -189,16 +218,30 @@ const formatMetadata = (
   if (typeof displayName === "string" && displayName.length > 0) {
     parts.push(displayName);
   }
+  const callerDisplayName = metadata.callerDisplayName;
+  if (typeof callerDisplayName === "string" && callerDisplayName.length > 0) {
+    parts.push(callerDisplayName);
+  }
   if (parts.length === 0) {
     return null;
   }
   return parts.join(" · ");
 };
 
+const isStickyNotification = (
+  notification: WorldNotificationPayload
+): boolean => {
+  if (notification.kind === "peer_call_invite") {
+    return true;
+  }
+  return notification.metadata.sticky === true;
+};
+
 type ActiveNotification = {
   readonly id: string;
   readonly element: HTMLElement;
   focused: boolean;
+  sticky: boolean;
   timerId: ReturnType<typeof setTimeout> | null;
   remainingMs: number;
   deadlineAt: number | null;
@@ -277,7 +320,7 @@ export const createNotificationTray = (
 
   const scheduleDismiss = (entry: ActiveNotification): void => {
     clearTimer(entry);
-    if (entry.focused) {
+    if (entry.sticky || entry.focused) {
       entry.deadlineAt = null;
       return;
     }
@@ -305,6 +348,9 @@ export const createNotificationTray = (
       return;
     }
     entry.focused = false;
+    if (entry.sticky) {
+      return;
+    }
     if (entry.remainingMs <= 0) {
       removeEntry(entry.id);
       return;
@@ -332,6 +378,7 @@ export const createNotificationTray = (
     },
     push(notification) {
       removeEntry(notification.id);
+      const sticky = isStickyNotification(notification);
       const item = document.createElement("article");
       item.className = `${TRAY_CLASS}__item`;
       item.dataset.notificationId = notification.id;
@@ -365,12 +412,38 @@ export const createNotificationTray = (
         item.appendChild(meta);
       }
 
+      if (notification.kind === "peer_call_invite") {
+        const actions = document.createElement("div");
+        actions.className = `${TRAY_CLASS}__actions`;
+        const accept = document.createElement("button");
+        accept.type = "button";
+        accept.className = `${TRAY_CLASS}__action ${TRAY_CLASS}__action--accept`;
+        accept.dataset.peerCallAction = "accept";
+        accept.textContent = "Accept";
+        accept.addEventListener("click", () => {
+          options.onAcceptPeerCall?.(notification);
+          removeEntry(notification.id);
+        });
+        const decline = document.createElement("button");
+        decline.type = "button";
+        decline.className = `${TRAY_CLASS}__action ${TRAY_CLASS}__action--decline`;
+        decline.dataset.peerCallAction = "decline";
+        decline.textContent = "Decline";
+        decline.addEventListener("click", () => {
+          options.onDeclinePeerCall?.(notification);
+          removeEntry(notification.id);
+        });
+        actions.append(accept, decline);
+        item.appendChild(actions);
+      }
+
       const entry: ActiveNotification = {
         id: notification.id,
         element: item,
         focused: false,
+        sticky,
         timerId: null,
-        remainingMs: autoDismissMs,
+        remainingMs: sticky ? Number.POSITIVE_INFINITY : autoDismissMs,
         deadlineAt: null,
       };
 
