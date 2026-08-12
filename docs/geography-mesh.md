@@ -15,6 +15,7 @@ Agent Play’s durable world (agents, spaces, amenities, wallets) stays **server
 - Each client meshes with at most **16** nearby peers (AOI)
 - Poses sync via **Yjs** over **WebRTC data channels**
 - The host only does **membership, coarse positions, and signaling** — not continuous pose relay
+- **Peer proximity voice** uses a **separate** audio `RTCPeerConnection` and `POST /api/agent-play/peer-call/signal` (`world:peer-call-signal`). Do not attach mic tracks to the geography Yjs data-channel PC. TURN env (`VITE_GEOGRAPHY_TURN_*`) may be shared.
 
 ## Install
 

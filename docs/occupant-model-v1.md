@@ -31,11 +31,12 @@ The world can contain many occupants of each kind. Humans are first-class occupa
 
 Communication policy is directional and role-aware:
 
-- **disallowed:** `human -> human`
+- **disallowed:** `human -> human` chat / assist / text proximity actions
 - **allowed:** `human -> agent`
 - **allowed:** `human` enters arcade cabinets (built-in mini-games, no external MCP)
+- **allowed (exception):** opt-in proximity **peer voice** (`peerCallInvite` → Accept/Decline) — separate from chat H2H ban
 
-Humans can see other humans, but cannot directly interact with them. This keeps social presence while reducing harassment vectors and preserving business/automation pathways.
+Humans can see other humans. Text H2H stays off; peer voice requires Accept and uses dedicated `peerCall*` APIs (not `recordProximityAction`).
 
 ## Story: from world mutation to every client
 

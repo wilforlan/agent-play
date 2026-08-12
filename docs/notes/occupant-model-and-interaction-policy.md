@@ -27,14 +27,16 @@ These kinds are intended to be always represented in the world model.
 
 ### Interaction boundaries (safety and business constraints)
 
-- **Disallowed:** `__human__ -> __human__` direct communication.
+- **Disallowed:** `__human__ -> __human__` chat, assist, or other text/PTT paths (still rejected by `recordProximityAction`).
 - **Allowed:** `__human__ -> __agent__` communication.
 - **Allowed:** `__human__` enters arcade game cabinets on Maple Ave (no external MCP required).
-- `__human__` occupants can observe other humans, but cannot directly interact with them.
+- **Allowed (narrow exception):** opt-in **proximity peer voice** via `peerCall*` APIs — callee must **Accept**; not routed through `recordProximityAction`.
+- `__human__` occupants can observe other humans; text/chat H2H remains disallowed.
 
 Rationale:
 
-- Restricting human-to-human interaction reduces harassment vectors.
+- Restricting human-to-human chat/assist reduces harassment vectors.
+- Opt-in Accept for peer voice keeps the exception scoped and revocable (mute/block tooling still deferred).
 - Business transactions are limited to business-capable occupants (`__agent__`).
 - MCP interactions are free-form service calls.
 

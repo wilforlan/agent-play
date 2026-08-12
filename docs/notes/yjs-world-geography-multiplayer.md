@@ -13,6 +13,7 @@
 | Redis membership hash | `agent-play:{hostId}:geography:members:{sid}` |
 | Client mesh session | `GeographyMeshSession` in play-ui (copied to web-ui canvas vendor) |
 | Feature flag | `worldGeographyEnabled` (default **on**) — mesh when on; Redis 30s pose path when off (rollback) |
+| Peer voice (separate) | Dedicated audio PC + `peer-call/signal` — not the geography data-channel mesh |
 
 ## Decision lock
 
