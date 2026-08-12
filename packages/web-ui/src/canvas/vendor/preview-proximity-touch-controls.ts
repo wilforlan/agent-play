@@ -91,6 +91,12 @@ export type CreatePreviewProximityTouchControlsOptions = {
    * Defaults to `true` when omitted.
    */
   getGameStageProximityActivatable?: () => boolean;
+  /**
+   * When near another geography human (and idle for amenities), returns the
+   * peer-talk verb for the `P` button — typically `"Talk"` or `"End"`.
+   * Precedence is below amenity Buy/Enter and above agent Push.
+   */
+  getPeerTalkLabel?: () => string | null | undefined;
   onAssist: () => void;
   onChat: () => void;
   onPushToTalk: () => void;
@@ -266,6 +272,9 @@ export function createPreviewProximityTouchControls(
     const structureLabel = options.getStructureProximityLabel?.() ?? null;
     const nearStructure =
       typeof structureLabel === "string" && structureLabel.length > 0;
+    const peerTalkLabel = options.getPeerTalkLabel?.() ?? null;
+    const nearPeerTalk =
+      typeof peerTalkLabel === "string" && peerTalkLabel.length > 0;
     if (inHouseInteriorPurchase) {
       btnAssist.disabled = true;
       subA.textContent = "Assist";
@@ -385,6 +394,19 @@ export function createPreviewProximityTouchControls(
       btnPushToTalk.setAttribute(
         "aria-label",
         `${inspectVerb} ${houseLabel ?? "house"}`
+      );
+    } else if (nearPeerTalk) {
+      btnAssist.disabled = true;
+      subA.textContent = "Assist";
+      btnAssist.removeAttribute("aria-label");
+      btnChat.disabled = true;
+      btnPushToTalk.disabled = false;
+      subP.textContent = peerTalkLabel ?? "Talk";
+      btnPushToTalk.classList.add("preview-proximity-touch-pad__key--proximity-active");
+      btnPushToTalk.classList.remove("preview-proximity-touch-pad__key--proximity-hint");
+      btnPushToTalk.setAttribute(
+        "aria-label",
+        peerTalkLabel === "End" ? "End peer call" : "Talk to nearby peer"
       );
     } else if (nearStructure) {
       const verb = options.getStructureProximityVerb?.() ?? "Enter";
