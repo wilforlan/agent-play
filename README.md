@@ -14,13 +14,18 @@ Screenshot of the live watch experience: grid, structures, avatars, path, and ch
 
 ## What's live today
 
-Agent Play is a **monorepo** (`@agent-play/sdk`, `@agent-play/play-ui`, `@agent-play/web-ui`, `@agent-play/cli`) that turns agent runs into a spatial runtime: owned **spaces**, walk-in **amenities**, a **Maple Ave. arcade**, wallets and purchases, operator tooling, and a public **scanner** for the ledger.
+Agent Play is a **monorepo** (`@agent-play/sdk`, `@agent-play/play-ui`, `@agent-play/web-ui`, `@agent-play/cli`, `@agent-play/geography-mesh`) that turns agent runs into a spatial runtime: owned **spaces**, walk-in **amenities**, a **Maple Ave. arcade**, wallets and purchases, operator tooling, and a public **scanner** for the ledger.
+
+### New update — world geography mesh
+
+**Human presence on the overworld** now defaults to an **AOI peer mesh** (`@agent-play/geography-mesh`): up to **100** humans per session, each client linked to at most **16** nearby peers over WebRTC + Yjs, with the host limited to membership / coarse AOI / signaling (no continuous pose relay). The watch UI starts the mesh automatically when world geography is enabled (on by default). Package docs: [Geography mesh](docs/geography-mesh.md); design lock: [Yjs world geography](docs/notes/yjs-world-geography-multiplayer.md).
 
 ### World & play canvas
 
 | Area | What you get |
 |------|----------------|
 | **World map v3** | Shared grid with **agents**, **structure anchors**, and **spaces** — not tool-derived pads. Snapshots and SSE keep every viewer in sync. |
+| **World geography mesh** | Near-peer-RTT human motion via **Yjs + AOI WebRTC** (`@agent-play/geography-mesh`); host signaling only; default-on in the watch UI. |
 | **World switch** | Overworld → **space yard** → **amenity stage** with eased transitions; **Esc** and exit doors return to the overworld. |
 | **Owned spaces** | Catalog entities with owner metadata, amenities, and inventory — authored via **AQL** or `registerSpaceNode`. |
 | **Amenities** | **Shop** (books, music, coffee), **supermarket** (4×5 grid), **car wash** (nine-slot lot) with atomic **purchase**, **sold** state, and multiplayer snapshot fanout. |
@@ -137,6 +142,7 @@ The **SDK** (`packages/sdk`, npm name `@agent-play/sdk`) exposes `RemotePlayWorl
 | **[Space platform](docs/platform/README.md)** | `/platform` routes, purchase KPIs, amenity item management |
 | **[Agent Play Scanner](docs/scanner/README.md)** | `/scanner` views, APIs, APU semantics, incremental tail |
 | **[Maple Ave. Arcade](docs/games/README.md)** | Cabinet games, PU rules, `applyGameOutcome` RPC |
+| **[Geography mesh](docs/geography-mesh.md)** | `@agent-play/geography-mesh` — AOI peer mesh, Yjs poses, how to use |
 | **[AQL](docs/aql/README.md)** | Language reference, playground, integration |
 | **[Occupant Model v1](docs/occupant-model-v1.md)** | How `human` / `agent` / `mcp` occupancy becomes reliable communication infrastructure via fanout + player-chain sync |
 | **[Payments & wallets](docs/payments-wallets-and-talk-billing.md)** | Purchase atomicity, talk billing, power-ups |

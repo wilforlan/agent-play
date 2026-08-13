@@ -67,6 +67,10 @@ import {
   ingestRoomJoinNotification,
 } from "./notification-intake.js";
 import { createJoinBubbleSound } from "./join-bubble-sound.js";
+import { createPreviewRingerEngine } from "./preview-ringer-engine.js";
+import { createPeerCallController } from "./peer-call-controller.js";
+import { findNearestHumanPartner } from "./peer-human-proximity.js";
+import { WORLD_PEER_CALL_SIGNAL_EVENT } from "./peer-voice-session.js";
 import { fetchPlayerWallet } from "./wallet-client.js";
 import {
   createWalletInventoryPanel,
@@ -193,9 +197,19 @@ import {
 import { createPreviewDebugPanel } from "./preview-debug-panel.js";
 import {
   GEOGRAPHY_PUBLISH_INTERVAL_MS,
+  formatShortNodeId,
   postGeographyLeave,
-  postGeographyPresence,
+  resolveWorldGeographyPresenceTick,
+  shouldEnsureWorldGeographyMesh,
 } from "./preview-world-geography.js";
+import {
+  GeographyMeshSession,
+  type GeographyMeshRemotePose,
+} from "./geography-mesh-session.js";
+import {
+  WORLD_GEOGRAPHY_NEIGHBORS_EVENT,
+  WORLD_GEOGRAPHY_SIGNAL_EVENT,
+} from "@agent-play/geography-mesh";
 import {
   mountStreetSignPosts,
   type StreetSignZone,
@@ -316,6 +330,7 @@ import {
   type ProximityActionKind,
   type StructureProximityTarget,
 } from "./proximity-interaction.js";
+import { resolveProximityPAction } from "./proximity-p-action.js";
 import {
   countAmenitiesInSpaceCompound,
   representativePrimaryAmenityForCompound,
@@ -409,6 +424,8 @@ const WORLD_INTERACTION_SSE = "world:interaction";
 const WORLD_AGENT_SIGNAL_SSE = "world:agent_signal";
 const WORLD_INTERCOM_SSE = "world:intercom";
 const WORLD_GEOGRAPHY_SSE = "world:geography";
+const WORLD_GEOGRAPHY_NEIGHBORS_SSE = WORLD_GEOGRAPHY_NEIGHBORS_EVENT;
+const WORLD_GEOGRAPHY_SIGNAL_SSE = WORLD_GEOGRAPHY_SIGNAL_EVENT;
 const WORLD_GLOBAL_CHAT_CHANNEL = "intercom:world:global";
 const AP_INTERCOM_PROTOCOL = "ap-intercom";
 function buildIntercomAddress(nodeId: string): string {
@@ -694,14 +711,29 @@ function listMapRenderableRows(s: Snapshot): AgentRow[] {
     return agents;
   }
   const localId = getLocalGeographyHumanId();
-  const remoteHumans = listHumanRows(s)
+  const fromSnapshot = listHumanRows(s)
     .filter((h) => localId === null || h.id !== localId)
     .map((h) => ({
       agentId: h.id,
-      name: h.name,
+      name: formatShortNodeId(h.name.length > 0 ? h.name : h.id),
       structures: [] as Structure[],
     }));
-  return [...agents, ...remoteHumans];
+  const seen = new Set(fromSnapshot.map((r) => r.agentId));
+  const fromMesh: AgentRow[] = [];
+  for (const id of remoteGeographyHumanIds) {
+    if (seen.has(id)) {
+      continue;
+    }
+    if (localId !== null && id === localId) {
+      continue;
+    }
+    fromMesh.push({
+      agentId: id,
+      name: formatShortNodeId(id),
+      structures: [],
+    });
+  }
+  return [...agents, ...fromSnapshot, ...fromMesh];
 }
 
 function listAgentRows(s: Snapshot): AgentRow[] {
@@ -941,6 +973,10 @@ let proximityTouchPadHandle: { refresh: () => void } | null = null;
 const playerWorldPos = new Map<string, { x: number; y: number }>();
 let geographyLastPublishMs = 0;
 const remoteGeographyHumanIds = new Set<string>();
+let geographyMeshSession: GeographyMeshSession | null = null;
+let geographyMeshStatusDetail = "";
+let geographyMeshTruncated = false;
+let geographyMeshMemberCount = 0;
 const waypointQueues = new Map<string, Array<{ x: number; y: number }>>();
 const lastTickWorldPos = new Map<string, { x: number; y: number }>();
 const walkPhaseByPlayer = new Map<string, number>();
@@ -1299,6 +1335,9 @@ async function triggerProximityPushToTalk(): Promise<void> {
     lastProximityPartnerId
   );
   if (partner === null || partner === HUMAN_VIEWER_PLAYER_ID) return;
+  if (peerCallController?.isInCall() === true) {
+    return;
+  }
   if (!getPreviewViewSettings().p2aEnabled) {
     showP2aRequiredModal();
     return;
@@ -1320,6 +1359,89 @@ async function triggerProximityPushToTalk(): Promise<void> {
     Promise.resolve(true));
   if (!ready) {
     return;
+  }
+}
+
+/**
+ * Shared `P` dispatch for keyboard and the proximity touch-bar.
+ * @returns whether the caller should treat the input as handled (e.g. preventDefault).
+ */
+function dispatchProximityPAction(): boolean {
+  const peerTalkLabel = peerCallController?.getPeerTalkLabel() ?? null;
+  const agentPartner = registeredAgentPartnerForProximityOrNull(
+    lastProximityPartnerId
+  );
+  const action = resolveProximityPAction({
+    peerTalkLabel,
+    isInPeerCall: peerCallController?.isInCall() === true,
+    inHouseInterior: activeHouseStage !== null,
+    hasActivatableGameStageTarget:
+      activeGameStage !== null &&
+      lastGameStageProximityTarget !== null &&
+      lastGameStageProximityTarget.activatable !== false,
+    hasHouseNearest:
+      lastHouseNearest !== null &&
+      activeAmenityStage === null &&
+      activeGameStage === null &&
+      activeHouseStage === null &&
+      stageController?.current()?.id === "overworld",
+    hasParkingNearest:
+      lastParkingBayNearest !== null &&
+      activeAmenityStage === null &&
+      activeGameStage === null &&
+      activeHouseStage === null &&
+      stageController?.current()?.id === "overworld",
+    hasAmenityItem:
+      activeAmenityStage !== null && activeAmenityStage.nearestBuyable !== null,
+    hasYardAmenityPad:
+      lastYardAmenityPadTarget !== null &&
+      stageController?.current()?.id === "spaceYard",
+    hasAgentPartner:
+      agentPartner !== null && agentPartner !== HUMAN_VIEWER_PLAYER_ID,
+  });
+
+  switch (action) {
+    case "peerHangup":
+      void peerCallController?.hangup();
+      return true;
+    case "housePurchaseToggle":
+      return toggleHousePurchasePanel();
+    case "gameStageActivate":
+      activateGameStageProximityTarget();
+      return true;
+    case "houseInspect": {
+      const house = lastHouseNearest;
+      if (house === null) return false;
+      void enterHouseStage({
+        houseId: house.houseId,
+        mode: "inspect",
+      });
+      return true;
+    }
+    case "parkingCycle":
+      cycleParkingTicketAction();
+      return true;
+    case "amenityItemCycle": {
+      const stage = activeAmenityStage;
+      const buyable = stage?.nearestBuyable ?? null;
+      if (stage === null || buyable === null) return false;
+      cycleAmenityItemAction(stage, buyable);
+      return true;
+    }
+    case "yardAmenityEnter": {
+      const pad = lastYardAmenityPadTarget;
+      if (pad === null) return false;
+      void enterAmenityFromYardPad(pad);
+      return true;
+    }
+    case "peerTalkStart":
+      void peerCallController?.startCallWithNearest();
+      return true;
+    case "agentPushToTalk":
+      void triggerProximityPushToTalk();
+      return true;
+    case "noop":
+      return false;
   }
 }
 
@@ -1388,71 +1510,11 @@ function onDocumentKeyDown(e: KeyboardEvent): void {
     openGameStreakPanel();
     return;
   }
-  if (
-    e.key.toLowerCase() === "p" &&
-    activeHouseStage !== null
-  ) {
-    if (toggleHousePurchasePanel()) {
+  if (e.key.toLowerCase() === "p") {
+    if (dispatchProximityPAction()) {
       e.preventDefault();
     }
     return;
-  }
-  if (
-    e.key.toLowerCase() === "p" &&
-    activeGameStage !== null &&
-    lastGameStageProximityTarget !== null &&
-    lastGameStageProximityTarget.activatable !== false
-  ) {
-    e.preventDefault();
-    activateGameStageProximityTarget();
-    return;
-  }
-  if (
-    e.key.toLowerCase() === "p" &&
-    lastYardAmenityPadTarget !== null &&
-    stageController?.current()?.id === "spaceYard"
-  ) {
-    e.preventDefault();
-    void enterAmenityFromYardPad(lastYardAmenityPadTarget);
-    return;
-  }
-  if (
-    e.key.toLowerCase() === "p" &&
-    activeAmenityStage === null &&
-    activeGameStage === null &&
-    activeHouseStage === null &&
-    stageController?.current()?.id === "overworld" &&
-    lastHouseNearest !== null
-  ) {
-    e.preventDefault();
-    void enterHouseStage({
-      houseId: lastHouseNearest.houseId,
-      mode: "inspect",
-    });
-    return;
-  }
-  if (
-    e.key.toLowerCase() === "p" &&
-    activeAmenityStage === null &&
-    activeGameStage === null &&
-    stageController?.current()?.id === "overworld" &&
-    lastParkingBayNearest !== null
-  ) {
-    e.preventDefault();
-    cycleParkingTicketAction();
-    return;
-  }
-  if (
-    e.key.toLowerCase() === "p" &&
-    activeAmenityStage !== null
-  ) {
-    const stage = activeAmenityStage;
-    const buyable = stage.nearestBuyable;
-    if (buyable !== null) {
-      e.preventDefault();
-      cycleAmenityItemAction(stage, buyable);
-      return;
-    }
   }
   const partner = registeredAgentPartnerForProximityOrNull(
     lastProximityPartnerId
@@ -1501,10 +1563,6 @@ function onDocumentKeyDown(e: KeyboardEvent): void {
   e.preventDefault();
   if (act === "assist" || act === "chat") {
     triggerProximityAssistOrChat(act);
-    return;
-  }
-  if (act === "push_to_talk") {
-    void triggerProximityPushToTalk();
     return;
   }
   void sendProximityAction(partner, act);
@@ -2623,6 +2681,9 @@ let activeIntercomAddress: string | null = null;
 let sessionInteractionPanel:
   | ReturnType<typeof createPreviewSessionInteractionPanel>
   | null = null;
+let peerCallController: ReturnType<typeof createPeerCallController> | null =
+  null;
+let peerCallRinger: ReturnType<typeof createPreviewRingerEngine> | null = null;
 let mobileSidePanelControls:
   | ReturnType<typeof attachMobileSidePanelControls>
   | null = null;
@@ -2789,14 +2850,14 @@ function maybeStartArrivalQuestAfterOnboarding(): void {
  */
 function playerDisplayName(playerId: string): string {
   if (playerId === HUMAN_VIEWER_PLAYER_ID) return "You";
-  if (snapshot === null) return playerId;
+  if (snapshot === null) return formatShortNodeId(playerId);
   const human = listHumanRows(snapshot).find((h) => h.id === playerId);
   if (human !== undefined) {
-    return human.name;
+    return formatShortNodeId(human.name.length > 0 ? human.name : human.id);
   }
   return (
     listAgentRows(snapshot).find((p) => p.agentId === playerId)?.name ??
-    playerId
+    formatShortNodeId(playerId)
   );
 }
 
@@ -2990,8 +3051,45 @@ function clearRemoteGeographyPresence(): void {
   remoteGeographyHumanIds.clear();
 }
 
+function applyMeshRemotePoses(poses: GeographyMeshRemotePose[]): void {
+  if (!getPreviewViewSettings().worldGeographyEnabled) {
+    return;
+  }
+  const wb = getWorldBoundsForClamp();
+  const seen = new Set<string>();
+  for (const h of poses) {
+    seen.add(h.id);
+    remoteGeographyHumanIds.add(h.id);
+    const clamped =
+      wb !== null
+        ? clampWorldPosition({ x: h.x, y: h.y }, wb)
+        : { x: h.x, y: h.y };
+    playerWorldPos.set(h.id, clamped);
+    if (h.facing === "left" || h.facing === "right") {
+      facingByPlayer.set(h.id, h.facing);
+    }
+    if (typeof h.isMoving === "boolean") {
+      movingByPlayer.set(h.id, h.isMoving);
+    }
+  }
+  for (const id of [...remoteGeographyHumanIds]) {
+    if (!seen.has(id)) {
+      remoteGeographyHumanIds.delete(id);
+      playerWorldPos.delete(id);
+      waypointQueues.delete(id);
+      walkPhaseByPlayer.delete(id);
+      facingByPlayer.delete(id);
+      movingByPlayer.delete(id);
+      lastTickWorldPos.delete(id);
+    }
+  }
+}
+
 function applyWorldGeographyOccupants(snap: Snapshot): void {
   if (!getPreviewViewSettings().worldGeographyEnabled) {
+    return;
+  }
+  if (geographyMeshSession !== null) {
     return;
   }
   const wb = getWorldBoundsForClamp();
@@ -3028,26 +3126,55 @@ function applyWorldGeographyOccupants(snap: Snapshot): void {
   }
 }
 
-async function publishLocalGeographyPresence(): Promise<void> {
-  if (!getPreviewViewSettings().worldGeographyEnabled) {
-    return;
+async function stopGeographyMeshSession(): Promise<void> {
+  const session = geographyMeshSession;
+  geographyMeshSession = null;
+  geographyMeshStatusDetail = "";
+  geographyMeshTruncated = false;
+  geographyMeshMemberCount = 0;
+  if (session !== null) {
+    await session.stop();
   }
+}
+
+async function startGeographyMeshSession(): Promise<void> {
   const sid = getPreviewSessionIdSync();
   const humanId = getLocalGeographyHumanId();
-  if (sid === null || humanId === null) {
-    return;
-  }
   const pos = playerWorldPos.get(HUMAN_VIEWER_PLAYER_ID);
-  if (pos === undefined) {
+  if (sid === null || humanId === null || pos === undefined) {
     return;
   }
-  const displayName =
-    humanId.length > 16 ? `${humanId.slice(0, 12)}…` : humanId;
-  await postGeographyPresence({
+  await stopGeographyMeshSession();
+  const displayName = formatShortNodeId(humanId);
+  const session = new GeographyMeshSession({
     apiBase: API_BASE,
     sid,
     humanId,
-    name: displayName,
+    displayName,
+    callbacks: {
+      onRemotePoses: (poses) => {
+        applyMeshRemotePoses(poses);
+      },
+      onStatus: (status, detail) => {
+        geographyMeshStatusDetail =
+          detail ??
+          (status === "cap_reached"
+            ? "Geography membership is full (100)."
+            : status === "error"
+              ? "Geography mesh error"
+              : "");
+        if (status === "cap_reached" || status === "error") {
+          clearRemoteGeographyPresence();
+        }
+      },
+      onNeighborsChanged: (payload) => {
+        geographyMeshTruncated = payload.truncated;
+        geographyMeshMemberCount = payload.memberCount;
+      },
+    },
+  });
+  geographyMeshSession = session;
+  await session.start({
     x: pos.x,
     y: pos.y,
     facing: facingByPlayer.get(HUMAN_VIEWER_PLAYER_ID) ?? "right",
@@ -3060,23 +3187,46 @@ async function syncWorldGeographyEnabled(enabled: boolean): Promise<void> {
   const humanId = getLocalGeographyHumanId();
   if (!enabled) {
     clearRemoteGeographyPresence();
+    await stopGeographyMeshSession();
     if (sid !== null && humanId !== null) {
       await postGeographyLeave({ apiBase: API_BASE, sid, humanId });
     }
     return;
   }
-  await publishLocalGeographyPresence();
+  await startGeographyMeshSession();
 }
 
 function maybePublishGeographyPresence(nowMs: number): void {
-  if (!getPreviewViewSettings().worldGeographyEnabled) {
+  const tick = resolveWorldGeographyPresenceTick({
+    worldGeographyEnabled: getPreviewViewSettings().worldGeographyEnabled,
+    meshSessionActive: geographyMeshSession !== null,
+  });
+  if (tick === "noop") {
+    return;
+  }
+  if (tick === "tick_mesh") {
+    const mesh = geographyMeshSession;
+    if (mesh === null) {
+      return;
+    }
+    const pos = playerWorldPos.get(HUMAN_VIEWER_PLAYER_ID);
+    if (pos === undefined) {
+      return;
+    }
+    mesh.tickLocalPose({
+      x: pos.x,
+      y: pos.y,
+      facing: facingByPlayer.get(HUMAN_VIEWER_PLAYER_ID) ?? "right",
+      isMoving: movingByPlayer.get(HUMAN_VIEWER_PLAYER_ID) ?? false,
+      nowMs,
+    });
     return;
   }
   if (nowMs - geographyLastPublishMs < GEOGRAPHY_PUBLISH_INTERVAL_MS) {
     return;
   }
   geographyLastPublishMs = nowMs;
-  void publishLocalGeographyPresence();
+  void syncWorldGeographyEnabled(true);
 }
 
 function ingestSnapshot(snap: Snapshot): void {
@@ -3694,7 +3844,48 @@ function connectSse(sid: string): void {
     if (!getPreviewViewSettings().worldGeographyEnabled) {
       return;
     }
+    if (geographyMeshSession !== null) {
+      return;
+    }
     void handleWorldMapSse(sid, (ev as MessageEvent).data as string);
+  });
+  es.addEventListener(WORLD_GEOGRAPHY_NEIGHBORS_SSE, (ev) => {
+    if (geographyMeshSession === null) {
+      return;
+    }
+    try {
+      const data = JSON.parse((ev as MessageEvent).data as string) as unknown;
+      geographyMeshSession.handleSseEvent(WORLD_GEOGRAPHY_NEIGHBORS_SSE, data);
+    } catch {
+      /* ignore */
+    }
+  });
+  es.addEventListener(WORLD_GEOGRAPHY_SIGNAL_SSE, (ev) => {
+    if (geographyMeshSession === null) {
+      return;
+    }
+    try {
+      const data = JSON.parse((ev as MessageEvent).data as string) as unknown;
+      geographyMeshSession.handleSseEvent(WORLD_GEOGRAPHY_SIGNAL_SSE, data);
+    } catch {
+      /* ignore */
+    }
+  });
+  es.addEventListener(WORLD_PEER_CALL_SIGNAL_EVENT, (ev) => {
+    try {
+      const data = JSON.parse((ev as MessageEvent).data as string) as unknown;
+      peerCallController?.handleSseEvent(WORLD_PEER_CALL_SIGNAL_EVENT, data);
+    } catch {
+      /* ignore */
+    }
+  });
+  es.addEventListener("world:peer-call-state", (ev) => {
+    try {
+      const data = JSON.parse((ev as MessageEvent).data as string) as unknown;
+      peerCallController?.handleSseEvent("world:peer-call-state", data);
+    } catch {
+      /* ignore */
+    }
   });
   es.addEventListener(WORLD_INTERACTION_SSE, (ev) => {
     const data = JSON.parse((ev as MessageEvent).data) as {
@@ -3806,6 +3997,7 @@ function connectSse(sid: string): void {
           viewerPlayerId: getViewerWalletPlayerId(),
           push: (notification) => {
             notificationTray?.push(notification);
+            peerCallController?.handleIncomingInvite(notification);
           },
         });
         return;
@@ -3815,6 +4007,7 @@ function connectSse(sid: string): void {
         viewerPlayerId: getViewerWalletPlayerId(),
         push: (notification) => {
           notificationTray?.push(notification);
+          peerCallController?.handleIncomingInvite(notification);
         },
       });
     }
@@ -4716,11 +4909,14 @@ function onFrame(): void {
       isMoving: movingByPlayer.get(id) ?? false,
     });
     const displayName =
-      snapshot === null
-        ? id
-        : listAgentRows(snapshot).find((pl) => pl.agentId === id)?.name ??
-          listHumanRows(snapshot).find((h) => h.id === id)?.name ??
-          id;
+      id === HUMAN_VIEWER_PLAYER_ID
+        ? "You"
+        : snapshot === null
+          ? formatShortNodeId(id)
+          : listAgentRows(snapshot).find((pl) => pl.agentId === id)?.name ??
+            formatShortNodeId(
+              listHumanRows(snapshot).find((h) => h.id === id)?.name ?? id
+            );
     v.nameTag.text = displayName;
     v.nameTag.position.set(-v.nameTag.width / 2, box * 0.45);
     if (getPreviewViewSettings().showChatUi) {
@@ -4759,6 +4955,18 @@ function onFrame(): void {
     });
   } else {
     lastProximityPartnerId = null;
+  }
+  const localHumanId = getLocalGeographyHumanId();
+  if (onOverworld && localHumanId !== null && remoteGeographyHumanIds.size > 0) {
+    peerCallController?.setNearestHumanId(
+      findNearestHumanPartner({
+        localHumanId,
+        positions: playerWorldPos,
+        remoteHumanIds: remoteGeographyHumanIds,
+      })
+    );
+  } else {
+    peerCallController?.setNearestHumanId(null);
   }
   if (
     !arrivalControlsMuted &&
@@ -5058,6 +5266,9 @@ export function bootstrap(): void {
         getSettings: () => ({
           worldGeographyEnabled:
             getPreviewViewSettings().worldGeographyEnabled,
+          meshStatusDetail: geographyMeshStatusDetail,
+          meshTruncated: geographyMeshTruncated,
+          meshMemberCount: geographyMeshMemberCount,
         }),
         setSettings: (partial) => {
           const prev = getPreviewViewSettings().worldGeographyEnabled;
@@ -5302,9 +5513,38 @@ export function bootstrap(): void {
       parent: bottomHudDock.root,
       onClick: () => openWalletInventoryPanel(),
     });
+    peerCallRinger = createPreviewRingerEngine();
+    peerCallController = createPeerCallController({
+      parent: document.body,
+      getSid,
+      getApiBase: () => API_BASE,
+      getLocalHumanId: () => getLocalGeographyHumanId(),
+      getPeerDisplayName: (humanId) => formatShortNodeId(humanId),
+      isAgentPttActive: () =>
+        sessionInteractionPanel?.isVoiceConnectionActive() === true,
+      stopAgentPtt: () => {
+        sessionInteractionPanel?.closeVoiceConnection();
+      },
+      onWalletUpdate: (wallet) => {
+        walletHud?.setBalance(wallet.balanceUsd);
+      },
+      onError: (message) => {
+        deepLogText("peer-call", { message });
+      },
+      onCallUiChange: () => {
+        proximityTouchPadHandle?.refresh();
+      },
+      ringer: peerCallRinger,
+    });
     notificationTray = createNotificationTray({
       parent: document.body,
       syncLayoutToViewport: true,
+      onAcceptPeerCall: (notification) => {
+        void peerCallController?.acceptInvite(notification);
+      },
+      onDeclinePeerCall: (notification) => {
+        void peerCallController?.declineInvite(notification);
+      },
     });
     joinBubbleSound = createJoinBubbleSound({
       getLocalPlayerId: () => getViewerWalletPlayerId(),
@@ -5431,6 +5671,7 @@ export function bootstrap(): void {
         if (target === null) return false;
         return target.activatable !== false;
       },
+      getPeerTalkLabel: () => peerCallController?.getPeerTalkLabel() ?? null,
       onAssist: () => {
         noteArrivalQuestStep("touch_control");
         if (lastHouseNearest !== null) {
@@ -5472,47 +5713,7 @@ export function bootstrap(): void {
       },
       onPushToTalk: () => {
         noteArrivalQuestStep("touch_control");
-        if (activeHouseStage !== null) {
-          toggleHousePurchasePanel();
-          return;
-        }
-        if (
-          activeGameStage !== null &&
-          lastGameStageProximityTarget !== null &&
-          lastGameStageProximityTarget.activatable !== false
-        ) {
-          activateGameStageProximityTarget();
-          return;
-        }
-        if (
-          lastHouseNearest !== null &&
-          activeAmenityStage === null &&
-          activeGameStage === null &&
-          activeHouseStage === null
-        ) {
-          void enterHouseStage({
-            houseId: lastHouseNearest.houseId,
-            mode: "inspect",
-          });
-          return;
-        }
-        if (lastParkingBayNearest !== null && activeAmenityStage === null) {
-          cycleParkingTicketAction();
-          return;
-        }
-        if (activeAmenityStage !== null) {
-          const stage = activeAmenityStage;
-          const buyable = stage.nearestBuyable;
-          if (buyable !== null) {
-            cycleAmenityItemAction(stage, buyable);
-            return;
-          }
-        }
-        if (lastYardAmenityPadTarget !== null) {
-          void enterAmenityFromYardPad(lastYardAmenityPadTarget);
-          return;
-        }
-        void triggerProximityPushToTalk();
+        dispatchProximityPAction();
       },
       onWallet: () => {
         noteArrivalQuestStep("touch_control");
@@ -5832,6 +6033,14 @@ export function bootstrap(): void {
 
     await loadSnapshot(sid);
     connectSse(sid);
+    if (
+      shouldEnsureWorldGeographyMesh({
+        worldGeographyEnabled: getPreviewViewSettings().worldGeographyEnabled,
+        meshSessionActive: geographyMeshSession !== null,
+      })
+    ) {
+      void syncWorldGeographyEnabled(true);
+    }
     maybeStartArrivalQuestAfterOnboarding();
   })().finally(() => {
     previewBootstrapLock = null;

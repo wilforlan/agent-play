@@ -5,6 +5,60 @@
 
 export const GEOGRAPHY_PUBLISH_INTERVAL_MS = 30_000;
 
+/** Default pawn label length for node-id-style human ids. */
+export const GEOGRAPHY_NODE_ID_LABEL_CHARS = 8;
+
+export type WorldGeographyPresenceTickKind =
+  | "noop"
+  | "tick_mesh"
+  | "ensure_mesh";
+
+/**
+ * True when world geography is enabled in settings but the AOI mesh session
+ * is not running yet (e.g. saved checkbox on load).
+ */
+export function shouldEnsureWorldGeographyMesh(options: {
+  worldGeographyEnabled: boolean;
+  meshSessionActive: boolean;
+}): boolean {
+  return options.worldGeographyEnabled && !options.meshSessionActive;
+}
+
+/**
+ * Decides what the presence tick should do for the current geography mode.
+ * When the setting is on, never fall back to Redis pose publish — ensure the
+ * mesh instead.
+ */
+export function resolveWorldGeographyPresenceTick(options: {
+  worldGeographyEnabled: boolean;
+  meshSessionActive: boolean;
+}): WorldGeographyPresenceTickKind {
+  if (!options.worldGeographyEnabled) {
+    return "noop";
+  }
+  if (options.meshSessionActive) {
+    return "tick_mesh";
+  }
+  return "ensure_mesh";
+}
+
+/**
+ * Short label for a node id on the map pawn (about 8 chars by default).
+ */
+export function formatShortNodeId(
+  id: string,
+  maxChars: number = GEOGRAPHY_NODE_ID_LABEL_CHARS
+): string {
+  const trimmed = id.trim();
+  if (trimmed.length === 0) {
+    return trimmed;
+  }
+  if (trimmed.length <= maxChars) {
+    return trimmed;
+  }
+  return trimmed.slice(0, maxChars);
+}
+
 export type GeographyPresencePayload = {
   humanId: string;
   name: string;

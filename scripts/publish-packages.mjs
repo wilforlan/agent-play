@@ -3,8 +3,8 @@
  * publish-packages.mjs
  *
  * Publish agent-play packages to npm in dependency order:
- *   @agent-play/node-tools → @agent-play/intercom → @agent-play/sdk
- *      → @agent-play/cli → @agent-play/play-ui
+ *   @agent-play/node-tools → @agent-play/intercom → @agent-play/geography-mesh
+ *      → @agent-play/sdk → @agent-play/cli → @agent-play/play-ui
  *
  * Safe-by-default:
  *   - Refuses to run if the git working tree is dirty (override with --allow-dirty).
@@ -18,8 +18,8 @@
  *
  * Options:
  *   --packages <list>    Comma-separated subset of the publishable set:
- *                        node-tools,intercom,sdk,cli,play-ui
- *                        Default: all five, in dependency order.
+ *                        node-tools,intercom,geography-mesh,sdk,cli,play-ui
+ *                        Default: all six, in dependency order.
  *   --tag <tag>          Pass --tag to npm publish (default: latest).
  *   --otp <code>         Pass --otp to npm publish for 2FA accounts.
  *   --dry-run            Pass --dry-run to npm publish; also skips the
@@ -42,7 +42,14 @@ import { stdin as input, stdout as output } from "node:process";
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(SCRIPT_DIR, "..");
 
-const PUBLISHABLE_ORDER = ["node-tools", "intercom", "sdk", "cli", "play-ui"];
+const PUBLISHABLE_ORDER = [
+  "node-tools",
+  "intercom",
+  "geography-mesh",
+  "sdk",
+  "cli",
+  "play-ui",
+];
 const PUBLISHABLE_SET = new Set(PUBLISHABLE_ORDER);
 
 function fullPackageName(shortName) {

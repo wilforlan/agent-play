@@ -21,3 +21,4 @@ Informal **runbooks and context** that do not replace the main docs under [`docs
 | [agent-play-scanner-architecture.md](agent-play-scanner-architecture.md) | Scanner indexer Redis keys, write-through hooks, backfill, contributor checklist. |
 | [in-platform-analytics.md](in-platform-analytics.md) | Segment-style events + properties, analytics Redis layout, catalog, funnels. |
 | [spatial-economy-investment-note.md](spatial-economy-investment-note.md) | $10 wallet seed policy, APU-centric flywheel, $10k investment strategies, Scanner KPIs. |
+| [yjs-world-geography-multiplayer.md](yjs-world-geography-multiplayer.md) | Yjs geography **shipped**: WebRTC **AOI peer mesh**, **100** concurrent per `sid`, mesh degree **≤16**, host signaling only; npm package `@agent-play/geography-mesh` — see [../geography-mesh.md](../geography-mesh.md). |

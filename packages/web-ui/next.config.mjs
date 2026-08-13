@@ -46,6 +46,22 @@ const nextConfig = {
         destination: "/api/agent-play/geography",
       },
       {
+        source: "/agent-play/geography/membership",
+        destination: "/api/agent-play/geography/membership",
+      },
+      {
+        source: "/agent-play/geography/coarse",
+        destination: "/api/agent-play/geography/coarse",
+      },
+      {
+        source: "/agent-play/geography/signal",
+        destination: "/api/agent-play/geography/signal",
+      },
+      {
+        source: "/agent-play/peer-call/signal",
+        destination: "/api/agent-play/peer-call/signal",
+      },
+      {
         source: "/agent-play/assist-tool",
         destination: "/api/agent-play/assist-tool",
       },

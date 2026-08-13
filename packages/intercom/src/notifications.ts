@@ -10,6 +10,8 @@ export const WorldNotificationKindSchema = z.enum([
   "message_love",
   "message_reply",
   "room_join",
+  "peer_call_invite",
+  "peer_call_declined",
 ]);
 
 export const WorldNotificationPayloadSchema = z.object({
@@ -186,6 +188,58 @@ export function buildRoomJoinNotification(input: {
     actorPlayerId: input.actorPlayerId,
     metadata: {
       displayName: name,
+    },
+  });
+}
+
+export function buildPeerCallInviteNotification(input: {
+  id: string;
+  createdAt: string;
+  callerId: string;
+  calleeId: string;
+  callId: string;
+  callerDisplayName?: string;
+}): WorldNotificationPayload {
+  const name =
+    typeof input.callerDisplayName === "string" &&
+    input.callerDisplayName.trim().length > 0
+      ? input.callerDisplayName.trim()
+      : input.callerId;
+  return buildWorldNotification({
+    id: input.id,
+    kind: "peer_call_invite",
+    title: "Incoming call",
+    description: `${name} wants to talk`,
+    createdAt: input.createdAt,
+    actorPlayerId: input.callerId,
+    targetPlayerId: input.calleeId,
+    metadata: {
+      callId: input.callId,
+      callerId: input.callerId,
+      callerDisplayName: name,
+      sticky: true,
+    },
+  });
+}
+
+export function buildPeerCallDeclinedNotification(input: {
+  id: string;
+  createdAt: string;
+  callerId: string;
+  calleeId: string;
+  callId: string;
+}): WorldNotificationPayload {
+  return buildWorldNotification({
+    id: input.id,
+    kind: "peer_call_declined",
+    title: "Call declined",
+    description: "Your call was declined",
+    createdAt: input.createdAt,
+    actorPlayerId: input.calleeId,
+    targetPlayerId: input.callerId,
+    metadata: {
+      callId: input.callId,
+      calleeId: input.calleeId,
     },
   });
 }

@@ -116,7 +116,7 @@ export function getDefaultViewSettings(): PreviewViewSettings {
     debugMode: defaultDebugModeForHost(),
     debugOccupancyQuartiles: false,
     debugOccupancyFreeGrids: false,
-    worldGeographyEnabled: false,
+    worldGeographyEnabled: true,
     joystickEnabled: true,
     stationaryPanels: false,
     p2aEnabled: true,

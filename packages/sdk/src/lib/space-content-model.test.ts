@@ -280,6 +280,23 @@ describe("space-content-model: PurchaseRecordSchema", () => {
     expect(parsed.detail).toBe("Realtime voice · 10s · agent a1");
   });
 
+  it("accepts a peer-talk-time billing audit row", () => {
+    const parsed = PurchaseRecordSchema.parse({
+      id: "peer-talk-1",
+      playerId: "caller-1",
+      spaceId: "__peer_talk__",
+      amenityKind: "peer_talk_time",
+      itemRef: { kind: "peer_talk", id: "peer-webrtc" },
+      priceUsd: 0.014,
+      at: "2026-05-12T00:00:00.000Z",
+      detail: "Peer voice · 7s · callee callee-1",
+      counterpartyNodeId: "callee-1",
+    });
+    expect(parsed.amenityKind).toBe("peer_talk_time");
+    expect(parsed.itemRef.kind).toBe("peer_talk");
+    expect(parsed.spaceId).toBe("__peer_talk__");
+  });
+
   it("accepts legacy purchase records without detail", () => {
     const parsed = PurchaseRecordSchema.parse({
       id: "rec-1",

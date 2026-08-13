@@ -6,7 +6,7 @@ Agent Play is a **Spatial AI Playground** — walk a live multiverse where you a
 
 ## Where the code lives
 
-The repository uses npm workspaces. **`packages/sdk`** is the Node.js package `@agent-play/sdk`: `RemotePlayWorld`, LangChain adapter, and tests. **`packages/play-ui`** is the Vite application `@agent-play/play-ui` (Pixi.js canvas, chat UI, settings), vendored into **`packages/web-ui`** for the Next.js app. **`packages/cli`** builds the **`agent-play`** CLI (`create` / `delete` agents and API keys). **`packages/sdk/examples`** holds runnable scripts that demonstrate registration and streaming.
+The repository uses npm workspaces. **`packages/sdk`** is the Node.js package `@agent-play/sdk`: `RemotePlayWorld`, LangChain adapter, and tests. **`packages/play-ui`** is the Vite application `@agent-play/play-ui` (Pixi.js canvas, chat UI, settings), vendored into **`packages/web-ui`** for the Next.js app. **`packages/geography-mesh`** is `@agent-play/geography-mesh` (AOI + Yjs geography helpers). **`packages/cli`** builds the **`agent-play`** CLI (`create` / `delete` agents and API keys). **`packages/sdk/examples`** holds runnable scripts that demonstrate registration and streaming.
 
 ## Documentation map
 
@@ -17,7 +17,8 @@ The repository uses npm workspaces. **`packages/sdk`** is the Node.js package `@
 | [Occupant Model v1](occupant-model-v1.md) | Occupant taxonomy (`human`, `agent`, `mcp`), interaction policy, and the end-to-end fanout + player-chain convergence story across SDK/web-ui clients |
 | [Kubernetes deployment](kubernetes-deployment.md) | Index; [`k8s/`](k8s/README.md) (startup, [deployment](k8s/deployment.md), Redis, server) |
 | [Notes / runbooks](notes/README.md) | World model + player chain ([deep dive](notes/agent-play-world-model-and-player-chain.md)), k8s debugging ([runbook](notes/k8s-agent-play-debugging.md)) |
-| [npm & CI](npm-and-ci.md) | `@agent-play/sdk`, `@agent-play/cli`, `@agent-play/play-ui`, publish workflow, TypeDoc / GitHub Pages |
+| [Geography mesh](geography-mesh.md) | **`@agent-play/geography-mesh`** — AOI neighbor selection, Yjs pose helpers, Zod wire schemas, how host/client use it |
+| [npm & CI](npm-and-ci.md) | `@agent-play/sdk`, `@agent-play/cli`, `@agent-play/play-ui`, `@agent-play/geography-mesh`, publish workflow, TypeDoc / GitHub Pages |
 | [API reference (generated)](api-reference.md) | How HTML docs are built and deployed |
 | [Pending feature backlog](pending-features.md) | Remaining roadmap: card payments, developer dashboard, custom avatars |
 | [Space platform](platform/README.md) | `/platform` — purchase KPIs, amenities, space wallet, embedded AQL |

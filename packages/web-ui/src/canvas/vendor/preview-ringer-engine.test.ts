@@ -35,4 +35,22 @@ describe("createPreviewRingerEngine", () => {
       "Hello, you have an incoming message from Agent One. They have the following message: Status update"
     );
   });
+
+  it("loops ringtone until stopIncomingCallRing", async () => {
+    vi.useFakeTimers();
+    const playRingtone = vi.fn(async () => {});
+    const ringer = createPreviewRingerEngine({
+      getIsPresent: () => true,
+      playRingtone,
+    });
+    const loop = ringer.startIncomingCallRing();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(playRingtone).toHaveBeenCalled();
+    ringer.stopIncomingCallRing();
+    const callsAfterStop = playRingtone.mock.calls.length;
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(playRingtone.mock.calls.length).toBe(callsAfterStop);
+    await loop;
+    vi.useRealTimers();
+  });
 });

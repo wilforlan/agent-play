@@ -54,7 +54,7 @@ export const purchaseRecordToAnalyticsEvent = (input: {
     };
   }
 
-  if (record.amenityKind === "talk_time") {
+  if (record.amenityKind === "talk_time" || record.amenityKind === "peer_talk_time") {
     return {
       ...base,
       event: ANALYTICS_EVENT_NAMES.talkSessionBilled,
@@ -63,6 +63,7 @@ export const purchaseRecordToAnalyticsEvent = (input: {
         chargedUsd: record.priceUsd ?? 0,
         apuEarned: record.powerUpsEarned ?? 0,
         backfilled: input.backfilled ?? false,
+        amenityKind: record.amenityKind,
       },
     };
   }

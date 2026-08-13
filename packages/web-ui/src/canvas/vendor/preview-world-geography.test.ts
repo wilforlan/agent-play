@@ -1,8 +1,11 @@
 import { describe, expect, it, vi, afterEach } from "vitest";
 import {
   GEOGRAPHY_PUBLISH_INTERVAL_MS,
+  formatShortNodeId,
   postGeographyLeave,
   postGeographyPresence,
+  resolveWorldGeographyPresenceTick,
+  shouldEnsureWorldGeographyMesh,
 } from "./preview-world-geography.js";
 
 describe("preview-world-geography", () => {
@@ -12,6 +15,16 @@ describe("preview-world-geography", () => {
 
   it("exposes a publish interval for throttling", () => {
     expect(GEOGRAPHY_PUBLISH_INTERVAL_MS).toBeGreaterThan(0);
+  });
+
+  it("truncates node ids to about 8 characters for pawn labels", () => {
+    expect(formatShortNodeId("abcdefghijklmnop")).toBe("abcdefgh");
+    expect(formatShortNodeId("short")).toBe("short");
+    expect(
+      formatShortNodeId(
+        "46d21b68e3d9192b6c4deec62a9f43f6603a110ea6a436a1e6f905d64da6a2fb"
+      )
+    ).toBe("46d21b68");
   });
 
   it("posts presence to geography API", async () => {
@@ -55,5 +68,47 @@ describe("preview-world-geography", () => {
     expect(call).toBeDefined();
     const body = JSON.parse(String(call[1]?.body)) as Record<string, unknown>;
     expect(body.leave).toBe(true);
+  });
+
+  it("ensures the mesh when geography is enabled but not yet started", () => {
+    expect(
+      shouldEnsureWorldGeographyMesh({
+        worldGeographyEnabled: true,
+        meshSessionActive: false,
+      })
+    ).toBe(true);
+    expect(
+      shouldEnsureWorldGeographyMesh({
+        worldGeographyEnabled: true,
+        meshSessionActive: true,
+      })
+    ).toBe(false);
+    expect(
+      shouldEnsureWorldGeographyMesh({
+        worldGeographyEnabled: false,
+        meshSessionActive: false,
+      })
+    ).toBe(false);
+  });
+
+  it("resolves presence ticks to start the mesh on load when enabled", () => {
+    expect(
+      resolveWorldGeographyPresenceTick({
+        worldGeographyEnabled: true,
+        meshSessionActive: false,
+      })
+    ).toBe("ensure_mesh");
+    expect(
+      resolveWorldGeographyPresenceTick({
+        worldGeographyEnabled: true,
+        meshSessionActive: true,
+      })
+    ).toBe("tick_mesh");
+    expect(
+      resolveWorldGeographyPresenceTick({
+        worldGeographyEnabled: false,
+        meshSessionActive: false,
+      })
+    ).toBe("noop");
   });
 });

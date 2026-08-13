@@ -6,6 +6,7 @@ Published package names:
 |---------|-------------|
 | `@agent-play/node-tools` | Node identity: passphrase generation, scrypt derivation, credential file helpers. |
 | `@agent-play/intercom` | Wire types and Zod parsers for human–agent intercom (assist/chat); published **after** node-tools, **before** the SDK. |
+| `@agent-play/geography-mesh` | AOI constants, Zod geography wire schemas, neighbor selection, Yjs pose helpers; published **before** play-ui. |
 | `@agent-play/sdk` | Node SDK (`RemotePlayWorld`, LangChain registration, types). Build output: `dist/` (ESM + `.d.ts`) via `tsup`. |
 | `@agent-play/cli` | `agent-play` CLI binary (`dist/cli.js`). |
 | `@agent-play/play-ui` | Static Vite bundle (`dist/`) for the watch canvas; consume files under `node_modules/@agent-play/play-ui/dist/` or serve the folder behind your API. |
@@ -17,13 +18,14 @@ These are **public** scoped packages (`publishConfig.access: public`) where appl
 From the repository root:
 
 ```bash
+npm run build:geography-mesh
 npm run build:sdk
 npm run build:cli
 npm run build:web-ui
 npm run build:play-ui
 ```
 
-Or `npm run build` to run all four build steps.
+Or `npm run build` to run the full workspace build (includes geography-mesh).
 
 ## Version numbers (published packages)
 
@@ -44,7 +46,7 @@ npm run version:packages -- --workspace @agent-play/cli 1.4.0
 npm run version:packages -- -w web-ui minor
 ```
 
-Aliases: **`node-tools`**, **`intercom`**, **`sdk`**, **`cli`**, **`play-ui`**, **`web-ui`**, **`root`** (root **`package.json`** only), or full names such as **`@agent-play/sdk`**.
+Aliases: **`node-tools`**, **`intercom`**, **`geography-mesh`**, **`sdk`**, **`cli`**, **`play-ui`**, **`web-ui`**, **`root`** (root **`package.json`** only), or full names such as **`@agent-play/sdk`**.
 
 Implementation: [`scripts/sync-package-versions.mjs`](../scripts/sync-package-versions.mjs).
 
@@ -53,7 +55,7 @@ Implementation: [`scripts/sync-package-versions.mjs`](../scripts/sync-package-ve
 
 ## Publishing (manual)
 
-The preferred entry point is **`npm run publish:packages`** (script: [`scripts/publish-packages.mjs`](../scripts/publish-packages.mjs)). It enforces the dependency-order chain (`node-tools → intercom → sdk → cli → play-ui`), builds each package before publishing, probes the registry to catch already-published versions before the chain starts, and is safe-by-default (refuses a dirty git tree, requires `npm whoami`, prompts for confirmation).
+The preferred entry point is **`npm run publish:packages`** (script: [`scripts/publish-packages.mjs`](../scripts/publish-packages.mjs)). It enforces the dependency-order chain (`node-tools → intercom → geography-mesh → sdk → cli → play-ui`), builds each package before publishing, probes the registry to catch already-published versions before the chain starts, and is safe-by-default (refuses a dirty git tree, requires `npm whoami`, prompts for confirmation).
 
 ### Typical release flow
 
@@ -105,6 +107,7 @@ If you ever need to bypass the script entirely (matches what `.github/workflows/
 ```bash
 npm publish -w @agent-play/node-tools --access public
 npm publish -w @agent-play/intercom --access public
+npm publish -w @agent-play/geography-mesh --access public
 npm publish -w @agent-play/sdk --access public
 npm publish -w @agent-play/cli --access public
 npm publish -w @agent-play/play-ui --access public
@@ -118,8 +121,8 @@ Workflow [`.github/workflows/publish-npm.yml`](../.github/workflows/publish-npm.
 
 Behavior:
 
-- **Single workflow** — One **`publish`** job runs **`npm install`** once, then **build + publish** in dependency order: **`@agent-play/node-tools`** → **`@agent-play/intercom`** → **`@agent-play/sdk`** → **`@agent-play/cli`** → **`@agent-play/play-ui`**. Each step runs only when that package is selected (see below). Failures stop later steps in the same run.
-- **Path-based selection on `push`** — A **`changes`** job uses **`dorny/paths-filter`** so only packages with changes under `packages/node-tools/**`, `packages/intercom/**`, `packages/sdk/**`, `packages/cli/**`, or `packages/play-ui/**` are built and published.
+- **Single workflow** — One **`publish`** job runs **`npm install`** once, then **build + publish** in dependency order: **`@agent-play/node-tools`** → **`@agent-play/intercom`** → **`@agent-play/geography-mesh`** → **`@agent-play/sdk`** → **`@agent-play/cli`** → **`@agent-play/play-ui`**. Each step runs only when that package is selected (see below). Failures stop later steps in the same run.
+- **Path-based selection on `push`** — A **`changes`** job uses **`dorny/paths-filter`** so only packages with changes under `packages/node-tools/**`, `packages/intercom/**`, `packages/geography-mesh/**`, `packages/sdk/**`, `packages/cli/**`, or `packages/play-ui/**` are built and published.
 - **Manual runs** — **`workflow_dispatch`** exposes checkboxes to include or skip each package (defaults: all on).
 
 ## API documentation (TypeDoc)

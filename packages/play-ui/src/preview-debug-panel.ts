@@ -36,7 +36,11 @@ type OccupancyDebugPick = Pick<
   "debugOccupancyQuartiles" | "debugOccupancyFreeGrids"
 >;
 
-type GeographyDebugPick = Pick<PreviewViewSettings, "worldGeographyEnabled">;
+type GeographyDebugPick = Pick<PreviewViewSettings, "worldGeographyEnabled"> & {
+  meshStatusDetail?: string;
+  meshTruncated?: boolean;
+  meshMemberCount?: number;
+};
 
 export function createPreviewDebugPanel(options: {
   getSnapshot: () => {
@@ -78,6 +82,7 @@ export function createPreviewDebugPanel(options: {
   let quartileInput: HTMLInputElement | null = null;
   let freeGridsInput: HTMLInputElement | null = null;
   let geographyInput: HTMLInputElement | null = null;
+  let geographyStatusEl: HTMLParagraphElement | null = null;
 
   if (options.geographyDebug !== undefined) {
     const geoWrap = document.createElement("div");
@@ -101,6 +106,10 @@ export function createPreviewDebugPanel(options: {
       "Enable world geography: view other players in your world";
     rowGeo.append(geographyInput, geoLabel);
     geoWrap.appendChild(rowGeo);
+    geographyStatusEl = document.createElement("p");
+    geographyStatusEl.className = "preview-debug-panel__geography-status";
+    geographyStatusEl.textContent = "";
+    geoWrap.appendChild(geographyStatusEl);
     body.appendChild(geoWrap);
   }
 
@@ -243,8 +252,24 @@ export function createPreviewDebugPanel(options: {
       }
     }
     if (options.geographyDebug !== undefined && geographyInput !== null) {
-      geographyInput.checked =
-        options.geographyDebug.getSettings().worldGeographyEnabled;
+      const gs = options.geographyDebug.getSettings();
+      geographyInput.checked = gs.worldGeographyEnabled;
+      if (geographyStatusEl !== null) {
+        const parts: string[] = [];
+        if (gs.meshMemberCount !== undefined && gs.meshMemberCount > 0) {
+          parts.push(`members ${String(gs.meshMemberCount)}/100`);
+        }
+        if (gs.meshTruncated === true) {
+          parts.push("showing nearest 16");
+        }
+        if (
+          typeof gs.meshStatusDetail === "string" &&
+          gs.meshStatusDetail.length > 0
+        ) {
+          parts.push(gs.meshStatusDetail);
+        }
+        geographyStatusEl.textContent = parts.join(" · ");
+      }
     }
   };
 

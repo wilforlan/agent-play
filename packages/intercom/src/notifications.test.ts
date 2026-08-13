@@ -5,6 +5,8 @@ import {
   buildMessageLoveNotification,
   buildMessageReplyNotification,
   buildNotificationIntercomEvent,
+  buildPeerCallDeclinedNotification,
+  buildPeerCallInviteNotification,
   buildRoomJoinNotification,
   extractWorldNotificationFromIntercomResult,
   parseWorldNotificationPayload,
@@ -145,6 +147,79 @@ describe("world notifications", () => {
       shouldDeliverWorldNotification({
         notification: join,
         viewerPlayerId: "carol",
+      })
+    ).toBe(false);
+  });
+
+  it("parses peer call invite and declined kinds", () => {
+    const invite = buildPeerCallInviteNotification({
+      id: "n-invite",
+      createdAt: "2026-08-12T12:00:00.000Z",
+      callerId: "caller-1",
+      calleeId: "callee-1",
+      callId: "call-1",
+      callerDisplayName: "Alex",
+    });
+    expect(invite.kind).toBe("peer_call_invite");
+    expect(invite.targetPlayerId).toBe("callee-1");
+    expect(invite.metadata.callId).toBe("call-1");
+    expect(invite.metadata.sticky).toBe(true);
+
+    const declined = buildPeerCallDeclinedNotification({
+      id: "n-declined",
+      createdAt: "2026-08-12T12:00:01.000Z",
+      callerId: "caller-1",
+      calleeId: "callee-1",
+      callId: "call-1",
+    });
+    expect(declined.kind).toBe("peer_call_declined");
+    expect(declined.targetPlayerId).toBe("caller-1");
+  });
+
+  it("delivers peer call invite only to callee and declined only to caller", () => {
+    const invite = buildPeerCallInviteNotification({
+      id: "n-invite",
+      createdAt: "2026-08-12T12:00:00.000Z",
+      callerId: "caller-1",
+      calleeId: "callee-1",
+      callId: "call-1",
+    });
+    expect(
+      shouldDeliverWorldNotification({
+        notification: invite,
+        viewerPlayerId: "callee-1",
+      })
+    ).toBe(true);
+    expect(
+      shouldDeliverWorldNotification({
+        notification: invite,
+        viewerPlayerId: "caller-1",
+      })
+    ).toBe(false);
+    expect(
+      shouldDeliverWorldNotification({
+        notification: invite,
+        viewerPlayerId: "other",
+      })
+    ).toBe(false);
+
+    const declined = buildPeerCallDeclinedNotification({
+      id: "n-declined",
+      createdAt: "2026-08-12T12:00:01.000Z",
+      callerId: "caller-1",
+      calleeId: "callee-1",
+      callId: "call-1",
+    });
+    expect(
+      shouldDeliverWorldNotification({
+        notification: declined,
+        viewerPlayerId: "caller-1",
+      })
+    ).toBe(true);
+    expect(
+      shouldDeliverWorldNotification({
+        notification: declined,
+        viewerPlayerId: "callee-1",
       })
     ).toBe(false);
   });

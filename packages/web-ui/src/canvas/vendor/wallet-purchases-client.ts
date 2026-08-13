@@ -32,6 +32,7 @@ export type PurchaseRecordDto = {
     | "parking"
     | "house"
     | "talk_time"
+    | "peer_talk_time"
     | "wallet_bundle"
     | "apu_credit"
     | "apu_debit";
@@ -45,6 +46,7 @@ export type PurchaseRecordDto = {
       | "game"
       | "apu"
       | "talk"
+      | "peer_talk"
       | "bundle";
     readonly id: string;
   };

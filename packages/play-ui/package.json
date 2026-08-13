@@ -1,6 +1,6 @@
 {
   "name": "@agent-play/play-ui",
-  "version": "3.9.0",
+  "version": "3.9.1",
   "description": "Vite-built watch canvas (Pixi.js) for Agent Play. Publishes static files under dist/ for self-hosting or embedding beside your own API.",
   "private": false,
   "type": "module",
@@ -33,8 +33,12 @@
     "@openai/agents": "^0.8.5",
     "@vercel/analytics": "^2.0.1",
     "dompurify": "^3.3.3",
+    "lib0": "^0.2.117",
     "marked": "^17.0.5",
-    "pixi.js": "^8.17.1"
+    "pixi.js": "^8.17.1",
+    "y-protocols": "^1.0.7",
+    "@agent-play/geography-mesh": "^0.1.0",
+    "yjs": "^13.6.27"
   },
   "devDependencies": {
     "@types/dompurify": "^3.0.5",

@@ -48,7 +48,10 @@ export const buildScannerTalkSummary = async (input: {
       hostId: input.hostId,
       txId: id,
     });
-    if (tx === null || tx.amenityKind !== "talk_time") continue;
+    if (tx === null) continue;
+    if (tx.amenityKind !== "talk_time" && tx.amenityKind !== "peer_talk_time") {
+      continue;
+    }
     sessions += 1;
     totalChargedUsd += tx.priceUsd ?? 0;
     totalApuEarned += tx.powerUpsEarned ?? 0;

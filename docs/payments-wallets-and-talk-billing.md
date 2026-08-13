@@ -91,6 +91,27 @@ If two clients race, one `EXEC` wins; the other gets **`ITEM_ALREADY_SOLD`**. If
 - [`packages/web-ui/src/server/agent-play/redis-session-store.ts`](../packages/web-ui/src/server/agent-play/redis-session-store.ts) — `executePurchase`, `addPowerUps`.
 - [`packages/play-ui/src/wallet-hud.ts`](../packages/play-ui/src/wallet-hud.ts), [`wallet-inventory-panel.ts`](../packages/play-ui/src/wallet-inventory-panel.ts).
 
+## Peer proximity voice (human ↔ human)
+
+Proximity-gated **1:1 peer WebRTC** calls (not OpenAI Realtime) bill the **caller only** at a lower rate. Declined rings are free; billing starts on **Accept**.
+
+### Rates
+
+- **`PEER_TALK_PRICE_PER_SECOND_USD`** = **0.002**
+- **`PEER_TALK_PRICE_PER_60S_USD`** = **0.12**
+- Client tick interval: random whole seconds in **`[7, 15]`** via `nextPeerTalkTickSeconds()`
+
+`peerCostForSeconds` floors whole seconds (`Math.round(whole * 2) / 1000` USD). No agent PU reward.
+
+### Session + purchases
+
+- Redis key: `agent-play:{hostId}:peer-talk:{callerId}:{calleeId}`
+- RPCs: `peerTalkSessionStart` / `Tick` / `Stop` (also started from `peerCallAccept`)
+- Purchase kind: **`peer_talk_time`**, sentinel `spaceId: "__peer_talk__"`, `itemRef.kind: "peer_talk"`
+- Call lifecycle RPCs: `peerCallInvite` / `Accept` / `Decline` / `Hangup` (proximity-gated on invite)
+
+**Source:** [`packages/sdk/src/lib/peer-talk-billing.ts`](../packages/sdk/src/lib/peer-talk-billing.ts), [`peer-call-model.ts`](../packages/sdk/src/lib/peer-call-model.ts).
+
 ## Talk billing (realtime voice)
 
 When the human uses **push-to-talk** with OpenAI Realtime, the server tracks a **talk session** per pair **`(viewerNodeId, agentId)`** and bills the **viewer’s wallet** in wall-clock time.

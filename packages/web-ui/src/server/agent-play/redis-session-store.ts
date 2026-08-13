@@ -28,17 +28,24 @@ import type {
   ParkingDurationTier,
   HouseStreetContent,
   HouseId,
+  PeerCallEndReason,
+  PeerCallRecord,
+  PeerCallStatus,
 } from "@agent-play/sdk";
 import {
   ApplyGameOutcomeInputSchema,
   CarWashCarSchema,
   PlayerWalletSchema,
   PurchaseRecordSchema,
+  PeerCallRecordSchema,
   ShopItemSchema,
   SupermarketItemSchema,
   ParkingStreetContentSchema,
   HouseStreetContentSchema,
   TALK_PRICE_PER_SECOND_USD,
+  PEER_TALK_PRICE_PER_SECOND_USD,
+  PEER_CALL_INVITE_TIMEOUT_MS,
+  arePeersWithinCallProximity,
   canCarAcquireParkingSpot,
   canNodeAcquireParkingSpot,
   computeParkingExpiresAt,
@@ -55,6 +62,7 @@ import {
   createInitialAgentRewardWallet,
   createInitialPlayerWallet,
   costForSeconds,
+  peerCostForSeconds,
   getWalletBundleById,
   buildAmenityPurchaseApuFields,
   buildApuWalletTransaction,
@@ -91,6 +99,12 @@ import {
   parseGeographyHumanState,
   type GeographyHumanState,
 } from "./world-geography.js";
+import {
+  GEOGRAPHY_MEMBER_CAP,
+  type GeographyMember,
+  GeographyMemberSchema,
+} from "@agent-play/geography-mesh";
+import { GEOGRAPHY_MEMBERSHIP_REDIS_TTL_SECONDS } from "./geography-membership.js";
 import type {
   BuyParkingTicketResult,
   BuyHouseResult,
@@ -165,6 +179,10 @@ function geographyHumansKey(hostId: string, sid: string): string {
   return `agent-play:${hostId}:geography:${sid}`;
 }
 
+function geographyMembersKey(hostId: string, sid: string): string {
+  return `agent-play:${hostId}:geography:members:${sid}`;
+}
+
 function spaceAmenityLogKey(
   hostId: string,
   spaceId: string,
@@ -213,7 +231,36 @@ function talkSessionKey(
   return `agent-play:${hostId}:talk:${viewerNodeId}:${agentId}`;
 }
 
+function peerTalkSessionKey(
+  hostId: string,
+  callerId: string,
+  calleeId: string
+): string {
+  return `agent-play:${hostId}:peer-talk:${callerId}:${calleeId}`;
+}
+
+function peerCallKey(hostId: string, callId: string): string {
+  return `agent-play:${hostId}:peer-call:${callId}`;
+}
+
+function peerCallByHumanKey(hostId: string, humanId: string): string {
+  return `agent-play:${hostId}:peer-call-by-human:${humanId}`;
+}
+
+const PEER_CALL_RINGING_TTL_SECONDS = Math.ceil(
+  PEER_CALL_INVITE_TIMEOUT_MS / 1000
+);
+const PEER_CALL_ACTIVE_TTL_SECONDS = 2 * 60 * 60;
+
 type TalkSessionStored = {
+  startedAtIso: string;
+  lastBilledAtIso: string;
+  totalBilledSeconds: number;
+  totalChargedUsd: number;
+};
+
+type PeerTalkSessionStored = {
+  callId: string;
   startedAtIso: string;
   lastBilledAtIso: string;
   totalBilledSeconds: number;
@@ -235,6 +282,33 @@ function parseTalkSessionStored(raw: string): TalkSessionStored | null {
     const totalChargedUsd =
       typeof o.totalChargedUsd === "number" ? o.totalChargedUsd : 0;
     return {
+      startedAtIso: o.startedAtIso,
+      lastBilledAtIso: o.lastBilledAtIso,
+      totalBilledSeconds: o.totalBilledSeconds,
+      totalChargedUsd,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function parsePeerTalkSessionStored(raw: string): PeerTalkSessionStored | null {
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (typeof parsed !== "object" || parsed === null) return null;
+    const o = parsed as Record<string, unknown>;
+    if (
+      typeof o.callId !== "string" ||
+      typeof o.startedAtIso !== "string" ||
+      typeof o.lastBilledAtIso !== "string" ||
+      typeof o.totalBilledSeconds !== "number"
+    ) {
+      return null;
+    }
+    const totalChargedUsd =
+      typeof o.totalChargedUsd === "number" ? o.totalChargedUsd : 0;
+    return {
+      callId: o.callId,
       startedAtIso: o.startedAtIso,
       lastBilledAtIso: o.lastBilledAtIso,
       totalBilledSeconds: o.totalBilledSeconds,
@@ -2147,6 +2221,501 @@ export class RedisSessionStore implements SessionStore {
     );
   }
 
+  private async appendPeerTalkTimePurchaseRecord(input: {
+    playerId: string;
+    calleeId: string;
+    priceUsd: number;
+    billedSeconds: number;
+    at: string;
+  }): Promise<void> {
+    const record: PurchaseRecord = PurchaseRecordSchema.parse({
+      id: `peer-talk-${randomUUID()}`,
+      playerId: input.playerId,
+      spaceId: "__peer_talk__",
+      amenityKind: "peer_talk_time",
+      itemRef: { kind: "peer_talk", id: "peer-webrtc" },
+      priceUsd: input.priceUsd,
+      at: input.at,
+      detail: `Peer voice · ${String(input.billedSeconds)}s · callee ${input.calleeId}`,
+      counterpartyNodeId: input.calleeId,
+    });
+    await this.appendPurchaseRecord(record);
+  }
+
+  async startPeerTalkSession(input: {
+    callerId: string;
+    calleeId: string;
+    callId: string;
+    now: string;
+  }): Promise<
+    | {
+        ok: true;
+        startedAt: string;
+        ratePerSecondUsd: number;
+        wallet: PlayerWallet;
+      }
+    | { ok: false; error: "ALREADY_ACTIVE" | "INSUFFICIENT_FUNDS" }
+  > {
+    const wallet = await this.getPlayerWallet(input.callerId);
+    if (wallet.balanceUsd <= 0) {
+      return { ok: false, error: "INSUFFICIENT_FUNDS" };
+    }
+    const key = peerTalkSessionKey(
+      this.hostId,
+      input.callerId,
+      input.calleeId
+    );
+    const initial: PeerTalkSessionStored = {
+      callId: input.callId,
+      startedAtIso: input.now,
+      lastBilledAtIso: input.now,
+      totalBilledSeconds: 0,
+      totalChargedUsd: 0,
+    };
+    const setResult = await this.redis.set(
+      key,
+      JSON.stringify(initial),
+      "NX"
+    );
+    if (setResult === null) {
+      return { ok: false, error: "ALREADY_ACTIVE" };
+    }
+    return {
+      ok: true,
+      startedAt: input.now,
+      ratePerSecondUsd: PEER_TALK_PRICE_PER_SECOND_USD,
+      wallet,
+    };
+  }
+
+  async tickPeerTalkSession(input: {
+    callerId: string;
+    calleeId: string;
+    callId: string;
+    now: string;
+  }): Promise<
+    | {
+        ok: true;
+        secondsBilledThisTick: number;
+        secondsBilledTotal: number;
+        costUsd: number;
+        wallet: PlayerWallet;
+      }
+    | { ok: false; error: "NO_SESSION" | "INSUFFICIENT_FUNDS" }
+  > {
+    const talkKey = peerTalkSessionKey(
+      this.hostId,
+      input.callerId,
+      input.calleeId
+    );
+    const walletKey = playerWalletKey(this.hostId, input.callerId);
+    const maxAttempts = 5;
+    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+      await this.redis.watch(talkKey, walletKey);
+      const rawTalk = await this.redis.get(talkKey);
+      const session =
+        rawTalk !== null && rawTalk.length > 0
+          ? parsePeerTalkSessionStored(rawTalk)
+          : null;
+      if (session === null) {
+        await this.redis.unwatch();
+        return { ok: false, error: "NO_SESSION" };
+      }
+      const rawWallet = await this.redis.get(walletKey);
+      if (rawWallet === null || rawWallet.length === 0) {
+        await this.redis.unwatch();
+        const multiDel = this.redis.multi();
+        multiDel.del(talkKey);
+        await multiDel.exec();
+        return { ok: false, error: "INSUFFICIENT_FUNDS" };
+      }
+      let wallet: PlayerWallet;
+      try {
+        wallet = PlayerWalletSchema.parse(JSON.parse(rawWallet));
+      } catch {
+        await this.redis.unwatch();
+        const multiDel = this.redis.multi();
+        multiDel.del(talkKey);
+        await multiDel.exec();
+        return { ok: false, error: "INSUFFICIENT_FUNDS" };
+      }
+      const elapsedMs =
+        Date.parse(input.now) - Date.parse(session.lastBilledAtIso);
+      const billSeconds =
+        elapsedMs > 0 ? Math.ceil(elapsedMs / 1000) : 0;
+      const costUsd = peerCostForSeconds(billSeconds);
+      if (costUsd > wallet.balanceUsd) {
+        await this.redis.unwatch();
+        await this.redis.del(talkKey);
+        return { ok: false, error: "INSUFFICIENT_FUNDS" };
+      }
+      const nextWallet: PlayerWallet = {
+        ...wallet,
+        balanceUsd: wallet.balanceUsd - costUsd,
+        updatedAt: input.now,
+      };
+      const nextSession: PeerTalkSessionStored = {
+        ...session,
+        callId: input.callId,
+        lastBilledAtIso: input.now,
+        totalBilledSeconds: session.totalBilledSeconds + billSeconds,
+        totalChargedUsd: session.totalChargedUsd + costUsd,
+      };
+      const multi = this.redis.multi();
+      multi.set(walletKey, JSON.stringify(nextWallet));
+      multi.set(talkKey, JSON.stringify(nextSession));
+      const exec = await multi.exec();
+      if (exec !== null) {
+        if (costUsd > 0) {
+          await this.appendPeerTalkTimePurchaseRecord({
+            playerId: input.callerId,
+            calleeId: input.calleeId,
+            priceUsd: costUsd,
+            billedSeconds: billSeconds,
+            at: input.now,
+          });
+        }
+        return {
+          ok: true,
+          secondsBilledThisTick: billSeconds,
+          secondsBilledTotal: nextSession.totalBilledSeconds,
+          costUsd,
+          wallet: nextWallet,
+        };
+      }
+    }
+    throw new Error(
+      `tickPeerTalkSession: lost ${String(maxAttempts)} CAS retries for peer talk ${input.callerId}:${input.calleeId}`
+    );
+  }
+
+  async stopPeerTalkSession(input: {
+    callerId: string;
+    calleeId: string;
+    callId: string;
+    now: string;
+  }): Promise<
+    | {
+        ok: true;
+        totalCostUsd: number;
+        secondsBilledTotal: number;
+        wallet: PlayerWallet;
+      }
+    | { ok: false; error: "NO_SESSION" }
+  > {
+    const talkKey = peerTalkSessionKey(
+      this.hostId,
+      input.callerId,
+      input.calleeId
+    );
+    const walletKey = playerWalletKey(this.hostId, input.callerId);
+    const maxAttempts = 5;
+    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+      await this.redis.watch(talkKey, walletKey);
+      const rawTalk = await this.redis.get(talkKey);
+      const session =
+        rawTalk !== null && rawTalk.length > 0
+          ? parsePeerTalkSessionStored(rawTalk)
+          : null;
+      if (session === null) {
+        await this.redis.unwatch();
+        return { ok: false, error: "NO_SESSION" };
+      }
+      const rawWallet = await this.redis.get(walletKey);
+      if (rawWallet === null || rawWallet.length === 0) {
+        await this.redis.unwatch();
+        await this.redis.del(talkKey);
+        const w = await this.getPlayerWallet(input.callerId);
+        return {
+          ok: true,
+          totalCostUsd: session.totalChargedUsd,
+          secondsBilledTotal: session.totalBilledSeconds,
+          wallet: w,
+        };
+      }
+      let wallet: PlayerWallet;
+      try {
+        wallet = PlayerWalletSchema.parse(JSON.parse(rawWallet));
+      } catch {
+        await this.redis.unwatch();
+        await this.redis.del(talkKey);
+        const w = await this.getPlayerWallet(input.callerId);
+        return {
+          ok: true,
+          totalCostUsd: session.totalChargedUsd,
+          secondsBilledTotal: session.totalBilledSeconds,
+          wallet: w,
+        };
+      }
+      const elapsedMs =
+        Date.parse(input.now) - Date.parse(session.lastBilledAtIso);
+      const billSeconds =
+        elapsedMs > 0 ? Math.ceil(elapsedMs / 1000) : 0;
+      const finalCostUsd = peerCostForSeconds(billSeconds);
+      if (finalCostUsd > wallet.balanceUsd) {
+        await this.redis.unwatch();
+        await this.redis.del(talkKey);
+        return {
+          ok: true,
+          totalCostUsd: session.totalChargedUsd,
+          secondsBilledTotal: session.totalBilledSeconds,
+          wallet,
+        };
+      }
+      const nextWallet: PlayerWallet = {
+        ...wallet,
+        balanceUsd: wallet.balanceUsd - finalCostUsd,
+        updatedAt: input.now,
+      };
+      const totalCostUsd = session.totalChargedUsd + finalCostUsd;
+      const secondsBilledTotal =
+        session.totalBilledSeconds + billSeconds;
+      const multi = this.redis.multi();
+      multi.set(walletKey, JSON.stringify(nextWallet));
+      multi.del(talkKey);
+      const exec = await multi.exec();
+      if (exec !== null) {
+        if (finalCostUsd > 0) {
+          await this.appendPeerTalkTimePurchaseRecord({
+            playerId: input.callerId,
+            calleeId: input.calleeId,
+            priceUsd: finalCostUsd,
+            billedSeconds: billSeconds,
+            at: input.now,
+          });
+        }
+        return {
+          ok: true,
+          totalCostUsd,
+          secondsBilledTotal,
+          wallet: nextWallet,
+        };
+      }
+    }
+    throw new Error(
+      `stopPeerTalkSession: lost ${String(maxAttempts)} CAS retries for peer talk ${input.callerId}:${input.calleeId}`
+    );
+  }
+
+  async createPeerCall(
+    record: PeerCallRecord
+  ): Promise<{ ok: true } | { ok: false; error: "BUSY" }> {
+    const parsed = PeerCallRecordSchema.parse(record);
+    const callKey = peerCallKey(this.hostId, parsed.callId);
+    const callerIndexKey = peerCallByHumanKey(this.hostId, parsed.callerId);
+    const calleeIndexKey = peerCallByHumanKey(this.hostId, parsed.calleeId);
+    const ttlSeconds =
+      parsed.status === "ringing"
+        ? PEER_CALL_RINGING_TTL_SECONDS
+        : PEER_CALL_ACTIVE_TTL_SECONDS;
+
+    const callerClaim = await this.redis.set(
+      callerIndexKey,
+      parsed.callId,
+      "EX",
+      ttlSeconds,
+      "NX"
+    );
+    if (callerClaim === null) {
+      return { ok: false, error: "BUSY" };
+    }
+    const calleeClaim = await this.redis.set(
+      calleeIndexKey,
+      parsed.callId,
+      "EX",
+      ttlSeconds,
+      "NX"
+    );
+    if (calleeClaim === null) {
+      await this.redis.del(callerIndexKey);
+      return { ok: false, error: "BUSY" };
+    }
+    const callClaim = await this.redis.set(
+      callKey,
+      JSON.stringify(parsed),
+      "EX",
+      ttlSeconds,
+      "NX"
+    );
+    if (callClaim === null) {
+      await this.redis.del(callerIndexKey, calleeIndexKey);
+      return { ok: false, error: "BUSY" };
+    }
+    return { ok: true };
+  }
+
+  async getPeerCall(callId: string): Promise<PeerCallRecord | null> {
+    const raw = await this.redis.get(peerCallKey(this.hostId, callId));
+    if (raw === null || raw.length === 0) {
+      return null;
+    }
+    try {
+      return PeerCallRecordSchema.parse(JSON.parse(raw) as unknown);
+    } catch {
+      return null;
+    }
+  }
+
+  async getPeerCallIdForHuman(humanId: string): Promise<string | null> {
+    const raw = await this.redis.get(peerCallByHumanKey(this.hostId, humanId));
+    if (raw === null || raw.trim().length === 0) {
+      return null;
+    }
+    return raw;
+  }
+
+  async transitionPeerCall(input: {
+    callId: string;
+    fromStatus: PeerCallStatus | readonly PeerCallStatus[];
+    toStatus: PeerCallStatus;
+    answeredAt?: string;
+    endedAt?: string;
+    endReason?: PeerCallEndReason;
+  }): Promise<
+    | { ok: true; call: PeerCallRecord }
+    | { ok: false; error: "NOT_FOUND" | "INVALID_STATUS" }
+  > {
+    const callKey = peerCallKey(this.hostId, input.callId);
+    const maxAttempts = 8;
+    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+      await this.redis.watch(callKey);
+      const raw = await this.redis.get(callKey);
+      if (raw === null || raw.length === 0) {
+        await this.redis.unwatch();
+        return { ok: false, error: "NOT_FOUND" };
+      }
+      let existing: PeerCallRecord;
+      try {
+        existing = PeerCallRecordSchema.parse(JSON.parse(raw) as unknown);
+      } catch {
+        await this.redis.unwatch();
+        return { ok: false, error: "NOT_FOUND" };
+      }
+      const allowed = Array.isArray(input.fromStatus)
+        ? input.fromStatus
+        : [input.fromStatus];
+      if (!allowed.includes(existing.status)) {
+        await this.redis.unwatch();
+        return { ok: false, error: "INVALID_STATUS" };
+      }
+      const next: PeerCallRecord = PeerCallRecordSchema.parse({
+        ...existing,
+        status: input.toStatus,
+        ...(input.answeredAt !== undefined
+          ? { answeredAt: input.answeredAt }
+          : {}),
+        ...(input.endedAt !== undefined ? { endedAt: input.endedAt } : {}),
+        ...(input.endReason !== undefined
+          ? { endReason: input.endReason }
+          : {}),
+      });
+      const ttlSeconds =
+        next.status === "ringing"
+          ? PEER_CALL_RINGING_TTL_SECONDS
+          : next.status === "active"
+            ? PEER_CALL_ACTIVE_TTL_SECONDS
+            : PEER_CALL_RINGING_TTL_SECONDS;
+      const multi = this.redis.multi();
+      multi.set(callKey, JSON.stringify(next), "EX", ttlSeconds);
+      multi.set(
+        peerCallByHumanKey(this.hostId, next.callerId),
+        next.callId,
+        "EX",
+        ttlSeconds
+      );
+      multi.set(
+        peerCallByHumanKey(this.hostId, next.calleeId),
+        next.callId,
+        "EX",
+        ttlSeconds
+      );
+      const exec = await multi.exec();
+      if (exec !== null) {
+        return { ok: true, call: next };
+      }
+    }
+    throw new Error(
+      `transitionPeerCall: lost ${String(maxAttempts)} CAS retries for ${input.callId}`
+    );
+  }
+
+  async clearPeerCall(callId: string): Promise<void> {
+    const existing = await this.getPeerCall(callId);
+    const keys = [peerCallKey(this.hostId, callId)];
+    if (existing !== null) {
+      keys.push(
+        peerCallByHumanKey(this.hostId, existing.callerId),
+        peerCallByHumanKey(this.hostId, existing.calleeId)
+      );
+    }
+    await this.redis.del(...keys);
+  }
+
+  async invitePeerCall(input: {
+    callerId: string;
+    calleeId: string;
+    now: string;
+    callId?: string;
+  }): Promise<
+    | { ok: true; call: PeerCallRecord }
+    | {
+        ok: false;
+        error:
+          | "NOT_MEMBERS"
+          | "TOO_FAR"
+          | "BUSY"
+          | "INSUFFICIENT_FUNDS"
+          | "SELF_CALL";
+      }
+  > {
+    const callerId = input.callerId.trim();
+    const calleeId = input.calleeId.trim();
+    if (callerId.length === 0 || calleeId.length === 0) {
+      return { ok: false, error: "NOT_MEMBERS" };
+    }
+    if (callerId === calleeId) {
+      return { ok: false, error: "SELF_CALL" };
+    }
+    const members = await this.getGeographyMembers();
+    const caller = members.get(callerId);
+    const callee = members.get(calleeId);
+    if (caller === undefined || callee === undefined) {
+      return { ok: false, error: "NOT_MEMBERS" };
+    }
+    if (
+      !arePeersWithinCallProximity({
+        caller: { x: caller.x, y: caller.y },
+        callee: { x: callee.x, y: callee.y },
+      })
+    ) {
+      return { ok: false, error: "TOO_FAR" };
+    }
+    const [callerBusy, calleeBusy] = await Promise.all([
+      this.getPeerCallIdForHuman(callerId),
+      this.getPeerCallIdForHuman(calleeId),
+    ]);
+    if (callerBusy !== null || calleeBusy !== null) {
+      return { ok: false, error: "BUSY" };
+    }
+    const wallet = await this.getPlayerWallet(callerId);
+    if (wallet.balanceUsd <= 0) {
+      return { ok: false, error: "INSUFFICIENT_FUNDS" };
+    }
+    const call: PeerCallRecord = PeerCallRecordSchema.parse({
+      callId: input.callId?.trim() || randomUUID(),
+      sid: this.getSessionId(),
+      callerId,
+      calleeId,
+      status: "ringing",
+      createdAt: input.now,
+    });
+    const created = await this.createPeerCall(call);
+    if (!created.ok) {
+      return { ok: false, error: "BUSY" };
+    }
+    return { ok: true, call };
+  }
+
   async getGeographyHumans(): Promise<Map<string, GeographyHumanState>> {
     const sid = this.getSessionId();
     const key = geographyHumansKey(this.hostId, sid);
@@ -2195,6 +2764,109 @@ export class RedisSessionStore implements SessionStore {
       pipe.del(key);
     } else {
       pipe.expire(key, GEOGRAPHY_REDIS_TTL_SECONDS);
+    }
+    await pipe.exec();
+    return { prev, next };
+  }
+
+  async getGeographyMembers(): Promise<Map<string, GeographyMember>> {
+    const sid = this.getSessionId();
+    const key = geographyMembersKey(this.hostId, sid);
+    const raw = await this.redis.hgetall(key);
+    const out = new Map<string, GeographyMember>();
+    for (const [fieldId, json] of Object.entries(raw)) {
+      if (json.length === 0) continue;
+      try {
+        const parsed = JSON.parse(json) as Record<string, unknown>;
+        out.set(
+          fieldId,
+          GeographyMemberSchema.parse({ ...parsed, humanId: fieldId })
+        );
+      } catch {
+        continue;
+      }
+    }
+    return out;
+  }
+
+  async joinGeographyMember(member: GeographyMember): Promise<
+    | {
+        ok: true;
+        joined: boolean;
+        prev: Map<string, GeographyMember>;
+        next: Map<string, GeographyMember>;
+      }
+    | { ok: false; error: "cap_reached"; memberCount: number; cap: number }
+  > {
+    const sid = this.getSessionId();
+    const key = geographyMembersKey(this.hostId, sid);
+    const prev = await this.getGeographyMembers();
+    if (!prev.has(member.humanId) && prev.size >= GEOGRAPHY_MEMBER_CAP) {
+      return {
+        ok: false,
+        error: "cap_reached",
+        memberCount: prev.size,
+        cap: GEOGRAPHY_MEMBER_CAP,
+      };
+    }
+    const joined = !prev.has(member.humanId);
+    const next = new Map(prev);
+    next.set(member.humanId, member);
+    const pipe = this.redis.multi();
+    pipe.hset(key, member.humanId, JSON.stringify(member));
+    pipe.expire(key, GEOGRAPHY_MEMBERSHIP_REDIS_TTL_SECONDS);
+    await pipe.exec();
+    return { ok: true, joined, prev, next };
+  }
+
+  async updateGeographyMemberCoarse(input: {
+    humanId: string;
+    x: number;
+    y: number;
+    stage?: "overworld" | "space" | "amenity";
+    coarseRevisedAt: number;
+  }): Promise<{
+    prev: Map<string, GeographyMember>;
+    next: Map<string, GeographyMember>;
+  } | null> {
+    const sid = this.getSessionId();
+    const key = geographyMembersKey(this.hostId, sid);
+    const prev = await this.getGeographyMembers();
+    const existing = prev.get(input.humanId);
+    if (existing === undefined) {
+      return null;
+    }
+    const updated: GeographyMember = {
+      ...existing,
+      x: input.x,
+      y: input.y,
+      coarseRevisedAt: input.coarseRevisedAt,
+      ...(input.stage !== undefined ? { stage: input.stage } : {}),
+    };
+    const next = new Map(prev);
+    next.set(input.humanId, updated);
+    const pipe = this.redis.multi();
+    pipe.hset(key, input.humanId, JSON.stringify(updated));
+    pipe.expire(key, GEOGRAPHY_MEMBERSHIP_REDIS_TTL_SECONDS);
+    await pipe.exec();
+    return { prev, next };
+  }
+
+  async leaveGeographyMember(humanId: string): Promise<{
+    prev: Map<string, GeographyMember>;
+    next: Map<string, GeographyMember>;
+  }> {
+    const sid = this.getSessionId();
+    const key = geographyMembersKey(this.hostId, sid);
+    const prev = await this.getGeographyMembers();
+    const next = new Map(prev);
+    next.delete(humanId);
+    const pipe = this.redis.multi();
+    pipe.hdel(key, humanId);
+    if (next.size === 0) {
+      pipe.del(key);
+    } else {
+      pipe.expire(key, GEOGRAPHY_MEMBERSHIP_REDIS_TTL_SECONDS);
     }
     await pipe.exec();
     return { prev, next };

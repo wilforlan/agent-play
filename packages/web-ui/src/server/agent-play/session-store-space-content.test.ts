@@ -4,7 +4,11 @@ import type {
   ShopItem,
   SupermarketItem,
 } from "@agent-play/sdk";
-import { computeTalkAgentPowerUpsEarned, costForSeconds } from "@agent-play/sdk";
+import {
+  computeTalkAgentPowerUpsEarned,
+  costForSeconds,
+  peerCostForSeconds,
+} from "@agent-play/sdk";
 import { TestSessionStore } from "./session-store.test-double.js";
 
 const ISO = "2026-05-12T00:00:00.000Z";
@@ -465,6 +469,122 @@ describe("session-store: talk billing", () => {
     expect(tick.ok).toBe(false);
     if (!tick.ok) {
       expect(tick.error).toBe("INSUFFICIENT_FUNDS");
+    }
+  });
+});
+
+describe("session-store: peer talk billing", () => {
+  it("start tick stop debits caller wallet and appends peer_talk_time purchases", async () => {
+    const store = new TestSessionStore();
+    await store.loadOrCreateSessionId();
+    await store.setPlayerWalletBalance({
+      playerId: "caller-1",
+      balanceUsd: 10,
+    });
+    await store.setPlayerWalletBalance({
+      playerId: "callee-1",
+      balanceUsd: 10,
+    });
+    const start = await store.startPeerTalkSession({
+      callerId: "caller-1",
+      calleeId: "callee-1",
+      callId: "call-1",
+      now: "2026-05-12T00:00:00.000Z",
+    });
+    expect(start.ok).toBe(true);
+    if (start.ok) {
+      expect(start.ratePerSecondUsd).toBe(0.002);
+    }
+
+    const tick = await store.tickPeerTalkSession({
+      callerId: "caller-1",
+      calleeId: "callee-1",
+      callId: "call-1",
+      now: "2026-05-12T00:00:10.000Z",
+    });
+    expect(tick.ok).toBe(true);
+    if (tick.ok) {
+      expect(tick.secondsBilledThisTick).toBe(10);
+      expect(tick.costUsd).toBe(peerCostForSeconds(10));
+      expect(tick.secondsBilledTotal).toBe(10);
+    }
+
+    const stop = await store.stopPeerTalkSession({
+      callerId: "caller-1",
+      calleeId: "callee-1",
+      callId: "call-1",
+      now: "2026-05-12T00:00:17.000Z",
+    });
+    expect(stop.ok).toBe(true);
+    if (stop.ok && tick.ok) {
+      expect(stop.secondsBilledTotal).toBe(17);
+      expect(stop.totalCostUsd).toBe(tick.costUsd + peerCostForSeconds(7));
+    }
+
+    const callerPurchases = await store.listPurchases({
+      playerId: "caller-1",
+      limit: 20,
+    });
+    const peerRows = callerPurchases.filter(
+      (row) => row.amenityKind === "peer_talk_time"
+    );
+    expect(peerRows.length).toBe(2);
+    expect(peerRows.every((row) => row.itemRef.kind === "peer_talk")).toBe(true);
+    expect(peerRows.every((row) => row.spaceId === "__peer_talk__")).toBe(true);
+
+    const calleeWallet = await store.getPlayerWallet("callee-1");
+    expect(calleeWallet.balanceUsd).toBe(10);
+  });
+
+  it("returns INSUFFICIENT_FUNDS when a peer tick exceeds caller balance", async () => {
+    const store = new TestSessionStore();
+    await store.loadOrCreateSessionId();
+    await store.setPlayerWalletBalance({
+      playerId: "caller-1",
+      balanceUsd: 0.01,
+    });
+    const start = await store.startPeerTalkSession({
+      callerId: "caller-1",
+      calleeId: "callee-1",
+      callId: "call-2",
+      now: "2026-01-01T00:00:00.000Z",
+    });
+    expect(start.ok).toBe(true);
+    const tick = await store.tickPeerTalkSession({
+      callerId: "caller-1",
+      calleeId: "callee-1",
+      callId: "call-2",
+      now: "2026-01-01T00:01:00.000Z",
+    });
+    expect(tick.ok).toBe(false);
+    if (!tick.ok) {
+      expect(tick.error).toBe("INSUFFICIENT_FUNDS");
+    }
+  });
+
+  it("rejects a second peer talk session while one is already active", async () => {
+    const store = new TestSessionStore();
+    await store.loadOrCreateSessionId();
+    await store.setPlayerWalletBalance({
+      playerId: "caller-1",
+      balanceUsd: 5,
+    });
+    const first = await store.startPeerTalkSession({
+      callerId: "caller-1",
+      calleeId: "callee-1",
+      callId: "call-a",
+      now: "2026-05-12T00:00:00.000Z",
+    });
+    expect(first.ok).toBe(true);
+    const second = await store.startPeerTalkSession({
+      callerId: "caller-1",
+      calleeId: "callee-1",
+      callId: "call-b",
+      now: "2026-05-12T00:00:01.000Z",
+    });
+    expect(second.ok).toBe(false);
+    if (!second.ok) {
+      expect(second.error).toBe("ALREADY_ACTIVE");
     }
   });
 });

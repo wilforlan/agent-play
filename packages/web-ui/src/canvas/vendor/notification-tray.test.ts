@@ -1,6 +1,9 @@
 // @vitest-environment happy-dom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { buildMessageLikeNotification } from "@agent-play/intercom";
+import {
+  buildMessageLikeNotification,
+  buildPeerCallInviteNotification,
+} from "@agent-play/intercom";
 import {
   computeNotificationTrayPlacement,
   createNotificationTray,
@@ -268,5 +271,59 @@ describe("notification tray", () => {
     expect(tray.getLayoutMode()).toBe("panel");
     tray.destroy();
     expect(mm.removeEventListener).toHaveBeenCalled();
+  });
+
+  it("keeps peer call invites sticky without auto-dismiss", () => {
+    const tray = createNotificationTray({ parent: document.body });
+    tray.push(
+      buildPeerCallInviteNotification({
+        id: "invite-1",
+        createdAt: "2026-08-12T12:00:00.000Z",
+        callerId: "caller-1",
+        calleeId: "callee-1",
+        callId: "call-1",
+        callerDisplayName: "Caller",
+      })
+    );
+    expect(tray.root.querySelectorAll("[data-notification-id]")).toHaveLength(1);
+    vi.advanceTimersByTime(60_000);
+    expect(tray.root.querySelectorAll("[data-notification-id]")).toHaveLength(1);
+    tray.destroy();
+  });
+
+  it("fires Accept and Decline callbacks for peer call invites", () => {
+    const onAccept = vi.fn();
+    const onDecline = vi.fn();
+    const tray = createNotificationTray({
+      parent: document.body,
+      onAcceptPeerCall: onAccept,
+      onDeclinePeerCall: onDecline,
+    });
+    const invite = buildPeerCallInviteNotification({
+      id: "invite-2",
+      createdAt: "2026-08-12T12:00:00.000Z",
+      callerId: "caller-1",
+      calleeId: "callee-1",
+      callId: "call-2",
+    });
+    tray.push(invite);
+    const accept = tray.root.querySelector(
+      '[data-notification-id="invite-2"] [data-peer-call-action="accept"]'
+    );
+    const decline = tray.root.querySelector(
+      '[data-notification-id="invite-2"] [data-peer-call-action="decline"]'
+    );
+    expect(accept).toBeInstanceOf(HTMLButtonElement);
+    expect(decline).toBeInstanceOf(HTMLButtonElement);
+    accept?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    expect(onAccept).toHaveBeenCalledWith(invite);
+    expect(tray.root.querySelectorAll("[data-notification-id]")).toHaveLength(0);
+    tray.push(invite);
+    const declineAgain = tray.root.querySelector(
+      '[data-notification-id="invite-2"] [data-peer-call-action="decline"]'
+    );
+    declineAgain?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    expect(onDecline).toHaveBeenCalledWith(invite);
+    tray.destroy();
   });
 });
