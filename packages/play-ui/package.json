@@ -27,9 +27,9 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@agent-play/intercom": "^3.3.6",
+    "@agent-play/intercom": "^3.3.7",
     "@agent-play/node-tools": "^3.2.1",
-    "@agent-play/sdk": "^3.4.6",
+    "@agent-play/sdk": "^3.4.7",
     "@openai/agents": "^0.8.5",
     "@vercel/analytics": "^2.0.1",
     "dompurify": "^3.3.3",

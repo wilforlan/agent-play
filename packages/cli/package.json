@@ -26,7 +26,7 @@
     "smoke:initialize": "node ./scripts/smoke-initialize.mjs"
   },
   "dependencies": {
-    "@agent-play/node-tools": "^3.2.1"
+    "@agent-play/node-tools": "^3.2.2"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
