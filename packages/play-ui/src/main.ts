@@ -330,6 +330,7 @@ import {
   type ProximityActionKind,
   type StructureProximityTarget,
 } from "./proximity-interaction.js";
+import { resolveProximityPAction } from "./proximity-p-action.js";
 import {
   countAmenitiesInSpaceCompound,
   representativePrimaryAmenityForCompound,
@@ -1362,6 +1363,89 @@ async function triggerProximityPushToTalk(): Promise<void> {
 }
 
 /**
+ * Shared `P` dispatch for keyboard and the proximity touch-bar.
+ * @returns whether the caller should treat the input as handled (e.g. preventDefault).
+ */
+function dispatchProximityPAction(): boolean {
+  const peerTalkLabel = peerCallController?.getPeerTalkLabel() ?? null;
+  const agentPartner = registeredAgentPartnerForProximityOrNull(
+    lastProximityPartnerId
+  );
+  const action = resolveProximityPAction({
+    peerTalkLabel,
+    isInPeerCall: peerCallController?.isInCall() === true,
+    inHouseInterior: activeHouseStage !== null,
+    hasActivatableGameStageTarget:
+      activeGameStage !== null &&
+      lastGameStageProximityTarget !== null &&
+      lastGameStageProximityTarget.activatable !== false,
+    hasHouseNearest:
+      lastHouseNearest !== null &&
+      activeAmenityStage === null &&
+      activeGameStage === null &&
+      activeHouseStage === null &&
+      stageController?.current()?.id === "overworld",
+    hasParkingNearest:
+      lastParkingBayNearest !== null &&
+      activeAmenityStage === null &&
+      activeGameStage === null &&
+      activeHouseStage === null &&
+      stageController?.current()?.id === "overworld",
+    hasAmenityItem:
+      activeAmenityStage !== null && activeAmenityStage.nearestBuyable !== null,
+    hasYardAmenityPad:
+      lastYardAmenityPadTarget !== null &&
+      stageController?.current()?.id === "spaceYard",
+    hasAgentPartner:
+      agentPartner !== null && agentPartner !== HUMAN_VIEWER_PLAYER_ID,
+  });
+
+  switch (action) {
+    case "peerHangup":
+      void peerCallController?.hangup();
+      return true;
+    case "housePurchaseToggle":
+      return toggleHousePurchasePanel();
+    case "gameStageActivate":
+      activateGameStageProximityTarget();
+      return true;
+    case "houseInspect": {
+      const house = lastHouseNearest;
+      if (house === null) return false;
+      void enterHouseStage({
+        houseId: house.houseId,
+        mode: "inspect",
+      });
+      return true;
+    }
+    case "parkingCycle":
+      cycleParkingTicketAction();
+      return true;
+    case "amenityItemCycle": {
+      const stage = activeAmenityStage;
+      const buyable = stage?.nearestBuyable ?? null;
+      if (stage === null || buyable === null) return false;
+      cycleAmenityItemAction(stage, buyable);
+      return true;
+    }
+    case "yardAmenityEnter": {
+      const pad = lastYardAmenityPadTarget;
+      if (pad === null) return false;
+      void enterAmenityFromYardPad(pad);
+      return true;
+    }
+    case "peerTalkStart":
+      void peerCallController?.startCallWithNearest();
+      return true;
+    case "agentPushToTalk":
+      void triggerProximityPushToTalk();
+      return true;
+    case "noop":
+      return false;
+  }
+}
+
+/**
  * Routes arrow keys to movement and letter keys to proximity when an agent partner is targeted.
  * @remarks **Callers:** `document` listener from {@link bootstrap}. **Callees:** {@link setArrowKey}, {@link sendProximityAction}.
  */
@@ -1426,71 +1510,11 @@ function onDocumentKeyDown(e: KeyboardEvent): void {
     openGameStreakPanel();
     return;
   }
-  if (
-    e.key.toLowerCase() === "p" &&
-    activeHouseStage !== null
-  ) {
-    if (toggleHousePurchasePanel()) {
+  if (e.key.toLowerCase() === "p") {
+    if (dispatchProximityPAction()) {
       e.preventDefault();
     }
     return;
-  }
-  if (
-    e.key.toLowerCase() === "p" &&
-    activeGameStage !== null &&
-    lastGameStageProximityTarget !== null &&
-    lastGameStageProximityTarget.activatable !== false
-  ) {
-    e.preventDefault();
-    activateGameStageProximityTarget();
-    return;
-  }
-  if (
-    e.key.toLowerCase() === "p" &&
-    lastYardAmenityPadTarget !== null &&
-    stageController?.current()?.id === "spaceYard"
-  ) {
-    e.preventDefault();
-    void enterAmenityFromYardPad(lastYardAmenityPadTarget);
-    return;
-  }
-  if (
-    e.key.toLowerCase() === "p" &&
-    activeAmenityStage === null &&
-    activeGameStage === null &&
-    activeHouseStage === null &&
-    stageController?.current()?.id === "overworld" &&
-    lastHouseNearest !== null
-  ) {
-    e.preventDefault();
-    void enterHouseStage({
-      houseId: lastHouseNearest.houseId,
-      mode: "inspect",
-    });
-    return;
-  }
-  if (
-    e.key.toLowerCase() === "p" &&
-    activeAmenityStage === null &&
-    activeGameStage === null &&
-    stageController?.current()?.id === "overworld" &&
-    lastParkingBayNearest !== null
-  ) {
-    e.preventDefault();
-    cycleParkingTicketAction();
-    return;
-  }
-  if (
-    e.key.toLowerCase() === "p" &&
-    activeAmenityStage !== null
-  ) {
-    const stage = activeAmenityStage;
-    const buyable = stage.nearestBuyable;
-    if (buyable !== null) {
-      e.preventDefault();
-      cycleAmenityItemAction(stage, buyable);
-      return;
-    }
   }
   const partner = registeredAgentPartnerForProximityOrNull(
     lastProximityPartnerId
@@ -1539,10 +1563,6 @@ function onDocumentKeyDown(e: KeyboardEvent): void {
   e.preventDefault();
   if (act === "assist" || act === "chat") {
     triggerProximityAssistOrChat(act);
-    return;
-  }
-  if (act === "push_to_talk") {
-    void triggerProximityPushToTalk();
     return;
   }
   void sendProximityAction(partner, act);
@@ -5693,59 +5713,7 @@ export function bootstrap(): void {
       },
       onPushToTalk: () => {
         noteArrivalQuestStep("touch_control");
-        const peerLabel = peerCallController?.getPeerTalkLabel() ?? null;
-        if (peerLabel === "End" || peerCallController?.isInCall() === true) {
-          void peerCallController?.hangup();
-          return;
-        }
-        if (activeHouseStage !== null) {
-          toggleHousePurchasePanel();
-          return;
-        }
-        if (
-          activeGameStage !== null &&
-          lastGameStageProximityTarget !== null &&
-          lastGameStageProximityTarget.activatable !== false
-        ) {
-          activateGameStageProximityTarget();
-          return;
-        }
-        if (
-          lastHouseNearest !== null &&
-          activeAmenityStage === null &&
-          activeGameStage === null &&
-          activeHouseStage === null
-        ) {
-          void enterHouseStage({
-            houseId: lastHouseNearest.houseId,
-            mode: "inspect",
-          });
-          return;
-        }
-        if (lastParkingBayNearest !== null && activeAmenityStage === null) {
-          cycleParkingTicketAction();
-          return;
-        }
-        if (activeAmenityStage !== null) {
-          const stage = activeAmenityStage;
-          const buyable = stage.nearestBuyable;
-          if (buyable !== null) {
-            cycleAmenityItemAction(stage, buyable);
-            return;
-          }
-        }
-        if (lastYardAmenityPadTarget !== null) {
-          void enterAmenityFromYardPad(lastYardAmenityPadTarget);
-          return;
-        }
-        if (peerLabel !== null) {
-          void peerCallController?.startCallWithNearest();
-          return;
-        }
-        if (peerCallController?.isInCall() === true) {
-          return;
-        }
-        void triggerProximityPushToTalk();
+        dispatchProximityPAction();
       },
       onWallet: () => {
         noteArrivalQuestStep("touch_control");
