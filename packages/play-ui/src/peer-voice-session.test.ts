@@ -26,6 +26,37 @@ const createFakePc = (): FakePc => ({
 });
 
 describe("createPeerVoiceSession", () => {
+  it("posts signals to /peer-call/signal under apiBase (not /api/agent-play/...)", async () => {
+    const pc = createFakePc();
+    const fetchMock = vi.fn(async () => ({ ok: true }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const session = createPeerVoiceSession({
+      callId: "call-1",
+      localHumanId: "caller-1",
+      remoteHumanId: "callee-1",
+      apiBase: "/agent-play",
+      sid: "s1",
+      isOfferer: true,
+      getUserMedia: vi.fn(async () => ({
+        getTracks: () => [{ stop: vi.fn(), kind: "audio" }],
+      })) as unknown as (
+        constraints: MediaStreamConstraints
+      ) => Promise<MediaStream>,
+      createPeerConnection: () => pc as unknown as RTCPeerConnection,
+    });
+
+    await session.start();
+
+    expect(fetchMock).toHaveBeenCalled();
+    const postedUrl = String(fetchMock.mock.calls[0]?.[0]);
+    expect(postedUrl).toBe("/agent-play/peer-call/signal?sid=s1");
+    expect(postedUrl).not.toContain("/api/agent-play/");
+
+    session.stop();
+    vi.unstubAllGlobals();
+  });
+
   it("posts an offer when started as offerer", async () => {
     const pc = createFakePc();
     const postSignal = vi.fn(async () => {});

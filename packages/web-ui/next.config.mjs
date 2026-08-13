@@ -58,6 +58,10 @@ const nextConfig = {
         destination: "/api/agent-play/geography/signal",
       },
       {
+        source: "/agent-play/peer-call/signal",
+        destination: "/api/agent-play/peer-call/signal",
+      },
+      {
         source: "/agent-play/assist-tool",
         destination: "/api/agent-play/assist-tool",
       },

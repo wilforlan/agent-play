@@ -75,7 +75,7 @@ const defaultPostSignal = async (input: {
   body: PeerCallSignalBody;
 }): Promise<void> => {
   const base = input.apiBase.replace(/\/$/, "");
-  const url = `${base}/api/agent-play/peer-call/signal?sid=${encodeURIComponent(input.sid)}`;
+  const url = `${base}/peer-call/signal?sid=${encodeURIComponent(input.sid)}`;
   const res = await fetch(url, {
     method: "POST",
     headers: { "content-type": "application/json" },
