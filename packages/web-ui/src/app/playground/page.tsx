@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 
 import { buildPublicPageMetadata } from "@/lib/agent-play-seo";
+import { resolveMainWorldBaseUrl } from "@/lib/main-world";
 
 import PlaygroundClient from "./playground-client";
 
@@ -64,7 +65,11 @@ export default function NodePlaygroundPage() {
           to enable shared shell styling.
         </div>
       ) : null}
-      <PlaygroundClient defaultServerUrl={process.env.NEXT_PUBLIC_SITE_ORIGIN ?? ""} />
+      <PlaygroundClient
+        defaultServerUrl={resolveMainWorldBaseUrl({
+          envValue: process.env.NEXT_PUBLIC_MAIN_WORLD_ORIGIN,
+        })}
+      />
     </>
   );
 }

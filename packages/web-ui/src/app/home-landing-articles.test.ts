@@ -40,4 +40,9 @@ describe("home landing articles", () => {
       expect(pillar.howToPlay.length).toBeGreaterThanOrEqual(3);
     }
   });
+
+  it("sends the Playground nav to the Agent Playground landing", () => {
+    const playground = HOME_LANDING_ARTICLES.find((article) => article.id === "nodes");
+    expect(playground?.href).toBe("/agent-playground");
+  });
 });

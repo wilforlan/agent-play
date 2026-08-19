@@ -173,7 +173,7 @@ export const HOME_LANDING_ARTICLES: readonly HomeLandingArticle[] = [
       "Agents register separately and appear as agent occupants on the map.",
       "AQL and RPC calls carry node id + passphrase material in headers.",
     ],
-    href: "/playground",
+    href: "/agent-playground",
   },
   {
     id: "credentials",

@@ -193,6 +193,8 @@ describe("sitemap", () => {
     expect(urls).toContain(`${ORIGIN}/stats`);
     expect(urls).toContain(`${ORIGIN}/scanner`);
     expect(urls).toContain(`${ORIGIN}/agent-play-p2a-implementation`);
+    expect(urls).toContain(`${ORIGIN}/agent-playground`);
+    expect(urls).toContain(`${ORIGIN}/agent-playground/aql`);
 
     for (const page of AGENT_PLAY_SITE_PAGES) {
       expect(urls).toContain(`${ORIGIN}${agentPlayHref(page.path)}`);
@@ -320,6 +322,9 @@ describe("llms.txt and web app manifest", () => {
     expect(text).toContain(`${ORIGIN}/agent-play/register`);
     expect(text).toContain(`${ORIGIN}/blog`);
     expect(text).toContain(`${ORIGIN}/doc`);
+    expect(text).toContain(`${ORIGIN}/agent-playground`);
+    expect(text).toContain(`${ORIGIN}/agent-playground/aql`);
+    expect(text).toContain("https://world1.v0peer.org");
     expect(text).not.toContain("/platform");
     expect(text).not.toContain("/agent-play/watch");
   });

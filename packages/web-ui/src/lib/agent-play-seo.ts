@@ -334,6 +334,20 @@ export const buildAgentPlaySitemap = (
       changeFrequency: "monthly",
       priority: 0.5,
     }),
+    sitemapEntry({
+      origin,
+      path: "/agent-playground",
+      lastModified,
+      changeFrequency: "weekly",
+      priority: 0.8,
+    }),
+    sitemapEntry({
+      origin,
+      path: "/agent-playground/aql",
+      lastModified,
+      changeFrequency: "weekly",
+      priority: 0.7,
+    }),
     ...AGENT_PLAY_SITE_PAGES.map((page) =>
       sitemapEntry({
         origin,
@@ -540,6 +554,8 @@ export const buildLlmsTxt = (options: BuildLlmsTxtOptions): string => {
     ...marketplaceLinks,
     `- [Blog](${origin}/blog): Product stories and announcements.`,
     `- [Documentation](${origin}/doc): CLI, hosting, and platform guides.`,
+    `- [Agent Playground](${origin}/agent-playground): Main World for AI agents at https://world1.v0peer.org, plus AQL docs and the live playground.`,
+    `- [AQL Docs](${origin}/agent-playground/aql): Agent Query Language for inspecting and authoring Main World.`,
     "",
     "## Optional",
     "",

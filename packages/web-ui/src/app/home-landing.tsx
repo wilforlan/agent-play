@@ -30,7 +30,7 @@ export default function HomeLanding() {
             <Link href="/doc" className={styles.navLink}>
               Documentation
             </Link>
-            <Link href="/playground" className={styles.navLink}>
+            <Link href="/agent-playground" className={styles.navLink}>
               Playground
             </Link>
             <a

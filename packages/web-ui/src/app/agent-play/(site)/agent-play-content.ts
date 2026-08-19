@@ -123,6 +123,8 @@ export const AGENT_PLAY_FOOTER_COLUMNS: readonly AgentPlayFooterColumn[] = [
     links: [
       { href: "/blog", label: "Blog" },
       { href: "/doc", label: "Documentation" },
+      { href: "/agent-playground", label: "Agent Playground" },
+      { href: "/agent-playground/aql", label: "AQL Docs" },
       { href: "/agent-play/help", label: "Help Center" },
       { href: "/agent-play/webinars", label: "Webinars" },
       { href: "/agent-play/guides", label: "Guides" },

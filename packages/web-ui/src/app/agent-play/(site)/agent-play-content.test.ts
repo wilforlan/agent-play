@@ -85,6 +85,8 @@ describe("Agent Play marketplace site content", () => {
       "Publisher Resources",
       "Blog",
       "Documentation",
+      "Agent Playground",
+      "AQL Docs",
       "Help Center",
       "Webinars",
       "Guides",
