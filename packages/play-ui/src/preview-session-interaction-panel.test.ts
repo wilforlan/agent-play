@@ -81,6 +81,35 @@ describe("createPreviewSessionInteractionPanel", () => {
     ).toBeGreaterThan(0);
   });
 
+  it("opens the human agent interaction panel and smooth-scrolls to the bottom on agent actions", async () => {
+    const onReveal = vi.fn();
+    const panel = createPreviewSessionInteractionPanel({
+      getSid: () => "sid-1",
+      apiBase: "/api/agent-play",
+      getMainNodeId: () => "main-node-1",
+      onReveal,
+    });
+    const scrollTo = vi.fn();
+    panel.element.scrollTo = scrollTo;
+    Object.defineProperty(panel.element, "scrollHeight", {
+      configurable: true,
+      value: 720,
+    });
+    document.body.append(panel.element);
+
+    panel.setContext("agent-1");
+    panel.setMode("assist");
+
+    expect(onReveal).toHaveBeenCalled();
+    await new Promise<void>((resolve) => {
+      requestAnimationFrame(() => resolve());
+    });
+    expect(scrollTo).toHaveBeenCalledWith({
+      top: 720,
+      behavior: "smooth",
+    });
+  });
+
   it("posts intercomCommand assist invocation with target player id", async () => {
     const fetchMock = vi.fn(async () => new Response(JSON.stringify({ ok: true })));
     vi.stubGlobal("fetch", fetchMock);

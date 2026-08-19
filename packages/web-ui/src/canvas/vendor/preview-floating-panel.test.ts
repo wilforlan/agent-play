@@ -354,6 +354,35 @@ describe("attachPreviewFloatingPanelDrag", () => {
     expect(collapsedStates).toEqual([false, true]);
   });
 
+  it("expands a collapsed panel for an automated agent action", () => {
+    const collapsedStates: boolean[] = [];
+    const { expand } = attachPreviewFloatingPanelDrag({
+      element: panel,
+      getBoundsElement: () => bounds,
+      label: "Human agent interaction",
+      initialPlacement: { leftPx: 24, topPx: 32 },
+      initialCollapsed: true,
+      resolvePlacement: () => ({ leftPx: 24, topPx: 32 }),
+      onCollapsedChange: (collapsed) => {
+        collapsedStates.push(collapsed);
+      },
+    });
+
+    expect(panel.classList.contains("preview-floating-panel--collapsed")).toBe(
+      true
+    );
+    expand();
+    expect(panel.classList.contains("preview-floating-panel--collapsed")).toBe(
+      false
+    );
+    expect(getButton(panel, ".preview-floating-panel__drag").getAttribute("aria-expanded")).toBe(
+      "true"
+    );
+    expect(collapsedStates).toEqual([false]);
+    expand();
+    expect(collapsedStates).toEqual([false]);
+  });
+
   it("includes collapsed in onPlacementCommit after a drag move", () => {
     const commits: Array<{
       leftPx: number;

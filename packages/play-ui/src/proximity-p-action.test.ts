@@ -41,14 +41,7 @@ describe("resolveProximityPAction", () => {
     ).toBe("peerHangup");
   });
 
-  it("prefers amenity / structure P targets over starting peer Talk", () => {
-    expect(
-      resolveProximityPAction({
-        ...idle,
-        peerTalkLabel: "Talk",
-        hasYardAmenityPad: true,
-      })
-    ).toBe("yardAmenityEnter");
+  it("prefers enclosed amenity item P over starting peer Talk", () => {
     expect(
       resolveProximityPAction({
         ...idle,
@@ -56,13 +49,41 @@ describe("resolveProximityPAction", () => {
         hasAmenityItem: true,
       })
     ).toBe("amenityItemCycle");
+  });
+
+  it("prefers a nearby member over house, parking, yard amenity, and peer Talk", () => {
+    expect(
+      resolveProximityPAction({
+        ...idle,
+        hasAgentPartner: true,
+        hasHouseNearest: true,
+        hasParkingNearest: true,
+        hasYardAmenityPad: true,
+        peerTalkLabel: "Talk",
+      })
+    ).toBe("agentPushToTalk");
+  });
+
+  it("prefers peer Talk over house inspect when no agent partner is nearby", () => {
     expect(
       resolveProximityPAction({
         ...idle,
         peerTalkLabel: "Talk",
         hasHouseNearest: true,
+        hasParkingNearest: true,
+        hasYardAmenityPad: true,
       })
-    ).toBe("houseInspect");
+    ).toBe("peerTalkStart");
+  });
+
+  it("keeps enclosed game-stage P above a nearby member", () => {
+    expect(
+      resolveProximityPAction({
+        ...idle,
+        hasAgentPartner: true,
+        hasActivatableGameStageTarget: true,
+      })
+    ).toBe("gameStageActivate");
   });
 
   it("still hangs up peer calls before amenity P targets", () => {

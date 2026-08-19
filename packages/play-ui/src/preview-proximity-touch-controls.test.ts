@@ -555,6 +555,97 @@ describe("createPreviewProximityTouchControls", () => {
     expect(pttBtn.disabled).toBe(false);
   });
 
+  it("prefers a nearby member over house, parking, structure, yard amenity, and peer Talk", () => {
+    const { root } = createPreviewProximityTouchControls({
+      parent,
+      getBoundsElement: () => parent,
+      getCanAct: () => true,
+      getHouseProximityLabel: () => "House 2 · Alex",
+      getHouseAssistVerb: () => "Enter",
+      getHouseAssistActivatable: () => true,
+      getHouseInspectVerb: () => "Inspect",
+      getParkingProximityLabel: () => "Bay 1",
+      getParkingProximityVerb: () => "Buy ticket",
+      getParkingProximityActivatable: () => true,
+      getStructureProximityLabel: () => "SandMill Circle",
+      getStructureProximityVerb: () => "Enter",
+      getAmenityProximityLabel: () => "Shop",
+      getPeerTalkLabel: () => "Talk",
+      onAssist,
+      onChat,
+      onPushToTalk,
+    });
+    const assistBtn = root.querySelector(
+      ".preview-proximity-touch-pad__key--assist"
+    ) as HTMLButtonElement;
+    const chatBtn = root.querySelector(
+      ".preview-proximity-touch-pad__key--chat"
+    ) as HTMLButtonElement;
+    const pttBtn = root.querySelector(
+      ".preview-proximity-touch-pad__key--ptt"
+    ) as HTMLButtonElement;
+    expect(assistBtn.disabled).toBe(false);
+    expect(chatBtn.disabled).toBe(false);
+    expect(pttBtn.disabled).toBe(false);
+    expect(
+      root.querySelector(
+        ".preview-proximity-touch-pad__key--assist .preview-proximity-touch-pad__key-sub"
+      )?.textContent
+    ).toBe("Assist");
+    expect(
+      root.querySelector(
+        ".preview-proximity-touch-pad__key--ptt .preview-proximity-touch-pad__key-sub"
+      )?.textContent
+    ).toBe("Push");
+    assistBtn.click();
+    chatBtn.click();
+    pttBtn.click();
+    expect(onAssist).toHaveBeenCalledTimes(1);
+    expect(onChat).toHaveBeenCalledTimes(1);
+    expect(onPushToTalk).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps enclosed-stage Buy and peer hangup above a nearby member", () => {
+    const buyPad = createPreviewProximityTouchControls({
+      parent,
+      getBoundsElement: () => parent,
+      getCanAct: () => true,
+      getAmenityItemActionLabel: () => "Buy",
+      getHouseProximityLabel: () => "House 1",
+      onAssist,
+      onChat,
+      onPushToTalk,
+    });
+    expect(
+      buyPad.root.querySelector(
+        ".preview-proximity-touch-pad__key--ptt .preview-proximity-touch-pad__key-sub"
+      )?.textContent
+    ).toBe("Buy");
+    expect(
+      (
+        buyPad.root.querySelector(
+          ".preview-proximity-touch-pad__key--assist"
+        ) as HTMLButtonElement
+      ).disabled
+    ).toBe(true);
+
+    const hangupPad = createPreviewProximityTouchControls({
+      parent,
+      getBoundsElement: () => parent,
+      getCanAct: () => true,
+      getPeerTalkLabel: () => "End",
+      getHouseProximityLabel: () => "House 1",
+      onAssist,
+      onChat,
+      onPushToTalk,
+    });
+    expect(
+      hangupPad.root.querySelector(
+        ".preview-proximity-touch-pad__key--ptt .preview-proximity-touch-pad__key-sub"
+      )?.textContent
+    ).toBe("End");
+  });
+
   it("enables P to buy or hide the house purchase modal while inside a vacant house", () => {
     const { root, refresh } = createPreviewProximityTouchControls({
       parent,

@@ -71,6 +71,7 @@ function ensureStyles(): void {
   font-family: ui-sans-serif, system-ui, sans-serif;
   overflow-x: hidden;
   overflow-y: auto;
+  scroll-behavior: smooth;
   -webkit-overflow-scrolling: touch;
 }
 .preview-session-interaction__header {
@@ -745,6 +746,7 @@ export function createPreviewSessionInteractionPanel(options: {
   onServerWalletAppliedToHud?: () => void;
   onHumanNodeLifecycle?: (action: "replace" | "setup") => void | Promise<void>;
   onClosePanel?: () => void;
+  onReveal?: () => void;
 }): {
   element: HTMLElement;
   setAgents: (agents: readonly SessionInteractionAgent[]) => void;
@@ -1669,6 +1671,7 @@ export function createPreviewSessionInteractionPanel(options: {
       setBusy(true);
       result.textContent = `${requestId}: pending`;
       render();
+      presentForAgentAction();
       void fetch(rpcUrl, {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -1967,6 +1970,7 @@ export function createPreviewSessionInteractionPanel(options: {
       setBusy(true);
       result.textContent = `${requestId}: pending`;
       render();
+      presentForAgentAction();
       void fetch(rpcUrl, {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -2134,7 +2138,24 @@ export function createPreviewSessionInteractionPanel(options: {
   };
 
   const scrollToBottom = (): void => {
-    root.scrollTop = root.scrollHeight;
+    const top = root.scrollHeight;
+    if (typeof root.scrollTo === "function") {
+      root.scrollTo({ top, behavior: "smooth" });
+      return;
+    }
+    root.scrollTop = top;
+  };
+
+  const presentForAgentAction = (): void => {
+    options.onReveal?.();
+    const runScroll = (): void => {
+      scrollToBottom();
+    };
+    if (typeof requestAnimationFrame === "function") {
+      requestAnimationFrame(runScroll);
+      return;
+    }
+    runScroll();
   };
 
   const applyIntercomEvent = (raw: unknown): void => {
@@ -2225,6 +2246,7 @@ export function createPreviewSessionInteractionPanel(options: {
             ? `${rid}: realtime credentials received`
             : `${rid}: missing realtime credentials`;
         render();
+        presentForAgentAction();
         return;
       }
       if (pending.mode === "chat" && activeAgentId === pending.agentId) {
@@ -2255,6 +2277,7 @@ export function createPreviewSessionInteractionPanel(options: {
       }
       pendingByRequestId.delete(rid);
       render();
+      presentForAgentAction();
       return;
     }
     if (payload.status === "failed") {
@@ -2285,6 +2308,7 @@ export function createPreviewSessionInteractionPanel(options: {
         waiter.resolve(null);
       }
       render();
+      presentForAgentAction();
     }
   };
 
@@ -2344,7 +2368,7 @@ export function createPreviewSessionInteractionPanel(options: {
       }
       clearInteractionError();
       render();
-      scrollToBottom();
+      presentForAgentAction();
     },
     setMode: (nextMode) => {
       if (nextMode !== "push_to_talk") {
@@ -2358,7 +2382,7 @@ export function createPreviewSessionInteractionPanel(options: {
       if (nextMode === "push_to_talk") {
         root.focus({ preventScroll: true });
       }
-      scrollToBottom();
+      presentForAgentAction();
     },
     focusChatInput: () => {
       if (chatInputEl !== null) {

@@ -2681,6 +2681,7 @@ let activeIntercomAddress: string | null = null;
 let sessionInteractionPanel:
   | ReturnType<typeof createPreviewSessionInteractionPanel>
   | null = null;
+let expandHumanAgentInteractionPanel: (() => void) | null = null;
 let peerCallController: ReturnType<typeof createPeerCallController> | null =
   null;
 let peerCallRinger: ReturnType<typeof createPreviewRingerEngine> | null = null;
@@ -5404,6 +5405,10 @@ export function bootstrap(): void {
       onClosePanel: () => {
         mobileSidePanelControls?.closePanels();
       },
+      onReveal: () => {
+        expandHumanAgentInteractionPanel?.();
+        mobileSidePanelControls?.openRightPanel();
+      },
     });
 
     controlStack.append(proximityLegend, sessionInteractionPanel.element);
@@ -5839,6 +5844,9 @@ export function bootstrap(): void {
           savePanelPlacement("debug", { collapsed });
         },
       }),
+    };
+    expandHumanAgentInteractionPanel = () => {
+      floatingPanelHandles.session.expand();
     };
     const floatingPanels = [
       floatingPanelHandles.messages,
