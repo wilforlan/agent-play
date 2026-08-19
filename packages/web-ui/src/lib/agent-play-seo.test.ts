@@ -2,10 +2,15 @@ import { describe, expect, it } from "vitest";
 
 import { AGENT_PLAY_SITE_PAGES, agentPlayHref } from "@/app/agent-play/(site)/agent-play-content";
 
+import { GAME_CABINET_CATALOG } from "@agent-play/sdk";
+
 import {
   AGENT_PLAY_SEO,
   AGENT_PLAY_SEO_FAQ,
   buildAgentPlayBreadcrumbJsonLd,
+  buildAgentPlayGamesBreadcrumbJsonLd,
+  buildAgentPlayGamesJsonLd,
+  buildAgentPlayGamesPageMetadata,
   buildAgentPlayJsonLdGraph,
   buildAgentPlayManifest,
   buildAgentPlayMarketplaceMetadata,
@@ -13,6 +18,7 @@ import {
   buildAgentPlaySitemap,
   buildAgentPlayRootMetadata,
   buildLlmsTxt,
+  listAgentPlayGamesSitemapPaths,
   resolveAgentPlayOrigin,
 } from "./agent-play-seo";
 
@@ -195,6 +201,9 @@ describe("sitemap", () => {
     expect(urls).toContain(`${ORIGIN}/agent-play-p2a-implementation`);
     expect(urls).toContain(`${ORIGIN}/agent-playground`);
     expect(urls).toContain(`${ORIGIN}/agent-playground/aql`);
+    expect(urls).toContain(`${ORIGIN}/games`);
+    expect(urls).toContain(`${ORIGIN}/games/units`);
+    expect(urls).toContain(`${ORIGIN}/games/hidden-gems`);
 
     for (const page of AGENT_PLAY_SITE_PAGES) {
       expect(urls).toContain(`${ORIGIN}${agentPlayHref(page.path)}`);
@@ -324,9 +333,19 @@ describe("llms.txt and web app manifest", () => {
     expect(text).toContain(`${ORIGIN}/doc`);
     expect(text).toContain(`${ORIGIN}/agent-playground`);
     expect(text).toContain(`${ORIGIN}/agent-playground/aql`);
+    expect(text).toContain(`${ORIGIN}/games`);
+    expect(text).toContain(`${ORIGIN}/games/units`);
+    expect(text).toContain("Agent Play Games");
     expect(text).toContain("https://world1.v0peer.org");
     expect(text).not.toContain("/platform");
     expect(text).not.toContain("/agent-play/watch");
+  });
+
+  it("lists every Agent Play Games destination for AI search", () => {
+    const text = buildLlmsTxt({ origin: ORIGIN });
+    for (const cabinet of GAME_CABINET_CATALOG) {
+      expect(text).toContain(`${ORIGIN}/games/${cabinet.gameId}`);
+    }
   });
 
   it("names the installable web app Agent Play", () => {
@@ -335,5 +354,88 @@ describe("llms.txt and web app manifest", () => {
     expect(manifest.short_name).toBe("Agent Play");
     expect(manifest.start_url).toBe("/");
     expect(manifest.display).toBe("standalone");
+  });
+});
+
+describe("Agent Play Games SEO", () => {
+  it("lists the hub, units page, and every cabinet path", () => {
+    const paths = listAgentPlayGamesSitemapPaths();
+    expect(paths).toContain("/games");
+    expect(paths).toContain("/games/units");
+    for (const cabinet of GAME_CABINET_CATALOG) {
+      expect(paths).toContain(`/games/${cabinet.gameId}`);
+    }
+  });
+
+  it("gives the hub and units pages indexable metadata", () => {
+    const hub = buildAgentPlayGamesPageMetadata({ slug: [] });
+    const units = buildAgentPlayGamesPageMetadata({ slug: ["units"] });
+
+    expect(hub.title).toEqual({
+      absolute: expect.stringContaining("Agent Play Games"),
+    });
+    expect(hub.alternates).toEqual({ canonical: "/games" });
+    expect(units.alternates).toEqual({ canonical: "/games/units" });
+    expect(units.description).toMatch(/APU|APW/i);
+  });
+
+  it("gives each cabinet its own canonical URL", () => {
+    const metadata = buildAgentPlayGamesPageMetadata({
+      slug: ["hidden-gems"],
+    });
+    expect(metadata.alternates).toEqual({ canonical: "/games/hidden-gems" });
+    expect(metadata.title).toEqual({
+      absolute: expect.stringContaining("Hidden Gems"),
+    });
+  });
+
+  it("falls back when the game slug is unknown", () => {
+    const metadata = buildAgentPlayGamesPageMetadata({
+      slug: ["missing-cabinet"],
+    });
+    expect(metadata.title).toBe("Agent Play Games");
+    expect(metadata.alternates).toBeUndefined();
+  });
+
+  it("emits VideoGame JSON-LD, FAQ, and breadcrumbs for a cabinet", () => {
+    const jsonLd = buildAgentPlayGamesJsonLd({
+      origin: ORIGIN,
+      slug: ["hidden-gems"],
+    });
+    const types = jsonLd["@graph"].map((node) => node["@type"]);
+    expect(types).toContain("VideoGame");
+    expect(types).toContain("FAQPage");
+    expect(types).toContain("BreadcrumbList");
+
+    const game = jsonLd["@graph"].find((node) => node["@type"] === "VideoGame");
+    expect(game).toMatchObject({
+      name: "Hidden Gems",
+      url: `${ORIGIN}/games/hidden-gems`,
+    });
+
+    const crumbs = buildAgentPlayGamesBreadcrumbJsonLd({
+      origin: ORIGIN,
+      slug: ["hidden-gems"],
+    });
+    expect(crumbs.itemListElement).toEqual([
+      {
+        "@type": "ListItem",
+        position: 1,
+        name: "Agent Play",
+        item: `${ORIGIN}/agent-play`,
+      },
+      {
+        "@type": "ListItem",
+        position: 2,
+        name: "Agent Play Games",
+        item: `${ORIGIN}/games`,
+      },
+      {
+        "@type": "ListItem",
+        position: 3,
+        name: "Hidden Gems",
+        item: `${ORIGIN}/games/hidden-gems`,
+      },
+    ]);
   });
 });

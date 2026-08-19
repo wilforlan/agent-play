@@ -2,6 +2,13 @@ import type { Metadata, MetadataRoute } from "next";
 import { z } from "zod";
 
 import {
+  AGENT_PLAY_GAMES_FAQ,
+  AGENT_PLAY_GAMES_HERO,
+  AGENT_PLAY_GAMES_UNITS,
+  getAgentPlayGamePage,
+  requiredAgentPlayGamesPaths,
+} from "@/app/games/agent-play-games-content";
+import {
   AGENT_PLAY_BRAND,
   AGENT_PLAY_HERO,
   AGENT_PLAY_SITE_PAGES,
@@ -48,6 +55,10 @@ export const AGENT_PLAY_SEO = AgentPlaySeoSchema.parse({
     "enterprise AI agents",
     "human in the loop agents",
     "Viroke Technologies",
+    "Agent Play Games",
+    "Agent Play arcade",
+    "APU",
+    "APW",
   ],
   githubUrl: GITHUB_URL,
   logoPath: "/agent-play-logo.png",
@@ -348,6 +359,15 @@ export const buildAgentPlaySitemap = (
       changeFrequency: "weekly",
       priority: 0.7,
     }),
+    ...listAgentPlayGamesSitemapPaths().map((path) =>
+      sitemapEntry({
+        origin,
+        path,
+        lastModified,
+        changeFrequency: "weekly",
+        priority: path === "/games" ? 0.8 : 0.7,
+      }),
+    ),
     ...AGENT_PLAY_SITE_PAGES.map((page) =>
       sitemapEntry({
         origin,
@@ -556,6 +576,17 @@ export const buildLlmsTxt = (options: BuildLlmsTxtOptions): string => {
     `- [Documentation](${origin}/doc): CLI, hosting, and platform guides.`,
     `- [Agent Playground](${origin}/agent-playground): Main World for AI agents at https://world1.v0peer.org, plus AQL docs and the live playground.`,
     `- [AQL Docs](${origin}/agent-playground/aql): Agent Query Language for inspecting and authoring Main World.`,
+    `- [Agent Play Games](${origin}/games): Maple Ave arcade cabinets, scoring, and how arcade play funds the world.`,
+    `- [World Units](${origin}/games/units): APW$ and APU — how they count, earning rates, and how to spend them.`,
+    ...requiredAgentPlayGamesPaths()
+      .filter((path) => path.startsWith("/games/") && path !== "/games/units")
+      .map((path) => {
+        const slug = path.slice("/games/".length);
+        const page = getAgentPlayGamePage(slug);
+        const label = page?.title ?? slug;
+        const lead = page?.lead ?? AGENT_PLAY_GAMES_HERO.subtitle;
+        return `- [${label}](${origin}${path}): ${lead}`;
+      }),
     "",
     "## Optional",
     "",
@@ -600,3 +631,168 @@ export const buildNoIndexMetadata = (options: {
 export const serializeJsonLd = (value: unknown): string => {
   return JSON.stringify(value).replace(/</g, "\\u003c");
 };
+
+export const listAgentPlayGamesSitemapPaths = (): readonly string[] => {
+  return requiredAgentPlayGamesPaths();
+};
+
+type BuildAgentPlayGamesPageMetadataOptions = {
+  slug: readonly string[];
+};
+
+export const buildAgentPlayGamesPageMetadata = (
+  options: BuildAgentPlayGamesPageMetadataOptions,
+): Metadata => {
+  if (options.slug.length === 0) {
+    return buildPublicPageMetadata({
+      title: AGENT_PLAY_GAMES_HERO.seoTitle,
+      description: AGENT_PLAY_GAMES_HERO.seoDescription,
+      path: "/games",
+    });
+  }
+
+  if (options.slug.length === 1 && options.slug[0] === "units") {
+    return buildPublicPageMetadata({
+      title: AGENT_PLAY_GAMES_UNITS.seoTitle,
+      description: AGENT_PLAY_GAMES_UNITS.seoDescription,
+      path: "/games/units",
+    });
+  }
+
+  if (options.slug.length === 1 && options.slug[0] !== undefined) {
+    const page = getAgentPlayGamePage(options.slug[0]);
+    if (page !== undefined) {
+      return buildPublicPageMetadata({
+        title: `${page.title} — Agent Play Games`,
+        description: page.seoDescription,
+        path: `/games/${page.slug}`,
+      });
+    }
+  }
+
+  return { title: AGENT_PLAY_GAMES_HERO.title };
+};
+
+type BuildAgentPlayGamesJsonLdOptions = {
+  origin: string;
+  slug: readonly string[];
+};
+
+const gamesFaqMainEntity = () => {
+  return AGENT_PLAY_GAMES_FAQ.map((item) => ({
+    "@type": "Question",
+    name: item.question,
+    acceptedAnswer: {
+      "@type": "Answer",
+      text: item.answer,
+    },
+  }));
+};
+
+export const buildAgentPlayGamesBreadcrumbJsonLd = (
+  options: BuildAgentPlayGamesJsonLdOptions,
+): BreadcrumbJsonLd => {
+  const items: BreadcrumbJsonLd["itemListElement"][number][] = [
+    {
+      "@type": "ListItem",
+      position: 1,
+      name: AGENT_PLAY_SEO.brandName,
+      item: `${options.origin}/agent-play`,
+    },
+    {
+      "@type": "ListItem",
+      position: 2,
+      name: AGENT_PLAY_GAMES_HERO.title,
+      item: `${options.origin}/games`,
+    },
+  ];
+
+  if (options.slug.length === 1 && options.slug[0] === "units") {
+    items.push({
+      "@type": "ListItem",
+      position: 3,
+      name: AGENT_PLAY_GAMES_UNITS.title,
+      item: `${options.origin}/games/units`,
+    });
+  }
+
+  if (options.slug.length === 1 && options.slug[0] !== undefined) {
+    const page = getAgentPlayGamePage(options.slug[0]);
+    if (page !== undefined) {
+      items.push({
+        "@type": "ListItem",
+        position: 3,
+        name: page.title,
+        item: `${options.origin}/games/${page.slug}`,
+      });
+    }
+  }
+
+  return {
+    "@type": "BreadcrumbList",
+    itemListElement: items,
+  };
+};
+
+export const buildAgentPlayGamesJsonLd = (
+  options: BuildAgentPlayGamesJsonLdOptions,
+): JsonLdGraph => {
+  const page =
+    options.slug.length === 1 && options.slug[0] !== undefined
+      ? getAgentPlayGamePage(options.slug[0])
+      : undefined;
+  const path =
+    options.slug.length === 0
+      ? "/games"
+      : options.slug[0] === "units"
+        ? "/games/units"
+        : page !== undefined
+          ? `/games/${page.slug}`
+          : "/games";
+  const graph: JsonLdNode[] = [
+    {
+      "@type": "WebPage",
+      name:
+        page?.title ??
+        (options.slug[0] === "units"
+          ? AGENT_PLAY_GAMES_UNITS.title
+          : AGENT_PLAY_GAMES_HERO.title),
+      url: `${options.origin}${path}`,
+      description:
+        page?.seoDescription ??
+        (options.slug[0] === "units"
+          ? AGENT_PLAY_GAMES_UNITS.seoDescription
+          : AGENT_PLAY_GAMES_HERO.seoDescription),
+      isPartOf: { "@id": `${options.origin}/#website` },
+    },
+    {
+      "@type": "FAQPage",
+      mainEntity: gamesFaqMainEntity(),
+    },
+    buildAgentPlayGamesBreadcrumbJsonLd(options),
+  ];
+
+  if (page !== undefined) {
+    graph.unshift({
+      "@type": "VideoGame",
+      name: page.title,
+      alternateName: page.cabinetName,
+      url: `${options.origin}/games/${page.slug}`,
+      description: page.seoDescription,
+      gamePlatform: "Agent Play World",
+      playMode: "SinglePlayer",
+      applicationCategory: "BrowserGame",
+      offers: {
+        "@type": "Offer",
+        price: "0",
+        priceCurrency: "USD",
+      },
+    });
+  }
+
+  return {
+    "@context": "https://schema.org",
+    "@graph": graph,
+  };
+};
+
