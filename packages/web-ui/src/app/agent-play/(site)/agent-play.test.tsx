@@ -23,10 +23,13 @@ vi.mock("next/navigation", () => ({
   usePathname: () => "/agent-play",
 }));
 
+import { MAIN_WORLD_ORIGIN } from "@/lib/main-world";
+
 import { AgentPlay } from "./agent-play";
 import {
   AGENT_PLAY_CATEGORIES,
   AGENT_PLAY_FEATURED_AGENT,
+  AGENT_PLAY_WORLD_SURFACES,
   getAgentPlaySitePage,
 } from "./agent-play-content";
 import { AgentPlayLanding } from "./agent-play-landing";
@@ -74,6 +77,25 @@ describe("Agent Play parent landing", () => {
     expect(nav?.querySelector('a[href="/agent-play/register"]')?.textContent).toBe(
       "Register Organization",
     );
+    const worldsNav = container.querySelector('nav[aria-label="Worlds"]');
+    expect(worldsNav).not.toBeNull();
+    expect(worldsNav?.querySelector('a[href="/playground"]')?.textContent).toBe(
+      "Playground",
+    );
+    expect(
+      worldsNav?.querySelector('a[href="/agent-playground"]')?.textContent,
+    ).toBe("Agent Playground");
+    expect(worldsNav?.querySelector('a[href="/games"]')?.textContent).toBe(
+      "Agent Play Games",
+    );
+    expect(
+      worldsNav?.querySelector(`a[href="${MAIN_WORLD_ORIGIN}"]`)?.textContent,
+    ).toBe("Main World");
+    expect(
+      worldsNav
+        ?.querySelector(`a[href="${MAIN_WORLD_ORIGIN}"]`)
+        ?.getAttribute("target"),
+    ).toBe("_blank");
     expect(container.textContent).toContain("Product");
     expect(container.textContent).toContain("For Publishers");
     expect(container.textContent).toContain(
@@ -98,6 +120,17 @@ describe("Agent Play parent landing", () => {
     expect(container.textContent).not.toContain("OB360");
     expect(container.textContent).toContain("Marketplace Analytics");
     expect(container.textContent).toContain("How Agent Play Works");
+    const worldsSection = container.querySelector(
+      'section[aria-labelledby="worlds-title"]',
+    );
+    expect(worldsSection).not.toBeNull();
+    for (const surface of AGENT_PLAY_WORLD_SURFACES) {
+      expect(worldsSection?.textContent).toContain(surface.title);
+      expect(worldsSection?.textContent).toContain(surface.body);
+      expect(
+        worldsSection?.querySelector(`a[href="${surface.href}"]`)?.textContent,
+      ).toContain(surface.label);
+    }
     expect(container.textContent).toContain("Built for Discovery, Publishing, and Growth");
     expect(container.textContent).toContain("No featured agents available yet.");
     for (const category of AGENT_PLAY_CATEGORIES) {
