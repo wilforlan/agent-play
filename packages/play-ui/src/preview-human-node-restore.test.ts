@@ -116,6 +116,70 @@ describe("restoreMainNodeFromCredentials", () => {
     }
   });
 
+  it("accepts World 1 credentials issued for www.agent-play.com on world1.v0peer.org", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => Response.json({ ok: true, nodeKind: "main" }))
+    );
+    const result = await restoreMainNodeFromCredentials({
+      apiBase: "https://world1.v0peer.org/api/agent-play",
+      credentials: {
+        nodeId,
+        passw: phrase,
+        serverUrl: "https://www.agent-play.com",
+      },
+    });
+    expect(result).toEqual({ ok: true, nodeId });
+  });
+
+  it("accepts World 1 credentials issued for agent-play.com on world1.v0peer.org", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => Response.json({ ok: true, nodeKind: "main" }))
+    );
+    const result = await restoreMainNodeFromCredentials({
+      apiBase: "https://world1.v0peer.org/api/agent-play",
+      credentials: {
+        nodeId,
+        passw: phrase,
+        serverUrl: "https://agent-play.com",
+      },
+    });
+    expect(result).toEqual({ ok: true, nodeId });
+  });
+
+  it("accepts World 1 credentials issued for playworld.world on world1.v0peer.org", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => Response.json({ ok: true, nodeKind: "main" }))
+    );
+    const result = await restoreMainNodeFromCredentials({
+      apiBase: "https://world1.v0peer.org/api/agent-play",
+      credentials: {
+        nodeId,
+        passw: phrase,
+        serverUrl: "https://playworld.world",
+      },
+    });
+    expect(result).toEqual({ ok: true, nodeId });
+  });
+
+  it("treats www and apex hosts as the same deployment", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => Response.json({ ok: true, nodeKind: "main" }))
+    );
+    const result = await restoreMainNodeFromCredentials({
+      apiBase: "https://agent-play.com/api/agent-play",
+      credentials: {
+        nodeId,
+        passw: phrase,
+        serverUrl: "https://www.agent-play.com",
+      },
+    });
+    expect(result).toEqual({ ok: true, nodeId });
+  });
+
   it("validates on the server with node auth headers", async () => {
     vi.stubGlobal(
       "fetch",

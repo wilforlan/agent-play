@@ -1,34 +1,28 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import "./globals.css";
-import { siteMetaDescription, siteTitle } from "./site-brand";
+import { AgentPlayJsonLd } from "@/components/agent-play-json-ld";
+import {
+  buildAgentPlayRootMetadata,
+  resolveAgentPlayOrigin,
+} from "@/lib/agent-play-seo";
 
-const siteOrigin =
-  typeof process.env.NEXT_PUBLIC_SITE_ORIGIN === "string" &&
-  process.env.NEXT_PUBLIC_SITE_ORIGIN.length > 0
-    ? process.env.NEXT_PUBLIC_SITE_ORIGIN
-    : "https://agent-play.com";
+const origin = resolveAgentPlayOrigin({
+  envValue: process.env.NEXT_PUBLIC_SITE_ORIGIN,
+});
 
-export const metadata: Metadata = {
-  metadataBase: new URL(siteOrigin),
-  title: siteTitle,
-  description: siteMetaDescription,
-  openGraph: {
-    title: siteTitle,
-    description: siteMetaDescription,
-    type: "website",
-  },
-  twitter: {
-    card: "summary_large_image",
-    title: siteTitle,
-    description: siteMetaDescription,
-  },
-};
+export const metadata: Metadata = buildAgentPlayRootMetadata({
+  origin,
+  googleSiteVerification: process.env.NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION,
+});
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en">
-      <body style={{ margin: 0 }}>{children}</body>
+      <body style={{ margin: 0 }}>
+        <AgentPlayJsonLd />
+        {children}
+      </body>
     </html>
   );
 }

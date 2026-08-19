@@ -52,8 +52,11 @@ describe("citizen induction onboarding", () => {
     expect(overlay?.classList.contains("human-onboard-overlay--opaque")).toBe(
       true
     );
+    expect(document.querySelector(".human-onboard-kicker")?.textContent).toBe(
+      "Citizen induction"
+    );
     expect(document.querySelector(".human-onboard-brand")?.textContent).toBe(
-      "Agent Play"
+      "v0peer"
     );
     expect(document.querySelector(".human-onboard-title")?.textContent).toBe(
       "Become a citizen"
