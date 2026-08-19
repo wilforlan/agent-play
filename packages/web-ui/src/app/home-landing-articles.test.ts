@@ -45,4 +45,9 @@ describe("home landing articles", () => {
     const playground = HOME_LANDING_ARTICLES.find((article) => article.id === "nodes");
     expect(playground?.href).toBe("/agent-playground");
   });
+
+  it("sends Power-Ups and arcade docs to Agent Play Games", () => {
+    const powerUps = HOME_LANDING_ARTICLES.find((article) => article.id === "power-ups");
+    expect(powerUps?.href).toBe("/games");
+  });
 });

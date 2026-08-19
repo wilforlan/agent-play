@@ -123,7 +123,7 @@ export const HOME_LANDING_ARTICLES: readonly HomeLandingArticle[] = [
       "Arcade: up to 100 PU per UTC day; first completed round is guaranteed net positive.",
       "5-day streak grants a once-per-day +5 PU bonus toward the daily cap.",
     ],
-    href: "/doc/games",
+    href: "/games",
   },
   {
     id: "touch-bar",

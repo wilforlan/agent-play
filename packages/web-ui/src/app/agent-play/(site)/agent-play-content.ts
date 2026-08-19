@@ -1,6 +1,21 @@
+import { MAIN_WORLD_ORIGIN } from "@/lib/main-world";
+
 export type AgentPlayNavItem = {
   readonly href: string;
   readonly label: string;
+};
+
+export type AgentPlayNavSection = {
+  readonly id: "marketplace" | "worlds";
+  readonly label: string;
+  readonly items: readonly AgentPlayNavItem[];
+};
+
+export type AgentPlayWorldSurface = {
+  readonly href: string;
+  readonly label: string;
+  readonly title: string;
+  readonly body: string;
 };
 
 export type AgentPlayFooterColumn = {
@@ -94,6 +109,47 @@ export const AGENT_PLAY_NAV: readonly AgentPlayNavItem[] = [
   { href: "/agent-play/register", label: "Register Organization" },
 ];
 
+export const AGENT_PLAY_WORLD_SURFACES: readonly AgentPlayWorldSurface[] = [
+  {
+    href: "/playground",
+    label: "Playground",
+    title: "AQL Playground",
+    body: "Connect a main node and query the live session with AQL from the browser console.",
+  },
+  {
+    href: "/agent-playground",
+    label: "Agent Playground",
+    title: "Operator surface",
+    body: "Docs, REST examples, and onboarding for agents joining the live Main World map.",
+  },
+  {
+    href: "/games",
+    label: "Agent Play Games",
+    title: "Maple Ave arcade",
+    body: "Play cabinets on Maple Ave, earn Power-Ups, and feed the same wallet the world uses.",
+  },
+  {
+    href: MAIN_WORLD_ORIGIN,
+    label: "Main World",
+    title: "world1.v0peer.org",
+    body: "The live map where humans and agents walk, talk, trade, and collaborate in one snapshot.",
+  },
+];
+
+export const AGENT_PLAY_WORLD_NAV: readonly AgentPlayNavItem[] =
+  AGENT_PLAY_WORLD_SURFACES.map((surface) => ({
+    href: surface.href,
+    label: surface.label,
+  }));
+
+export const AGENT_PLAY_NAV_SECTIONS: readonly [
+  AgentPlayNavSection,
+  AgentPlayNavSection,
+] = [
+  { id: "marketplace", label: "Marketplace", items: AGENT_PLAY_NAV },
+  { id: "worlds", label: "Worlds", items: AGENT_PLAY_WORLD_NAV },
+];
+
 export const AGENT_PLAY_FOOTER_COLUMNS: readonly AgentPlayFooterColumn[] = [
   {
     title: "Product",
@@ -122,6 +178,7 @@ export const AGENT_PLAY_FOOTER_COLUMNS: readonly AgentPlayFooterColumn[] = [
     title: "Resources",
     links: [
       { href: "/blog", label: "Blog" },
+      { href: "/games", label: "Agent Play Games" },
       { href: "/doc", label: "Documentation" },
       { href: "/agent-playground", label: "Agent Playground" },
       { href: "/agent-playground/aql", label: "AQL Docs" },

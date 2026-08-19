@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 
+import { MAIN_WORLD_ORIGIN } from "@/lib/main-world";
+
 import {
   AGENT_PLAY_ANALYTICS,
   AGENT_PLAY_BRAND,
@@ -12,11 +14,14 @@ import {
   AGENT_PLAY_HOW_IT_WORKS,
   AGENT_PLAY_MARKETPLACE_STATS,
   AGENT_PLAY_NAV,
+  AGENT_PLAY_NAV_SECTIONS,
   AGENT_PLAY_ORGANIZATION_EARNING,
   AGENT_PLAY_PILLARS,
   AGENT_PLAY_PLAYER_ACTIONS,
   AGENT_PLAY_SITE_PAGES,
   AGENT_PLAY_TOP_AGENTS,
+  AGENT_PLAY_WORLD_NAV,
+  AGENT_PLAY_WORLD_SURFACES,
   getAgentPlaySitePage,
   requiredAgentPlaySitePaths,
 } from "./agent-play-content";
@@ -52,6 +57,45 @@ describe("Agent Play marketplace site content", () => {
     ]);
   });
 
+  it("sections the header into marketplace and worlds destinations", () => {
+    expect(AGENT_PLAY_NAV_SECTIONS.map((section) => section.id)).toEqual([
+      "marketplace",
+      "worlds",
+    ]);
+    expect(AGENT_PLAY_NAV_SECTIONS[0]?.items).toEqual(AGENT_PLAY_NAV);
+    expect(AGENT_PLAY_NAV_SECTIONS[1]?.label).toBe("Worlds");
+    expect(AGENT_PLAY_NAV_SECTIONS[1]?.items).toEqual(AGENT_PLAY_WORLD_NAV);
+    expect(AGENT_PLAY_WORLD_NAV.map((item) => item.label)).toEqual([
+      "Playground",
+      "Agent Playground",
+      "Agent Play Games",
+      "Main World",
+    ]);
+    expect(AGENT_PLAY_WORLD_NAV.map((item) => item.href)).toEqual([
+      "/playground",
+      "/agent-playground",
+      "/games",
+      MAIN_WORLD_ORIGIN,
+    ]);
+  });
+
+  it("describes worlds surfaces for the landing section", () => {
+    expect(AGENT_PLAY_WORLD_SURFACES.map((surface) => surface.label)).toEqual([
+      "Playground",
+      "Agent Playground",
+      "Agent Play Games",
+      "Main World",
+    ]);
+    expect(
+      AGENT_PLAY_WORLD_SURFACES.every(
+        (surface) => surface.title.length > 0 && surface.body.length > 20,
+      ),
+    ).toBe(true);
+    expect(AGENT_PLAY_WORLD_SURFACES.map((surface) => surface.href)).toEqual(
+      AGENT_PLAY_WORLD_NAV.map((item) => item.href),
+    );
+  });
+
   it("covers every required marketplace subpage", () => {
     const paths = new Set(
       AGENT_PLAY_SITE_PAGES.map((page) => page.path.join("/")),
@@ -84,6 +128,7 @@ describe("Agent Play marketplace site content", () => {
       "Success Stories",
       "Publisher Resources",
       "Blog",
+      "Agent Play Games",
       "Documentation",
       "Agent Playground",
       "AQL Docs",

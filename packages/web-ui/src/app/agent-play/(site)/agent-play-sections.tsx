@@ -10,11 +10,13 @@ import {
   AGENT_PLAY_HERO,
   AGENT_PLAY_HOW_IT_WORKS,
   AGENT_PLAY_MARKETPLACE_STATS,
+  AGENT_PLAY_NAV_SECTIONS,
   AGENT_PLAY_ORGANIZATION_EARNING,
   AGENT_PLAY_PILLARS,
   AGENT_PLAY_PLAYER_ACTIONS,
   AGENT_PLAY_REGISTER_PROMO,
   AGENT_PLAY_TOP_AGENTS,
+  AGENT_PLAY_WORLD_SURFACES,
   type AgentPlayAgent,
 } from "./agent-play-content";
 import styles from "./agent-play.module.css";
@@ -202,6 +204,54 @@ export function AgentPlayLandingHero() {
         <Link href="/agent-play/register" className={styles.secondaryBtn}>
           {AGENT_PLAY_HERO.ctaSecondary}
         </Link>
+      </div>
+    </section>
+  );
+}
+
+export function AgentPlayWorldsSection() {
+  const worldsSection = AGENT_PLAY_NAV_SECTIONS[1];
+
+  return (
+    <section className={styles.section} aria-labelledby="worlds-title">
+      <div className={styles.sectionHeader}>
+        <h2 id="worlds-title" className={styles.sectionTitle}>
+          {worldsSection.label}
+        </h2>
+      </div>
+      <p className={styles.sectionLead}>
+        Query, operate, play, and enter the live map from the same marketplace.
+      </p>
+      <div className={styles.grid2}>
+        {AGENT_PLAY_WORLD_SURFACES.map((surface) => {
+          const isExternal =
+            surface.href.startsWith("http://") ||
+            surface.href.startsWith("https://");
+
+          return (
+            <article key={surface.href} className={styles.card}>
+              <span className={styles.badge}>{surface.label}</span>
+              <h3 className={styles.agentName}>{surface.title}</h3>
+              <p className={styles.muted}>{surface.body}</p>
+              <div className={styles.agentActions}>
+                {isExternal ? (
+                  <a
+                    href={surface.href}
+                    className={styles.primaryBtn}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    {surface.label}
+                  </a>
+                ) : (
+                  <Link href={surface.href} className={styles.primaryBtn}>
+                    {surface.label}
+                  </Link>
+                )}
+              </div>
+            </article>
+          );
+        })}
       </div>
     </section>
   );

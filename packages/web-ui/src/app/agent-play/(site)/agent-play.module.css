@@ -10,28 +10,46 @@
     -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, sans-serif;
 }
 
-.shell {
-  max-width: 1180px;
-  margin: 0 auto;
-  padding: 1.5rem 1.5rem 0;
+.header {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.14);
+  background: color-mix(in srgb, #020617 78%, transparent);
+  backdrop-filter: blur(20px);
 }
 
-.header {
+.headerInner {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 1rem;
-  padding-bottom: 1.25rem;
-  border-bottom: 1px solid rgba(148, 163, 184, 0.18);
+  gap: 0.9rem 1.25rem;
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 0.85rem 1.5rem;
 }
 
 .brandBlock {
   display: flex;
-  flex-direction: column;
-  gap: 0.15rem;
+  flex-direction: row;
+  align-items: center;
+  gap: 0.7rem;
   text-decoration: none;
   color: inherit;
+}
+
+.brandMark {
+  display: grid;
+  place-items: center;
+  width: 2.05rem;
+  height: 2.05rem;
+  border-radius: 0.7rem;
+  background: linear-gradient(135deg, #38bdf8 0%, #818cf8 55%, #e879f9 100%);
+  color: #0f172a;
+  font-size: 0.72rem;
+  font-weight: 900;
+  letter-spacing: 0.04em;
 }
 
 .brandName {
@@ -42,10 +60,101 @@
   color: #f8fafc;
 }
 
+.headerNav {
+  display: flex;
+  flex: 1;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.7rem 1rem;
+}
+
 .nav {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.55rem 1.1rem;
+  align-items: center;
+  gap: 0.55rem 0.75rem;
+}
+
+.navGroup,
+.worldNavGroup {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.15rem;
+  padding: 0.18rem;
+  border-radius: 999px;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  background: rgba(15, 23, 42, 0.55);
+}
+
+.navActions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.headerLink {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 2rem;
+  padding: 0.35rem 0.8rem;
+  border-radius: 999px;
+  color: #94a3b8;
+  text-decoration: none;
+  font-size: 0.8rem;
+  font-weight: 650;
+  line-height: 1;
+  transition:
+    color 160ms ease,
+    background 160ms ease,
+    border-color 160ms ease;
+}
+
+.headerLink:hover,
+.headerLinkActive {
+  color: #f8fafc;
+  background: rgba(148, 163, 184, 0.12);
+}
+
+.headerCta {
+  color: #0f172a;
+  background: linear-gradient(135deg, #38bdf8 0%, #818cf8 50%, #e879f9 100%);
+  font-weight: 800;
+}
+
+.headerCta:hover,
+.headerCta.headerLinkActive {
+  color: #0f172a;
+  background: linear-gradient(135deg, #7dd3fc 0%, #a5b4fc 50%, #f0abfc 100%);
+}
+
+.worldNav {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.65rem;
+}
+
+.worldNavLabel {
+  margin: 0;
+  font-size: 0.66rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: #67e8f9;
+  font-weight: 800;
+}
+
+.worldNavLink {
+  color: #bae6fd;
+}
+
+.worldNavLink:hover,
+.worldNavLink.headerLinkActive {
+  color: #f0f9ff;
+  background: rgba(14, 165, 233, 0.18);
 }
 
 .navLink {
@@ -461,7 +570,7 @@
   }
 
   .main,
-  .shell,
+  .headerInner,
   .footerInner {
     padding-left: 1rem;
     padding-right: 1rem;

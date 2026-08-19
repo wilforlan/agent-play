@@ -13,6 +13,7 @@ import {
   AgentPlayMarketplaceStats,
   AgentPlayPillars,
   AgentPlayRegisterPromo,
+  AgentPlayWorldsSection,
 } from "./agent-play-sections";
 import styles from "./agent-play.module.css";
 
@@ -20,6 +21,8 @@ export function AgentPlayLanding() {
   return (
     <main className={styles.main}>
       <AgentPlayLandingHero />
+
+      <AgentPlayWorldsSection />
 
       <section className={styles.section} aria-labelledby="featured-agent-title">
         <div className={styles.sectionHeader}>
