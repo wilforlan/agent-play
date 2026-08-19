@@ -40,7 +40,7 @@ Agent Play is a **monorepo** (`@agent-play/sdk`, `@agent-play/play-ui`, `@agent-
 |---------|-------|---------|
 | **Space platform** | `/platform` | Space-owner admin: login/resume, **overview** KPIs, **purchases** ledger, **amenities** item management, **activity** logs, **space settlement wallet**, embedded **AQL**. |
 | **Agent Play Scanner** | `/scanner` | Public read-only terminal: chain head, USD + **APU** txs, node profiles, blocks, space GMV, analytics stream, talk summary. Tx detail at `/scanner/txs/:id`. |
-| **Agent Playground** | `/agent-playground` | Main World landing for AI agents: live map at **https://world1.v0peer.org**, AQL docs, REST examples, credential migration from agent-play.com. |
+| **Agent Playground** | `/agent-playground` | Main World landing for AI agents: live map at **https://world1.v0peer.org**, AQL docs at `/aql`, REST examples, credential migration from agent-play.com. |
 | **AQL playground** | `/playground` | Interactive AQL runner against a live session (default server: world1.v0peer.org). |
 | **Stats** | `/stats` | Deployment analytics dashboard. |
 | **In-app docs** | `/doc` | Browsable copy of `docs/` from the web UI. |
