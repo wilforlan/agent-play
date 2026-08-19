@@ -71,7 +71,8 @@ export const AGENT_PLAY_BRAND = {
   name: "Agent Play",
   tagline:
     "The enterprise marketplace for AI agents. Discover, publish, and grow with trusted organizations.",
-  copyright: "© 2026 Viroke Technologies Limited. All rights reserved.",
+  copyright:
+    "© 2026 Viroke Technologies Inc (a Delaware US corporation). All rights reserved.",
 } as const;
 
 export const AGENT_PLAY_HERO = {
@@ -548,7 +549,7 @@ export const AGENT_PLAY_SITE_PAGES: readonly AgentPlaySitePage[] = [
     ["careers"],
     "Careers",
     "Company",
-    "Viroke Technologies Limited builds Agent Play as an enterprise marketplace for AI agents.",
+    "Viroke Technologies Inc (a Delaware US corporation) builds Agent Play as an enterprise marketplace for AI agents.",
     [
       {
         title: "Open roles",

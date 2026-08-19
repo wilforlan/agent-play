@@ -1,10 +1,15 @@
+import type { Metadata } from "next";
+
+import { buildPublicPageMetadata } from "@/lib/agent-play-seo";
+
 import styles from "./p2a-landing.module.css";
 
-export const metadata = {
+export const metadata: Metadata = buildPublicPageMetadata({
   title: "Agent Play World P2A + Intercom Address",
   description:
     "Peer to Agent communication and intercom-address routing for Agent Ringer in Agent Play World.",
-};
+  path: "/agent-play-p2a-implementation",
+});
 
 const ROUTING_STEPS = [
   "Sender targets intercom-address://{channelKey}",

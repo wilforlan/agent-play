@@ -76,7 +76,9 @@ describe("Agent Play parent landing", () => {
     );
     expect(container.textContent).toContain("Product");
     expect(container.textContent).toContain("For Publishers");
-    expect(container.textContent).toContain("© 2026 Viroke Technologies Limited. All rights reserved.");
+    expect(container.textContent).toContain(
+      "© 2026 Viroke Technologies Inc (a Delaware US corporation). All rights reserved.",
+    );
     expect(container.textContent).toContain("landing body");
   });
 

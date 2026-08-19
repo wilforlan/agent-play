@@ -1,8 +1,10 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 
+import { AgentPlayBreadcrumbJsonLd } from "@/components/agent-play-breadcrumb-json-ld";
+import { buildAgentPlayMarketplaceMetadata } from "@/lib/agent-play-seo";
+
 import {
-  AGENT_PLAY_BRAND,
   AGENT_PLAY_SITE_PAGES,
   getAgentPlaySitePage,
 } from "../agent-play-content";
@@ -20,14 +22,7 @@ export const generateMetadata = async ({
   params,
 }: AgentPlaySlugPageProps): Promise<Metadata> => {
   const { slug } = await params;
-  const page = getAgentPlaySitePage(slug);
-  if (page === undefined) {
-    return { title: `${AGENT_PLAY_BRAND.name}` };
-  }
-  return {
-    title: `${page.title} — ${AGENT_PLAY_BRAND.name}`,
-    description: page.lead,
-  };
+  return buildAgentPlayMarketplaceMetadata({ path: slug });
 };
 
 export default async function AgentPlaySlugPage({
@@ -38,5 +33,10 @@ export default async function AgentPlaySlugPage({
   if (page === undefined) {
     notFound();
   }
-  return <AgentPlaySubpage page={page} />;
+  return (
+    <>
+      <AgentPlayBreadcrumbJsonLd path={page.path} />
+      <AgentPlaySubpage page={page} />
+    </>
+  );
 }
