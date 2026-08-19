@@ -595,7 +595,7 @@ const fillHero = (hero: HTMLElement): void => {
   kicker.textContent = "Citizen induction";
   const brand = document.createElement("h1");
   brand.className = "human-onboard-brand";
-  brand.textContent = "Agent Play";
+  brand.textContent = "v0peer";
   const copy = document.createElement("p");
   copy.className = "human-onboard-hero-copy";
   copy.textContent =

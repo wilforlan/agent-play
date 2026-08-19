@@ -1,4 +1,15 @@
+import type { Metadata } from "next";
+
+import { buildPublicPageMetadata } from "@/lib/agent-play-seo";
+
 import PlaygroundClient from "./playground-client";
+
+export const metadata: Metadata = buildPublicPageMetadata({
+  title: "AQL Playground",
+  description:
+    "Query Agent Play world state with AQL — inspect nodes, amenities, and live spatial data.",
+  path: "/playground",
+});
 
 const ENABLE_PLAYGROUND =
   process.env.NEXT_PUBLIC_ENABLE_NODE_PLAYGROUND === "1" ||
