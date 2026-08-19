@@ -34,8 +34,8 @@ export type ResolveProximityPActionOptions = {
  * Resolve what `P` should do from the current proximity / call context.
  *
  * Precedence matches the proximity touch-bar `onPushToTalk` path: hang up an
- * active peer call first, then stage-local P targets, then peer Talk start,
- * then agent push-to-talk.
+ * active peer call first, then enclosed-stage P targets, then a nearby member,
+ * then overworld objects.
  */
 export const resolveProximityPAction = (
   options: ResolveProximityPActionOptions
@@ -49,23 +49,23 @@ export const resolveProximityPAction = (
   if (options.hasActivatableGameStageTarget) {
     return "gameStageActivate";
   }
+  if (options.hasAmenityItem) {
+    return "amenityItemCycle";
+  }
+  if (options.hasAgentPartner) {
+    return "agentPushToTalk";
+  }
+  if (options.peerTalkLabel !== null) {
+    return "peerTalkStart";
+  }
   if (options.hasHouseNearest) {
     return "houseInspect";
   }
   if (options.hasParkingNearest) {
     return "parkingCycle";
   }
-  if (options.hasAmenityItem) {
-    return "amenityItemCycle";
-  }
   if (options.hasYardAmenityPad) {
     return "yardAmenityEnter";
-  }
-  if (options.peerTalkLabel !== null) {
-    return "peerTalkStart";
-  }
-  if (options.hasAgentPartner) {
-    return "agentPushToTalk";
   }
   return "noop";
 };
