@@ -21,6 +21,9 @@ export default function HomeLanding() {
         <header className={styles.nav}>
           <p className={styles.navBrand}>Agent Play World</p>
           <nav className={styles.navLinks} aria-label="Site">
+            <Link href="/agent-play" className={styles.navLink}>
+              Marketplace
+            </Link>
             <Link href="/blog" className={styles.navLink}>
               Newsroom
             </Link>
