@@ -148,6 +148,117 @@ describe("Agent Play marketplace site content", () => {
     ]);
   });
 
+  it("populates For Publishers pages with page-specific copy", () => {
+    const publisherColumn = AGENT_PLAY_FOOTER_COLUMNS.find(
+      (column) => column.title === "For Publishers",
+    );
+    expect(publisherColumn).toBeDefined();
+    if (publisherColumn === undefined) {
+      throw new Error("For Publishers footer column missing");
+    }
+
+    const publisherPages = publisherColumn.links.map((link) => {
+      const page = getAgentPlaySitePage(
+        link.href.replace("/agent-play/", "").split("/"),
+      );
+      expect(page).toBeDefined();
+      if (page === undefined) {
+        throw new Error(`missing publisher page for ${link.href}`);
+      }
+      return page;
+    });
+
+    expect(publisherPages).toHaveLength(5);
+    expect(new Set(publisherPages.map((page) => page.lead)).size).toBe(5);
+
+    for (const page of publisherPages) {
+      expect(page.kind).toBe("article");
+      expect(page.kicker).toBe("Publishers");
+      expect(page.lead.length).toBeGreaterThan(80);
+      expect(page.sections?.length).toBeGreaterThanOrEqual(4);
+      for (const section of page.sections ?? []) {
+        expect(section.body.length).toBeGreaterThan(120);
+      }
+    }
+
+    const publish = getAgentPlaySitePage(["publish"]);
+    const publishCopy = JSON.stringify(publish).toLowerCase();
+    expect(publish?.sections?.map((section) => section.title)).toEqual([
+      "Register the organization",
+      "Initialize with the CLI",
+      "What a listing carries",
+      "Where buyers find the agent",
+      "Host it on Main World",
+    ]);
+    expect(publishCopy).toContain("credentials.json");
+    expect(publishCopy).toContain(AGENT_PLAY_CLI_ONBOARDING.installCommand);
+    expect(publishCopy).toContain(AGENT_PLAY_CLI_ONBOARDING.createAgentCommand);
+    expect(publishCopy).toContain("summary");
+    expect(publishCopy).toContain("category");
+    expect(publishCopy).toContain("demo");
+
+    const benefits = getAgentPlaySitePage(["publishers", "benefits"]);
+    const benefitsCopy = JSON.stringify(benefits).toLowerCase();
+    expect(benefits?.sections?.map((section) => section.title)).toEqual([
+      "A catalog seat, not a landing page",
+      "A live agent players can walk up to",
+      "Earnings from billed world actions",
+      "A workspace restored from credentials",
+      "Engagement you can read",
+    ]);
+    expect(benefitsCopy).toContain("talk");
+    expect(benefitsCopy).toContain("power-ups");
+    expect(benefitsCopy).toContain("profile views");
+    expect(benefitsCopy).toContain("demo clicks");
+    expect(benefitsCopy).toContain("contact views");
+
+    const insights = getAgentPlaySitePage(["publishers", "insights"]);
+    const insightsCopy = JSON.stringify(insights).toLowerCase();
+    expect(insights?.lead).not.toBe(AGENT_PLAY_ANALYTICS_COPY.body);
+    expect(insights?.sections?.map((section) => section.title)).toEqual([
+      "Profile views",
+      "Demo clicks",
+      "Contact views",
+      "Lead trend for the period",
+      "How publishers use the readout",
+    ]);
+    expect(insightsCopy).toContain("this month");
+    expect(insightsCopy).toContain("/agent-play/analytics");
+    expect(insightsCopy).not.toContain("interest request");
+
+    const success = getAgentPlaySitePage(["publishers", "success"]);
+    const successCopy = JSON.stringify(success).toLowerCase();
+    expect(successCopy).not.toMatch(/appear here/);
+    expect(success?.sections?.map((section) => section.title)).toEqual([
+      "What success means on this marketplace",
+      "Featured listing: IT Helpdesk Agent",
+      "Catalog listings already live",
+      "The publisher path that produces a story",
+    ]);
+    expect(successCopy).toContain("it helpdesk agent");
+    expect(successCopy).toContain("healthcare navigation assistant");
+    expect(successCopy).toContain("meeting scheduler agent");
+    expect(successCopy).toContain("employee onboarding assistant");
+
+    const resources = getAgentPlaySitePage(["publishers", "resources"]);
+    const resourcesCopy = JSON.stringify(resources).toLowerCase();
+    expect(resources?.sections?.map((section) => section.title)).toEqual([
+      "Register and restore",
+      "CLI and host documentation",
+      "Marketplace pages for publishers",
+      "World surfaces",
+      "Talk to the Agent Play team",
+    ]);
+    expect(resourcesCopy).toContain("/agent-play/register");
+    expect(resourcesCopy).toContain("/agent-play/login");
+    expect(resourcesCopy).toContain("/doc/cli");
+    expect(resourcesCopy).toContain(
+      AGENT_PLAY_CLI_ONBOARDING.initializeDocHref,
+    );
+    expect(resourcesCopy).toContain("/agent-play/how-it-works");
+    expect(resourcesCopy).toContain("/agent-playground");
+  });
+
   it("documents featured agent, marketplace stats, and analytics", () => {
     expect(AGENT_PLAY_FEATURED_AGENT.name).toBe("IT Helpdesk Agent");
     expect(AGENT_PLAY_FEATURED_AGENT.publisher).toBe("Agent Play");
