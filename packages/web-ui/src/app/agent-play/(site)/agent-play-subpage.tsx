@@ -5,7 +5,6 @@ import React, { useState, type FormEvent } from "react";
 import {
   AGENT_PLAY_CATALOG,
   AGENT_PLAY_FEATURED_AGENT,
-  type AgentPlayFormKind,
   type AgentPlaySitePage,
 } from "./agent-play-content";
 import {
@@ -22,6 +21,7 @@ import {
   AgentPlayRegisterPromo,
 } from "./agent-play-sections";
 import { AgentPlayRegisterForm } from "./agent-play-register-form";
+import { AgentPlayLoginForm } from "./agent-play-login-form";
 import { AgentPlayOrganizationsSection } from "./agent-play-organizations-section";
 import styles from "./agent-play.module.css";
 
@@ -29,68 +29,28 @@ type AgentPlaySubpageProps = {
   page: AgentPlaySitePage;
 };
 
-const formSuccessMessage = (kind: AgentPlayFormKind): string => {
-  if (kind === "register") {
-    return "Your publisher profile request is recorded on this device.";
-  }
-  if (kind === "login") {
-    return "Sign-in is recorded on this device. Publisher workspaces are not connected yet.";
-  }
-  return "Your message is recorded on this device.";
-};
-
-const AgentPlayForm = ({
-  kind,
-  submitLabel,
-}: {
-  kind: AgentPlayFormKind;
-  submitLabel: string;
-}) => {
+const AgentPlayContactForm = ({ submitLabel }: { submitLabel: string }) => {
   const [message, setMessage] = useState<string | null>(null);
 
   const onSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    setMessage(formSuccessMessage(kind));
+    setMessage("Your message is recorded on this device.");
   };
 
   return (
     <form className={styles.form} onSubmit={onSubmit}>
-      {kind === "register" ? (
-        <div className={styles.field}>
-          <label htmlFor="organizationName">Organization name</label>
-          <input id="organizationName" name="organizationName" required />
-        </div>
-      ) : null}
-      {kind === "contact" ? (
-        <div className={styles.field}>
-          <label htmlFor="fullName">Name</label>
-          <input id="fullName" name="fullName" required />
-        </div>
-      ) : null}
+      <div className={styles.field}>
+        <label htmlFor="fullName">Name</label>
+        <input id="fullName" name="fullName" required />
+      </div>
       <div className={styles.field}>
         <label htmlFor="email">Email</label>
         <input id="email" name="email" type="email" required />
       </div>
-      {kind === "login" ? (
-        <div className={styles.field}>
-          <label htmlFor="password">Password</label>
-          <input id="password" name="password" type="password" required />
-        </div>
-      ) : null}
-      {kind === "register" ? (
-        <div className={styles.field}>
-          <label htmlFor="website">Website</label>
-          <input id="website" name="website" />
-        </div>
-      ) : null}
-      {kind !== "login" ? (
-        <div className={styles.field}>
-          <label htmlFor="details">
-            {kind === "contact" ? "Message" : "About your agents"}
-          </label>
-          <textarea id="details" name="details" />
-        </div>
-      ) : null}
+      <div className={styles.field}>
+        <label htmlFor="details">Message</label>
+        <textarea id="details" name="details" />
+      </div>
       <button type="submit" className={styles.primaryBtn}>
         {submitLabel}
       </button>
@@ -133,9 +93,6 @@ export function AgentPlaySubpage({ page }: AgentPlaySubpageProps) {
           <section className={styles.section}>
             <h2 className={styles.sectionTitle}>Featured Agent</h2>
             <AgentPlayFeaturedCard agent={AGENT_PLAY_FEATURED_AGENT} />
-          </section>
-          <section className={styles.section}>
-            <AgentPlayAnalyticsPanel />
           </section>
           <section className={styles.section}>
             <AgentPlayRegisterPromo />
@@ -205,14 +162,13 @@ export function AgentPlaySubpage({ page }: AgentPlaySubpageProps) {
         </section>
       ) : null}
 
-      {page.kind === "form" &&
-      page.formKind !== undefined &&
-      page.formKind !== "register" ? (
+      {page.kind === "form" && page.formKind === "login" ? (
+        <AgentPlayLoginForm />
+      ) : null}
+
+      {page.kind === "form" && page.formKind === "contact" ? (
         <section className={`${styles.section} ${styles.formShell}`}>
-          <AgentPlayForm
-            kind={page.formKind}
-            submitLabel={page.title}
-          />
+          <AgentPlayContactForm submitLabel={page.title} />
         </section>
       ) : null}
     </main>

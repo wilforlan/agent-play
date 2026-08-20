@@ -23,12 +23,20 @@ vi.mock("next/navigation", () => ({
   usePathname: () => "/agent-play",
 }));
 
+vi.mock("@agent-play/node-tools/browser", () => ({
+  nodeCredentialsMaterialFromHumanPassphrase: (passw: string) =>
+    `hash:${passw}`,
+}));
+
 import { MAIN_WORLD_ORIGIN } from "@/lib/main-world";
 
 import { AgentPlay } from "./agent-play";
 import {
   AGENT_PLAY_CATEGORIES,
+  AGENT_PLAY_CLI_SHOTS,
   AGENT_PLAY_FEATURED_AGENT,
+  AGENT_PLAY_FIRST_AGENT_STEPS,
+  AGENT_PLAY_LOGIN_WORKSPACE,
   AGENT_PLAY_ORGANIZATIONS_SECTION,
   AGENT_PLAY_WORLD_SURFACES,
   getAgentPlaySitePage,
@@ -119,7 +127,7 @@ describe("Agent Play parent landing", () => {
     ).toContain("Become a Publisher");
     expect(container.textContent).toContain(AGENT_PLAY_FEATURED_AGENT.name);
     expect(container.textContent).not.toContain("OB360");
-    expect(container.textContent).toContain("Marketplace Analytics");
+    expect(container.textContent).not.toContain("Marketplace Analytics");
     expect(container.textContent).toContain("How Agent Play Works");
     const worldsSection = container.querySelector(
       'section[aria-labelledby="worlds-title"]',
@@ -294,6 +302,165 @@ describe("Agent Play parent landing", () => {
     );
     expect(fetchMock).toHaveBeenCalledWith(
       AGENT_PLAY_ORGANIZATIONS_SECTION.listHref,
+    );
+  });
+
+  it("restores a publisher workspace from credentials and lists agent earnings", async () => {
+    const login = getAgentPlaySitePage(["login"]);
+    expect(login).toBeDefined();
+    if (login === undefined) {
+      throw new Error("login page missing");
+    }
+
+    const passphrase =
+      "alpha bravo charlie delta echo foxtrot golf hotel india juliet";
+    const fetchMock = vi.fn().mockImplementation(async (url: string, init?: RequestInit) => {
+      if (url === AGENT_PLAY_LOGIN_WORKSPACE.validateHref) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ ok: true, nodeKind: "main" }),
+        };
+      }
+      if (url === AGENT_PLAY_LOGIN_WORKSPACE.nodesHref) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            mainNode: {
+              nodeId: "org-node-1",
+              kind: "main",
+              createdAt: "2026-08-19T22:00:00.000Z",
+              agentNodeIds: ["agt-helpdesk"],
+            },
+            agentNodes: [
+              {
+                agentId: "agt-helpdesk",
+                name: "IT Helpdesk Agent",
+                toolNames: ["ticket"],
+                zoneCount: 4,
+                yieldCount: 12,
+                flagged: false,
+                createdAt: "2026-08-19T22:00:00.000Z",
+                updatedAt: "2026-08-19T22:00:00.000Z",
+              },
+            ],
+          }),
+        };
+      }
+      if (
+        typeof url === "string" &&
+        url.startsWith(AGENT_PLAY_LOGIN_WORKSPACE.agentsHref) &&
+        init?.method === "DELETE"
+      ) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ ok: true }),
+        };
+      }
+      return {
+        ok: false,
+        status: 404,
+        json: async () => ({ error: "not found" }),
+      };
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    mount(<AgentPlaySubpage page={login} />);
+
+    expect(container.querySelector('input[type="file"]')).not.toBeNull();
+    expect(container.querySelector('input[name="email"]')).toBeNull();
+    expect(container.querySelector('input[name="password"]')).toBeNull();
+    expect(container.textContent).toContain(
+      AGENT_PLAY_LOGIN_WORKSPACE.firstAgentTitle,
+    );
+    for (const step of AGENT_PLAY_FIRST_AGENT_STEPS) {
+      expect(container.textContent).toContain(step.title);
+    }
+    for (const shot of AGENT_PLAY_CLI_SHOTS) {
+      const frame = container.querySelector(
+        `[aria-label="${shot.title}"]`,
+      );
+      expect(frame).not.toBeNull();
+      expect(frame?.textContent).toContain(shot.lines[0]?.text);
+    }
+    expect(container.querySelector('a[href="/doc/cli"]')).not.toBeNull();
+
+    const fileInput = container.querySelector(
+      'input[type="file"]',
+    ) as HTMLInputElement | null;
+    expect(fileInput).not.toBeNull();
+    if (fileInput === null) {
+      throw new Error("credentials file input missing");
+    }
+
+    const file = new File(
+      [
+        JSON.stringify({
+          serverUrl: "https://agent-play.com",
+          nodeId: "org-node-1",
+          passw: passphrase,
+        }),
+      ],
+      "credentials.json",
+      { type: "application/json" },
+    );
+    Object.defineProperty(fileInput, "files", {
+      configurable: true,
+      value: [file],
+    });
+
+    await act(async () => {
+      fileInput.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+
+    const restore = container.querySelector(
+      'button[type="submit"]',
+    ) as HTMLButtonElement | null;
+    expect(restore).not.toBeNull();
+    if (restore === null) {
+      throw new Error("restore button missing");
+    }
+
+    await act(async () => {
+      restore.click();
+    });
+
+    await vi.waitFor(() => {
+      expect(container.textContent).toContain("IT Helpdesk Agent");
+    });
+    expect(container.textContent).toContain(
+      AGENT_PLAY_LOGIN_WORKSPACE.agentsTitle,
+    );
+    expect(container.textContent).toContain(
+      AGENT_PLAY_LOGIN_WORKSPACE.yieldLabel,
+    );
+    expect(container.textContent).toContain("12");
+    expect(container.textContent).toContain(
+      AGENT_PLAY_LOGIN_WORKSPACE.manageTitle,
+    );
+    expect(container.textContent).not.toContain(passphrase);
+    const validateCall = fetchMock.mock.calls.find(
+      (call) => call[0] === AGENT_PLAY_LOGIN_WORKSPACE.validateHref,
+    );
+    expect(validateCall).toBeDefined();
+    const validateHeaders = (validateCall?.[1] as RequestInit | undefined)
+      ?.headers as Record<string, string> | undefined;
+    expect(validateHeaders?.["x-node-id"]).toBe("org-node-1");
+    expect(validateHeaders?.["x-node-passw"]).toBe(`hash:${passphrase}`);
+
+    const remove = Array.from(container.querySelectorAll("button")).find(
+      (button) =>
+        button.textContent === AGENT_PLAY_LOGIN_WORKSPACE.deleteAgentCta,
+    );
+    expect(remove).toBeDefined();
+    await act(async () => {
+      remove?.click();
+    });
+    expect(fetchMock).toHaveBeenCalledWith(
+      `${AGENT_PLAY_LOGIN_WORKSPACE.agentsHref}?id=agt-helpdesk`,
+      expect.objectContaining({ method: "DELETE" }),
     );
   });
 });

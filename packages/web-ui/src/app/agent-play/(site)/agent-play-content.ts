@@ -55,6 +55,17 @@ export type AgentPlayStep = {
   readonly body: string;
 };
 
+export type AgentPlayCliLine = {
+  readonly kind: "prompt" | "output";
+  readonly text: string;
+};
+
+export type AgentPlayCliShot = {
+  readonly title: string;
+  readonly caption: string;
+  readonly lines: readonly AgentPlayCliLine[];
+};
+
 export type AgentPlayArticleSection = {
   readonly title: string;
   readonly body: string;
@@ -320,9 +331,86 @@ export const AGENT_PLAY_CLI_ONBOARDING = {
   initializeDocHref: "/doc/initialize-agent-server-and-template",
   installCommand: "npx agent-play initialize",
   createAgentCommand: "npx agent-play create-agent-node",
+  inspectCommand: "npx agent-play inspect-node",
   installTitle: "Install and initialize",
   hostingTitle: "Host your agents",
 } as const;
+
+export const AGENT_PLAY_LOGIN_WORKSPACE = {
+  uploadLabel: "credentials.json",
+  uploadHelp:
+    "Use the file downloaded when you registered the organization. Agent Play hashes the passphrase in the browser and never sends the raw phrase.",
+  restoreCta: "Open publisher workspace",
+  signOutCta: "Sign out",
+  agentsTitle: "Your agents",
+  agentsEmpty: "No agents are attached to this organization yet.",
+  earningsTitle: "Earnings",
+  earningsLead:
+    "Talk time, assist work, and billed world actions credit Power-Ups on the agent. Yield is the running total; zones show how often the agent was in play.",
+  yieldLabel: "Power-Ups earned",
+  zonesLabel: "Zones",
+  manageTitle: "Manage account",
+  deleteAgentCta: "Remove agent",
+  firstAgentTitle: "Create your first agent",
+  firstAgentLead:
+    "The publisher workspace restores from credentials.json. Create agent nodes with the CLI, then host them on Main World so players can talk, chat, and assist.",
+  validateHref: "/api/nodes/validate",
+  nodesHref: "/api/nodes",
+  agentsHref: "/api/agents",
+} as const;
+
+export const AGENT_PLAY_FIRST_AGENT_STEPS: readonly AgentPlayStep[] = [
+  {
+    step: "1",
+    title: "Save credentials.json",
+    body: "Keep the file from organization registration at ~/.agent-play/credentials.json. The ten-word passphrase is the only way back into this account.",
+  },
+  {
+    step: "2",
+    title: "Initialize a host",
+    body: "Scaffold a starter agent repository that talks to this Agent Play deployment.",
+  },
+  {
+    step: "3",
+    title: "Create an agent node",
+    body: "Derive a child identity under your organization main node. The CLI appends it to credentials.json.",
+  },
+  {
+    step: "4",
+    title: "Host and earn",
+    body: "Add the agent on Main World. Billed talk time and assist actions credit Power-Ups you can review as earnings in this workspace.",
+  },
+];
+
+export const AGENT_PLAY_CLI_SHOTS: readonly AgentPlayCliShot[] = [
+  {
+    title: "Initialize the host",
+    caption: "Scaffold starter files from any directory.",
+    lines: [
+      { kind: "prompt", text: AGENT_PLAY_CLI_ONBOARDING.installCommand },
+      { kind: "output", text: "Environment? production" },
+      { kind: "output", text: "Scaffolded starter files in ./agent-play-host" },
+    ],
+  },
+  {
+    title: "Create an agent node",
+    caption: "Attaches a child identity under your organization main node.",
+    lines: [
+      { kind: "prompt", text: AGENT_PLAY_CLI_ONBOARDING.createAgentCommand },
+      { kind: "output", text: "Created agent node under this main node." },
+      { kind: "output", text: "Appended to ~/.agent-play/credentials.json" },
+    ],
+  },
+  {
+    title: "Inspect the account",
+    caption: "Confirm the main node and every attached agent.",
+    lines: [
+      { kind: "prompt", text: AGENT_PLAY_CLI_ONBOARDING.inspectCommand },
+      { kind: "output", text: "main node: restored from credentials.json" },
+      { kind: "output", text: "agent nodes: listed from GET /api/nodes" },
+    ],
+  },
+];
 
 export const AGENT_PLAY_PLAYER_ACTIONS: readonly AgentPlayPillar[] = [
   {
@@ -462,7 +550,7 @@ export const AGENT_PLAY_SITE_PAGES: readonly AgentPlaySitePage[] = [
     path: ["login"],
     title: "Login",
     kicker: "Publishers",
-    lead: "Sign in to your publisher workspace to manage agents, demos, and interest requests.",
+    lead: "Upload credentials.json to open your publisher workspace. Review agents, earnings, and the CLI steps to create your first agent.",
     kind: "form",
     formKind: "login",
   },

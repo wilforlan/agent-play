@@ -7,8 +7,11 @@ import {
   AGENT_PLAY_BOTTOM_CTA,
   AGENT_PLAY_CATEGORIES,
   AGENT_PLAY_CLI_ONBOARDING,
+  AGENT_PLAY_CLI_SHOTS,
+  AGENT_PLAY_FIRST_AGENT_STEPS,
   AGENT_PLAY_HERO,
   AGENT_PLAY_HOW_IT_WORKS,
+  AGENT_PLAY_LOGIN_WORKSPACE,
   AGENT_PLAY_MARKETPLACE_STATS,
   AGENT_PLAY_NAV_SECTIONS,
   AGENT_PLAY_ORGANIZATION_EARNING,
@@ -338,6 +341,77 @@ export function AgentPlayCliOnboarding() {
           className={styles.secondaryBtn}
         >
           How to install and host agents
+        </Link>
+      </div>
+    </section>
+  );
+}
+
+export function AgentPlayFirstAgentGuide() {
+  return (
+    <section
+      className={styles.section}
+      aria-labelledby="first-agent-title"
+    >
+      <div className={styles.sectionHeader}>
+        <h2 id="first-agent-title" className={styles.sectionTitle}>
+          {AGENT_PLAY_LOGIN_WORKSPACE.firstAgentTitle}
+        </h2>
+      </div>
+      <p className={styles.sectionLead}>
+        {AGENT_PLAY_LOGIN_WORKSPACE.firstAgentLead}
+      </p>
+      <ol className={styles.steps}>
+        {AGENT_PLAY_FIRST_AGENT_STEPS.map((step) => (
+          <li key={step.step} className={styles.card}>
+            <span className={styles.stepIndex}>{step.step}</span>
+            <h3 className={styles.agentName}>{step.title}</h3>
+            <p className={styles.muted}>{step.body}</p>
+          </li>
+        ))}
+      </ol>
+      <div className={styles.cliShotGrid}>
+        {AGENT_PLAY_CLI_SHOTS.map((shot) => (
+          <figure
+            key={shot.title}
+            className={styles.cliFrame}
+            aria-label={shot.title}
+          >
+            <div className={styles.cliChrome} aria-hidden>
+              <span className={styles.cliDot} />
+              <span className={styles.cliDot} />
+              <span className={styles.cliDot} />
+              <span className={styles.cliChromeTitle}>{shot.title}</span>
+            </div>
+            <pre className={styles.cliBody}>
+              {shot.lines.map((line) => (
+                <span
+                  key={`${line.kind}-${line.text}`}
+                  className={
+                    line.kind === "prompt" ? styles.cliPrompt : styles.cliOutput
+                  }
+                >
+                  {line.kind === "prompt" ? `$ ${line.text}` : line.text}
+                  {"\n"}
+                </span>
+              ))}
+            </pre>
+            <figcaption className={styles.cliCaption}>{shot.caption}</figcaption>
+          </figure>
+        ))}
+      </div>
+      <div className={styles.actions}>
+        <Link
+          href={AGENT_PLAY_CLI_ONBOARDING.cliDocHref}
+          className={styles.primaryBtn}
+        >
+          CLI docs
+        </Link>
+        <Link
+          href={AGENT_PLAY_CLI_ONBOARDING.initializeDocHref}
+          className={styles.secondaryBtn}
+        >
+          Initialize walkthrough
         </Link>
       </div>
     </section>

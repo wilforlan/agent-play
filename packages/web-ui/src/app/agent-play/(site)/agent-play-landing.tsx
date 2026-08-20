@@ -3,12 +3,10 @@ import React from "react";
 
 import { AGENT_PLAY_FEATURED_AGENT } from "./agent-play-content";
 import {
-  AgentPlayAnalyticsPanel,
   AgentPlayBottomCta,
   AgentPlayCategoryChips,
   AgentPlayFeaturedCard,
   AgentPlayHowItWorks,
-  AgentPlayInsights,
   AgentPlayLandingHero,
   AgentPlayMarketplaceStats,
   AgentPlayPillars,
@@ -34,10 +32,6 @@ export function AgentPlayLanding() {
           </div>
         </div>
         <AgentPlayFeaturedCard agent={AGENT_PLAY_FEATURED_AGENT} />
-      </section>
-
-      <section className={styles.section}>
-        <AgentPlayAnalyticsPanel />
       </section>
 
       <section className={styles.section}>
@@ -90,10 +84,6 @@ export function AgentPlayLanding() {
           </Link>
         </div>
         <p className={styles.empty}>No featured agents available yet.</p>
-      </section>
-
-      <section className={styles.section}>
-        <AgentPlayInsights />
       </section>
 
       <section className={styles.section} aria-labelledby="categories-title">

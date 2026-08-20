@@ -8,10 +8,13 @@ import {
   AGENT_PLAY_CATALOG,
   AGENT_PLAY_CATEGORIES,
   AGENT_PLAY_CLI_ONBOARDING,
+  AGENT_PLAY_CLI_SHOTS,
   AGENT_PLAY_FEATURED_AGENT,
+  AGENT_PLAY_FIRST_AGENT_STEPS,
   AGENT_PLAY_FOOTER_COLUMNS,
   AGENT_PLAY_HERO,
   AGENT_PLAY_HOW_IT_WORKS,
+  AGENT_PLAY_LOGIN_WORKSPACE,
   AGENT_PLAY_MARKETPLACE_STATS,
   AGENT_PLAY_NAV,
   AGENT_PLAY_NAV_SECTIONS,
@@ -204,6 +207,37 @@ describe("Agent Play marketplace site content", () => {
     expect(AGENT_PLAY_ORGANIZATIONS_SECTION.empty).toMatch(/no organizations/i);
     expect(AGENT_PLAY_ORGANIZATIONS_SECTION.listHref).toBe(
       "/api/agent-play/organizations",
+    );
+  });
+
+  it("describes publisher login as credentials restore, first-agent steps, and earnings", () => {
+    expect(getAgentPlaySitePage(["login"])?.lead).toMatch(/credentials\.json/i);
+    expect(AGENT_PLAY_LOGIN_WORKSPACE.uploadLabel).toBe("credentials.json");
+    expect(AGENT_PLAY_LOGIN_WORKSPACE.agentsTitle).toBe("Your agents");
+    expect(AGENT_PLAY_LOGIN_WORKSPACE.earningsTitle).toBe("Earnings");
+    expect(AGENT_PLAY_LOGIN_WORKSPACE.validateHref).toBe("/api/nodes/validate");
+    expect(AGENT_PLAY_LOGIN_WORKSPACE.nodesHref).toBe("/api/nodes");
+    expect(AGENT_PLAY_FIRST_AGENT_STEPS).toHaveLength(4);
+    expect(AGENT_PLAY_FIRST_AGENT_STEPS.map((step) => step.title)).toEqual([
+      "Save credentials.json",
+      "Initialize a host",
+      "Create an agent node",
+      "Host and earn",
+    ]);
+    expect(AGENT_PLAY_CLI_SHOTS).toHaveLength(3);
+    expect(AGENT_PLAY_CLI_SHOTS.every((shot) => shot.lines.length >= 2)).toBe(
+      true,
+    );
+    expect(
+      AGENT_PLAY_CLI_SHOTS.every((shot) =>
+        shot.lines.some(
+          (line) =>
+            line.kind === "prompt" && line.text.startsWith("npx agent-play"),
+        ),
+      ),
+    ).toBe(true);
+    expect(AGENT_PLAY_CLI_ONBOARDING.inspectCommand).toBe(
+      "npx agent-play inspect-node",
     );
   });
 
