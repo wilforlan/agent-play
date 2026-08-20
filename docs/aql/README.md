@@ -8,7 +8,7 @@ AQL is a small, line-oriented language used in the Agent Play **Node Playground*
 |----------|----------|
 | [Introduction](introduction.md) | What AQL is for, mental model, execution flow |
 | [Language reference](language-reference.md) | Single-page catalog of every AQL command — connection, inspection, agent ops, space lifecycle, amenity content (`USE AMENITY`, `ADD SHOP ITEM`, `REMOVE AMENITY ITEMS`, …), wallet, error catalog, end-to-end recipes |
-| [Playground](playground.md) | `/playground` UI: Connect, Run, passphrase, autocomplete, headers |
+| [Playground](playground.md) | `/playground` UI: Connect, Run, passphrase, autocomplete, headers. Public landings: `/agent-playground` and `/aql` (Main World `https://world1.v0peer.org`) |
 | [Integration guide](integration.md) | `runAql`, execution state, runtime client, extending AQL |
 | [Examples](examples.md) | Copy-paste recipes and patterns |
 | [Troubleshooting](troubleshooting.md) | Common errors and fixes |

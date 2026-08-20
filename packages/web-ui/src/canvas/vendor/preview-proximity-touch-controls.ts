@@ -275,6 +275,23 @@ export function createPreviewProximityTouchControls(
     const peerTalkLabel = options.getPeerTalkLabel?.() ?? null;
     const nearPeerTalk =
       typeof peerTalkLabel === "string" && peerTalkLabel.length > 0;
+    const applyAgentMemberKeys = (): void => {
+      btnAssist.disabled = !can;
+      subA.textContent = "Assist";
+      btnAssist.removeAttribute("aria-label");
+      btnAssist.classList.remove(
+        "preview-proximity-touch-pad__key--proximity-active",
+        "preview-proximity-touch-pad__key--proximity-hint"
+      );
+      btnChat.disabled = !can;
+      btnPushToTalk.disabled = !can;
+      subP.textContent = "Push";
+      btnPushToTalk.classList.remove(
+        "preview-proximity-touch-pad__key--proximity-active",
+        "preview-proximity-touch-pad__key--proximity-hint"
+      );
+      btnPushToTalk.removeAttribute("aria-label");
+    };
     if (inHouseInteriorPurchase) {
       btnAssist.disabled = true;
       subA.textContent = "Assist";
@@ -311,19 +328,6 @@ export function createPreviewProximityTouchControls(
         "aria-label",
         `${itemActionLabel ?? "Buy"} amenity item`
       );
-    } else if (nearAmenity) {
-      btnAssist.disabled = true;
-      subA.textContent = "Assist";
-      btnAssist.removeAttribute("aria-label");
-      btnChat.disabled = true;
-      btnPushToTalk.disabled = false;
-      subP.textContent = "Enter";
-      btnPushToTalk.classList.add("preview-proximity-touch-pad__key--proximity-active");
-      btnPushToTalk.classList.remove("preview-proximity-touch-pad__key--proximity-hint");
-      btnPushToTalk.setAttribute(
-        "aria-label",
-        `Enter ${amenityLabel ?? "amenity"}`
-      );
     } else if (nearGameStage) {
       const verb = options.getGameStageProximityVerb?.() ?? "Use";
       const activatable = options.getGameStageProximityActivatable?.() ?? true;
@@ -349,6 +353,21 @@ export function createPreviewProximityTouchControls(
       } else {
         btnPushToTalk.setAttribute("aria-label", verb);
       }
+    } else if (can) {
+      applyAgentMemberKeys();
+    } else if (nearAmenity) {
+      btnAssist.disabled = true;
+      subA.textContent = "Assist";
+      btnAssist.removeAttribute("aria-label");
+      btnChat.disabled = true;
+      btnPushToTalk.disabled = false;
+      subP.textContent = "Enter";
+      btnPushToTalk.classList.add("preview-proximity-touch-pad__key--proximity-active");
+      btnPushToTalk.classList.remove("preview-proximity-touch-pad__key--proximity-hint");
+      btnPushToTalk.setAttribute(
+        "aria-label",
+        `Enter ${amenityLabel ?? "amenity"}`
+      );
     } else if (nearParking) {
       const verb = options.getParkingProximityVerb?.() ?? "Buy ticket";
       const activatable = options.getParkingProximityActivatable?.() ?? true;
@@ -435,21 +454,7 @@ export function createPreviewProximityTouchControls(
       );
       btnPushToTalk.removeAttribute("aria-label");
     } else {
-      btnAssist.disabled = !can;
-      subA.textContent = "Assist";
-      btnAssist.removeAttribute("aria-label");
-      btnAssist.classList.remove(
-        "preview-proximity-touch-pad__key--proximity-active",
-        "preview-proximity-touch-pad__key--proximity-hint"
-      );
-      btnChat.disabled = !can;
-      btnPushToTalk.disabled = !can;
-      subP.textContent = "Push";
-      btnPushToTalk.classList.remove(
-        "preview-proximity-touch-pad__key--proximity-active",
-        "preview-proximity-touch-pad__key--proximity-hint"
-      );
-      btnPushToTalk.removeAttribute("aria-label");
+      applyAgentMemberKeys();
     }
   };
 

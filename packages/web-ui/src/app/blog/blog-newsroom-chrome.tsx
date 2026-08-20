@@ -11,6 +11,7 @@ type BlogNewsroomChromeProps = {
 const navItems = [
   { href: "/", label: "Playworld" },
   { href: "/doc", label: "Documentation" },
+  { href: "/agent-playground", label: "Playground" },
   { href: "/playground", label: "AQL Playground" },
 ] as const;
 

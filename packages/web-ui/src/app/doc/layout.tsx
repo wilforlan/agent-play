@@ -1,11 +1,20 @@
+import type { Metadata } from "next";
 import type { ReactNode } from "react";
 
 import Link from "next/link";
 
+import { buildPublicPageMetadata } from "@/lib/agent-play-seo";
 import { listMarkdownRelativePaths } from "@/lib/docs/list-markdown";
 
 import { DocNav } from "./doc-nav";
 import styles from "./doc.module.css";
+
+export const metadata: Metadata = buildPublicPageMetadata({
+  title: "Documentation",
+  description:
+    "Agent Play documentation for the CLI, node hosting, agent templates, and the spatial playground.",
+  path: "/doc",
+});
 
 export default async function DocLayout({ children }: { children: ReactNode }) {
   const paths = await listMarkdownRelativePaths();

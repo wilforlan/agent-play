@@ -21,6 +21,43 @@ function normalizeServerUrl(url: string): string {
   return url.trim().replace(/\/$/, "");
 }
 
+const WORLD1_HOSTS = new Set([
+  "agent-play.com",
+  "playworld.world",
+  "world1.v0peer.org",
+]);
+
+function hostnameWithoutWww(hostname: string): string {
+  return hostname.toLowerCase().replace(/^www\./, "");
+}
+
+function defaultPortForProtocol(protocol: string): string {
+  if (protocol === "https:") {
+    return "443";
+  }
+  if (protocol === "http:") {
+    return "80";
+  }
+  return "";
+}
+
+function canonicalServerIdentity(url: string): string {
+  const normalized = normalizeServerUrl(url);
+  try {
+    const parsed = new URL(normalized);
+    const hostname = hostnameWithoutWww(parsed.hostname);
+    const canonicalHost = WORLD1_HOSTS.has(hostname)
+      ? "world1.v0peer.org"
+      : hostname;
+    const port =
+      parsed.port === defaultPortForProtocol(parsed.protocol) ? "" : parsed.port;
+    const host = port.length > 0 ? `${canonicalHost}:${port}` : canonicalHost;
+    return `${parsed.protocol}//${host}`;
+  } catch {
+    return normalized.toLowerCase();
+  }
+}
+
 const PLAY_API_BASE_SUFFIXES = ["/api/agent-play", "/agent-play"] as const;
 
 function resolveApiOriginPrefix(apiBase: string): string {
@@ -103,7 +140,7 @@ function credentialsServerMatchesDeployment(options: {
     resolveDeploymentServerUrlFromApiBase(options.apiBase)
   );
   const fromFile = normalizeServerUrl(options.credentialsServerUrl);
-  if (fromFile === expected) {
+  if (canonicalServerIdentity(fromFile) === canonicalServerIdentity(expected)) {
     return { ok: true };
   }
   return {

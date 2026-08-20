@@ -2681,6 +2681,7 @@ let activeIntercomAddress: string | null = null;
 let sessionInteractionPanel:
   | ReturnType<typeof createPreviewSessionInteractionPanel>
   | null = null;
+let expandHumanAgentInteractionPanel: (() => void) | null = null;
 let peerCallController: ReturnType<typeof createPeerCallController> | null =
   null;
 let peerCallRinger: ReturnType<typeof createPreviewRingerEngine> | null = null;
@@ -5066,6 +5067,8 @@ function onFrame(): void {
       proximityLegendEl.textContent = sold
         ? `Near ${buyable.tooltipModel.name} (SOLD). P: view`
         : `Near ${buyable.tooltipModel.name}. P: buy ($${buyable.tooltipModel.priceUsd.toFixed(2)})`;
+    } else if (lastProximityPartnerId !== null) {
+      proximityLegendEl.textContent = `Near ${playerDisplayName(lastProximityPartnerId)}. A: for assist · C: for chat · P: push to talk · Z: for zone · Y: for yield`;
     } else if (lastYardAmenityPadTarget !== null) {
       const amenityName =
         AMENITY_DISPLAY_LABEL[lastYardAmenityPadTarget.kind as AmenityKind];
@@ -5096,8 +5099,6 @@ function onFrame(): void {
         proximityLegendEl.textContent =
           `Near parking bay ${String(bay.bay)} (layer ${String(bay.layer)}). P: inspect spot`;
       }
-    } else if (lastProximityPartnerId !== null) {
-      proximityLegendEl.textContent = `Near ${playerDisplayName(lastProximityPartnerId)}. A: for assist · C: for chat · P: push to talk · Z: for zone · Y: for yield`;
     } else if (lastStructureProximityTarget !== null) {
       const target = lastStructureProximityTarget;
       const targetName = target.label ?? target.spaceId ?? "cabinet";
@@ -5404,6 +5405,10 @@ export function bootstrap(): void {
       onClosePanel: () => {
         mobileSidePanelControls?.closePanels();
       },
+      onReveal: () => {
+        expandHumanAgentInteractionPanel?.();
+        mobileSidePanelControls?.openRightPanel();
+      },
     });
 
     controlStack.append(proximityLegend, sessionInteractionPanel.element);
@@ -5624,6 +5629,7 @@ export function bootstrap(): void {
         return housePurchasePanel?.isOpen() === true ? "Hide" : "Buy";
       },
       getParkingProximityLabel: () => {
+        if (lastProximityPartnerId !== null) return null;
         if (lastParkingBayNearest === null) return null;
         return `Bay ${String(lastParkingBayNearest.bay)}`;
       },
@@ -5633,6 +5639,7 @@ export function bootstrap(): void {
       },
       getParkingProximityActivatable: () => lastParkingBayNearest !== null,
       getHouseProximityLabel: () => {
+        if (lastProximityPartnerId !== null) return null;
         if (lastHouseNearest === null) return null;
         const house = findHouseSlot(
           resolveHouseStreetContent(),
@@ -5674,6 +5681,13 @@ export function bootstrap(): void {
       getPeerTalkLabel: () => peerCallController?.getPeerTalkLabel() ?? null,
       onAssist: () => {
         noteArrivalQuestStep("touch_control");
+        const partner = registeredAgentPartnerForProximityOrNull(
+          lastProximityPartnerId
+        );
+        if (partner !== null && partner !== HUMAN_VIEWER_PLAYER_ID) {
+          triggerProximityAssistOrChat("assist");
+          return;
+        }
         if (lastHouseNearest !== null) {
           const house = findHouseSlot(
             resolveHouseStreetContent(),
@@ -5839,6 +5853,9 @@ export function bootstrap(): void {
           savePanelPlacement("debug", { collapsed });
         },
       }),
+    };
+    expandHumanAgentInteractionPanel = () => {
+      floatingPanelHandles.session.expand();
     };
     const floatingPanels = [
       floatingPanelHandles.messages,

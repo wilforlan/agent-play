@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 
+import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 
 import { DOC_BROWSER_ROUTE } from "@/lib/docs/doc-public-path";
@@ -13,6 +14,30 @@ import { resolveSlugToRelativeMdPath } from "@/lib/docs/resolve-doc-path";
 import styles from "../doc.module.css";
 
 export const dynamic = "force-static";
+
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ slug?: string[] }>;
+}): Promise<Metadata> {
+  const { slug } = await params;
+  const segments = slug ?? [];
+  const leaf = segments[segments.length - 1];
+  const title =
+    segments.length === 0 || leaf === undefined
+      ? "Documentation"
+      : leaf.replace(/-/g, " ");
+  const path =
+    segments.length === 0 ? "/doc" : `/doc/${segments.join("/")}`;
+
+  return {
+    title,
+    description: `Agent Play documentation: ${title}.`,
+    alternates: {
+      canonical: path,
+    },
+  };
+}
 
 export default async function DocPage({
   params,

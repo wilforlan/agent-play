@@ -1,4 +1,16 @@
+import type { Metadata } from "next";
+
+import { buildPublicPageMetadata } from "@/lib/agent-play-seo";
+import { resolveMainWorldBaseUrl } from "@/lib/main-world";
+
 import PlaygroundClient from "./playground-client";
+
+export const metadata: Metadata = buildPublicPageMetadata({
+  title: "AQL Playground",
+  description:
+    "Query Agent Play world state with AQL — inspect nodes, amenities, and live spatial data.",
+  path: "/playground",
+});
 
 const ENABLE_PLAYGROUND =
   process.env.NEXT_PUBLIC_ENABLE_NODE_PLAYGROUND === "1" ||
@@ -53,7 +65,11 @@ export default function NodePlaygroundPage() {
           to enable shared shell styling.
         </div>
       ) : null}
-      <PlaygroundClient defaultServerUrl={process.env.NEXT_PUBLIC_SITE_ORIGIN ?? ""} />
+      <PlaygroundClient
+        defaultServerUrl={resolveMainWorldBaseUrl({
+          envValue: process.env.NEXT_PUBLIC_MAIN_WORLD_ORIGIN,
+        })}
+      />
     </>
   );
 }

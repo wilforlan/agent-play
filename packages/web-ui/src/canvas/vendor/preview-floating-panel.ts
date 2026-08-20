@@ -51,6 +51,7 @@ export function attachPreviewFloatingPanelDrag(options: {
   dragHandle: HTMLButtonElement;
   refreshBounds: () => void;
   setLayoutMode: (mode: PreviewFloatingPanelLayoutMode) => void;
+  expand: () => void;
 } {
   const dragHandle = document.createElement("button");
   dragHandle.type = "button";
@@ -210,5 +211,12 @@ export function attachPreviewFloatingPanelDrag(options: {
     setCollapsed(!readCollapsed(), true);
   });
 
-  return { dragHandle, refreshBounds, setLayoutMode };
+  const expand = (): void => {
+    if (!readCollapsed()) {
+      return;
+    }
+    setCollapsed(false, true);
+  };
+
+  return { dragHandle, refreshBounds, setLayoutMode, expand };
 }

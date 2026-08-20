@@ -68,6 +68,7 @@ describe("BlogNewsroomChrome", () => {
     expect(nav).not.toBeNull();
     expect(nav?.textContent).toContain("Playworld");
     expect(nav?.textContent).toContain("Documentation");
+    expect(nav?.textContent).toContain("Playground");
     expect(nav?.textContent).toContain("AQL Playground");
     expect(nav?.textContent).not.toContain("Newsroom");
     expect(nav?.textContent).not.toContain("GitHub");
@@ -76,6 +77,9 @@ describe("BlogNewsroomChrome", () => {
     expect(nav?.querySelector('a[href="/"]')?.textContent).toBe("Playworld");
     expect(nav?.querySelector('a[href="/doc"]')?.textContent).toBe(
       "Documentation",
+    );
+    expect(nav?.querySelector('a[href="/agent-playground"]')?.textContent).toBe(
+      "Playground",
     );
     expect(nav?.querySelector('a[href="/playground"]')?.textContent).toBe(
       "AQL Playground",
