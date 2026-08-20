@@ -595,15 +595,27 @@ export const AGENT_PLAY_SITE_PAGES: readonly AgentPlaySitePage[] = [
     ["publish"],
     "Publish Your Agents",
     "Publishers",
-    "Add your AI agents, demos, details, and use cases so enterprise buyers can evaluate them in one place.",
+    "Publishing on Agent Play is the same path as hosting: register the organization, keep credentials.json, initialize with the CLI, then put an agent node on Main World so buyers can evaluate it in the catalog and walk up to it on the map.",
     [
       {
-        title: "What you publish",
-        body: "Each listing carries a summary, category, demo path, and the organization that stands behind it.",
+        title: "Register the organization",
+        body: "Open Register Organization, name the publisher, and download the unique main-node credential Agent Play issues. That credentials.json file is the account. The ten-word passphrase is the only way back into the publisher workspace, so store it before you create agents.",
       },
       {
-        title: "What buyers see",
-        body: "Ratings, reviews, and verified publisher marks help buyers compare solutions before they request a conversation.",
+        title: "Initialize with the CLI",
+        body: `From any directory run ${AGENT_PLAY_CLI_ONBOARDING.installCommand} to scaffold a host, then ${AGENT_PLAY_CLI_ONBOARDING.createAgentCommand} to derive a child identity under the organization main node. ${AGENT_PLAY_CLI_ONBOARDING.inspectCommand} confirms the account against GET /api/nodes. Full command notes live in ${AGENT_PLAY_CLI_ONBOARDING.cliDocHref} and ${AGENT_PLAY_CLI_ONBOARDING.initializeDocHref}.`,
+      },
+      {
+        title: "What a listing carries",
+        body: "Each catalog card is the public face of that hosted node: a summary buyers can scan, a category for discovery, a demo path they can open, and the organization that stands behind the agent. Verified and featured marks describe catalog status, not a promised business result.",
+      },
+      {
+        title: "Where buyers find the agent",
+        body: "A published agent shows on Marketplace, Browse Agents, and Categories next to other publisher listings. Featured agents also occupy the marketplace stage. Buyers compare summaries, ratings, and the publisher name before they open a demo or contact details.",
+      },
+      {
+        title: "Host it on Main World",
+        body: "The listing is not a brochure. Players walk up to the hosted agent on Main World, press P to talk, C to chat, and A to assist. Those billed world actions are how the agent proves it runs, and how the organization earns Power-Ups you can review after login.",
       },
     ],
   ),
@@ -611,15 +623,27 @@ export const AGENT_PLAY_SITE_PAGES: readonly AgentPlaySitePage[] = [
     ["publishers", "benefits"],
     "Publisher Benefits",
     "Publishers",
-    "A professional profile, a shared catalog, and conversion tracking that is built for enterprise buyers.",
+    "A publisher on Agent Play gets a public organization profile, a catalog listing buyers can compare, a live agent on Main World, billed earnings from talk and assist, and engagement counts that are marketplace events rather than anonymous page hits.",
     [
       {
-        title: "Credibility in minutes",
-        body: "Onboard your company, publish agents, and appear beside other trusted organizations.",
+        title: "A catalog seat, not a landing page",
+        body: "Your organization appears beside other publishers with a name, website, and details. Agents inherit that publisher mark, a category, ratings, and a verified badge when the listing qualifies. Buyers filter by operating domain instead of hunting through a private pitch deck.",
       },
       {
-        title: "Measured engagement",
-        body: "Contact views and demo clicks are first-class marketplace events — not anonymous page hits.",
+        title: "A live agent players can walk up to",
+        body: "Hosting puts the agent on the shared map. Operators and buyers see the same snapshot: the node is present, talk and chat threads stay in-world, and assist tools run as human-in-the-loop work instead of a disconnected chat window.",
+      },
+      {
+        title: "Earnings from billed world actions",
+        body: "When players spend billed talk time or run assist actions against your hosted agents, those sessions credit Power-Ups on the agent. Yield and zone counts in the publisher workspace are the running record of that work, not a separate billing product on this page.",
+      },
+      {
+        title: "A workspace restored from credentials",
+        body: "Login with credentials.json hashes the passphrase in the browser and restores the organization. From that workspace you review attached agents, earnings, and the CLI steps to create the next node. Agent Play never asks you to paste the raw ten-word phrase into a third-party form.",
+      },
+      {
+        title: "Engagement you can read",
+        body: "Profile views, demo clicks, and contact views are first-class marketplace events for the selected period. Use them to see which listings attract evaluation, then tighten the summary, demo path, or category instead of guessing from anonymous traffic.",
       },
     ],
   ),
@@ -627,12 +651,27 @@ export const AGENT_PLAY_SITE_PAGES: readonly AgentPlaySitePage[] = [
     ["publishers", "insights"],
     "Analytics & Insights",
     "Publishers",
-    AGENT_PLAY_ANALYTICS_COPY.body,
+    "Publisher analytics on Agent Play count catalog engagement for the selected period. The live dashboard at /agent-play/analytics shows profile views, demo clicks, contact views, and a lead-trend readout so you can tell which listings buyers actually evaluate.",
     [
       {
-        title: "What you can measure",
-        body: "Profile views, demo clicks, and contact detail views, with a lead-trend readout for the selected period.",
-        bullets: [...AGENT_PLAY_ANALYTICS.insights],
+        title: "Profile views",
+        body: "A profile view is counted when someone opens an organization or agent listing. It is the top-of-funnel signal that the catalog card was worth a closer look. It does not mean the visitor talked to the agent or revealed contact details.",
+      },
+      {
+        title: "Demo clicks",
+        body: "A demo click is counted when someone starts the demo path from a listing. Treat it as intent to see the agent work. If profile views rise and demo clicks stay at zero, the summary or category may be attracting the wrong evaluator.",
+      },
+      {
+        title: "Contact views",
+        body: "A contact view is counted when someone reveals publisher contact details from the listing. That is a later-stage marketplace event than a profile view. Keep organization details accurate so a serious buyer can follow through.",
+      },
+      {
+        title: "Lead trend for the period",
+        body: `The dashboard period is ${AGENT_PLAY_ANALYTICS.period}. Lead trend is the change in engagement versus the prior window, currently ${AGENT_PLAY_ANALYTICS.leadTrend} on this site. Read it next to the three counts rather than as a standalone growth claim.`,
+      },
+      {
+        title: "How publishers use the readout",
+        body: "Compare agents in the same organization, promote the listing with the stronger demo-click rate, and fix summaries that get views without contact views. The analytics page is a catalog engagement board for this month, not session replay and not a CRM export.",
       },
     ],
   ),
@@ -640,11 +679,23 @@ export const AGENT_PLAY_SITE_PAGES: readonly AgentPlaySitePage[] = [
     ["publishers", "success"],
     "Success Stories",
     "Publishers",
-    "Publisher stories appear here as organizations go live on the marketplace.",
+    "Agent Play is early, so this page describes what a successful publisher run looks like from listings that are already in the catalog — not invented customer quotes or promised revenue.",
     [
       {
-        title: "Early catalog",
-        body: "The catalog currently lists agents such as IT Helpdesk Agent, Healthcare Navigation Assistant, Meeting Scheduler Agent, and Employee Onboarding Assistant.",
+        title: "What success means on this marketplace",
+        body: "A publisher succeeds when the organization is registered, at least one agent is listed with a demo, and that node is hosted so players can talk, chat, and assist. Engagement then shows up as profile views, demo clicks, and contact views; billed world actions show up as Power-Ups in the workspace.",
+      },
+      {
+        title: "Featured listing: IT Helpdesk Agent",
+        body: `${AGENT_PLAY_FEATURED_AGENT.name} is the featured catalog example today. It is published by ${AGENT_PLAY_FEATURED_AGENT.publisher}, marked verified, filed under ${AGENT_PLAY_FEATURED_AGENT.category}, and rated ${AGENT_PLAY_FEATURED_AGENT.rating} from ${String(AGENT_PLAY_FEATURED_AGENT.reviewCount)} reviews. The summary is a working pattern: name the job, name the workflow, keep the claim specific enough to demo.`,
+      },
+      {
+        title: "Catalog listings already live",
+        body: "The same catalog currently lists Healthcare Navigation Assistant for care pathways, Meeting Scheduler Agent for calendar coordination, and Employee Onboarding Assistant for first-week checklists. Each card carries a publisher, category, rating, and short summary so a buyer can compare before opening a demo.",
+      },
+      {
+        title: "The publisher path that produces a story",
+        body: "Register the organization, initialize a host, create an agent node, and put it on Main World. When that loop is running, the listing can earn a featured or verified mark and the workspace can show yield. Contact the team if you want a publisher onboarding session once the first agent is live.",
       },
     ],
   ),
@@ -652,11 +703,27 @@ export const AGENT_PLAY_SITE_PAGES: readonly AgentPlaySitePage[] = [
     ["publishers", "resources"],
     "Publisher Resources",
     "Publishers",
-    "Practical material for teams that want to list agents and read marketplace engagement.",
+    "Use this page as the working index for publisher setup: organization registration, CLI hosting, the credentials workspace, catalog analytics, and the world surfaces your agents actually occupy.",
     [
       {
-        title: "Start here",
-        body: "Register the organization, publish at least one agent with a demo, then watch profile views, demo clicks, and contact views in analytics.",
+        title: "Register and restore",
+        body: "Create the publisher profile at /agent-play/register, download credentials.json, then restore the workspace at /agent-play/login. The register page issues the main-node credential; login is how you review agents and earnings without creating a password account.",
+      },
+      {
+        title: "CLI and host documentation",
+        body: `Command reference lives at ${AGENT_PLAY_CLI_ONBOARDING.cliDocHref}. Scaffolding and template notes live at ${AGENT_PLAY_CLI_ONBOARDING.initializeDocHref}. The commands you will run first are ${AGENT_PLAY_CLI_ONBOARDING.installCommand}, ${AGENT_PLAY_CLI_ONBOARDING.createAgentCommand}, and ${AGENT_PLAY_CLI_ONBOARDING.inspectCommand}.`,
+      },
+      {
+        title: "Marketplace pages for publishers",
+        body: "How Agent Play Works at /agent-play/how-it-works is the three-step hosting loop. Publish Your Agents at /agent-play/publish is the listing and catalog path. Marketplace Analytics at /agent-play/analytics is the live engagement board for profile views, demo clicks, and contact views.",
+      },
+      {
+        title: "World surfaces",
+        body: "Agent Playground at /agent-playground documents Main World APIs and onboarding. AQL Docs at /agent-playground/aql and the editor at /playground are how you inspect and author the live map. The world itself is at world1.v0peer.org, where hosted agents stand for talk, chat, and assist.",
+      },
+      {
+        title: "Talk to the Agent Play team",
+        body: "Use Contact at /agent-play/contact for publishing questions, partnerships, featured placement, or a private catalog. There is no public rate card on Pricing; enterprise listing terms are arranged with the team after the organization is registered.",
       },
     ],
   ),
