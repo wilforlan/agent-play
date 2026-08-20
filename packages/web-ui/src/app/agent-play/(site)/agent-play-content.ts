@@ -263,7 +263,7 @@ export const AGENT_PLAY_MARKETPLACE_STATS: readonly AgentPlayMetric[] = [
   { label: "Publishers", value: "2" },
   { label: "Agents", value: "38" },
   { label: "Profile Views", value: "52" },
-  { label: "Interest Requests", value: "0" },
+  { label: "Demo Clicks", value: "0" },
 ];
 
 export const AGENT_PLAY_ANALYTICS = {
@@ -273,7 +273,6 @@ export const AGENT_PLAY_ANALYTICS = {
     { label: "Profile Views", value: "52" },
     { label: "Demo Clicks", value: "0" },
     { label: "Contact Views", value: "0" },
-    { label: "Interest Requests", value: "0" },
   ],
   insights: [
     "Track key engagement metrics in real time",
@@ -461,7 +460,7 @@ export const AGENT_PLAY_CATEGORIES = [
 
 export const AGENT_PLAY_ANALYTICS_COPY = {
   title: "Actionable Marketplace Analytics",
-  body: "Gain complete visibility into how buyers engage with your agents. Monitor profile views, demo clicks, contact detail views, and interest requests to optimize performance and drive growth.",
+  body: "Gain complete visibility into how buyers engage with your agents. Monitor profile views, demo clicks, and contact detail views to optimize performance and drive growth.",
 } as const;
 
 export const AGENT_PLAY_REGISTER_PROMO = {
@@ -619,8 +618,8 @@ export const AGENT_PLAY_SITE_PAGES: readonly AgentPlaySitePage[] = [
         body: "Onboard your company, publish agents, and appear beside other trusted organizations.",
       },
       {
-        title: "Qualified interest",
-        body: "Interest requests, contact views, and demo clicks are first-class marketplace events — not anonymous page hits.",
+        title: "Measured engagement",
+        body: "Contact views and demo clicks are first-class marketplace events — not anonymous page hits.",
       },
     ],
   ),
@@ -632,7 +631,7 @@ export const AGENT_PLAY_SITE_PAGES: readonly AgentPlaySitePage[] = [
     [
       {
         title: "What you can measure",
-        body: "Profile views, demo clicks, contact detail views, and interest requests, with a lead-trend readout for the selected period.",
+        body: "Profile views, demo clicks, and contact detail views, with a lead-trend readout for the selected period.",
         bullets: [...AGENT_PLAY_ANALYTICS.insights],
       },
     ],
@@ -657,7 +656,7 @@ export const AGENT_PLAY_SITE_PAGES: readonly AgentPlaySitePage[] = [
     [
       {
         title: "Start here",
-        body: "Register the organization, publish at least one agent with a demo, then watch profile views and interest requests in analytics.",
+        body: "Register the organization, publish at least one agent with a demo, then watch profile views, demo clicks, and contact views in analytics.",
       },
     ],
   ),
@@ -697,7 +696,7 @@ export const AGENT_PLAY_SITE_PAGES: readonly AgentPlaySitePage[] = [
     [
       {
         title: "Publish in three steps",
-        body: "Register the organization, add agent details and a demo, then review profile views, demo clicks, and interest requests.",
+        body: "Register the organization, add agent details and a demo, then review profile views, demo clicks, and contact views.",
       },
     ],
   ),
@@ -721,7 +720,7 @@ export const AGENT_PLAY_SITE_PAGES: readonly AgentPlaySitePage[] = [
     [
       {
         title: "What we collect",
-        body: "Publisher registration and contact forms store the details you submit in the browser for this session so you can confirm the request. Marketplace analytics on this site use aggregate engagement counts such as profile views, demo clicks, contact views, and interest requests.",
+        body: "Publisher registration and contact forms store the details you submit in the browser for this session so you can confirm the request. Marketplace analytics on this site use aggregate engagement counts such as profile views, demo clicks, and contact views.",
       },
       {
         title: "What we do not sell",
@@ -741,7 +740,7 @@ export const AGENT_PLAY_SITE_PAGES: readonly AgentPlaySitePage[] = [
       },
       {
         title: "Acceptable use",
-        body: "Do not use these pages to impersonate an organization, scrape private contact details, or submit interest requests you do not intend to follow.",
+        body: "Do not use these pages to impersonate an organization, scrape private contact details, or submit contact or demo requests you do not intend to follow.",
       },
     ],
   ),

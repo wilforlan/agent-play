@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
 
+import { agentPlaySiteFontClassName } from "@/lib/agent-play-site-fonts";
 import { buildPublicPageMetadata } from "@/lib/agent-play-seo";
 
 import { AgentPlaygroundChrome } from "./agent-playground-chrome";
@@ -17,5 +18,9 @@ export default function AgentPlaygroundLayout({
 }: {
   children: ReactNode;
 }) {
-  return <AgentPlaygroundChrome>{children}</AgentPlaygroundChrome>;
+  return (
+    <div className={agentPlaySiteFontClassName}>
+      <AgentPlaygroundChrome>{children}</AgentPlaygroundChrome>
+    </div>
+  );
 }

@@ -11,8 +11,8 @@ type AgentPlayGamesChromeProps = {
 export function AgentPlayGamesChrome({ children }: AgentPlayGamesChromeProps) {
   return (
     <div className={styles.page}>
-      <div className={styles.shell}>
-        <header className={styles.header}>
+      <header className={styles.header}>
+        <div className={styles.headerInner}>
           <Link href="/games" className={styles.brand}>
             <span className={styles.brandMark} aria-hidden>
               AP
@@ -26,8 +26,8 @@ export function AgentPlayGamesChrome({ children }: AgentPlayGamesChromeProps) {
               </Link>
             ))}
           </nav>
-        </header>
-      </div>
+        </div>
+      </header>
       {children}
       <footer className={styles.footer}>
         Agent Play Games — Maple Ave arcade, APU, and APW$ in Agent Play World

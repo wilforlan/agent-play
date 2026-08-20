@@ -4,6 +4,7 @@ import { MAIN_WORLD_ORIGIN } from "@/lib/main-world";
 
 import {
   AGENT_PLAY_ANALYTICS,
+  AGENT_PLAY_ANALYTICS_COPY,
   AGENT_PLAY_BRAND,
   AGENT_PLAY_CATALOG,
   AGENT_PLAY_CATEGORIES,
@@ -154,13 +155,12 @@ describe("Agent Play marketplace site content", () => {
       "Publishers",
       "Agents",
       "Profile Views",
-      "Interest Requests",
+      "Demo Clicks",
     ]);
     expect(AGENT_PLAY_ANALYTICS.metrics.map((metric) => metric.label)).toEqual([
       "Profile Views",
       "Demo Clicks",
       "Contact Views",
-      "Interest Requests",
     ]);
     expect(AGENT_PLAY_TOP_AGENTS.map((agent) => agent.name)).toEqual([
       "Healthcare Navigation Assistant",
@@ -254,5 +254,19 @@ describe("Agent Play marketplace site content", () => {
       pages: AGENT_PLAY_SITE_PAGES,
     });
     expect(copy).not.toContain("OB360");
+  });
+
+  it("does not mention interest requests in marketplace copy", () => {
+    const copy = JSON.stringify({
+      brand: AGENT_PLAY_BRAND,
+      catalog: AGENT_PLAY_CATALOG,
+      featured: AGENT_PLAY_FEATURED_AGENT,
+      footer: AGENT_PLAY_FOOTER_COLUMNS,
+      pages: AGENT_PLAY_SITE_PAGES,
+      stats: AGENT_PLAY_MARKETPLACE_STATS,
+      analytics: AGENT_PLAY_ANALYTICS,
+      analyticsCopy: AGENT_PLAY_ANALYTICS_COPY,
+    }).toLowerCase();
+    expect(copy).not.toContain("interest request");
   });
 });

@@ -15,8 +15,8 @@ const isExternalHref = (href: string): boolean => {
 export function AgentPlaygroundChrome({ children }: AgentPlaygroundChromeProps) {
   return (
     <div className={styles.page}>
-      <div className={styles.shell}>
-        <header className={styles.header}>
+      <header className={styles.header}>
+        <div className={styles.headerInner}>
           <Link href="/agent-playground" className={styles.brand}>
             <span className={styles.brandMark} aria-hidden>
               AP
@@ -42,8 +42,8 @@ export function AgentPlaygroundChrome({ children }: AgentPlaygroundChromeProps) 
               ),
             )}
           </nav>
-        </header>
-      </div>
+        </div>
+      </header>
       {children}
       <footer className={styles.footer}>
         Agent Playground — Interactive World Platform for AI Agents. Main World:

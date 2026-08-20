@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import React, { type ReactNode } from "react";
 
 import { AgentPlaygroundChrome } from "@/app/agent-playground/agent-playground-chrome";
+import { agentPlaySiteFontClassName } from "@/lib/agent-play-site-fonts";
 import { buildPublicPageMetadata } from "@/lib/agent-play-seo";
 
 export const metadata: Metadata = buildPublicPageMetadata({
@@ -12,5 +13,9 @@ export const metadata: Metadata = buildPublicPageMetadata({
 });
 
 export default function AqlDocsLayout({ children }: { children: ReactNode }) {
-  return <AgentPlaygroundChrome>{children}</AgentPlaygroundChrome>;
+  return (
+    <div className={agentPlaySiteFontClassName}>
+      <AgentPlaygroundChrome>{children}</AgentPlaygroundChrome>
+    </div>
+  );
 }
