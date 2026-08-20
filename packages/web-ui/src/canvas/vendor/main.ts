@@ -190,6 +190,7 @@ import {
 } from "./preview-debug-joystick.js";
 import {
   isPlayPadKeyChar,
+  isPlayPadModifierChord,
   isPlayPadTwoLetterCombo,
   PLAY_PAD_SEQUENCE_WINDOW_MS,
   resolvePlayPadInputFromKeyBuffer,
@@ -1471,7 +1472,11 @@ function onDocumentKeyDown(e: KeyboardEvent): void {
   }
   if (!inField && !e.repeat && getHumanPlayerId() !== null) {
     const playPadKey = e.key.toLowerCase();
-    if (isPlayPadKeyChar(playPadKey) && tryHandlePlayPadKeyPress(playPadKey)) {
+    if (
+      isPlayPadModifierChord(e) &&
+      isPlayPadKeyChar(playPadKey) &&
+      tryHandlePlayPadKeyPress(playPadKey)
+    ) {
       e.preventDefault();
       return;
     }
