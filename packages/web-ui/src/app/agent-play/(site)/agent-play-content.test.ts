@@ -199,7 +199,7 @@ describe("Agent Play marketplace site content", () => {
     );
   });
 
-  it("describes a registered organizations section on the agents catalog", () => {
+  it("describes a registered organizations section on the agents catalog and categories page", () => {
     expect(AGENT_PLAY_ORGANIZATIONS_SECTION.title).toBe(
       "Registered Organizations",
     );

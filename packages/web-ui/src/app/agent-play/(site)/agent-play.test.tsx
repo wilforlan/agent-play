@@ -255,6 +255,53 @@ describe("Agent Play parent landing", () => {
     expect(container.textContent).toContain("How organizations earn");
   });
 
+  it("loads registered organizations in a section on the categories page", async () => {
+    const categories = getAgentPlaySitePage(["categories"]);
+    expect(categories).toBeDefined();
+    if (categories === undefined) {
+      throw new Error("categories page missing");
+    }
+
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        organizations: [
+          {
+            nodeId: "org-node-1",
+            organizationName: "Northwind Agents",
+            website: "https://northwind.test",
+            details: "Helpdesk and onboarding agents",
+            createdAt: "2026-08-19T22:00:00.000Z",
+          },
+        ],
+      }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    mount(<AgentPlaySubpage page={categories} />);
+
+    const section = container.querySelector(
+      'section[aria-labelledby="organizations-title"]',
+    );
+    expect(section).not.toBeNull();
+    expect(section?.textContent).toContain(
+      AGENT_PLAY_ORGANIZATIONS_SECTION.title,
+    );
+
+    await vi.waitFor(() => {
+      expect(section?.textContent).toContain("Northwind Agents");
+    });
+    expect(section?.textContent).toContain("Helpdesk and onboarding agents");
+    expect(
+      section?.querySelector('a[href="https://northwind.test"]'),
+    ).not.toBeNull();
+    expect(container.textContent).toContain(AGENT_PLAY_CATEGORIES[1]);
+    expect(fetchMock).toHaveBeenCalledWith(
+      AGENT_PLAY_ORGANIZATIONS_SECTION.listHref,
+    );
+  });
+
   it("loads registered organizations in a section on the agents catalog", async () => {
     const agents = getAgentPlaySitePage(["agents"]);
     expect(agents).toBeDefined();

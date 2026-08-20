@@ -117,9 +117,12 @@ export function AgentPlaySubpage({ page }: AgentPlaySubpageProps) {
       ) : null}
 
       {page.kind === "categories" ? (
-        <section className={styles.section}>
-          <AgentPlayCategoryChips />
-        </section>
+        <>
+          <section className={styles.section}>
+            <AgentPlayCategoryChips />
+          </section>
+          <AgentPlayOrganizationsSection />
+        </>
       ) : null}
 
       {page.kind === "analytics" ? (
