@@ -52,6 +52,19 @@ export function isPlayPadKeyChar(char: string): boolean {
   return PLAY_PAD_KEY_CHARS.has(char);
 }
 
+export type PlayPadModifierChord = {
+  readonly shiftKey: boolean;
+  readonly ctrlKey: boolean;
+  readonly altKey: boolean;
+  readonly metaKey: boolean;
+};
+
+export function isPlayPadModifierChord(event: PlayPadModifierChord): boolean {
+  return (
+    event.shiftKey && event.ctrlKey && !event.altKey && !event.metaKey
+  );
+}
+
 export function isPlayPadTwoLetterCombo(buffer: string): boolean {
   return buffer.length === 2 && PLAY_PAD_COMBO_DIRECTION[buffer] !== undefined;
 }
@@ -169,15 +182,15 @@ export type PlayPadHelpRow = {
 };
 
 export const PLAY_PAD_HELP_ROWS: readonly PlayPadHelpRow[] = [
-  { keys: "N", description: "Attach the Play Pad handle" },
-  { keys: "K", description: "Move left (rotating sweep)" },
-  { keys: "L", description: "Move right (rotating sweep)" },
-  { keys: "I", description: "Move up" },
-  { keys: "M", description: "Move down" },
-  { keys: "MK or KM", description: "Move diagonal down-left" },
-  { keys: "LM or ML", description: "Move diagonal down-right" },
-  { keys: "IL or LI", description: "Move diagonal up-right" },
-  { keys: "IK or KI", description: "Move diagonal up-left" },
+  { keys: "Shift+Ctrl+N", description: "Attach the Play Pad handle" },
+  { keys: "Shift+Ctrl+K", description: "Move left (rotating sweep)" },
+  { keys: "Shift+Ctrl+L", description: "Move right (rotating sweep)" },
+  { keys: "Shift+Ctrl+I", description: "Move up" },
+  { keys: "Shift+Ctrl+M", description: "Move down" },
+  { keys: "Shift+Ctrl+MK or KM", description: "Move diagonal down-left" },
+  { keys: "Shift+Ctrl+LM or ML", description: "Move diagonal down-right" },
+  { keys: "Shift+Ctrl+IL or LI", description: "Move diagonal up-right" },
+  { keys: "Shift+Ctrl+IK or KI", description: "Move diagonal up-left" },
 ];
 
 const PLAY_PAD_HELP_STYLE_ID = "agent-play-preview-play-pad-help-styles";
@@ -225,7 +238,7 @@ function ensurePlayPadHelpStyles(): void {
 }
 .preview-session-interaction__play-pad-help-row {
   display: grid;
-  grid-template-columns: minmax(72px, auto) 1fr;
+  grid-template-columns: minmax(9.5rem, auto) 1fr;
   gap: 8px;
   font-size: 11px;
   line-height: 1.35;
@@ -259,7 +272,7 @@ export function createPlayPadKeysHelpSection(): HTMLElement {
   const note = document.createElement("p");
   note.className = "preview-session-interaction__play-pad-help-note";
   note.textContent =
-    "Requires joystick enabled. Press two-letter diagonals in quick succession (either order).";
+    "Requires joystick enabled. Hold Shift+Ctrl for every Play Pad key. Press two-letter diagonals in quick succession (either order) while the modifiers stay down.";
   body.append(note);
   for (const row of PLAY_PAD_HELP_ROWS) {
     const rowEl = document.createElement("div");

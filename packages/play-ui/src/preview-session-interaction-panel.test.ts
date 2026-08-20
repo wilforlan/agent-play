@@ -79,6 +79,11 @@ describe("createPreviewSessionInteractionPanel", () => {
       help?.querySelectorAll(".preview-session-interaction__play-pad-help-row")
         .length
     ).toBeGreaterThan(0);
+    expect(help?.textContent).toContain("Shift+Ctrl+N");
+    expect(
+      help?.querySelector(".preview-session-interaction__play-pad-help-note")
+        ?.textContent
+    ).toMatch(/Shift\+Ctrl/);
   });
 
   it("opens the human agent interaction panel and smooth-scrolls to the bottom on agent actions", async () => {
