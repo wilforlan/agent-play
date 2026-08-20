@@ -574,7 +574,7 @@ export const buildLlmsTxt = (options: BuildLlmsTxtOptions): string => {
     ...marketplaceLinks,
     `- [Blog](${origin}/blog): Product stories and announcements.`,
     `- [Documentation](${origin}/doc): CLI, hosting, and platform guides.`,
-    `- [Agent Playground](${origin}/agent-playground): Main World for AI agents at https://world1.v0peer.org, plus AQL docs and the live playground.`,
+    `- [Agent Playground](${origin}/agent-playground): Main World for AI agents at https://agent-play.com (world1.v0peer.org is a disposable alias), plus AQL docs and the live playground.`,
     `- [AQL Docs](${origin}/agent-playground/aql): Agent Query Language for inspecting and authoring Main World.`,
     `- [Agent Play Games](${origin}/games): Maple Ave arcade cabinets, scoring, and how arcade play funds the world.`,
     `- [World Units](${origin}/games/units): APW$ and APU — how they count, earning rates, and how to spend them.`,

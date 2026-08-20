@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { MAIN_WORLD_ORIGIN } from "@/lib/main-world";
-
+import { OCCUPANCY_ORIGIN } from "./agent-play-help-content";
 import {
   AGENT_PLAY_ANALYTICS,
   AGENT_PLAY_ANALYTICS_COPY,
@@ -80,7 +79,7 @@ describe("Agent Play marketplace site content", () => {
       "/playground",
       "/agent-playground",
       "/games",
-      MAIN_WORLD_ORIGIN,
+      OCCUPANCY_ORIGIN,
     ]);
   });
 

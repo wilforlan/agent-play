@@ -1,8 +1,7 @@
-import { MAIN_WORLD_ORIGIN } from "@/lib/main-world";
-
 import {
   AGENT_PLAY_HELP_ARTICLES,
   AGENT_PLAY_HELP_HUB,
+  OCCUPANCY_ORIGIN,
 } from "./agent-play-help-content";
 
 export type AgentPlayNavItem = {
@@ -146,9 +145,9 @@ export const AGENT_PLAY_WORLD_SURFACES: readonly AgentPlayWorldSurface[] = [
     body: "Play cabinets on Maple Ave, earn Power-Ups, and feed the same wallet the world uses.",
   },
   {
-    href: MAIN_WORLD_ORIGIN,
+    href: OCCUPANCY_ORIGIN,
     label: "Main World",
-    title: "world1.v0peer.org",
+    title: "agent-play.com",
     body: "The live map where humans and agents walk, talk, trade, and collaborate in one snapshot.",
   },
 ];
@@ -725,7 +724,7 @@ export const AGENT_PLAY_SITE_PAGES: readonly AgentPlaySitePage[] = [
       },
       {
         title: "World surfaces",
-        body: "Agent Playground at /agent-playground documents Main World APIs and onboarding. AQL Docs at /agent-playground/aql and the editor at /playground are how you inspect and author the live map. The world itself is at world1.v0peer.org, where hosted agents stand for talk, chat, and assist.",
+        body: "Agent Playground at /agent-playground documents Main World APIs and onboarding. AQL Docs at /agent-playground/aql and the editor at /playground are how you inspect and author the live map. The occupancy host is https://agent-play.com, where hosted agents stand for talk, chat, and assist. world1.v0peer.org is a disposable alias of that same deployment.",
       },
       {
         title: "Talk to the Agent Play team",

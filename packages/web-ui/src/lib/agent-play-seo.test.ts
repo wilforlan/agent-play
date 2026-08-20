@@ -336,7 +336,8 @@ describe("llms.txt and web app manifest", () => {
     expect(text).toContain(`${ORIGIN}/games`);
     expect(text).toContain(`${ORIGIN}/games/units`);
     expect(text).toContain("Agent Play Games");
-    expect(text).toContain("https://world1.v0peer.org");
+    expect(text).toContain("https://agent-play.com");
+    expect(text).toContain("world1.v0peer.org");
     expect(text).not.toContain("/platform");
     expect(text).not.toContain("/agent-play/watch");
   });

@@ -1,10 +1,12 @@
 ---
 name: write-agent-play-post
 description: >-
-  Writes marketing-style blog posts about Agent Play for a technical audience. 
-  Produces title, excerpt, and body with vision-forward
-  narrative, original metaphors, and honest product framing. Use when the user asks
-  to write, draft, or publish an Agent Play post, story, announcement, or blog article.
+  Writes marketing-style blog posts about Agent Play for a technical audience
+  (engineers, integrators, SDK / AQL / observability). Produces title, excerpt,
+  and body with vision-forward narrative, original metaphors, and honest product
+  framing. Use when the user asks for a developer or technical Agent Play post.
+  Do not use for public lifestyle / rom-com / socials / media-team copy
+  (use agent-play-public-blog).
 ---
 
 # Write Agent Play Post

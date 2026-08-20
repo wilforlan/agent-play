@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { MAIN_WORLD_ORIGIN } from "@/lib/main-world";
+import { MAIN_WORLD_API_BASE } from "@/lib/main-world";
 
 import {
   AGENT_PLAYGROUND_AGENT_PROMPT,
@@ -50,13 +50,13 @@ describe("Agent Playground content", () => {
     expect(AGENT_PLAYGROUND_HERO.title).toBe(
       "Interactive World Platform for AI Agents",
     );
-    expect(AGENT_PLAYGROUND_HERO.baseUrl).toBe(MAIN_WORLD_ORIGIN);
-    expect(AGENT_PLAYGROUND_HERO.liveWorldHref).toBe(MAIN_WORLD_ORIGIN);
+    expect(AGENT_PLAYGROUND_HERO.baseUrl).toBe("https://agent-play.com");
+    expect(AGENT_PLAYGROUND_HERO.liveWorldHref).toBe("https://agent-play.com");
     expect(AGENT_PLAYGROUND_HERO.aqlPlaygroundHref).toBe("/playground");
     expect(AGENT_PLAYGROUND_HERO.aqlDocsHref).toBe("/agent-playground/aql");
   });
 
-  it("uses world1.v0peer.org in every public URL and example", () => {
+  it("uses https://agent-play.com as the canonical occupancy origin in public URLs and examples", () => {
     const catalog = collectText({
       hero: AGENT_PLAYGROUND_HERO,
       worlds: AGENT_PLAYGROUND_WORLDS,
@@ -68,10 +68,11 @@ describe("Agent Playground content", () => {
       surfaces: AGENT_PLAYGROUND_SURFACES,
     });
 
-    expect(catalog).toContain("https://world1.v0peer.org");
+    expect(catalog).toContain("https://agent-play.com");
+    expect(catalog).toContain("world1.v0peer.org");
     expect(catalog).not.toContain("agentplayground.com.sg");
     expect(AGENT_PLAYGROUND_QUICK_START.every((step) =>
-      step.sample === undefined || step.sample.includes("https://world1.v0peer.org"),
+      step.sample === undefined || step.sample.includes("https://agent-play.com"),
     )).toBe(true);
   });
 
@@ -112,13 +113,13 @@ describe("Agent Playground content", () => {
       "/doc/aql/playground",
     ]);
     expect(AGENT_PLAYGROUND_AQL_COMMANDS[0]?.sample).toContain(
-      `CONNECT SERVER "${MAIN_WORLD_ORIGIN}"`,
+      `CONNECT SERVER "https://agent-play.com"`,
     );
   });
 
   it("builds REST examples against the Main World API prefix", () => {
     expect(agentPlaygroundApiUrl("/session")).toBe(
-      "https://world1.v0peer.org/api/agent-play/session",
+      `${MAIN_WORLD_API_BASE}/session`,
     );
     const paths = AGENT_PLAYGROUND_API_GROUPS.flatMap((group) =>
       group.endpoints.map((endpoint) => endpoint.path),
@@ -129,25 +130,28 @@ describe("Agent Playground content", () => {
     expect(paths).not.toContain("/v1/sessions/{id}/observation");
   });
 
-  it("documents restoring agent-play.com credentials on world1.v0peer.org", () => {
-    expect(AGENT_PLAYGROUND_MIGRATION.title).toMatch(/migrat/i);
-    expect(AGENT_PLAYGROUND_MIGRATION.fromHost).toBe("agent-play.com");
-    expect(AGENT_PLAYGROUND_MIGRATION.toHost).toBe("world1.v0peer.org");
-    expect(AGENT_PLAYGROUND_MIGRATION.legacyOrigins).toEqual([
-      "https://agent-play.com",
+  it("documents agent-play.com as canonical occupancy with world1 as a disposable alias", () => {
+    expect(AGENT_PLAYGROUND_MIGRATION.title).toMatch(/origin/i);
+    expect(AGENT_PLAYGROUND_MIGRATION.fromHost).toBe("world1.v0peer.org");
+    expect(AGENT_PLAYGROUND_MIGRATION.toHost).toBe("agent-play.com");
+    expect(AGENT_PLAYGROUND_MIGRATION.aliasOrigins).toEqual([
       "https://www.agent-play.com",
       "https://playworld.world",
+      "https://world1.v0peer.org",
     ]);
-    expect(AGENT_PLAYGROUND_MIGRATION.canonicalOrigin).toBe(MAIN_WORLD_ORIGIN);
+    expect(AGENT_PLAYGROUND_MIGRATION.canonicalOrigin).toBe(
+      "https://agent-play.com",
+    );
     expect(AGENT_PLAYGROUND_MIGRATION.steps.join(" ")).toContain(
       "credentials.json",
     );
     expect(AGENT_PLAYGROUND_MIGRATION.body).toContain("agent-play.com");
     expect(AGENT_PLAYGROUND_MIGRATION.body).toContain("world1.v0peer.org");
+    expect(AGENT_PLAYGROUND_MIGRATION.body).toContain("discontinued");
   });
 
   it("gives agents a copyable prompt aimed at the Main World", () => {
-    expect(AGENT_PLAYGROUND_AGENT_PROMPT).toContain(MAIN_WORLD_ORIGIN);
+    expect(AGENT_PLAYGROUND_AGENT_PROMPT).toContain("https://agent-play.com");
     expect(AGENT_PLAYGROUND_AGENT_PROMPT).toContain("/playground");
     expect(AGENT_PLAYGROUND_AGENT_PROMPT).toContain("/agent-playground/aql");
     expect(AGENT_PLAYGROUND_AGENT_PROMPT).not.toContain("agentplayground.com.sg");

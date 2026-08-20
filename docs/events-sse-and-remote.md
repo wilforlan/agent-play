@@ -59,6 +59,8 @@ Next rewrites `/agent-play/sdk/rpc` to `/api/agent-play/sdk/rpc`.
 
 Invalid or missing `sid` on **mutating** RPC → 400/403.
 
+Machine-readable Occupant Model v1 contract for page-origin clients: [Occupancy Protocol v1](occupancy-v1.md) ([OpenAPI YAML](occupancy-v1.openapi.yaml)).
+
 ## SDK RPC (`POST .../api/agent-play/sdk/rpc`)
 
 Used by `RemotePlayWorld` for reads and mutations. When Redis is enabled, mutations run through a serialized pipeline: load snapshot → hydrate → mutate → persist with monotonic `snapshotRev` → publish fanout events.

@@ -15,6 +15,7 @@ The repository uses npm workspaces. **`packages/sdk`** is the Node.js package `@
 | [Development guide](development.md) | Local setup, env templates, running the stack, troubleshooting |
 | [World map v3](updates-world-map-v3.md) | Snapshot/RPC: occupants-only map, `getWorldSnapshot`, **`getPlayerChainNode`**, fanout **`playerChainNotify`**, 100-occupant cap |
 | [Occupant Model v1](occupant-model-v1.md) | Occupant taxonomy (`human`, `agent`, `mcp`), interaction policy, and the end-to-end fanout + player-chain convergence story across SDK/web-ui clients |
+| [Occupancy Protocol v1 (OpenAPI)](occupancy-v1.md) | Swagger/OpenAPI host contract for page-origin world clients (`occupancy-v1.openapi.yaml`); API base `https://agent-play.com/api/agent-play` |
 | [Kubernetes deployment](kubernetes-deployment.md) | Index; [`k8s/`](k8s/README.md) (startup, [deployment](k8s/deployment.md), Redis, server) |
 | [Notes / runbooks](notes/README.md) | World model + player chain ([deep dive](notes/agent-play-world-model-and-player-chain.md)), k8s debugging ([runbook](notes/k8s-agent-play-debugging.md)) |
 | [Geography mesh](geography-mesh.md) | **`@agent-play/geography-mesh`** — AOI neighbor selection, Yjs pose helpers, Zod wire schemas, how host/client use it |
@@ -30,7 +31,7 @@ The repository uses npm workspaces. **`packages/sdk`** is the Node.js package `@
 | [Payments, wallets & talk billing](payments-wallets-and-talk-billing.md) | **Per-node wallets** (legacy), amenity **purchase** atomicity, **power-ups**, **realtime talk** billing |
 | [x402 + Solana payments](payments/x402-solana/README.md) | **Production payment series:** x402, Solana USDC, wallet linking, settlement, migration — [plan](x402-solana-payments-plan.md) |
 | [Release 3.1.0](releases/agent-play-3.1.0.md) | npm intercom package, TypeDoc fixes, Docker/agents, play-ui and SDK highlights since 3.0.x |
-| [AQL](aql/README.md) | **Agent Query Language**: playground scripting, language reference, integration. Public pages: `/agent-playground` and `/aql` (Main World `https://world1.v0peer.org`) |
+| [AQL](aql/README.md) | **Agent Query Language**: playground scripting, language reference, integration. Public pages: `/agent-playground` and `/aql` (occupancy `https://agent-play.com`; `world1.v0peer.org` is a disposable alias) |
 | [SDK](sdk.md) | **`RemotePlayWorld`**, player-chain incremental sync (`getPlayerChainNode`, `subscribeWorldState`, merge helpers), LangChain adapter |
 | [Play UI](play-ui.md) | Static build, same-origin vs split deployment, `VITE_PLAY_API_BASE` |
 | [Multiplayer](multiplayer.md) | Human movement, proximity, A/C/Z/Y actions |

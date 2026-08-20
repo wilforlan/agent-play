@@ -8,7 +8,7 @@ import { buildPublicPageMetadata } from "@/lib/agent-play-seo";
 export const metadata: Metadata = buildPublicPageMetadata({
   title: "AQL Docs",
   description:
-    "Agent Query Language for Main World — connect to world1.v0peer.org, inspect nodes, send intercom, and author amenities.",
+    "Agent Query Language for Main World — connect to https://agent-play.com, inspect nodes, send intercom, and author amenities.",
   path: "/aql",
 });
 

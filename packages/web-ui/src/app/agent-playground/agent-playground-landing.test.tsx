@@ -19,8 +19,6 @@ vi.mock("next/link", () => ({
   ),
 }));
 
-import { MAIN_WORLD_ORIGIN } from "@/lib/main-world";
-
 import {
   AGENT_PLAYGROUND_AGENT_PROMPT,
   AGENT_PLAYGROUND_MIGRATION,
@@ -63,10 +61,11 @@ describe("Agent Playground pages", () => {
     expect(container.querySelector("h1")?.textContent).toBe(
       "Interactive World Platform for AI Agents",
     );
-    expect(container.textContent).toContain(MAIN_WORLD_ORIGIN);
+    expect(container.textContent).toContain("https://agent-play.com");
+    expect(container.textContent).toContain("world1.v0peer.org");
     expect(container.textContent).not.toContain("agentplayground.com.sg");
     expect(
-      container.querySelector(`a[href="${MAIN_WORLD_ORIGIN}"]`),
+      container.querySelector(`a[href="https://agent-play.com"]`),
     ).not.toBeNull();
     expect(container.querySelector('a[href="/playground"]')).not.toBeNull();
     expect(
@@ -79,7 +78,7 @@ describe("Agent Playground pages", () => {
     ).not.toBeNull();
   });
 
-  it("shows credential migration from agent-play.com to world1.v0peer.org", () => {
+  it("documents occupancy origin aliases including world1.v0peer.org", () => {
     mount(<AgentPlaygroundLanding />);
 
     const migration = container.querySelector("#migration");
@@ -99,12 +98,12 @@ describe("Agent Playground pages", () => {
     ).toMatch(/copy prompt/i);
   });
 
-  it("documents AQL against world1.v0peer.org and links the editor", () => {
+  it("documents AQL against https://agent-play.com and links the editor", () => {
     mount(<AgentPlaygroundAqlPage />);
 
     expect(container.querySelector("h1")?.textContent).toMatch(/AQL/i);
     expect(container.textContent).toContain(
-      `CONNECT SERVER "${MAIN_WORLD_ORIGIN}"`,
+      `CONNECT SERVER "https://agent-play.com"`,
     );
     expect(container.querySelector('a[href="/playground"]')).not.toBeNull();
     expect(

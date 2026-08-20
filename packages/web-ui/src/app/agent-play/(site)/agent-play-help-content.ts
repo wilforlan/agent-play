@@ -1,4 +1,4 @@
-import { MAIN_WORLD_ORIGIN } from "@/lib/main-world";
+export const OCCUPANCY_ORIGIN = "https://agent-play.com" as const;
 
 export type AgentPlayHelpArticle = {
   readonly slug: string;
@@ -52,7 +52,7 @@ export const AGENT_PLAY_HELP_ARTICLES: readonly AgentPlayHelpArticle[] = [
     [
       {
         title: "What you are building",
-        body: "Agent Play is a live map, not a chat-only runtime. Your agent becomes an occupant on Main World at world1.v0peer.org. Players walk up to it, talk, chat, and run assist actions against the same snapshot every other client sees.",
+        body: "Agent Play is a live map, not a chat-only runtime. Your agent becomes an occupant on Main World at https://agent-play.com. Players walk up to it, talk, chat, and run assist actions against the same snapshot every other client sees. world1.v0peer.org is a disposable alias of that same deployment and may be discontinued.",
       },
       {
         title: "The working order",
@@ -152,7 +152,7 @@ export const AGENT_PLAY_HELP_ARTICLES: readonly AgentPlayHelpArticle[] = [
       },
       {
         title: "Point it at Main World",
-        body: `Set the server URL to ${MAIN_WORLD_ORIGIN} so session, snapshot, and RPC hit the live map. Self-hosted or local servers use AGENT_PLAY_SERVER_URL instead. Optional X-API-Key is only for usage tracking, not identity.`,
+        body: `Set the server URL to ${OCCUPANCY_ORIGIN} so session, snapshot, and RPC hit the live map. world1.v0peer.org is an alias of the same host while it exists, not the canonical serverUrl. Self-hosted or local servers use AGENT_PLAY_SERVER_URL instead. Optional X-API-Key is only for usage tracking, not identity.`,
       },
       {
         title: "Full command list",
@@ -232,11 +232,11 @@ export const AGENT_PLAY_HELP_ARTICLES: readonly AgentPlayHelpArticle[] = [
   helpArticle(
     "connect-main-world",
     "Connect to Main World",
-    `Main World is the live map at ${MAIN_WORLD_ORIGIN}. Point credentials.json serverUrl, RemotePlayWorld, and AQL CONNECT at that origin so the occupant and the catalog listing share one world.`,
+    `Main World is the live map at ${OCCUPANCY_ORIGIN}. Point credentials.json serverUrl, RemotePlayWorld, and AQL CONNECT at that origin so the occupant and the catalog listing share one world.`,
     [
       {
         title: "One origin",
-        body: `Use ${MAIN_WORLD_ORIGIN} for the live deployment. Legacy hosts such as agent-play.com are not the map. Update serverUrl in credentials.json if it still points at a retired hostname.`,
+        body: `Use ${OCCUPANCY_ORIGIN} for the live deployment. www.agent-play.com, playworld.world, and world1.v0peer.org are aliases of the same occupancy host while they exist. world1.v0peer.org may be discontinued. world2.v0peer.org and other worldN pages are 3D clients, never serverUrl.`,
       },
       {
         title: "What to configure",
@@ -351,7 +351,7 @@ export const AGENT_PLAY_HELP_ARTICLES: readonly AgentPlayHelpArticle[] = [
     [
       {
         title: "Connect",
-        body: `Open /playground, set Server URL to ${MAIN_WORLD_ORIGIN}, and CONNECT SERVER with your main node id. FETCH SNAPSHOT then SHOW RESPONSE is the first loop. Default CONNECT target is the same origin as credentials.json serverUrl.`,
+        body: `Open /playground, set Server URL to ${OCCUPANCY_ORIGIN}, and CONNECT SERVER with your main node id. FETCH SNAPSHOT then SHOW RESPONSE is the first loop. Default CONNECT target is the same origin as credentials.json serverUrl. world1.v0peer.org still works as an alias; do not point CONNECT at world2.v0peer.org.`,
       },
       {
         title: "What AQL is for",
@@ -443,7 +443,7 @@ export const AGENT_PLAY_HELP_ARTICLES: readonly AgentPlayHelpArticle[] = [
     [
       {
         title: "Wrong origin",
-        body: `If credentials.json serverUrl still names agent-play.com or another legacy host, session and snapshot will miss Main World. Set serverUrl, RemotePlayWorld, and AQL CONNECT to ${MAIN_WORLD_ORIGIN}. Optional X-API-Key never fixes a bad origin.`,
+        body: `If credentials.json serverUrl names world2.v0peer.org or another 3D page origin, session and snapshot will miss Main World. Set serverUrl, RemotePlayWorld, and AQL CONNECT to ${OCCUPANCY_ORIGIN}. world1.v0peer.org is a disposable alias of that same host. Optional X-API-Key never fixes a bad origin.`,
       },
       {
         title: "Mismatched root or hash",
