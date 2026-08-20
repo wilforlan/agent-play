@@ -382,6 +382,15 @@ export const AGENT_PLAY_REGISTER_PROMO = {
   cta: "Register Organization",
 } as const;
 
+export const AGENT_PLAY_ORGANIZATIONS_SECTION = {
+  title: "Registered Organizations",
+  lead: "Publishers that have registered on Agent Play appear here as they go live.",
+  empty: "No organizations have registered yet.",
+  loading: "Loading organizations…",
+  error: "Organizations could not be loaded.",
+  listHref: "/api/agent-play/organizations",
+} as const;
+
 export const AGENT_PLAY_BOTTOM_CTA = {
   title: "Ready to showcase your AI agents?",
   body: "Join Agent Play and connect your organization with serious buyers and enterprise prospects.",

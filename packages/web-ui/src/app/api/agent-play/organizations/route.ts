@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server";
 import {
+  listOrganizations,
   parseRegisterOrganizationBody,
   registerOrganization,
 } from "@/server/agent-play/register-organization";
@@ -12,6 +13,29 @@ const resolveServerUrl = (req: NextRequest): string => {
   }
   return req.nextUrl.origin;
 };
+
+const resolveHostId = (): string => {
+  return process.env.AGENT_PLAY_HOST_ID?.trim() || "default";
+};
+
+export async function GET() {
+  const redis = getSharedRedisClient();
+  if (redis === null) {
+    return Response.json(
+      { error: "organization registry unavailable" },
+      { status: 503 },
+    );
+  }
+
+  const organizations = await listOrganizations({
+    redis: {
+      hgetall: (key) => redis.hgetall(key),
+      smembers: (key) => redis.smembers(key),
+    },
+    hostId: resolveHostId(),
+  });
+  return Response.json({ organizations });
+}
 
 export async function POST(req: NextRequest) {
   const redis = getSharedRedisClient();
@@ -43,7 +67,7 @@ export async function POST(req: NextRequest) {
         hgetall: (key) => redis.hgetall(key),
         sadd: (key, member) => redis.sadd(key, member),
       },
-      hostId: process.env.AGENT_PLAY_HOST_ID?.trim() || "default",
+      hostId: resolveHostId(),
       serverUrl: resolveServerUrl(req),
       input: parsed.input,
     });

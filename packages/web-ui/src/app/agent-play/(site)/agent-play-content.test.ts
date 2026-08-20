@@ -16,6 +16,7 @@ import {
   AGENT_PLAY_NAV,
   AGENT_PLAY_NAV_SECTIONS,
   AGENT_PLAY_ORGANIZATION_EARNING,
+  AGENT_PLAY_ORGANIZATIONS_SECTION,
   AGENT_PLAY_PILLARS,
   AGENT_PLAY_PLAYER_ACTIONS,
   AGENT_PLAY_SITE_PAGES,
@@ -192,6 +193,17 @@ describe("Agent Play marketplace site content", () => {
     );
     expect(AGENT_PLAY_ORGANIZATION_EARNING.bullets.join(" ").toLowerCase()).toContain(
       "talk time",
+    );
+  });
+
+  it("describes a registered organizations section on the agents catalog", () => {
+    expect(AGENT_PLAY_ORGANIZATIONS_SECTION.title).toBe(
+      "Registered Organizations",
+    );
+    expect(AGENT_PLAY_ORGANIZATIONS_SECTION.lead.length).toBeGreaterThan(20);
+    expect(AGENT_PLAY_ORGANIZATIONS_SECTION.empty).toMatch(/no organizations/i);
+    expect(AGENT_PLAY_ORGANIZATIONS_SECTION.listHref).toBe(
+      "/api/agent-play/organizations",
     );
   });
 

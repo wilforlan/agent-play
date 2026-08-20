@@ -137,7 +137,12 @@ export function AgentPlay({ children }: AgentPlayProps) {
       <footer className={styles.footer}>
         <div className={styles.footerInner}>
           <div className={styles.footerBrand}>
-            <p className={styles.brandName}>{AGENT_PLAY_BRAND.name}</p>
+            <div className={styles.footerBrandRow}>
+              <span className={styles.brandMark} aria-hidden>
+                AP
+              </span>
+              <p className={styles.brandName}>{AGENT_PLAY_BRAND.name}</p>
+            </div>
             <p className={styles.muted}>{AGENT_PLAY_BRAND.tagline}</p>
           </div>
           <div className={styles.footerColumns}>

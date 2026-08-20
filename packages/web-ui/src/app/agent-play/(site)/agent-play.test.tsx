@@ -29,6 +29,7 @@ import { AgentPlay } from "./agent-play";
 import {
   AGENT_PLAY_CATEGORIES,
   AGENT_PLAY_FEATURED_AGENT,
+  AGENT_PLAY_ORGANIZATIONS_SECTION,
   AGENT_PLAY_WORLD_SURFACES,
   getAgentPlaySitePage,
 } from "./agent-play-content";
@@ -244,5 +245,55 @@ describe("Agent Play parent landing", () => {
     expect(container.textContent).toContain("Talk time");
     expect(container.textContent).toContain("Human-in-the-loop actions");
     expect(container.textContent).toContain("How organizations earn");
+  });
+
+  it("loads registered organizations in a section on the agents catalog", async () => {
+    const agents = getAgentPlaySitePage(["agents"]);
+    expect(agents).toBeDefined();
+    if (agents === undefined) {
+      throw new Error("agents page missing");
+    }
+
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        organizations: [
+          {
+            nodeId: "org-node-1",
+            organizationName: "Northwind Agents",
+            website: "https://northwind.test",
+            details: "Helpdesk and onboarding agents",
+            createdAt: "2026-08-19T22:00:00.000Z",
+          },
+        ],
+      }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    mount(<AgentPlaySubpage page={agents} />);
+
+    const section = container.querySelector(
+      'section[aria-labelledby="organizations-title"]',
+    );
+    expect(section).not.toBeNull();
+    expect(section?.textContent).toContain(
+      AGENT_PLAY_ORGANIZATIONS_SECTION.title,
+    );
+
+    await vi.waitFor(() => {
+      expect(section?.textContent).toContain("Northwind Agents");
+    });
+    expect(section?.textContent).toContain("Helpdesk and onboarding agents");
+    expect(
+      section?.querySelector('a[href="https://northwind.test"]'),
+    ).not.toBeNull();
+    expect(container.textContent).toContain("IT Helpdesk Agent");
+    expect(JSON.stringify(section?.textContent)).not.toContain(
+      "ops@northwind.test",
+    );
+    expect(fetchMock).toHaveBeenCalledWith(
+      AGENT_PLAY_ORGANIZATIONS_SECTION.listHref,
+    );
   });
 });

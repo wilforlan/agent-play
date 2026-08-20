@@ -1,11 +1,18 @@
 import { createNodeCredentialMaterial } from "@agent-play/node-tools";
 import type { AgentRepository } from "./agent-repository.js";
 
-export type OrganizationRedis = {
+export type OrganizationWriteRedis = {
   hset(key: string, fields: Record<string, string>): Promise<unknown>;
   hgetall(key: string): Promise<Record<string, string>>;
   sadd(key: string, member: string): Promise<unknown>;
 };
+
+export type OrganizationListRedis = {
+  hgetall(key: string): Promise<Record<string, string>>;
+  smembers(key: string): Promise<string[]>;
+};
+
+export type OrganizationRedis = OrganizationWriteRedis & OrganizationListRedis;
 
 export type RegisterOrganizationInput = {
   organizationName: string;
@@ -20,6 +27,14 @@ export type OrganizationRecord = {
   website: string;
   details: string;
   nodeId: string;
+  createdAt: string;
+};
+
+export type PublicOrganizationListing = {
+  nodeId: string;
+  organizationName: string;
+  website: string;
+  details: string;
   createdAt: string;
 };
 
@@ -93,7 +108,7 @@ export const parseRegisterOrganizationBody = (
 
 export const registerOrganization = async (options: {
   repository: AgentRepository;
-  redis: OrganizationRedis;
+  redis: OrganizationWriteRedis;
   hostId: string;
   serverUrl: string;
   input: RegisterOrganizationInput;
@@ -144,4 +159,67 @@ export const registerOrganization = async (options: {
     },
     nextSteps: ORGANIZATION_CLI_NEXT_STEPS,
   };
+};
+
+export const parseOrganizationRecord = (
+  fields: Record<string, string>,
+): OrganizationRecord | null => {
+  if (
+    !nonEmpty(fields.organizationName) ||
+    !nonEmpty(fields.email) ||
+    !nonEmpty(fields.nodeId) ||
+    !nonEmpty(fields.createdAt)
+  ) {
+    return null;
+  }
+  return {
+    organizationName: fields.organizationName.trim(),
+    email: fields.email.trim(),
+    website: nonEmpty(fields.website) ? fields.website.trim() : "",
+    details: nonEmpty(fields.details) ? fields.details.trim() : "",
+    nodeId: fields.nodeId.trim(),
+    createdAt: fields.createdAt.trim(),
+  };
+};
+
+export const toPublicOrganizationListing = (
+  organization: OrganizationRecord,
+): PublicOrganizationListing => {
+  return {
+    nodeId: organization.nodeId,
+    organizationName: organization.organizationName,
+    website: organization.website,
+    details: organization.details,
+    createdAt: organization.createdAt,
+  };
+};
+
+const compareCreatedAtDesc = (
+  left: OrganizationRecord,
+  right: OrganizationRecord,
+): number => {
+  if (left.createdAt === right.createdAt) {
+    return 0;
+  }
+  return left.createdAt < right.createdAt ? 1 : -1;
+};
+
+export const listOrganizations = async (options: {
+  redis: OrganizationListRedis;
+  hostId: string;
+}): Promise<PublicOrganizationListing[]> => {
+  const ids = await options.redis.smembers(organizationsIndexKey(options.hostId));
+  const records = await Promise.all(
+    ids.map(async (nodeId) => {
+      const fields = await options.redis.hgetall(
+        organizationKey(options.hostId, nodeId),
+      );
+      return parseOrganizationRecord(fields);
+    }),
+  );
+
+  return records
+    .filter((record): record is OrganizationRecord => record !== null)
+    .sort(compareCreatedAtDesc)
+    .map(toPublicOrganizationListing);
 };

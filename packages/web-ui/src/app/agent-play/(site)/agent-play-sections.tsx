@@ -27,25 +27,30 @@ export function AgentPlayFeaturedCard({
   agent: AgentPlayAgent;
 }) {
   return (
-    <article className={styles.agentCard}>
-      <span className={styles.badge}>Featured</span>
-      <h3 className={styles.agentName}>{agent.name}</h3>
-      <p className={styles.agentMeta}>
-        by {agent.publisher}
-        {agent.verified ? <span className={styles.verified}> Verified</span> : null}
-      </p>
-      <p className={styles.agentMeta}>{agent.category}</p>
-      <p className={styles.muted}>{agent.summary}</p>
-      <p className={styles.agentMeta}>
-        Rated {agent.rating} · {agent.reviewCount} Reviews
-      </p>
-      <div className={styles.agentActions}>
-        <Link href="/agent-play/agents" className={styles.secondaryBtn}>
-          View Details
-        </Link>
-        <Link href="/agent-play/agents" className={styles.primaryBtn}>
-          Demo
-        </Link>
+    <article className={`${styles.agentCard} ${styles.featuredCard}`}>
+      <div className={styles.featuredCopy}>
+        <span className={styles.badge}>Featured</span>
+        <h3 className={styles.agentName}>{agent.name}</h3>
+        <p className={styles.agentMeta}>
+          by {agent.publisher}
+          {agent.verified ? <span className={styles.verified}> Verified</span> : null}
+        </p>
+        <p className={styles.agentMeta}>{agent.category}</p>
+        <p className={styles.muted}>{agent.summary}</p>
+        <div className={styles.agentActions}>
+          <Link href="/agent-play/agents" className={styles.secondaryBtn}>
+            View Details
+          </Link>
+          <Link href="/agent-play/agents" className={styles.primaryBtn}>
+            Demo
+          </Link>
+        </div>
+      </div>
+      <div className={styles.ratingPanel}>
+        <span className={styles.ratingMark}>{agent.rating}</span>
+        <span className={styles.metricLabel}>
+          {agent.reviewCount} Reviews
+        </span>
       </div>
     </article>
   );
@@ -91,7 +96,9 @@ export function AgentPlayHowItWorks() {
     <ol className={styles.steps}>
       {AGENT_PLAY_HOW_IT_WORKS.map((step) => (
         <li key={step.step} className={styles.card}>
-          <span className={styles.stepIndex}>{step.step}</span>
+          <span className={styles.stepIndex} aria-hidden>
+            {step.step.padStart(2, "0")}
+          </span>
           <h3 className={styles.agentName}>{step.title}</h3>
           <p className={styles.muted}>{step.body}</p>
         </li>
@@ -163,7 +170,7 @@ export function AgentPlayInsights() {
 
 export function AgentPlayRegisterPromo() {
   return (
-    <section className={styles.card}>
+    <section className={styles.promoBand}>
       <h2 className={styles.sectionTitle}>{AGENT_PLAY_REGISTER_PROMO.title}</h2>
       <p className={styles.sectionLead}>{AGENT_PLAY_REGISTER_PROMO.body}</p>
       <div className={styles.actions}>
@@ -177,7 +184,8 @@ export function AgentPlayRegisterPromo() {
 
 export function AgentPlayBottomCta() {
   return (
-    <section className={styles.hero}>
+    <section className={styles.ctaBand}>
+      <p className={styles.kicker}>Publish</p>
       <h2 className={styles.title}>{AGENT_PLAY_BOTTOM_CTA.title}</h2>
       <p className={styles.lead}>{AGENT_PLAY_BOTTOM_CTA.body}</p>
       <div className={styles.actions}>
@@ -214,11 +222,14 @@ export function AgentPlayWorldsSection() {
 
   return (
     <section className={styles.section} aria-labelledby="worlds-title">
-      <div className={styles.sectionHeader}>
-        <h2 id="worlds-title" className={styles.sectionTitle}>
-          {worldsSection.label}
-        </h2>
-      </div>
+        <div className={styles.sectionHeader}>
+          <div>
+            <p className={styles.sectionEyebrow}>Worlds</p>
+            <h2 id="worlds-title" className={styles.sectionTitle}>
+              {worldsSection.label}
+            </h2>
+          </div>
+        </div>
       <p className={styles.sectionLead}>
         Query, operate, play, and enter the live map from the same marketplace.
       </p>

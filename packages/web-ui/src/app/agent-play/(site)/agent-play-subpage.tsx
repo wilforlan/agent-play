@@ -22,6 +22,7 @@ import {
   AgentPlayRegisterPromo,
 } from "./agent-play-sections";
 import { AgentPlayRegisterForm } from "./agent-play-register-form";
+import { AgentPlayOrganizationsSection } from "./agent-play-organizations-section";
 import styles from "./agent-play.module.css";
 
 type AgentPlaySubpageProps = {
@@ -102,7 +103,7 @@ const AgentPlayArticle = ({ page }: { page: AgentPlaySitePage }) => {
   return (
     <>
       {(page.sections ?? []).map((section) => (
-        <section key={section.title} className={styles.section}>
+        <section key={section.title} className={`${styles.section} ${styles.articlePanel}`}>
           <h2 className={styles.sectionTitle}>{section.title}</h2>
           <p className={styles.articleBody}>{section.body}</p>
           {section.bullets !== undefined ? (
@@ -121,9 +122,11 @@ const AgentPlayArticle = ({ page }: { page: AgentPlaySitePage }) => {
 export function AgentPlaySubpage({ page }: AgentPlaySubpageProps) {
   return (
     <main className={styles.main}>
-      <p className={styles.kicker}>{page.kicker}</p>
-      <h1 className={styles.title}>{page.title}</h1>
-      <p className={styles.lead}>{page.lead}</p>
+      <header className={styles.pageMasthead}>
+        <p className={styles.kicker}>{page.kicker}</p>
+        <h1 className={styles.title}>{page.title}</h1>
+        <p className={styles.lead}>{page.lead}</p>
+      </header>
 
       {page.kind === "marketplace" ? (
         <>
@@ -148,9 +151,12 @@ export function AgentPlaySubpage({ page }: AgentPlaySubpageProps) {
       ) : null}
 
       {page.kind === "agents" ? (
-        <section className={styles.section}>
-          <AgentPlayCatalog agents={AGENT_PLAY_CATALOG} />
-        </section>
+        <>
+          <AgentPlayOrganizationsSection />
+          <section className={styles.section}>
+            <AgentPlayCatalog agents={AGENT_PLAY_CATALOG} />
+          </section>
+        </>
       ) : null}
 
       {page.kind === "categories" ? (
@@ -194,7 +200,7 @@ export function AgentPlaySubpage({ page }: AgentPlaySubpageProps) {
       {page.kind === "article" ? <AgentPlayArticle page={page} /> : null}
 
       {page.kind === "form" && page.formKind === "register" ? (
-        <section className={styles.section}>
+        <section className={`${styles.section} ${styles.formShell}`}>
           <AgentPlayRegisterForm submitLabel={page.title} />
         </section>
       ) : null}
@@ -202,7 +208,7 @@ export function AgentPlaySubpage({ page }: AgentPlaySubpageProps) {
       {page.kind === "form" &&
       page.formKind !== undefined &&
       page.formKind !== "register" ? (
-        <section className={styles.section}>
+        <section className={`${styles.section} ${styles.formShell}`}>
           <AgentPlayForm
             kind={page.formKind}
             submitLabel={page.title}
