@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import React, { useState, type FormEvent } from "react";
 
 import {
@@ -23,6 +24,11 @@ import {
 import { AgentPlayRegisterForm } from "./agent-play-register-form";
 import { AgentPlayLoginForm } from "./agent-play-login-form";
 import { AgentPlayOrganizationsSection } from "./agent-play-organizations-section";
+import {
+  AGENT_PLAY_HELP_ARTICLES,
+  AGENT_PLAY_HELP_HUB,
+  agentPlayHelpHref,
+} from "./agent-play-help-content";
 import styles from "./agent-play.module.css";
 
 type AgentPlaySubpageProps = {
@@ -86,6 +92,13 @@ export function AgentPlaySubpage({ page }: AgentPlaySubpageProps) {
         <p className={styles.kicker}>{page.kicker}</p>
         <h1 className={styles.title}>{page.title}</h1>
         <p className={styles.lead}>{page.lead}</p>
+        {page.path[0] === "help" && page.path.length > 1 ? (
+          <p className={styles.agentActions}>
+            <Link href="/agent-play/help" className={styles.secondaryBtn}>
+              Help Center
+            </Link>
+          </p>
+        ) : null}
       </header>
 
       {page.kind === "marketplace" ? (
@@ -158,6 +171,34 @@ export function AgentPlaySubpage({ page }: AgentPlaySubpageProps) {
       ) : null}
 
       {page.kind === "article" ? <AgentPlayArticle page={page} /> : null}
+
+      {page.kind === "help" ? (
+        <>
+          <AgentPlayArticle page={page} />
+          <section className={styles.section} aria-labelledby="developer-help-title">
+            <h2 id="developer-help-title" className={styles.sectionTitle}>
+              {AGENT_PLAY_HELP_HUB.developerIndexTitle}
+            </h2>
+            <p className={styles.sectionLead}>
+              {AGENT_PLAY_HELP_HUB.developerIndexLead}
+            </p>
+            <div className={styles.agentGrid}>
+              {AGENT_PLAY_HELP_ARTICLES.map((article) => (
+                <article key={article.slug} className={styles.agentCard}>
+                  <Link
+                    href={agentPlayHelpHref(article.slug)}
+                    className={styles.helpCardLink}
+                  >
+                    <span className={styles.badge}>Developers</span>
+                    <h3 className={styles.agentName}>{article.title}</h3>
+                    <p className={styles.muted}>{article.lead}</p>
+                  </Link>
+                </article>
+              ))}
+            </div>
+          </section>
+        </>
+      ) : null}
 
       {page.kind === "form" && page.formKind === "register" ? (
         <section className={`${styles.section} ${styles.formShell}`}>

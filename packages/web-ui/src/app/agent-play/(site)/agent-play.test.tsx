@@ -41,6 +41,11 @@ import {
   AGENT_PLAY_WORLD_SURFACES,
   getAgentPlaySitePage,
 } from "./agent-play-content";
+import {
+  AGENT_PLAY_HELP_ARTICLES,
+  AGENT_PLAY_HELP_HUB,
+  agentPlayHelpHref,
+} from "./agent-play-help-content";
 import { AgentPlayLanding } from "./agent-play-landing";
 import { AgentPlaySubpage } from "./agent-play-subpage";
 
@@ -508,6 +513,49 @@ describe("Agent Play parent landing", () => {
     expect(fetchMock).toHaveBeenCalledWith(
       `${AGENT_PLAY_LOGIN_WORKSPACE.agentsHref}?id=agt-helpdesk`,
       expect.objectContaining({ method: "DELETE" }),
+    );
+  });
+
+  it("lists Agent Developer help articles on the help center and opens one", () => {
+    const hub = getAgentPlaySitePage(["help"]);
+    expect(hub).toBeDefined();
+    if (hub === undefined) {
+      throw new Error("help page missing");
+    }
+
+    mount(<AgentPlaySubpage page={hub} />);
+
+    expect(container.querySelector("h1")?.textContent).toBe(
+      AGENT_PLAY_HELP_HUB.title,
+    );
+    expect(container.textContent).toContain(
+      AGENT_PLAY_HELP_HUB.developerIndexTitle,
+    );
+    expect(container.textContent).toContain("Buyers");
+    expect(container.textContent).toContain("Publishers");
+    for (const article of AGENT_PLAY_HELP_ARTICLES) {
+      expect(container.textContent).toContain(article.title);
+      expect(
+        container.querySelector(`a[href="${agentPlayHelpHref(article.slug)}"]`),
+      ).not.toBeNull();
+    }
+
+    const gettingStarted = getAgentPlaySitePage(["help", "getting-started"]);
+    expect(gettingStarted).toBeDefined();
+    if (gettingStarted === undefined) {
+      throw new Error("getting-started help article missing");
+    }
+
+    act(() => {
+      root.render(<AgentPlaySubpage page={gettingStarted} />);
+    });
+
+    expect(container.querySelector("h1")?.textContent).toBe(
+      gettingStarted.title,
+    );
+    expect(container.querySelector('a[href="/agent-play/help"]')).not.toBeNull();
+    expect(container.textContent).toContain(
+      gettingStarted.sections?.[0]?.title ?? "",
     );
   });
 });

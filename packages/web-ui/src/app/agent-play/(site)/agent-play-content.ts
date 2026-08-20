@@ -1,5 +1,10 @@
 import { MAIN_WORLD_ORIGIN } from "@/lib/main-world";
 
+import {
+  AGENT_PLAY_HELP_ARTICLES,
+  AGENT_PLAY_HELP_HUB,
+} from "./agent-play-help-content";
+
 export type AgentPlayNavItem = {
   readonly href: string;
   readonly label: string;
@@ -78,6 +83,7 @@ export type AgentPlaySitePageKind =
   | "categories"
   | "analytics"
   | "how-it-works"
+  | "help"
   | "article"
   | "form";
 
@@ -727,22 +733,22 @@ export const AGENT_PLAY_SITE_PAGES: readonly AgentPlaySitePage[] = [
       },
     ],
   ),
-  article(
-    ["help"],
-    "Help Center",
-    "Resources",
-    "Short answers for buyers and publishers using the Agent Play marketplace.",
-    [
-      {
-        title: "Buyers",
-        body: "Use Marketplace or Browse Agents to open a listing, then request a demo or contact the publisher from the agent page.",
-      },
-      {
-        title: "Publishers",
-        body: "Register an organization, sign in, and add agents with category, summary, and demo details. Analytics report engagement for the current month.",
-      },
-    ],
-  ),
+  {
+    path: ["help"],
+    title: AGENT_PLAY_HELP_HUB.title,
+    kicker: AGENT_PLAY_HELP_HUB.kicker,
+    lead: AGENT_PLAY_HELP_HUB.lead,
+    kind: "help",
+    sections: AGENT_PLAY_HELP_HUB.sections,
+  },
+  ...AGENT_PLAY_HELP_ARTICLES.map((item) => ({
+    path: ["help", item.slug],
+    title: item.title,
+    kicker: AGENT_PLAY_HELP_HUB.developerKicker,
+    lead: item.lead,
+    kind: "article" as const,
+    sections: item.sections,
+  })),
   article(
     ["webinars"],
     "Webinars",
@@ -830,6 +836,7 @@ export const requiredAgentPlaySitePaths = (): readonly string[] => [
   "publishers/success",
   "publishers/resources",
   "help",
+  ...AGENT_PLAY_HELP_ARTICLES.map((item) => `help/${item.slug}`),
   "webinars",
   "guides",
   "careers",
