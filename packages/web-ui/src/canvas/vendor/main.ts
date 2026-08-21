@@ -5536,7 +5536,11 @@ export function bootstrap(): void {
         sessionInteractionPanel?.closeVoiceConnection();
       },
       onWalletUpdate: (wallet) => {
+        if (wallet.playerId !== getLocalGeographyHumanId()) {
+          return;
+        }
         walletHud?.setBalance(wallet.balanceUsd);
+        walletHud?.setPowerUps(wallet.powerUps);
       },
       onError: (message) => {
         deepLogText("peer-call", { message });

@@ -276,6 +276,20 @@ async function verifySpaceNodeHeaders(
   return null;
 }
 
+const omitWalletUnlessOwnedBy = <T extends { wallet?: { playerId: string } }>(
+  billing: T,
+  requesterId: string
+): T | Omit<T, "wallet"> => {
+  if (
+    billing.wallet === undefined ||
+    billing.wallet.playerId === requesterId
+  ) {
+    return billing;
+  }
+  const { wallet: _wallet, ...rest } = billing;
+  return rest;
+};
+
 export async function POST(req: NextRequest) {
   logAgentPlayApi("POST sdk/rpc", req);
   let body: { op?: unknown; payload?: unknown };
@@ -1747,7 +1761,7 @@ export async function POST(req: NextRequest) {
         return Response.json({
           ok: true,
           call: transitioned.call,
-          billing,
+          billing: omitWalletUnlessOwnedBy(billing, calleeId),
         });
       }
       case "peerCallDecline": {
@@ -1853,14 +1867,20 @@ export async function POST(req: NextRequest) {
           return Response.json({
             ok: true,
             call: { ...existing, status: "ended", endedAt: now, endReason: "hangup" },
-            billing,
+            billing:
+              billing === null
+                ? null
+                : omitWalletUnlessOwnedBy(billing, actorId),
           });
         }
         await store.clearPeerCall(callId);
         return Response.json({
           ok: true,
           call: transitioned.call,
-          billing,
+          billing:
+            billing === null
+              ? null
+              : omitWalletUnlessOwnedBy(billing, actorId),
         });
       }
       default:
