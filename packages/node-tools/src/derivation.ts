@@ -117,14 +117,33 @@ export function nodeCredentialsMaterialFromHumanPassphrase(
   return hashNodePassword(normalizeNodePassphrase(humanPassphrase));
 }
 
+function secureIndex(length: number): number {
+  if (length <= 0) {
+    throw new Error("wordlist is empty");
+  }
+  const span = 0x100000000;
+  const limit = span - (span % length);
+  while (true) {
+    const bytes = randomBytes(4);
+    const value =
+      (((bytes[0] ?? 0) << 24) |
+        ((bytes[1] ?? 0) << 16) |
+        ((bytes[2] ?? 0) << 8) |
+        (bytes[3] ?? 0)) >>>
+      0;
+    if (value < limit) {
+      return value % length;
+    }
+  }
+}
+
 /**
  * Generates a fresh 10-word passphrase using the bundled wordlist.
  */
 export function generateNodePassw(): string {
-  const bytes = randomBytes(10);
   return Array.from(
-    bytes,
-    (b) => WORDLIST[b % WORDLIST.length] ?? "amber"
+    { length: 10 },
+    () => WORDLIST[secureIndex(WORDLIST.length)] ?? "amber"
   ).join(" ");
 }
 

@@ -74,6 +74,10 @@ const nextConfig = {
         destination: "/api/nodes/validate",
       },
       {
+        source: "/api/agent-play/nodes/validate",
+        destination: "/api/nodes/validate",
+      },
+      {
         source: "/agent-play/world-layout/bounds",
         destination: "/api/agent-play/world-layout/bounds",
       },

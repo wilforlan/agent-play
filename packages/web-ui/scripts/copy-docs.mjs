@@ -1,6 +1,8 @@
-import { cpSync, existsSync, mkdirSync } from "node:fs";
+import { existsSync, mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+
+import { copyLocalTree } from "./copy-local-tree.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 const src = join(root, "docs");
@@ -12,6 +14,22 @@ if (!existsSync(src)) {
   process.exit(0);
 }
 
-mkdirSync(dirname(dest), { recursive: true });
-cpSync(src, dest, { recursive: true });
-console.log("copy-docs: docs -> content/docs");
+const startedAt = Date.now();
+console.log("copy-docs: start docs -> content/docs");
+const result = await copyLocalTree({
+  src,
+  dest,
+  skipExtensions: [".html"],
+  log: (message) => {
+    console.warn(message);
+  },
+});
+const elapsedMs = Date.now() - startedAt;
+console.log(
+  `copy-docs: docs -> content/docs copied=${result.copied} skipped=${result.skipped} failed=${result.failed} in ${elapsedMs}ms`
+);
+if (result.failed > 0) {
+  console.warn(
+    `copy-docs debug: skipped ${result.failed} file copy failure(s); in-app /doc still starts with local markdown`
+  );
+}

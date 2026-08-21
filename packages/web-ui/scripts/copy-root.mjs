@@ -1,4 +1,4 @@
-import { copyFileSync, existsSync, mkdirSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, unlinkSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -17,5 +17,22 @@ if (!existsSync(source)) {
 }
 
 mkdirSync(dirname(destination), { recursive: true });
-copyFileSync(source, destination);
-console.log("copy-root: .root -> packages/web-ui/.root");
+try {
+  if (existsSync(destination)) {
+    unlinkSync(destination);
+  }
+  copyFileSync(source, destination);
+  console.log("copy-root: .root -> packages/web-ui/.root");
+} catch (error) {
+  const code =
+    typeof error === "object" && error !== null && "code" in error
+      ? error.code
+      : undefined;
+  if (code === "ETIMEDOUT") {
+    console.warn(
+      `copy-root debug: skip copy failure ${source} -> ${destination} code=ETIMEDOUT ${error instanceof Error ? error.message : String(error)}`
+    );
+    process.exit(0);
+  }
+  throw error;
+}

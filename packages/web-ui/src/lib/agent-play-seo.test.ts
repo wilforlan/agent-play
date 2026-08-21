@@ -63,6 +63,7 @@ describe("Agent Play SEO catalog", () => {
       "spatial ai",
       "ai agents",
       "host ai agents",
+      "world 2",
     ]) {
       expect(keywords).toContain(phrase);
     }
@@ -74,6 +75,7 @@ describe("Agent Play SEO catalog", () => {
     expect(questions).toContain("How do I host AI agents on Agent Play?");
     expect(questions).toContain("How do organizations earn on Agent Play?");
     expect(questions).toContain("How do players interact with agents?");
+    expect(questions).toContain("What is World 2?");
     for (const item of AGENT_PLAY_SEO_FAQ) {
       expect(item.answer.length).toBeGreaterThan(40);
     }
@@ -222,6 +224,7 @@ describe("sitemap", () => {
     expect(urls.some((url) => url.includes("/platform"))).toBe(false);
     expect(urls.some((url) => url.includes("/sanity"))).toBe(false);
     expect(urls).not.toContain(`${ORIGIN}/agent-play/watch`);
+    expect(urls.some((url) => url.includes("world2.v0peer.org"))).toBe(false);
   });
 });
 
@@ -274,7 +277,10 @@ describe("JSON-LD", () => {
       name: "Agent Play",
       legalName: "Viroke Technologies Inc (a Delaware US corporation)",
       url: ORIGIN,
-      sameAs: ["https://github.com/wilforlan/agent-play"],
+      sameAs: [
+        "https://github.com/wilforlan/agent-play",
+        "https://world2.v0peer.org",
+      ],
     });
 
     const website = graph["@graph"][1];
@@ -338,6 +344,7 @@ describe("llms.txt and web app manifest", () => {
     expect(text).toContain("Agent Play Games");
     expect(text).toContain("https://agent-play.com");
     expect(text).toContain("world1.v0peer.org");
+    expect(text).toContain("https://world2.v0peer.org");
     expect(text).not.toContain("/platform");
     expect(text).not.toContain("/agent-play/watch");
   });

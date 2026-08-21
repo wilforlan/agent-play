@@ -20,9 +20,16 @@ function secureRandomUintBelow(max: number): number {
   if (max <= 0) {
     throw new Error("max must be positive");
   }
+  const span = 0x100000000;
+  const limit = span - (span % max);
   const buf = new Uint32Array(1);
-  crypto.getRandomValues(buf);
-  return buf[0]! % max;
+  while (true) {
+    crypto.getRandomValues(buf);
+    const value = buf[0]!;
+    if (value < limit) {
+      return value % max;
+    }
+  }
 }
 
 export function generateNodePassphraseWordCount(wordCount: number): string {
