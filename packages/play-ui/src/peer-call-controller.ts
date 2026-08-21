@@ -128,7 +128,12 @@ export const createPeerCallController = (
       }
       return;
     }
-    if (out.wallet !== undefined) {
+    const localId = options.getLocalHumanId();
+    if (
+      out.wallet !== undefined &&
+      localId !== null &&
+      out.wallet.playerId === localId
+    ) {
       options.onWalletUpdate?.(out.wallet);
     }
     scheduleBillingTick();
@@ -312,9 +317,6 @@ export const createPeerCallController = (
     if (!accepted.ok) {
       options.onError?.(accepted.error);
       return;
-    }
-    if (accepted.billing?.wallet !== undefined) {
-      options.onWalletUpdate?.(accepted.billing.wallet);
     }
     beginActiveHud({
       call: accepted.call,
