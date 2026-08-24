@@ -171,6 +171,46 @@ describe("POST /api/agent-play/sdk/rpc peer call ops", () => {
     );
   });
 
+  it("peerCallAccept returns billing errors without a wallet", async () => {
+    const call = ringingCall();
+    const store = {
+      getSnapshotRev: vi.fn(async () => 10),
+      publishWorldFanout: vi.fn(async () => {}),
+      getPeerCall: vi.fn(async () => call),
+      transitionPeerCall: vi.fn(async () => ({
+        ok: true as const,
+        call: {
+          ...call,
+          status: "active" as const,
+          answeredAt: "2026-08-12T12:00:05.000Z",
+        },
+      })),
+      startPeerTalkSession: vi.fn(async () => ({
+        ok: false as const,
+        error: "INSUFFICIENT_FUNDS" as const,
+      })),
+    };
+    getSessionStore.mockReturnValue(store);
+
+    const res = await POST(
+      new NextRequest("http://localhost/api/agent-play/sdk/rpc?sid=s1", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          op: "peerCallAccept",
+          payload: { callId: "call-1", calleeId: "callee-1" },
+        }),
+      })
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      ok: boolean;
+      billing?: { ok?: boolean; error?: string; wallet?: unknown };
+    };
+    expect(body.ok).toBe(true);
+    expect(body.billing).toEqual({ ok: false, error: "INSUFFICIENT_FUNDS" });
+  });
+
   it("peerCallHangup stops billing when active and clears", async () => {
     const call = ringingCall({
       status: "active",

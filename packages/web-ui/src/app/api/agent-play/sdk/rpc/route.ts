@@ -276,7 +276,9 @@ async function verifySpaceNodeHeaders(
   return null;
 }
 
-const omitWalletUnlessOwnedBy = <T extends { wallet?: { playerId: string } }>(
+const omitWalletUnlessOwnedBy = <
+  T extends { ok: boolean; wallet?: { playerId: string } },
+>(
   billing: T,
   requesterId: string
 ): T | Omit<T, "wallet"> => {
