@@ -155,8 +155,13 @@ describe("POST /api/agent-play/sdk/rpc peer call ops", () => {
       })
     );
     expect(res.status).toBe(200);
-    const body = (await res.json()) as { ok: boolean };
+    const body = (await res.json()) as {
+      ok: boolean;
+      billing?: { ok?: boolean; wallet?: unknown };
+    };
     expect(body.ok).toBe(true);
+    expect(body.billing?.ok).toBe(true);
+    expect(body.billing).not.toHaveProperty("wallet");
     expect(store.startPeerTalkSession).toHaveBeenCalledWith(
       expect.objectContaining({
         callerId: "caller-1",
@@ -164,6 +169,46 @@ describe("POST /api/agent-play/sdk/rpc peer call ops", () => {
         callId: "call-1",
       })
     );
+  });
+
+  it("peerCallAccept returns billing errors without a wallet", async () => {
+    const call = ringingCall();
+    const store = {
+      getSnapshotRev: vi.fn(async () => 10),
+      publishWorldFanout: vi.fn(async () => {}),
+      getPeerCall: vi.fn(async () => call),
+      transitionPeerCall: vi.fn(async () => ({
+        ok: true as const,
+        call: {
+          ...call,
+          status: "active" as const,
+          answeredAt: "2026-08-12T12:00:05.000Z",
+        },
+      })),
+      startPeerTalkSession: vi.fn(async () => ({
+        ok: false as const,
+        error: "INSUFFICIENT_FUNDS" as const,
+      })),
+    };
+    getSessionStore.mockReturnValue(store);
+
+    const res = await POST(
+      new NextRequest("http://localhost/api/agent-play/sdk/rpc?sid=s1", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          op: "peerCallAccept",
+          payload: { callId: "call-1", calleeId: "callee-1" },
+        }),
+      })
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      ok: boolean;
+      billing?: { ok?: boolean; error?: string; wallet?: unknown };
+    };
+    expect(body.ok).toBe(true);
+    expect(body.billing).toEqual({ ok: false, error: "INSUFFICIENT_FUNDS" });
   });
 
   it("peerCallHangup stops billing when active and clears", async () => {
@@ -204,6 +249,62 @@ describe("POST /api/agent-play/sdk/rpc peer call ops", () => {
       })
     );
     expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      ok: boolean;
+      billing?: { ok?: boolean; wallet?: { playerId?: string } };
+    };
+    expect(body.ok).toBe(true);
+    expect(body.billing?.ok).toBe(true);
+    expect(body.billing?.wallet?.playerId).toBe("caller-1");
+    expect(store.stopPeerTalkSession).toHaveBeenCalled();
+    expect(store.clearPeerCall).toHaveBeenCalledWith("call-1");
+  });
+
+  it("peerCallHangup as callee omits the caller wallet", async () => {
+    const call = ringingCall({
+      status: "active",
+      answeredAt: "2026-08-12T12:00:05.000Z",
+    });
+    const store = {
+      getSnapshotRev: vi.fn(async () => 10),
+      publishWorldFanout: vi.fn(async () => {}),
+      getPeerCall: vi.fn(async () => call),
+      stopPeerTalkSession: vi.fn(async () => ({
+        ok: true as const,
+        totalCostUsd: 0.02,
+        secondsBilledTotal: 10,
+        wallet: {
+          playerId: "caller-1",
+          balanceUsd: 4.98,
+          updatedAt: "2026-08-12T12:01:00.000Z",
+        },
+      })),
+      transitionPeerCall: vi.fn(async () => ({
+        ok: true as const,
+        call: { ...call, status: "ended" as const, endReason: "hangup" as const },
+      })),
+      clearPeerCall: vi.fn(async () => {}),
+    };
+    getSessionStore.mockReturnValue(store);
+
+    const res = await POST(
+      new NextRequest("http://localhost/api/agent-play/sdk/rpc?sid=s1", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          op: "peerCallHangup",
+          payload: { callId: "call-1", actorId: "callee-1" },
+        }),
+      })
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      ok: boolean;
+      billing?: { ok?: boolean; wallet?: unknown };
+    };
+    expect(body.ok).toBe(true);
+    expect(body.billing?.ok).toBe(true);
+    expect(body.billing).not.toHaveProperty("wallet");
     expect(store.stopPeerTalkSession).toHaveBeenCalled();
     expect(store.clearPeerCall).toHaveBeenCalledWith("call-1");
   });

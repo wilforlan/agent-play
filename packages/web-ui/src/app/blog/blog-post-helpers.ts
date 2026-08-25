@@ -33,6 +33,11 @@ export const BLOG_POST_CTAS: ReadonlyArray<BlogPostCta> = [
   },
   { label: "v0peer.org", href: "https://v0peer.org", external: true },
   {
+    label: "World 2",
+    href: "https://world2.v0peer.org",
+    external: true,
+  },
+  {
     label: "Star on Github",
     href: "https://github.com/wilforlan/agent-play",
     external: true,

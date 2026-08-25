@@ -22,11 +22,28 @@ vi.mock("./peer-voice-session.js", async () => {
   };
 });
 
-import { peerCallInvite } from "./peer-call-client.js";
+import { buildPeerCallInviteNotification } from "@agent-play/intercom";
+import type { PlayerWallet } from "@agent-play/sdk/browser";
+import {
+  peerCallAccept,
+  peerCallInvite,
+  peerTalkSessionTick,
+} from "./peer-call-client.js";
 import { createPeerVoiceSession } from "./peer-voice-session.js";
 
 const mockInvite = vi.mocked(peerCallInvite);
+const mockAccept = vi.mocked(peerCallAccept);
+const mockTick = vi.mocked(peerTalkSessionTick);
 const mockCreateVoice = vi.mocked(createPeerVoiceSession);
+
+const callerWallet = (overrides?: Partial<PlayerWallet>): PlayerWallet => ({
+  playerId: "caller-1",
+  balanceUsd: 5,
+  currency: "USD",
+  updatedAt: "2026-08-12T12:00:05.000Z",
+  powerUps: 0,
+  ...overrides,
+});
 
 const baseCall = (overrides?: Partial<PeerCallRecord>): PeerCallRecord => ({
   callId: "call-1",
@@ -54,6 +71,14 @@ describe("createPeerCallController", () => {
     };
     mockCreateVoice.mockReset();
     mockInvite.mockReset();
+    mockAccept.mockReset();
+    mockTick.mockReset();
+    mockCreateVoice.mockReturnValue({
+      start: async () => {},
+      handleSignal: vi.fn(async () => {}),
+      stop: vi.fn(),
+      isActive: () => true,
+    });
     vi.useFakeTimers();
   });
 
@@ -167,6 +192,119 @@ describe("createPeerCallController", () => {
     );
 
     resolveStart?.();
+    controller.destroy();
+  });
+
+  it("does not apply the caller wallet to the callee HUD on accept", async () => {
+    const onWalletUpdate = vi.fn();
+    const controller = createPeerCallController({
+      parent,
+      getSid: () => "sid-1",
+      getApiBase: () => "",
+      getLocalHumanId: () => "callee-1",
+      getPeerDisplayName: (id) => id,
+      isAgentPttActive: () => false,
+      stopAgentPtt: () => undefined,
+      ringer,
+      onWalletUpdate,
+    });
+
+    mockAccept.mockResolvedValue({
+      ok: true,
+      call: baseCall({ status: "active" }),
+      billing: { ok: true, wallet: callerWallet() },
+    });
+
+    await controller.acceptInvite(
+      buildPeerCallInviteNotification({
+        id: "n-invite",
+        createdAt: "2026-08-12T12:00:00.000Z",
+        callerId: "caller-1",
+        calleeId: "callee-1",
+        callId: "call-1",
+      })
+    );
+
+    expect(mockAccept).toHaveBeenCalled();
+    expect(onWalletUpdate).not.toHaveBeenCalled();
+    controller.destroy();
+  });
+
+  it("applies the caller wallet from a billing tick to the caller HUD", async () => {
+    const onWalletUpdate = vi.fn();
+    mockTick.mockResolvedValue({
+      ok: true,
+      wallet: callerWallet({ balanceUsd: 4.98 }),
+    });
+
+    const controller = createPeerCallController({
+      parent,
+      getSid: () => "sid-1",
+      getApiBase: () => "",
+      getLocalHumanId: () => "caller-1",
+      getPeerDisplayName: (id) => id,
+      isAgentPttActive: () => false,
+      stopAgentPtt: () => undefined,
+      ringer,
+      onWalletUpdate,
+    });
+
+    mockInvite.mockResolvedValue({
+      ok: true,
+      call: baseCall({ status: "ringing" }),
+    });
+    controller.setNearestHumanId("callee-1");
+    await controller.startCallWithNearest();
+    controller.handleSseEvent("world:peer-call-state", {
+      call: baseCall({ status: "active" }),
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    await vi.advanceTimersByTimeAsync(15_000);
+
+    expect(mockTick).toHaveBeenCalled();
+    expect(onWalletUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({ playerId: "caller-1", balanceUsd: 4.98 })
+    );
+    controller.destroy();
+  });
+
+  it("ignores a billing tick wallet that belongs to the callee", async () => {
+    const onWalletUpdate = vi.fn();
+    mockTick.mockResolvedValue({
+      ok: true,
+      wallet: callerWallet({ playerId: "callee-1", balanceUsd: 99 }),
+    });
+
+    const controller = createPeerCallController({
+      parent,
+      getSid: () => "sid-1",
+      getApiBase: () => "",
+      getLocalHumanId: () => "caller-1",
+      getPeerDisplayName: (id) => id,
+      isAgentPttActive: () => false,
+      stopAgentPtt: () => undefined,
+      ringer,
+      onWalletUpdate,
+    });
+
+    mockInvite.mockResolvedValue({
+      ok: true,
+      call: baseCall({ status: "ringing" }),
+    });
+    controller.setNearestHumanId("callee-1");
+    await controller.startCallWithNearest();
+    controller.handleSseEvent("world:peer-call-state", {
+      call: baseCall({ status: "active" }),
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    await vi.advanceTimersByTimeAsync(15_000);
+
+    expect(mockTick).toHaveBeenCalled();
+    expect(onWalletUpdate).not.toHaveBeenCalled();
     controller.destroy();
   });
 });

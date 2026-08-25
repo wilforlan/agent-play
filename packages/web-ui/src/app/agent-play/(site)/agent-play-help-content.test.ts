@@ -1,7 +1,5 @@
 import { describe, expect, it } from "vitest";
 
-import { MAIN_WORLD_ORIGIN } from "@/lib/main-world";
-
 import {
   AGENT_PLAY_CLI_ONBOARDING,
   getAgentPlaySitePage,
@@ -9,6 +7,7 @@ import {
 import {
   AGENT_PLAY_HELP_ARTICLES,
   AGENT_PLAY_HELP_HUB,
+  OCCUPANCY_ORIGIN,
   agentPlayHelpHref,
 } from "./agent-play-help-content";
 
@@ -68,7 +67,9 @@ describe("Agent Play help center for agent developers", () => {
     expect(copy).toContain(AGENT_PLAY_CLI_ONBOARDING.installCommand);
     expect(copy).toContain(AGENT_PLAY_CLI_ONBOARDING.createAgentCommand);
     expect(copy).toContain(AGENT_PLAY_CLI_ONBOARDING.inspectCommand);
-    expect(copy).toContain(MAIN_WORLD_ORIGIN.toLowerCase());
+    expect(copy).toContain(OCCUPANCY_ORIGIN.toLowerCase());
+    expect(copy).toContain("world1.v0peer.org");
+    expect(copy).not.toContain("legacy hosts such as agent-play.com");
     expect(copy).toContain("x-node-id");
     expect(copy).toContain("x-node-passw");
     expect(copy).toContain("chat_tool");

@@ -116,9 +116,11 @@ describe("@agent-play/node-tools", () => {
     }
   });
 
-  it("uses separate word list with 3000 entries", () => {
-    expect(WORDLIST.length).toBe(3000);
-    expect(new Set(WORDLIST).size).toBe(3000);
+  it("uses the full adjective and noun morpheme product so generated passphrases rarely collide", () => {
+    expect(new Set(WORDLIST).size).toBe(WORDLIST.length);
+    expect(WORDLIST.length).toBeGreaterThan(10000);
+    expect(WORDLIST.some((word) => word.startsWith("amber-"))).toBe(true);
+    expect(WORDLIST.some((word) => !word.startsWith("amber-"))).toBe(true);
   });
 
   it("nodeCredentialsMaterialFromHumanPassphrase matches hashNodePassword on a normalized phrase", () => {

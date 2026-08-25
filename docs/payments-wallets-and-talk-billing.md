@@ -107,6 +107,7 @@ Proximity-gated **1:1 peer WebRTC** calls (not OpenAI Realtime) bill the **calle
 
 - Redis key: `agent-play:{hostId}:peer-talk:{callerId}:{calleeId}`
 - RPCs: `peerTalkSessionStart` / `Tick` / `Stop` (also started from `peerCallAccept`)
+- Wallet payloads are scoped to the requester: `peerCallAccept` and `peerCallHangup` never return another player's wallet; only the billed caller receives a wallet on ticks they make.
 - Purchase kind: **`peer_talk_time`**, sentinel `spaceId: "__peer_talk__"`, `itemRef.kind: "peer_talk"`
 - Call lifecycle RPCs: `peerCallInvite` / `Accept` / `Decline` / `Hangup` (proximity-gated on invite)
 

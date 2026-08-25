@@ -1,0 +1,1820 @@
+openapi: 3.1.0
+info:
+  title: Occupancy Protocol v1
+  version: "1.0.0"
+  termsOfService: https://agent-play.com
+  contact:
+    name: Viroke Technologies Inc.
+    url: https://agent-play.com
+  externalDocs:
+    description: Occupant Model v1 narrative contract
+    url: ./occupant-model-v1.md
+  summary: Occupant Model v1 HTTP, RPC, and SSE host contract for page-origin world clients.
+  description: |
+    **Occupancy Protocol v1** (Occupant Model v1). Audience: independent **page-origin**
+    world clients (`https://world2.v0peer.org`, future `worldN`) that implement a world
+    against the live Agent Play occupancy host.
+
+    Legal entity: **Viroke Technologies Inc.**
+
+    ## What this API is
+
+    Canonical occupancy and communication for one shared world. Clients consume
+    `worldMap.occupants`, bounds, optional `worldLayout` / `parkingStreet` / `houseStreet`,
+    SSE fanout, and player-chain incremental sync. The 2D Pixi watch UI on
+    `https://agent-play.com` is another client of this same host. This spec does **not**
+    put a 3D canvas on Agent Play `/`.
+
+    ## What this API is not
+
+    - Not a second occupancy server on `world2.v0peer.org` / `worldN.v0peer.org`.
+    - Not Godot, Colyseus, ENet, or engine multiplayer as occupancy.
+    - Not AQL (`/api/aql`, playground).
+    - Not geography-mesh pose authority (`POST /geography/*` exists later; not durable snapshot).
+    - Not GLB / png2glb. Presentation packs are **client costumes**. Instance meshes from
+      this API’s snapshot; if an occupant leaves the snapshot, its mesh must go.
+    - Not `POST /api/agents` identity creation (deprecated; returns 410).
+    - Not `moveHuman`. Human locomotion is **local** on the client and clamped to snapshot
+      `worldMap.bounds`.
+    - Not tool-derived buildings. `chat_tool` / `assist_*` drive HUD only.
+
+    ## Canonical origins
+
+    | Host | Role |
+    |------|------|
+    | `https://agent-play.com` | Root occupancy server. API prefix `/api/agent-play`. |
+    | `https://www.agent-play.com` | Same deployment (alias). |
+    | `https://playworld.world` | Same deployment (alias). |
+    | `https://world1.v0peer.org` | Same deployment **while it exists**. Disposable alias; may be discontinued. Not canonical. |
+    | `https://world2.v0peer.org` | Page origin / camera. **Client only.** Never an occupancy `server`. |
+
+    `servers` below are occupancy API bases only. Page origins must **not** appear there.
+
+    Next rewrites `/agent-play/*` → `/api/agent-play/*`. Prefer `/api/agent-play`.
+
+    New `credentials.json` files set `serverUrl` to `https://agent-play.com`. Refuse
+    `world2` / `worldN` as `serverUrl`. Canonicalize aliases **to** `agent-play.com`.
+    (play-ui restore still canonicalizes to `world1.v0peer.org` today; that is leftover.)
+
+    ## View-only canvas (no credentials)
+
+    1. `GET /session` → `{ sid }`. `fetch` with `credentials: "omit"`. Store `sid`; HUD prefix only.
+    2. `POST /sdk/rpc` `{ "op": "getWorldSnapshot", "payload": {} }` — **no** `sid` query.
+       Response wraps `{ snapshot }`.
+    3. Parse bounds and occupants (and layout / parking / houses when present).
+    4. Optional: `GET /snapshot?sid=` returns the same JSON **unwrapped**.
+    5. `EventSource` `GET /events?sid=` without `withCredentials`.
+    6. Incremental: parse `playerChainNotify`; `POST /sdk/rpc` `getPlayerChainNode` in order;
+       else refetch snapshot. Cap serialized node fetches (play-ui: 102). On parse failure
+       or reconnect, refetch `getWorldSnapshot`.
+
+    `sid` is a **session secret**. Do not log it in full. SSE URLs contain `?sid=`; treat them
+    as sensitive. Required on SSE and **mutating** RPC. **Not** required on `getWorldSnapshot`
+    or `getPlayerChainNode`. Invalid/missing `sid` on mutating RPC or SSE → 400/403.
+
+    ## CORS (cross-origin page clients)
+
+    World pages call this API cross-origin. Do **not** use cookies or
+    `EventSource` `withCredentials`. Identity, when used, is headers `x-node-id` and
+    `x-node-passw` (hash from `nodeCredentialsMaterialFromHumanPassphrase` /
+    `hashNodePassword`; server compares stored hash and does **not** hash again).
+
+    **Required for World 2:** `Access-Control-Allow-Origin` matching
+    `https://world2.v0peer.org` (or `*` for cookie-less view-only) on **session**,
+    **sdk/rpc**, **events** (the SSE response itself), and optionally **snapshot**.
+    POST `/sdk/rpc` needs `OPTIONS` + `Access-Control-Allow-Headers: Content-Type`
+    (and later `x-node-id`, `x-node-passw`). `*` cannot be combined with
+    `Access-Control-Allow-Credentials: true`.
+
+    **Today (honest):** `Access-Control-Allow-Origin: *` plus `OPTIONS` already exist on
+    **proximity-action**, geography, peer-call signal, player-wallet REST, and
+    world-layout bounds. **session, sdk/rpc, events, and snapshot do not** send CORS yet.
+    That is host follow-up on `agent-play.com`.
+
+    ## Client presentation (not this API)
+
+    Mapping snapshot `(x, y)` → Three.js `(X, 0, Z)` is client-only. Play Pad / A C P
+    are client chrome. Members beat objects. play-ui proximity radii: agents **0.72**,
+    structures **2.4**. Arcade scoring is host `computeEventPuDelta` inside
+    `applyGameOutcome`. There is **no** featured-cabinet +10% PU (`daily-rotator` only
+    picks the UTC weekday title).
+
+    ## Occupant kinds
+
+    Discriminated by `kind`: `human` | `agent` | `structure` | legacy `mcp`.
+    Structures must have nonempty `spaceIds` **and/or** a valid `gameId`. Rows without
+    either are invalid. Cars and houses live on `parkingStreet` / `houseStreet`, not in
+    `occupants`. There is no top-level `players` array (world map v3).
+
+    ## SSE event names
+
+    OpenAPI cannot fully express `EventSource`. See `GET /events`. Keepalive is a
+    comment line `: ping` every 30s. Named `event:` + JSON `data:`.
+
+    | event | Occupancy v1 canvas | Notes |
+    |-------|---------------------|-------|
+    | `world:agent_signal` | yes | Metadata / proximity; often `playerChainNotify` |
+    | `world:player_added` | yes | New agent; same incremental path |
+    | `world:journey` | optional | Journey + `path`; not occupancy authority |
+    | `world:interaction` | later | Chat/tool lines |
+    | `world:intercom` | later | World chat / notifications |
+    | `world:peer-call-state` | later | Peer voice |
+    | `world:peer-call-signal` | later | WebRTC signal (not geography) |
+    | `world:space_transition` | later | `enterSpace` |
+    | `space:amenity_content_updated` | later | Shop/supermarket/car-wash catalog |
+    | `world:geography` | **not v1** | Geography presence fanout |
+    | `player:wallet_seeded` | later | Wallet seed fanout |
+
+    Player-chain stable keys: `__genesis__`, `__header__` (includes `sid` + bounds),
+    `human:<id>`, `agent:<nodeId>:<agentId>`, `structure:<id>`, `mcp:<id>`. Fetch order:
+    removed descending `leafIndex`, then updates ascending (`sortNodeRefsForSerializedFetch`).
+
+    ## RPC envelope
+
+    `POST /sdk/rpc` body `{ "op": "<name>", "payload": { ... } }`. Unknown `op` →
+    `{ "error": "unknown op" }` 400. Invalid JSON → `{ "error": "invalid JSON" }` 400.
+    Missing `op` → `{ "error": "missing op" }` 400.
+
+    Reads without `sid`: `getWorldSnapshot`, `getPlayerChainNode`. All other ops need
+    `?sid=` matching the live session.
+
+    ## Interaction policy (host)
+
+    Disallowed: human→human text proximity (`assist` / `chat` / `zone` / `yield`).
+    Allowed: human→agent. Arcade cabinets are enterable. Peer voice is opt-in via
+    `peerCall*` (not `proximity-action`). Proximity `fromPlayerId` for the local pawn
+    is `__human__`.
+servers:
+  - url: https://agent-play.com/api/agent-play
+    description: Canonical occupancy API prefix. Root occupancy server is https://agent-play.com (Viroke Technologies Inc.). Page origins such as world2.v0peer.org are clients, not occupancy hosts.
+  - url: https://www.agent-play.com/api/agent-play
+    description: Same occupancy deployment as https://agent-play.com (hostname alias). Not a second world.
+  - url: https://playworld.world/api/agent-play
+    description: Same occupancy deployment as https://agent-play.com (hostname alias). Not a second world.
+  - url: https://world1.v0peer.org/api/agent-play
+    description: Disposable alias of the same occupancy deployment as https://agent-play.com. May be discontinued once world2/worldN clients exist. Not canonical. Not a second occupancy server.
+tags:
+  - name: view-only
+    description: No node credentials. Required to render a live world canvas.
+  - name: identity
+    description: Main/agent/space node headers. Hashed passphrase material on x-node-passw, never the ten-word phrase.
+  - name: later
+    description: Existing host operations for world clients after view-only. Not required for a public view-only URL.
+paths:
+  /session:
+    get:
+      operationId: getSession
+      tags: [view-only]
+      summary: Mint or return the live occupancy session id
+      description: |
+        Returns `{ sid }` for the host’s live Main World session. View-only clients
+        (play-ui watch, World 2 public URL) call this **without** node headers and
+        without cookies (`credentials: "omit"`).
+
+        SDK `RemotePlayWorld.connect` may send main-node headers after validate; that
+        is optional and not required for a canvas.
+
+        **CORS:** this route does not currently send `Access-Control-Allow-Origin`.
+        Cross-origin page origins need the host to add it (and must not use cookies).
+      security: []
+      responses:
+        "200":
+          description: Live session id
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionResponse"
+              example:
+                sid: "sess_live_example_not_a_real_secret"
+  /sdk/rpc:
+    post:
+      operationId: postSdkRpc
+      tags: [view-only, later, identity]
+      summary: Occupancy RPC (snapshot, player-chain, mutations)
+      description: |
+        Single POST. Body is `{ op, payload }`.
+
+        ### View-only (no `sid` query)
+
+        | op | payload | response |
+        |----|---------|----------|
+        | `getWorldSnapshot` | `{}` | `{ snapshot }` |
+        | `getPlayerChainNode` | `{ stableKey }` | `{ node }` or 400 `unknown stableKey` / `invalid payload` |
+
+        ### Later mutations (`?sid=` required)
+
+        World-client relevant: `enterSpace`, `enterAmenity`, `getGameStats`,
+        `applyGameOutcome`, `getPlayerWallet`, `listPurchases`, `purchase`,
+        `buyParkingTicket`, `buyHouse`, `redeemWalletBundle`, `inspectSpace`,
+        `inspectAmenity`, `createHumanNode`, `recordInteraction`, `recordJourney`,
+        `worldChatPublish`, `worldChatReact`, `worldChatHistory`, `intercomCommand`,
+        `intercomResponse`, `talkSessionStart`, `talkSessionTick`, `talkSessionStop`,
+        `peerTalkSessionStart`, `peerTalkSessionTick`, `peerTalkSessionStop`,
+        `peerCallInvite`, `peerCallAccept`, `peerCallDecline`, `peerCallHangup`.
+
+        Privileged / space-node / `x-agent-service-key`: `createSpace`,
+        `addSpaceAmenity`, `removeSpaceAmenity`, `removeSpace`, `removeSpaceNode`,
+        `addShopItem`, `addSupermarketItem`, `addCarWashCar`, `removeShopItem`,
+        `removeSupermarketItem`, `removeCarWashCar`, `removeAmenityItems`,
+        `setPlayerWalletBalance`, `setSpaceWalletBalance`.
+
+        `buyParkingTicket` and `buyHouse` require `x-node-id` / `x-node-passw`.
+        `enterAmenity` is **audit only** (`{ ok: true }`); stage persistence is client + snapshot.
+        `enterSpace` returns `{ transition }` and currently requires `playerId` to match an
+        **agent** occupant `agentId` (host check).
+
+        There is **no** `moveHuman` / `move` op. Unknown op → 400 `unknown op`.
+
+        **CORS:** this route does not currently send `Access-Control-Allow-Origin` or
+        answer `OPTIONS`. Cross-origin POST with `Content-Type: application/json` will
+        preflight; the host must allow it for page origins.
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/SidQueryOptional"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SdkRpcRequest"
+            examples:
+              getWorldSnapshot:
+                summary: Full occupancy read (view-only)
+                value:
+                  op: getWorldSnapshot
+                  payload: {}
+              getPlayerChainNode:
+                summary: Incremental player-chain leaf
+                value:
+                  op: getPlayerChainNode
+                  payload:
+                    stableKey: "agent:node_main:agent_guide"
+              enterSpace:
+                summary: Later stage transition
+                value:
+                  op: enterSpace
+                  payload:
+                    playerId: "agent_guide"
+                    structureId: "space-mall-1"
+                    spaceId: "space-catalog-1"
+              applyGameOutcome:
+                summary: Arcade round; PU from computeEventPuDelta (no featured +10%)
+                value:
+                  op: applyGameOutcome
+                  payload:
+                    playerId: "node_main"
+                    gameId: hidden-gems
+                    roundId: "round-1"
+                    events:
+                      - type: chest_open
+                        correct: true
+      responses:
+        "200":
+          description: Operation result (shape depends on op)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SdkRpcSuccess"
+              examples:
+                snapshotWrapped:
+                  summary: getWorldSnapshot
+                  value:
+                    snapshot:
+                      sid: "sess_live_example_not_a_real_secret"
+                      worldMap:
+                        bounds:
+                          minX: 0
+                          minY: 0
+                          maxX: 19
+                          maxY: 9
+                        occupants:
+                          - kind: human
+                            id: viewer-1
+                            name: You
+                            x: 2
+                            y: 1
+                            interactive: true
+                          - kind: agent
+                            agentId: agent_guide
+                            name: Guide
+                            x: 4
+                            y: 1
+                            nodeId: node_main
+                            streetId: st-john
+                            platform: langchain
+                            toolNames: [chat_tool]
+                            hasChatTool: true
+                            stationary: true
+                          - kind: structure
+                            id: space-mall-1
+                            name: Corner Mall
+                            x: 10
+                            y: 1
+                            worldId: main
+                            spaceIds: [space-catalog-1]
+                            stationary: true
+                            primaryAmenity: shop
+                            amenities: [shop]
+                          - kind: structure
+                            id: arcade-hidden-gems
+                            name: Gem Chest
+                            x: 3
+                            y: 1
+                            worldId: main
+                            spaceIds: []
+                            gameId: hidden-gems
+                            stationary: true
+                      worldLayout:
+                        rev: 1
+                        bounds:
+                          minX: 0
+                          minY: 0
+                          maxX: 19
+                          maxY: 9
+                        zones:
+                          - id: zone-agent-strip
+                            streetId: st-john
+                            streetLabel: St. John St.
+                            primaryGroup: agent
+                            allowedGroups: [agent]
+                            rect:
+                              minX: 0
+                              minY: 0
+                              maxX: 6
+                              maxY: 2
+                        streets:
+                          - id: st-john
+                            label: St. John St.
+                      spaces:
+                        - id: space-catalog-1
+                          name: Corner Mall
+                          description: Shop interior
+                          designKey: shop-v1
+                          owner:
+                            displayName: Operator
+                          amenities: [shop]
+                      parkingStreet:
+                        spots:
+                          - id: parking-bay-1-layer-1
+                            bay: 1
+                            layer: 1
+                            occupant: null
+                          - id: parking-bay-1-layer-2
+                            bay: 1
+                            layer: 2
+                            occupant: null
+                          - id: parking-bay-2-layer-1
+                            bay: 2
+                            layer: 1
+                            occupant: null
+                          - id: parking-bay-2-layer-2
+                            bay: 2
+                            layer: 2
+                            occupant: null
+                          - id: parking-bay-3-layer-1
+                            bay: 3
+                            layer: 1
+                            occupant: null
+                          - id: parking-bay-3-layer-2
+                            bay: 3
+                            layer: 2
+                            occupant: null
+                          - id: parking-bay-4-layer-1
+                            bay: 4
+                            layer: 1
+                            occupant: null
+                          - id: parking-bay-4-layer-2
+                            bay: 4
+                            layer: 2
+                            occupant: null
+                        rates:
+                          "1h": 0.75
+                          "12h": 3.5
+                          "1d": 5
+                          "3d": 12
+                          "7d": 22
+                          "1mo": 65
+                          "3mo": 165
+                          "1y": 480
+                          forever: 750
+                      houseStreet:
+                        houses:
+                          - id: house-1
+                            houseId: 1
+                            bay: 1
+                            worldX: 3
+                            priceUsd: 1299.99
+                            layoutId: 1
+                            layoutLabel: Studio layout
+                            ownerNodeId: null
+                            ownerDisplayName: null
+                            ownerName: null
+                            ownerSignature: null
+                            purchasedAt: null
+                          - id: house-2
+                            houseId: 2
+                            bay: 2
+                            worldX: 8
+                            priceUsd: 2199.99
+                            layoutId: 2
+                            layoutLabel: Split room
+                            ownerNodeId: null
+                            ownerDisplayName: null
+                            ownerName: null
+                            ownerSignature: null
+                            purchasedAt: null
+                          - id: house-3
+                            houseId: 3
+                            bay: 3
+                            worldX: 13
+                            priceUsd: 3499.99
+                            layoutId: 3
+                            layoutLabel: L-shaped
+                            ownerNodeId: null
+                            ownerDisplayName: null
+                            ownerName: null
+                            ownerSignature: null
+                            purchasedAt: null
+                          - id: house-4
+                            houseId: 4
+                            bay: 4
+                            worldX: 18
+                            priceUsd: 5999.99
+                            layoutId: 4
+                            layoutLabel: Loft
+                            ownerNodeId: null
+                            ownerDisplayName: null
+                            ownerName: null
+                            ownerSignature: null
+                            purchasedAt: null
+                playerChainNode:
+                  summary: getPlayerChainNode occupant present
+                  value:
+                    node:
+                      kind: occupant
+                      stableKey: "agent:node_main:agent_guide"
+                      removed: false
+                      occupant:
+                        kind: agent
+                        agentId: agent_guide
+                        name: Guide
+                        x: 4
+                        y: 1
+        "400":
+          description: Invalid JSON, missing op, invalid payload, missing sid on mutating op, unknown op, unknown stableKey
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorBody"
+              examples:
+                missingOp:
+                  value:
+                    error: missing op
+                unknownOp:
+                  value:
+                    error: unknown op
+                missingSid:
+                  value:
+                    error: missing sid
+        "401":
+          description: Missing or invalid node headers on identity ops
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorBody"
+        "403":
+          description: invalid sid, or node kind / space scope mismatch
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorBody"
+              example:
+                error: invalid sid
+        "409":
+          description: Business conflict (purchase, parking, house, game outcome, wallet)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorBody"
+        "503":
+          description: repository unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorBody"
+  /events:
+    get:
+      operationId: subscribeWorldEvents
+      tags: [view-only]
+      summary: SSE occupancy fanout
+      description: |
+        `Content-Type: text/event-stream`. Query `sid` is required (session secret).
+
+        Browser clients should match play-ui:
+
+        ```
+        new EventSource(`${API_BASE}/events?sid=${encodeURIComponent(sid)}`);
+        ```
+
+        Native `EventSource` cannot set `x-node-*` headers. Do not pass
+        `{ withCredentials: true }`. Keepalive comments `: ping` every 30 seconds.
+
+        Named events (see info). Incremental path: parse `playerChainNotify` from JSON
+        `data`. If `nodes` is nonempty, sort refs, `getPlayerChainNode` each in order,
+        merge. Else or on failure: `getWorldSnapshot`.
+
+        **CORS:** this route does not currently send `Access-Control-Allow-Origin` on
+        the stream. Cross-origin `EventSource` from world2 needs that header on the
+        SSE response before the public URL works.
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/SidQueryRequired"
+      responses:
+        "200":
+          description: Infinite text/event-stream until the client disconnects
+          headers:
+            Content-Type:
+              schema:
+                type: string
+                enum: [text/event-stream]
+            Cache-Control:
+              schema:
+                type: string
+                example: no-cache
+            Connection:
+              schema:
+                type: string
+                example: keep-alive
+          content:
+            text/event-stream:
+              schema:
+                type: string
+                description: |
+                  SSE frames. Examples (not a JSON schema):
+
+                  event: world:agent_signal
+                  data: {"playerId":"__world__","kind":"metadata","rev":12,"playerChainNotify":{"updatedAt":"...","nodes":[{"stableKey":"agent:n:a","leafIndex":3}]}}
+
+                  event: world:player_added
+                  data: {"player":{...},"rev":13}
+
+                  : ping
+        "400":
+          description: missing sid
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorBody"
+              example:
+                error: missing sid
+        "403":
+          description: invalid sid
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorBody"
+              example:
+                error: invalid sid
+  /snapshot:
+    get:
+      operationId: getSnapshotUnwrapped
+      tags: [view-only]
+      summary: Compatibility full snapshot (unwrapped)
+      description: |
+        Same resolved snapshot as `getWorldSnapshot` but **not** wrapped in `{ snapshot }`.
+        Requires `sid`. World clients should prefer RPC so they match play-ui and the SDK.
+
+        Also rewritten from `/agent-play/snapshot.json`.
+
+        **CORS:** not sent today; optional for World 2 if RPC is used instead.
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/SidQueryRequired"
+      responses:
+        "200":
+          description: Top-level AgentPlaySnapshot
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                example: "no-store, no-cache, must-revalidate"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentPlaySnapshot"
+        "400":
+          description: missing sid
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorBody"
+              example:
+                error: missing sid
+        "403":
+          description: invalid sid
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorBody"
+              example:
+                error: invalid sid
+  /proximity-action:
+    options:
+      operationId: optionsProximityAction
+      tags: [later]
+      summary: CORS preflight for proximity-action
+      description: "Host already answers 204 with Access-Control-Allow-Origin: *, methods POST/OPTIONS, headers Content-Type."
+      security: []
+      responses:
+        "204":
+          description: Preflight OK
+          headers:
+            Access-Control-Allow-Origin:
+              schema:
+                type: string
+                example: "*"
+            Access-Control-Allow-Methods:
+              schema:
+                type: string
+                example: "POST, OPTIONS"
+            Access-Control-Allow-Headers:
+              schema:
+                type: string
+                example: Content-Type
+    post:
+      operationId: postProximityAction
+      tags: [later]
+      summary: Assist / chat / zone / yield toward an agent
+      description: |
+        Not SDK RPC. Query `sid` required.
+
+        Body `fromPlayerId` for the local human pawn is `__human__`. `toPlayerId` is
+        the target **agent** id. `action` is `assist` | `chat` | `zone` | `yield` only.
+        Human→human throws on the host (400 with the error message).
+
+        This route already sends `Access-Control-Allow-Origin: *` on POST and OPTIONS.
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/SidQueryRequired"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProximityActionRequest"
+            example:
+              fromPlayerId: __human__
+              toPlayerId: agent_guide
+              action: assist
+      responses:
+        "200":
+          description: Recorded
+          headers:
+            Access-Control-Allow-Origin:
+              schema:
+                type: string
+                example: "*"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OkTrue"
+              example:
+                ok: true
+        "400":
+          description: missing sid, invalid body/action, or policy error (including H2H)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorBody"
+        "403":
+          description: invalid sid
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorBody"
+  /api/nodes/validate:
+    servers:
+      - url: https://agent-play.com
+        description: Origin root. This path is not under /api/agent-play. Same occupancy as the canonical API.
+      - url: https://www.agent-play.com
+        description: Same occupancy deployment (alias of agent-play.com).
+      - url: https://playworld.world
+        description: Same occupancy deployment (alias of agent-play.com).
+      - url: https://world1.v0peer.org
+        description: Disposable alias of the same occupancy; may be discontinued. Not canonical.
+    post:
+      operationId: validateNodeIdentity
+      tags: [identity]
+      summary: Validate node id + hashed passphrase material
+      description: |
+        `POST https://agent-play.com/api/nodes/validate`. Also rewritten from
+        `/agent-play/nodes/validate`.
+
+        Headers `x-node-id` and `x-node-passw` are required (`x-node-passw` is hashed
+        material, **not** the human passphrase). Optional JSON `{ "nodeId" }` must match
+        the header or is omitted (defaults to header). Mismatch → 400
+        `x-node-id does not match body nodeId`.
+
+        World 2 public URL does **not** call this. Phase 2+ identity on `fetch` only.
+      security:
+        - nodeIdentity: []
+          nodePasswHash: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ValidateNodeRequest"
+            example:
+              nodeId: node_main
+      responses:
+        "200":
+          description: "Identity accepted (ok true in body)"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ValidateNodeResult"
+        "400":
+          description: "Body mismatch or validation failed (ok false may be 400)"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorOrValidateNodeResult"
+        "401":
+          description: missing x-node-id / x-node-passw
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorBody"
+              example:
+                error: missing x-node-id / x-node-passw
+        "503":
+          description: repository not configured
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorBody"
+components:
+  securitySchemes:
+    nodeIdentity:
+      type: apiKey
+      in: header
+      name: x-node-id
+      description: Node id from credentials.json. Not a cookie.
+    nodePasswHash:
+      type: apiKey
+      in: header
+      name: x-node-passw
+      description: Hashed passphrase material (same hex as hashNodePassword on the normalized phrase). Never the ten-word passw.
+    agentServiceKey:
+      type: apiKey
+      in: header
+      name: x-agent-service-key
+      description: Privileged platform key for selected space/wallet mutations when AGENT_SERVICE_KEY is configured.
+  parameters:
+    SidQueryRequired:
+      name: sid
+      in: query
+      required: true
+      description: Session secret from GET /session. HUD prefix only. Do not log in full.
+      schema:
+        type: string
+        minLength: 1
+    SidQueryOptional:
+      name: sid
+      in: query
+      required: false
+      description: Required for mutating ops; omit for getWorldSnapshot and getPlayerChainNode.
+      schema:
+        type: string
+        minLength: 1
+  schemas:
+    ErrorBody:
+      type: object
+      required: [error]
+      additionalProperties: false
+      properties:
+        error:
+          type: string
+    OkTrue:
+      type: object
+      required: [ok]
+      properties:
+        ok:
+          type: boolean
+          enum: [true]
+    SessionResponse:
+      type: object
+      required: [sid]
+      additionalProperties: false
+      properties:
+        sid:
+          type: string
+          description: Session secret. Show a prefix in HUD only.
+    WorldBounds:
+      type: object
+      required: [minX, minY, maxX, maxY]
+      additionalProperties: false
+      properties:
+        minX:
+          type: number
+        minY:
+          type: number
+        maxX:
+          type: number
+        maxY:
+          type: number
+      example:
+        minX: 0
+        minY: 0
+        maxX: 19
+        maxY: 9
+    OccupantKind:
+      type: string
+      enum: [human, agent, structure, mcp]
+    HumanOccupant:
+      type: object
+      required: [kind, id, name, x, y]
+      properties:
+        kind:
+          type: string
+          enum: [human]
+        id:
+          type: string
+        name:
+          type: string
+        x:
+          type: number
+        y:
+          type: number
+        interactive:
+          type: boolean
+    AgentOccupant:
+      type: object
+      required: [kind, agentId, name]
+      description: |
+        Snapshot ingest on the SDK also requires numeric x, y and unique cells.
+        Legacy wire field `agentType` maps to `platform`. Tool names do not spawn buildings.
+      properties:
+        kind:
+          type: string
+          enum: [agent]
+        agentId:
+          type: string
+        name:
+          type: string
+        x:
+          type: number
+        y:
+          type: number
+        nodeId:
+          type: string
+        streetId:
+          type: string
+        platform:
+          type: string
+          description: Integration label (e.g. langchain). Legacy agentType is accepted when parsing.
+        toolNames:
+          type: array
+          items:
+            type: string
+        assistToolNames:
+          type: array
+          items:
+            type: string
+        hasChatTool:
+          type: boolean
+        stationary:
+          type: boolean
+        enableP2a:
+          type: string
+          enum: ["on", "off"]
+    McpOccupant:
+      type: object
+      required: [kind, id, name, x, y]
+      description: Legacy. New deployments seed arcade cabinets instead of MCP amenities.
+      properties:
+        kind:
+          type: string
+          enum: [mcp]
+        id:
+          type: string
+        name:
+          type: string
+        x:
+          type: number
+        y:
+          type: number
+        url:
+          type: string
+    GameId:
+      type: string
+      enum:
+        - hidden-gems
+        - map-recall
+        - price-check
+        - signal-hunt
+        - delivery-dash
+        - lease-locker
+        - talk-timer
+        - daily-rotator
+    SpaceAmenityKind:
+      type: string
+      enum: [supermarket, shop, car_wash]
+    StructureOccupant:
+      type: object
+      required: [kind, id, name, x, y, worldId, spaceIds]
+      description: |
+        Valid only when `spaceIds` is nonempty **or** `gameId` is a catalog id.
+        `gameId` → Maple Ave arcade terminal. Nonempty `spaceIds` → authored space mall.
+      properties:
+        kind:
+          type: string
+          enum: [structure]
+        id:
+          type: string
+        name:
+          type: string
+        x:
+          type: number
+        y:
+          type: number
+        worldId:
+          type: string
+        spaceIds:
+          type: array
+          items:
+            type: string
+        gameId:
+          $ref: "#/components/schemas/GameId"
+        stationary:
+          type: boolean
+        primaryAmenity:
+          $ref: "#/components/schemas/SpaceAmenityKind"
+        amenities:
+          type: array
+          items:
+            $ref: "#/components/schemas/SpaceAmenityKind"
+    Occupant:
+      oneOf:
+        - $ref: "#/components/schemas/HumanOccupant"
+        - $ref: "#/components/schemas/AgentOccupant"
+        - $ref: "#/components/schemas/StructureOccupant"
+        - $ref: "#/components/schemas/McpOccupant"
+      discriminator:
+        propertyName: kind
+        mapping:
+          human: "#/components/schemas/HumanOccupant"
+          agent: "#/components/schemas/AgentOccupant"
+          structure: "#/components/schemas/StructureOccupant"
+          mcp: "#/components/schemas/McpOccupant"
+    WorldMap:
+      type: object
+      required: [bounds, occupants]
+      properties:
+        bounds:
+          $ref: "#/components/schemas/WorldBounds"
+        occupants:
+          type: array
+          items:
+            $ref: "#/components/schemas/Occupant"
+    WorldLayoutZone:
+      type: object
+      required: [id, streetId, streetLabel, rect, primaryGroup, allowedGroups]
+      properties:
+        id:
+          type: string
+        streetId:
+          type: string
+        streetLabel:
+          type: string
+        rect:
+          $ref: "#/components/schemas/WorldBounds"
+        primaryGroup:
+          type: string
+          enum: [agent, space, arcade, parking]
+        allowedGroups:
+          type: array
+          items:
+            type: string
+            enum: [agent, space, arcade, parking]
+    WorldLayoutStreet:
+      type: object
+      required: [id, label]
+      properties:
+        id:
+          type: string
+        label:
+          type: string
+    WorldLayout:
+      type: object
+      required: [rev, bounds, zones, streets]
+      description: Optional on the SDK type; host snapshots typically include it. Live labels and rects — do not freeze street names in art.
+      properties:
+        rev:
+          type: number
+        bounds:
+          $ref: "#/components/schemas/WorldBounds"
+        zones:
+          type: array
+          items:
+            $ref: "#/components/schemas/WorldLayoutZone"
+        streets:
+          type: array
+          items:
+            $ref: "#/components/schemas/WorldLayoutStreet"
+    SpaceOwner:
+      type: object
+      required: [displayName]
+      properties:
+        displayName:
+          type: string
+        playerId:
+          type: string
+        nodeId:
+          type: string
+    SpaceCatalogEntry:
+      type: object
+      required: [id, name, description, designKey, owner, amenities]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        designKey:
+          type: string
+        owner:
+          $ref: "#/components/schemas/SpaceOwner"
+        amenities:
+          type: array
+          minItems: 1
+          items:
+            $ref: "#/components/schemas/SpaceAmenityKind"
+        activityObjectIds:
+          type: array
+          items:
+            type: string
+    ParkingDurationTier:
+      type: string
+      enum: ["1h", "12h", "1d", "3d", "7d", "1mo", "3mo", "1y", "forever"]
+    ParkingOccupant:
+      type: object
+      required: [nodeId, carPurchaseId, displayNick, colorHex, model, tier, purchasedAt, expiresAt]
+      properties:
+        nodeId:
+          type: string
+        carPurchaseId:
+          type: string
+        displayNick:
+          type: string
+          maxLength: 24
+        colorHex:
+          type: string
+          pattern: "^#[0-9a-fA-F]{6}$"
+        model:
+          type: string
+        tier:
+          $ref: "#/components/schemas/ParkingDurationTier"
+        purchasedAt:
+          type: string
+        expiresAt:
+          type: ["string", "null"]
+    ParkingSpot:
+      type: object
+      required: [id, bay, layer, occupant]
+      properties:
+        id:
+          type: string
+        bay:
+          type: integer
+          enum: [1, 2, 3, 4]
+        layer:
+          type: integer
+          enum: [1, 2]
+        occupant:
+          oneOf:
+            - $ref: "#/components/schemas/ParkingOccupant"
+            - type: "null"
+    ParkingStreetContent:
+      type: object
+      required: [spots, rates]
+      description: Eight spots (4 bays × 2 layers). Not worldMap.occupants.
+      properties:
+        spots:
+          type: array
+          minItems: 8
+          maxItems: 8
+          items:
+            $ref: "#/components/schemas/ParkingSpot"
+        rates:
+          type: object
+          additionalProperties:
+            type: number
+    HouseSlot:
+      type: object
+      required:
+        - id
+        - houseId
+        - bay
+        - worldX
+        - priceUsd
+        - layoutId
+        - layoutLabel
+        - ownerNodeId
+        - ownerDisplayName
+        - ownerName
+        - ownerSignature
+        - purchasedAt
+      properties:
+        id:
+          type: string
+        houseId:
+          type: integer
+          enum: [1, 2, 3, 4]
+        bay:
+          type: integer
+          enum: [1, 2, 3, 4]
+        worldX:
+          type: number
+        priceUsd:
+          type: number
+        layoutId:
+          type: integer
+          enum: [1, 2, 3, 4]
+        layoutLabel:
+          type: string
+        ownerNodeId:
+          type: ["string", "null"]
+        ownerDisplayName:
+          type: ["string", "null"]
+        ownerName:
+          type: ["string", "null"]
+        ownerSignature:
+          type: ["string", "null"]
+        purchasedAt:
+          type: ["string", "null"]
+    HouseStreetContent:
+      type: object
+      required: [houses]
+      description: Four houses. Not worldMap.occupants. Vacant vs owned is metadata, not despawn.
+      properties:
+        houses:
+          type: array
+          minItems: 4
+          maxItems: 4
+          items:
+            $ref: "#/components/schemas/HouseSlot"
+    McpServerRow:
+      type: object
+      required: [id, name]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        url:
+          type: string
+    AgentPlaySnapshot:
+      type: object
+      required: [sid, worldMap]
+      description: |
+        Canonical occupancy snapshot (`@agent-play/sdk` AgentPlaySnapshot plus host
+        street sidecars). GLB packs are not part of this object.
+      properties:
+        sid:
+          type: string
+        mainNodeId:
+          type: string
+        worldMap:
+          $ref: "#/components/schemas/WorldMap"
+        worldLayout:
+          $ref: "#/components/schemas/WorldLayout"
+        spaces:
+          type: array
+          items:
+            $ref: "#/components/schemas/SpaceCatalogEntry"
+        mcpServers:
+          type: array
+          items:
+            $ref: "#/components/schemas/McpServerRow"
+        parkingStreet:
+          $ref: "#/components/schemas/ParkingStreetContent"
+        houseStreet:
+          $ref: "#/components/schemas/HouseStreetContent"
+    GetWorldSnapshotResponse:
+      type: object
+      required: [snapshot]
+      properties:
+        snapshot:
+          $ref: "#/components/schemas/AgentPlaySnapshot"
+    PlayerChainNotifyNodeRef:
+      type: object
+      required: [stableKey, leafIndex]
+      properties:
+        stableKey:
+          type: string
+        leafIndex:
+          type: integer
+        removed:
+          type: boolean
+        updatedAt:
+          type: string
+    PlayerChainFanoutNotify:
+      type: object
+      required: [updatedAt, nodes]
+      properties:
+        updatedAt:
+          type: string
+        nodes:
+          type: array
+          items:
+            $ref: "#/components/schemas/PlayerChainNotifyNodeRef"
+    PlayerChainGenesisNode:
+      type: object
+      required: [kind, stableKey, text]
+      properties:
+        kind:
+          type: string
+          enum: [genesis]
+        stableKey:
+          type: string
+          enum: ["__genesis__"]
+        text:
+          type: string
+    PlayerChainHeaderNode:
+      type: object
+      required: [kind, stableKey, sid, bounds]
+      properties:
+        kind:
+          type: string
+          enum: [header]
+        stableKey:
+          type: string
+          enum: ["__header__"]
+        sid:
+          type: string
+        bounds:
+          $ref: "#/components/schemas/WorldBounds"
+    PlayerChainOccupantRemovedNode:
+      type: object
+      required: [kind, stableKey, removed]
+      properties:
+        kind:
+          type: string
+          enum: [occupant]
+        stableKey:
+          type: string
+        removed:
+          type: boolean
+          enum: [true]
+    PlayerChainOccupantPresentNode:
+      type: object
+      required: [kind, stableKey, removed, occupant]
+      properties:
+        kind:
+          type: string
+          enum: [occupant]
+        stableKey:
+          type: string
+        removed:
+          type: boolean
+          enum: [false]
+        occupant:
+          $ref: "#/components/schemas/Occupant"
+    PlayerChainSpaceRemovedNode:
+      type: object
+      required: [kind, stableKey, removed]
+      properties:
+        kind:
+          type: string
+          enum: [space]
+        stableKey:
+          type: string
+        removed:
+          type: boolean
+          enum: [true]
+    PlayerChainSpacePresentNode:
+      type: object
+      required: [kind, stableKey, removed, space]
+      properties:
+        kind:
+          type: string
+          enum: [space]
+        stableKey:
+          type: string
+        removed:
+          type: boolean
+          enum: [false]
+        space:
+          $ref: "#/components/schemas/SpaceCatalogEntry"
+    PlayerChainNode:
+      oneOf:
+        - $ref: "#/components/schemas/PlayerChainGenesisNode"
+        - $ref: "#/components/schemas/PlayerChainHeaderNode"
+        - $ref: "#/components/schemas/PlayerChainOccupantRemovedNode"
+        - $ref: "#/components/schemas/PlayerChainOccupantPresentNode"
+        - $ref: "#/components/schemas/PlayerChainSpaceRemovedNode"
+        - $ref: "#/components/schemas/PlayerChainSpacePresentNode"
+    GetPlayerChainNodeResponse:
+      type: object
+      required: [node]
+      properties:
+        node:
+          $ref: "#/components/schemas/PlayerChainNode"
+    EmptyPayload:
+      type: object
+      additionalProperties: false
+    GetWorldSnapshotRequest:
+      type: object
+      required: [op, payload]
+      properties:
+        op:
+          type: string
+          enum: [getWorldSnapshot]
+        payload:
+          $ref: "#/components/schemas/EmptyPayload"
+    GetPlayerChainNodeRequest:
+      type: object
+      required: [op, payload]
+      properties:
+        op:
+          type: string
+          enum: [getPlayerChainNode]
+        payload:
+          type: object
+          required: [stableKey]
+          properties:
+            stableKey:
+              type: string
+              minLength: 1
+    EnterSpaceRequest:
+      type: object
+      required: [op, payload]
+      properties:
+        op:
+          type: string
+          enum: [enterSpace]
+        payload:
+          type: object
+          required: [playerId, structureId]
+          properties:
+            playerId:
+              type: string
+            structureId:
+              type: string
+            spaceId:
+              type: string
+    EnterAmenityRequest:
+      type: object
+      required: [op, payload]
+      properties:
+        op:
+          type: string
+          enum: [enterAmenity]
+        payload:
+          type: object
+          required: [playerId, spaceId, amenityKind]
+          properties:
+            playerId:
+              type: string
+            spaceId:
+              type: string
+            amenityKind:
+              $ref: "#/components/schemas/SpaceAmenityKind"
+    GetGameStatsRequest:
+      type: object
+      required: [op, payload]
+      properties:
+        op:
+          type: string
+          enum: [getGameStats]
+        payload:
+          type: object
+          required: [playerId]
+          properties:
+            playerId:
+              type: string
+    GameEvent:
+      oneOf:
+        - type: object
+          required: [type, correct]
+          properties:
+            type:
+              type: string
+              enum: [chest_open]
+            correct:
+              type: boolean
+            tutorial:
+              type: boolean
+        - type: object
+          required: [type, correct]
+          properties:
+            type:
+              type: string
+              enum: [sequence_step]
+            correct:
+              type: boolean
+            tutorial:
+              type: boolean
+        - type: object
+          required: [type, correct, round]
+          properties:
+            type:
+              type: string
+              enum: [price_guess]
+            correct:
+              type: boolean
+            round:
+              type: integer
+              minimum: 1
+        - type: object
+          required: [type, correct]
+          properties:
+            type:
+              type: string
+              enum: [signal_pick]
+            correct:
+              type: boolean
+        - type: object
+          required: [type, band, hits]
+          properties:
+            type:
+              type: string
+              enum: [delivery_finish]
+            band:
+              type: string
+              enum: [fast, ok, slow]
+            hits:
+              type: integer
+              minimum: 0
+        - type: object
+          required: [type, correct]
+          properties:
+            type:
+              type: string
+              enum: [door_pick]
+            correct:
+              type: boolean
+        - type: object
+          required: [type, success, round]
+          properties:
+            type:
+              type: string
+              enum: [talk_release]
+            success:
+              type: boolean
+            round:
+              type: integer
+              minimum: 1
+              maximum: 3
+    ApplyGameOutcomeRequest:
+      type: object
+      required: [op, payload]
+      description: Host scores with computeEventPuDelta. No featured-cabinet PU multiplier.
+      properties:
+        op:
+          type: string
+          enum: [applyGameOutcome]
+        payload:
+          type: object
+          required: [playerId, gameId, roundId, events]
+          properties:
+            playerId:
+              type: string
+            gameId:
+              $ref: "#/components/schemas/GameId"
+            roundId:
+              type: string
+            events:
+              type: array
+              minItems: 1
+              items:
+                $ref: "#/components/schemas/GameEvent"
+    GetPlayerWalletRequest:
+      type: object
+      required: [op, payload]
+      properties:
+        op:
+          type: string
+          enum: [getPlayerWallet]
+        payload:
+          type: object
+          required: [playerId]
+          properties:
+            playerId:
+              type: string
+    ListPurchasesRequest:
+      type: object
+      required: [op, payload]
+      properties:
+        op:
+          type: string
+          enum: [listPurchases]
+        payload:
+          type: object
+          required: [playerId]
+          properties:
+            playerId:
+              type: string
+            limit:
+              type: number
+    PurchaseRequest:
+      type: object
+      required: [op, payload]
+      properties:
+        op:
+          type: string
+          enum: [purchase]
+        payload:
+          type: object
+          required: [playerId, spaceId, amenityKind, itemRef]
+          properties:
+            playerId:
+              type: string
+            spaceId:
+              type: string
+            amenityKind:
+              $ref: "#/components/schemas/SpaceAmenityKind"
+            itemRef:
+              type: object
+              required: [kind, id]
+              properties:
+                kind:
+                  type: string
+                  enum: [shop, supermarket, carwash]
+                id:
+                  type: string
+    BuyParkingTicketRequest:
+      type: object
+      required: [op, payload]
+      description: Requires x-node-id and x-node-passw. Mutating; needs sid query.
+      properties:
+        op:
+          type: string
+          enum: [buyParkingTicket]
+        payload:
+          type: object
+          required: [bay, carPurchaseId, durationTier, displayNick]
+          properties:
+            bay:
+              type: integer
+              enum: [1, 2, 3, 4]
+            layer:
+              type: integer
+              enum: [1, 2]
+              default: 1
+            carPurchaseId:
+              type: string
+            durationTier:
+              $ref: "#/components/schemas/ParkingDurationTier"
+            displayNick:
+              type: string
+    BuyHouseRequest:
+      type: object
+      required: [op, payload]
+      description: Requires x-node-id and x-node-passw. Mutating; needs sid query.
+      properties:
+        op:
+          type: string
+          enum: [buyHouse]
+        payload:
+          type: object
+          required: [houseId, ownerName, ownerSignature]
+          properties:
+            houseId:
+              type: integer
+              enum: [1, 2, 3, 4]
+            ownerName:
+              type: string
+            ownerSignature:
+              type: string
+    RedeemWalletBundleRequest:
+      type: object
+      required: [op, payload]
+      properties:
+        op:
+          type: string
+          enum: [redeemWalletBundle]
+        payload:
+          type: object
+          required: [playerId, bundleId]
+          properties:
+            playerId:
+              type: string
+            bundleId:
+              type: string
+    OtherSdkRpcOp:
+      type: string
+      description: Remaining host ops (sid required). Payloads match web-ui sdk/rpc/route.ts; not fully expanded here.
+      enum:
+        - createHumanNode
+        - intercomCommand
+        - intercomResponse
+        - worldChatPublish
+        - worldChatReact
+        - worldChatHistory
+        - recordInteraction
+        - recordJourney
+        - createSpace
+        - addSpaceAmenity
+        - removeSpaceAmenity
+        - removeSpace
+        - removeSpaceNode
+        - inspectSpace
+        - inspectAmenity
+        - addShopItem
+        - addSupermarketItem
+        - addCarWashCar
+        - removeShopItem
+        - removeSupermarketItem
+        - removeCarWashCar
+        - removeAmenityItems
+        - setPlayerWalletBalance
+        - setSpaceWalletBalance
+        - talkSessionStart
+        - talkSessionTick
+        - talkSessionStop
+        - peerTalkSessionStart
+        - peerTalkSessionTick
+        - peerTalkSessionStop
+        - peerCallInvite
+        - peerCallAccept
+        - peerCallDecline
+        - peerCallHangup
+    OtherSdkRpcRequest:
+      type: object
+      required: [op, payload]
+      properties:
+        op:
+          $ref: "#/components/schemas/OtherSdkRpcOp"
+        payload:
+          type: object
+          additionalProperties: true
+    SdkRpcRequest:
+      oneOf:
+        - $ref: "#/components/schemas/GetWorldSnapshotRequest"
+        - $ref: "#/components/schemas/GetPlayerChainNodeRequest"
+        - $ref: "#/components/schemas/EnterSpaceRequest"
+        - $ref: "#/components/schemas/EnterAmenityRequest"
+        - $ref: "#/components/schemas/GetGameStatsRequest"
+        - $ref: "#/components/schemas/ApplyGameOutcomeRequest"
+        - $ref: "#/components/schemas/GetPlayerWalletRequest"
+        - $ref: "#/components/schemas/ListPurchasesRequest"
+        - $ref: "#/components/schemas/PurchaseRequest"
+        - $ref: "#/components/schemas/BuyParkingTicketRequest"
+        - $ref: "#/components/schemas/BuyHouseRequest"
+        - $ref: "#/components/schemas/RedeemWalletBundleRequest"
+        - $ref: "#/components/schemas/OtherSdkRpcRequest"
+      discriminator:
+        propertyName: op
+    PlayerWallet:
+      type: object
+      required: [playerId, balanceUsd, currency, updatedAt]
+      properties:
+        playerId:
+          type: string
+        balanceUsd:
+          type: number
+          minimum: 0
+        currency:
+          type: string
+          enum: [USD]
+        updatedAt:
+          type: string
+        powerUps:
+          type: integer
+          minimum: 0
+    GamePerTitleStats:
+      type: object
+      required: [plays, bestNetPu]
+      properties:
+        plays:
+          type: integer
+          minimum: 0
+        bestNetPu:
+          type: integer
+    GameStats:
+      type: object
+      required:
+        - dayStreak
+        - bestStreak
+        - puEarnedToday
+        - puCapRemaining
+        - gamesPlayedToday
+        - featuredGameId
+        - firstGamePlayed
+        - perGame
+      description: featuredGameId is the UTC weekday rotator title, not a PU bonus.
+      properties:
+        dayStreak:
+          type: integer
+        bestStreak:
+          type: integer
+        puEarnedToday:
+          type: integer
+        puCapRemaining:
+          type: integer
+        gamesPlayedToday:
+          type: integer
+        featuredGameId:
+          type: string
+        firstGamePlayed:
+          type: boolean
+        perGame:
+          type: object
+          additionalProperties:
+            $ref: "#/components/schemas/GamePerTitleStats"
+    WorldPlayerLocation:
+      type: object
+      required: [playerId, worldId]
+      properties:
+        playerId:
+          type: string
+        worldId:
+          type: string
+        structureId:
+          type: string
+        spaceId:
+          type: string
+    SpaceTransition:
+      type: object
+      required: [playerId, from, to, at]
+      properties:
+        playerId:
+          type: string
+        from:
+          $ref: "#/components/schemas/WorldPlayerLocation"
+        to:
+          $ref: "#/components/schemas/WorldPlayerLocation"
+        at:
+          type: string
+    SdkRpcSuccess:
+      description: Success body depends on op
+      oneOf:
+        - $ref: "#/components/schemas/GetWorldSnapshotResponse"
+        - $ref: "#/components/schemas/GetPlayerChainNodeResponse"
+        - type: object
+          required: [transition]
+          properties:
+            transition:
+              $ref: "#/components/schemas/SpaceTransition"
+        - $ref: "#/components/schemas/OkTrue"
+        - type: object
+          required: [stats]
+          properties:
+            stats:
+              $ref: "#/components/schemas/GameStats"
+        - type: object
+          required: [stats, wallet, netPu]
+          properties:
+            stats:
+              $ref: "#/components/schemas/GameStats"
+            wallet:
+              $ref: "#/components/schemas/PlayerWallet"
+            netPu:
+              type: number
+        - type: object
+          required: [wallet]
+          properties:
+            wallet:
+              $ref: "#/components/schemas/PlayerWallet"
+        - type: object
+          additionalProperties: true
+    ProximityActionRequest:
+      type: object
+      required: [fromPlayerId, toPlayerId, action]
+      additionalProperties: false
+      properties:
+        fromPlayerId:
+          type: string
+          description: Local human pawn id is __human__
+        toPlayerId:
+          type: string
+          description: Target agent id
+        action:
+          type: string
+          enum: [assist, chat, zone, yield]
+    ValidateNodeRequest:
+      type: object
+      properties:
+        nodeId:
+          type: string
+          description: Must match x-node-id when present
+        rootKey:
+          type: string
+        mainNodeId:
+          type: string
+    ValidateNodeResult:
+      type: object
+      required: [ok]
+      properties:
+        ok:
+          type: boolean
+      additionalProperties: true
+    ErrorOrValidateNodeResult:
+      oneOf:
+        - $ref: "#/components/schemas/ErrorBody"
+        - $ref: "#/components/schemas/ValidateNodeResult"
+security: []

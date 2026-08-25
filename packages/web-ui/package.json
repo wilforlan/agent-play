@@ -1,6 +1,6 @@
 {
   "name": "@agent-play/web-ui",
-  "version": "3.6.3",
+  "version": "3.6.4",
   "private": true,
   "type": "module",
   "scripts": {
@@ -19,7 +19,7 @@
   "dependencies": {
     "@agent-play/geography-mesh": "^0.1.0",
     "@agent-play/intercom": "^3.3.7",
-    "@agent-play/node-tools": "^3.2.1",
+    "@agent-play/node-tools": "^3.2.3",
     "@agent-play/sdk": "^3.4.7",
     "@openai/agents": "^0.8.5",
     "@portabletext/react": "^7.0.1",

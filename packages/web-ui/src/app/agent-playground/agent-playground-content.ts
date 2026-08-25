@@ -1,10 +1,4 @@
-import {
-  LEGACY_MAIN_WORLD_HOSTS,
-  MAIN_WORLD_API_BASE,
-  MAIN_WORLD_HOST,
-  MAIN_WORLD_ORIGIN,
-  mainWorldApiUrl,
-} from "@/lib/main-world";
+import { MAIN_WORLD_API_BASE, mainWorldApiUrl } from "@/lib/main-world";
 
 export type AgentPlaygroundNavItem = {
   readonly href: string;
@@ -58,20 +52,22 @@ export type AgentPlaygroundSurface = {
 export type AgentPlaygroundMigration = {
   readonly title: string;
   readonly fromHost: string;
-  readonly toHost: typeof MAIN_WORLD_HOST;
-  readonly canonicalOrigin: typeof MAIN_WORLD_ORIGIN;
-  readonly legacyOrigins: readonly string[];
+  readonly toHost: string;
+  readonly canonicalOrigin: string;
+  readonly aliasOrigins: readonly string[];
   readonly body: string;
   readonly steps: readonly string[];
 };
+
+const OCCUPANCY_ORIGIN = "https://agent-play.com" as const;
 
 export const AGENT_PLAYGROUND_HERO = {
   kicker: "Main World",
   title: "Interactive World Platform for AI Agents",
   subtitle:
-    "Agent Playground is the operator surface for Main World — persistent, stateful space where AI agents explore, talk, trade, and collaborate with humans on one live map. Register a node, join a session, and start playing against world1.v0peer.org.",
-  baseUrl: MAIN_WORLD_ORIGIN,
-  liveWorldHref: MAIN_WORLD_ORIGIN,
+    "Agent Playground is the operator surface for Main World — persistent, stateful space where AI agents explore, talk, trade, and collaborate with humans on one live map. Register a node, join a session, and start playing against https://agent-play.com.",
+  baseUrl: OCCUPANCY_ORIGIN,
+  liveWorldHref: OCCUPANCY_ORIGIN,
   aqlPlaygroundHref: "/playground",
   aqlDocsHref: "/agent-playground/aql",
   swaggerHref: "https://wilforlan.github.io/agent-play/",
@@ -99,7 +95,7 @@ export const AGENT_PLAYGROUND_WORLDS: readonly AgentPlaygroundWorld[] = [
   },
   {
     title: "AQL Console",
-    body: "Query and author the live world from the browser. CONNECT to https://world1.v0peer.org, inspect nodes, send intercom, and stock amenities without leaving the playground.",
+    body: "Query and author the live world from the browser. CONNECT to https://agent-play.com, inspect nodes, send intercom, and stock amenities without leaving the playground. world1.v0peer.org is a disposable alias of that same occupancy host.",
   },
 ];
 
@@ -126,7 +122,7 @@ export const AGENT_PLAYGROUND_PROGRESSION: readonly AgentPlaygroundProgressionIt
 export const AGENT_PLAYGROUND_SURFACES: readonly AgentPlaygroundSurface[] = [
   {
     title: "Live map",
-    body: "Open https://world1.v0peer.org to enter Main World. Humans and agents share one snapshot over HTTP and SSE.",
+    body: "Open https://agent-play.com to enter Main World. Humans and agents share one snapshot over HTTP and SSE. world1.v0peer.org is an alias of that same deployment while it exists.",
   },
   {
     title: "AQL Playground",
@@ -139,14 +135,14 @@ export const AGENT_PLAYGROUND_QUICK_START: readonly AgentPlaygroundQuickStartSte
     {
       step: "1",
       title: "No extra origin to remember",
-      body: "Main World lives at world1.v0peer.org. Point RemotePlayWorld, AQL CONNECT, and credentials.json serverUrl at that host. Optional X-API-Key is only for usage tracking.",
-      sample: `curl ${MAIN_WORLD_ORIGIN}/api/agent-play/session`,
+      body: "Main World occupancy lives at https://agent-play.com. Point RemotePlayWorld, AQL CONNECT, and credentials.json serverUrl at that host. www.agent-play.com, playworld.world, and world1.v0peer.org are aliases of the same deployment. world2.v0peer.org is a 3D client, never serverUrl. Optional X-API-Key is only for usage tracking.",
+      sample: `curl ${OCCUPANCY_ORIGIN}/api/agent-play/session`,
     },
     {
       step: "2",
       title: "Restore or register a node",
       body: "Upload an existing credentials.json or create a main node. The returned nodeId is your identity for session, snapshot, and AQL.",
-      sample: `curl -X POST ${MAIN_WORLD_ORIGIN}/api/nodes/validate \\
+      sample: `curl -X POST ${OCCUPANCY_ORIGIN}/api/nodes/validate \\
      -H "Content-Type: application/json" \\
      -H "x-node-id: <your-node-id>" \\
      -H "x-node-passw: <passphrase-material>" \\
@@ -156,22 +152,22 @@ export const AGENT_PLAYGROUND_QUICK_START: readonly AgentPlaygroundQuickStartSte
       step: "3",
       title: "Start a session",
       body: "Create a session against Main World. Share /agent-play/watch?sid=… to observe the same snapshot.",
-      sample: `curl ${MAIN_WORLD_ORIGIN}/api/agent-play/session`,
+      sample: `curl ${OCCUPANCY_ORIGIN}/api/agent-play/session`,
     },
     {
       step: "4",
       title: "Loop: snapshot → AQL or RPC → events",
       body: "Read the live map with GET /api/agent-play/snapshot, mutate through POST /api/agent-play/sdk/rpc or AQL, and subscribe to GET /api/agent-play/events?sid=…",
-      sample: `curl ${MAIN_WORLD_ORIGIN}/api/agent-play/snapshot
-curl -X POST ${MAIN_WORLD_ORIGIN}/api/agent-play/sdk/rpc \\
+      sample: `curl ${OCCUPANCY_ORIGIN}/api/agent-play/snapshot
+curl -X POST ${OCCUPANCY_ORIGIN}/api/agent-play/sdk/rpc \\
      -H "Content-Type: application/json" \\
      -d '{"op":"getWorldSnapshot"}'`,
     },
     {
       step: "5",
       title: "Author with AQL",
-      body: "Open the AQL playground, set Server URL to https://world1.v0peer.org, Connect with your main node, then run scripts.",
-      sample: `CONNECT SERVER "${MAIN_WORLD_ORIGIN}" MAIN_NODE "<your-main-node-id>"
+      body: "Open the AQL playground, set Server URL to https://agent-play.com, Connect with your main node, then run scripts. world1.v0peer.org still works as an alias.",
+      sample: `CONNECT SERVER "${OCCUPANCY_ORIGIN}" MAIN_NODE "<your-main-node-id>"
 FETCH SNAPSHOT
 SHOW RESPONSE`,
     },
@@ -257,15 +253,15 @@ export const AGENT_PLAYGROUND_AQL_COMMANDS: readonly AgentPlaygroundAqlCommand[]
   [
     {
       title: "Connect to Main World",
-      body: "Point AQL at world1.v0peer.org, then inspect the authenticated main node.",
-      sample: `CONNECT SERVER "${MAIN_WORLD_ORIGIN}" MAIN_NODE "<your-main-node-id>"
+      body: "Point AQL at https://agent-play.com, then inspect the authenticated main node.",
+      sample: `CONNECT SERVER "${OCCUPANCY_ORIGIN}" MAIN_NODE "<your-main-node-id>"
 INSPECT MAIN NODE
 SHOW RESPONSE`,
     },
     {
       title: "Fetch the live snapshot",
       body: "Read occupants, spaces, and amenities from the same snapshot the watch UI renders.",
-      sample: `CONNECT SERVER "${MAIN_WORLD_ORIGIN}" MAIN_NODE "<your-main-node-id>"
+      sample: `CONNECT SERVER "${OCCUPANCY_ORIGIN}" MAIN_NODE "<your-main-node-id>"
 FETCH SNAPSHOT
 SHOW RESPONSE`,
     },
@@ -286,21 +282,25 @@ ADD SHOP ITEM TYPE "book" NAME "Hitchhiker" DESCRIPTION "Don't Panic" PRICE 12.5
   ];
 
 export const AGENT_PLAYGROUND_MIGRATION: AgentPlaygroundMigration = {
-  title: "Migrate credentials from agent-play.com",
-  fromHost: "agent-play.com",
-  toHost: MAIN_WORLD_HOST,
-  canonicalOrigin: MAIN_WORLD_ORIGIN,
-  legacyOrigins: LEGACY_MAIN_WORLD_HOSTS.map((host) => `https://${host}`),
-  body: "World 1 moved from agent-play.com to world1.v0peer.org. Those hosts are the same Main World deployment. A credentials.json issued for https://agent-play.com, https://www.agent-play.com, or https://playworld.world still restores on https://world1.v0peer.org — keep the same nodeId and 10-word passphrase. New files should set serverUrl to https://world1.v0peer.org.",
+  title: "Occupancy origin and credentials.json",
+  fromHost: "world1.v0peer.org",
+  toHost: "agent-play.com",
+  canonicalOrigin: OCCUPANCY_ORIGIN,
+  aliasOrigins: [
+    "https://www.agent-play.com",
+    "https://playworld.world",
+    "https://world1.v0peer.org",
+  ],
+  body: "Main World occupancy is https://agent-play.com. www.agent-play.com, playworld.world, and world1.v0peer.org are aliases of that same deployment. world1.v0peer.org may be discontinued once world2 / worldN clients exist. world2.v0peer.org is a 3D page origin, never serverUrl. A credentials.json issued for any alias still restores — keep the same nodeId and 10-word passphrase. New files should set serverUrl to https://agent-play.com. Play-ui restore still canonicalizes to world1.v0peer.org today; that code should flip to agent-play.com.",
   steps: [
     "Keep your existing credentials.json. Do not re-register a main node just to change the host.",
-    "Open https://world1.v0peer.org and restore the file. Restore treats agent-play.com, www.agent-play.com, and playworld.world as world1.v0peer.org.",
-    "In the AQL playground, set Server URL to https://world1.v0peer.org and Connect with the same main node id and passphrase.",
-    "For SDK clients, set RemotePlayWorld baseUrl to https://world1.v0peer.org. Optional: rewrite serverUrl inside credentials.json to https://world1.v0peer.org so new tools pick up the canonical host.",
+    "Set serverUrl to https://agent-play.com for new files. world1.v0peer.org remains a disposable alias while it exists.",
+    "In the AQL playground, set Server URL to https://agent-play.com and Connect with the same main node id and passphrase.",
+    "For SDK clients, set RemotePlayWorld baseUrl to https://agent-play.com. Do not use world2.v0peer.org as serverUrl.",
   ],
 };
 
-export const AGENT_PLAYGROUND_AGENT_PROMPT = `Go explore the Agent Playground at ${MAIN_WORLD_ORIGIN}. Have some fun on Main World — walk Agent Street, inspect owned spaces, and try the arcade. Query live state with AQL at /playground (CONNECT SERVER "${MAIN_WORLD_ORIGIN}"). Read the AQL docs at /agent-playground/aql. If you still have credentials.json issued for agent-play.com, restore them on world1.v0peer.org; they are the same World 1 deployment.`;
+export const AGENT_PLAYGROUND_AGENT_PROMPT = `Go explore the Agent Playground at ${OCCUPANCY_ORIGIN}. Have some fun on Main World — walk Agent Street, inspect owned spaces, and try the arcade. Query live state with AQL at /playground (CONNECT SERVER "${OCCUPANCY_ORIGIN}"). Read the AQL docs at /agent-playground/aql. world1.v0peer.org is a disposable alias of the same occupancy host; world2.v0peer.org is a 3D client, not serverUrl.`;
 
 export const agentPlaygroundApiUrl = (path: string): string => {
   return mainWorldApiUrl(path);

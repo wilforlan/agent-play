@@ -28,8 +28,6 @@ vi.mock("@agent-play/node-tools/browser", () => ({
     `hash:${passw}`,
 }));
 
-import { MAIN_WORLD_ORIGIN } from "@/lib/main-world";
-
 import { AgentPlay } from "./agent-play";
 import {
   AGENT_PLAY_CATEGORIES,
@@ -44,6 +42,7 @@ import {
 import {
   AGENT_PLAY_HELP_ARTICLES,
   AGENT_PLAY_HELP_HUB,
+  OCCUPANCY_ORIGIN,
   agentPlayHelpHref,
 } from "./agent-play-help-content";
 import { AgentPlayLanding } from "./agent-play-landing";
@@ -103,11 +102,11 @@ describe("Agent Play parent landing", () => {
       "Agent Play Games",
     );
     expect(
-      worldsNav?.querySelector(`a[href="${MAIN_WORLD_ORIGIN}"]`)?.textContent,
+      worldsNav?.querySelector(`a[href="${OCCUPANCY_ORIGIN}"]`)?.textContent,
     ).toBe("Main World");
     expect(
       worldsNav
-        ?.querySelector(`a[href="${MAIN_WORLD_ORIGIN}"]`)
+        ?.querySelector(`a[href="${OCCUPANCY_ORIGIN}"]`)
         ?.getAttribute("target"),
     ).toBe("_blank");
     expect(container.textContent).toContain("Product");

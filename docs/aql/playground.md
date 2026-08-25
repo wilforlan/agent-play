@@ -21,7 +21,7 @@ Implementation: [`packages/web-ui/src/app/playground/page.tsx`](../../packages/w
 
 ## Connection workflow
 
-1. **Server URL** — Defaults to Main World (`https://world1.v0peer.org`) via [`resolveMainWorldBaseUrl`](../../packages/web-ui/src/lib/main-world.ts). Override with `NEXT_PUBLIC_MAIN_WORLD_ORIGIN` if needed.
+1. **Server URL** — Canonical occupancy is `https://agent-play.com`. The playground field currently defaults via [`resolveMainWorldBaseUrl`](../../packages/web-ui/src/lib/main-world.ts) (`MAIN_WORLD_HOST` is still `world1.v0peer.org` in code). Intended operator default is `https://agent-play.com`; `world1.v0peer.org` is a disposable alias of the same deployment. Override with `NEXT_PUBLIC_MAIN_WORLD_ORIGIN` if needed. Do not CONNECT to `world2.v0peer.org` (that origin is a 3D client, not occupancy).
 2. **Main node ID** — Your deployed **main** node identifier. Changing this field rewrites the `LET mainNode = "..."` line in the editor when present.
 3. **Passphrase** — Exactly **10 words** (whitespace-separated). The UI derives **hex credential material** via `nodeCredentialsMaterialFromHumanPassphrase` from [`@agent-play/node-tools/browser`](../../packages/node-tools/src/browser.ts).
 4. **Connect** — Calls `POST /api/nodes/validate` with `nodeId` + `rootKey` (`NEXT_PUBLIC_AGENT_PLAY_ROOT_KEY`), then `POST /api/agent-play/session`. On success, execution state holds `sid` and `nodePasswordMaterial`.

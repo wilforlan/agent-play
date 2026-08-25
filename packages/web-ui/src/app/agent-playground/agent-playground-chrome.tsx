@@ -46,8 +46,8 @@ export function AgentPlaygroundChrome({ children }: AgentPlaygroundChromeProps) 
       </header>
       {children}
       <footer className={styles.footer}>
-        Agent Playground — Interactive World Platform for AI Agents. Main World:
-        world1.v0peer.org
+        Agent Playground — Interactive World Platform for AI Agents. Occupancy:
+        agent-play.com (world1.v0peer.org is a disposable alias)
       </footer>
     </div>
   );

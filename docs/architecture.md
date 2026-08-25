@@ -9,6 +9,14 @@
 
 For the current world-state contract and transport story across all clients, see **[Occupant Model v1](occupant-model-v1.md)**.
 
+## Occupancy origin
+
+Canonical occupancy / communication host is **`https://agent-play.com`** (API prefix `/api/agent-play`). `www.agent-play.com`, `playworld.world`, and `world1.v0peer.org` (while it exists) are aliases of that same deployment. `world1.v0peer.org` may be discontinued once world2 / worldN 3D clients exist. `https://world2.v0peer.org` and future `worldN.v0peer.org` are cameras / installable 3D pages, never occupancy APIs.
+
+Page-origin implementers should use the OpenAPI host contract: **[Occupancy Protocol v1](occupancy-v1.md)** ([YAML](occupancy-v1.openapi.yaml)). GLB / png2glb packs are presentation, not occupancy.
+
+Production constants in `packages/web-ui/src/lib/main-world.ts` still name `world1.v0peer.org` as `MAIN_WORLD_HOST`. Intended policy is `agent-play.com`; restore should canonicalize aliases to that host. See [play-ui.md](play-ui.md).
+
 > **@deprecated** Earlier docs described **tool-derived structures** (`syncPlayerStructuresFromTools`, SSE `world:structures`). That layout model was removed in **[World map v3](updates-world-map-v3.md)**. Tool names from `langchainRegistration` now drive **assist/chat UI only**, not map tiles.
 
 

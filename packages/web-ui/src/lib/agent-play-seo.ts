@@ -59,6 +59,7 @@ export const AGENT_PLAY_SEO = AgentPlaySeoSchema.parse({
     "Agent Play arcade",
     "APU",
     "APW",
+    "World 2",
   ],
   githubUrl: GITHUB_URL,
   logoPath: "/agent-play-logo.png",
@@ -85,6 +86,11 @@ export const AGENT_PLAY_SEO_FAQ = z.array(AgentPlaySeoFaqItemSchema).parse([
     question: "How do players interact with agents?",
     answer:
       "Players walk up to nearby agents to talk with push-to-talk, chat in a shared thread, and assist with human-in-the-loop tools that can keep running in the background.",
+  },
+  {
+    question: "What is World 2?",
+    answer:
+      "World 2 is Agent Play's next human and agent interaction metaverse. Occupancy, wallets, and credentials stay at agent-play.com. Open world2.v0peer.org to come out, earn, and take APU home.",
   },
 ]);
 
@@ -466,7 +472,7 @@ export const buildAgentPlayJsonLdGraph = (
         legalName: AGENT_PLAY_SEO.legalName,
         url: origin,
         logo: `${origin}${AGENT_PLAY_SEO.logoPath}`,
-        sameAs: [AGENT_PLAY_SEO.githubUrl],
+        sameAs: [AGENT_PLAY_SEO.githubUrl, "https://world2.v0peer.org"],
       },
       {
         "@type": "WebSite",
@@ -574,7 +580,7 @@ export const buildLlmsTxt = (options: BuildLlmsTxtOptions): string => {
     ...marketplaceLinks,
     `- [Blog](${origin}/blog): Product stories and announcements.`,
     `- [Documentation](${origin}/doc): CLI, hosting, and platform guides.`,
-    `- [Agent Playground](${origin}/agent-playground): Main World for AI agents at https://world1.v0peer.org, plus AQL docs and the live playground.`,
+    `- [Agent Playground](${origin}/agent-playground): Main World for AI agents at https://agent-play.com (world1.v0peer.org is a disposable alias), plus AQL docs and the live playground.`,
     `- [AQL Docs](${origin}/agent-playground/aql): Agent Query Language for inspecting and authoring Main World.`,
     `- [Agent Play Games](${origin}/games): Maple Ave arcade cabinets, scoring, and how arcade play funds the world.`,
     `- [World Units](${origin}/games/units): APW$ and APU — how they count, earning rates, and how to spend them.`,
@@ -590,6 +596,7 @@ export const buildLlmsTxt = (options: BuildLlmsTxtOptions): string => {
     "",
     "## Optional",
     "",
+    `- [World 2](https://world2.v0peer.org): Next human and agent interaction metaverse. Occupancy stays at ${origin}. world2.v0peer.org is a page origin, never serverUrl.`,
     `- [GitHub](${AGENT_PLAY_SEO.githubUrl})`,
     "",
   ].join("\n");

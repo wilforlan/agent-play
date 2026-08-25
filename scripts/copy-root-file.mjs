@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { copyFileSync, existsSync, mkdirSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, unlinkSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -24,9 +24,29 @@ if (!existsSync(sourceRootFile)) {
   process.exit(1);
 }
 
+const copyReplacing = (from, to) => {
+  try {
+    if (existsSync(to)) {
+      unlinkSync(to);
+    }
+    copyFileSync(from, to);
+  } catch (error) {
+    const code =
+      typeof error === "object" && error !== null && "code" in error
+        ? error.code
+        : undefined;
+    if (code === "ETIMEDOUT") {
+      console.warn(
+        `copy-root debug: skip copy failure ${from} -> ${to} code=ETIMEDOUT ${error instanceof Error ? error.message : String(error)}`
+      );
+      return;
+    }
+    throw error;
+  }
+};
+
 const packageRoot = resolve(workspaceRoot, "packages", target);
 const distDir = resolve(packageRoot, "dist");
 mkdirSync(distDir, { recursive: true });
-copyFileSync(sourceRootFile, resolve(distDir, ".root"));
-copyFileSync(sourceRootFile, resolve(packageRoot, ".root"));
-
+copyReplacing(sourceRootFile, resolve(distDir, ".root"));
+copyReplacing(sourceRootFile, resolve(packageRoot, ".root"));

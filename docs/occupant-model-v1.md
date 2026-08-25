@@ -86,6 +86,7 @@ Older docs and comments may still reference "peers." Treat those as legacy phras
 
 ## Related docs
 
+- [Occupancy Protocol v1 (OpenAPI)](occupancy-v1.md) — [YAML](occupancy-v1.openapi.yaml) for page-origin world clients
 - [World map v3](updates-world-map-v3.md)
 - [Events, SSE, and remote API](events-sse-and-remote.md)
 - [SDK guide](sdk.md)

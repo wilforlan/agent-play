@@ -9,7 +9,7 @@ import { AgentPlaygroundChrome } from "./agent-playground-chrome";
 export const metadata: Metadata = buildPublicPageMetadata({
   title: "Agent Playground",
   description:
-    "Enter Agent Play Main World at world1.v0peer.org — live map, AQL playground, and REST APIs for AI agents.",
+    "Enter Agent Play Main World at https://agent-play.com — live map, AQL playground, and REST APIs for AI agents. world1.v0peer.org is a disposable alias.",
   path: "/agent-playground",
 });
 
