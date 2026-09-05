@@ -174,12 +174,74 @@ export const bumpScannerHeadOnBlock = async (input: {
   });
 };
 
+const BACKFILL_PAGE_SIZE = 1_000;
+const SCAN_COUNT = 200;
+
+const pageAllScannerTxIds = async (input: {
+  redis: Redis;
+  hostId: string;
+}): Promise<string[]> => {
+  const { scannerTxsKey } = await import("./scanner-keys.js");
+  const collected: string[] = [];
+  let offset = 0;
+  while (true) {
+    const page = await input.redis.zrangebyscore(
+      scannerTxsKey(input.hostId),
+      "-inf",
+      "+inf",
+      "LIMIT",
+      offset,
+      BACKFILL_PAGE_SIZE
+    );
+    collected.push(...page);
+    if (page.length < BACKFILL_PAGE_SIZE) {
+      return collected;
+    }
+    offset += page.length;
+  }
+};
+
+const scanAndDelete = async (redis: Redis, pattern: string): Promise<void> => {
+  let cursor = "0";
+  do {
+    const [next, keys] = await redis.scan(
+      cursor,
+      "MATCH",
+      pattern,
+      "COUNT",
+      SCAN_COUNT
+    );
+    cursor = next;
+    if (keys.length > 0) {
+      await redis.del(...keys);
+    }
+  } while (cursor !== "0");
+};
+
 export const rebuildScannerCacheFromIndexes = async (input: {
   redis: Redis;
   hostId: string;
 }): Promise<void> => {
   const { getScannerTx } = await import("./scanner-indexer.js");
-  const { scannerTxsKey } = await import("./scanner-keys.js");
+  const { queueScannerEconomyIncrement } = await import(
+    "./scanner-economy-cache.js"
+  );
+  const {
+    aggregateDailyMarketActivity,
+    dailyMarketActivityKey,
+    dailyMarketActivityReadyKey,
+    dailyMarketActivityRebuildKey,
+    enrichScannerTxSolFromDetail,
+  } = await import("./daily-market-activity.js");
+  const {
+    scannerGameScanPattern,
+    scannerSpaceScanPattern,
+    scannerSupplyKey,
+    scannerTalkCacheKey,
+    scannerTxKey,
+    scannerWalletKey,
+    scannerWalletsKey,
+  } = await import("./scanner-keys.js");
 
   const nowMs = Date.now();
   for (const date of hourBucketDates(nowMs)) {
@@ -188,25 +250,66 @@ export const rebuildScannerCacheFromIndexes = async (input: {
     await input.redis.del(scannerApuBurnHourKey(input.hostId, date));
   }
   await input.redis.del(scannerHeadCacheKey(input.hostId));
+  await input.redis.del(scannerTalkCacheKey(input.hostId));
+  await input.redis.del(scannerSupplyKey(input.hostId));
+  await scanAndDelete(input.redis, scannerSpaceScanPattern(input.hostId));
+  await scanAndDelete(input.redis, scannerGameScanPattern(input.hostId));
 
-  const sinceMs = nowMs - DAY_MS;
-  const ids = await input.redis.zrangebyscore(
-    scannerTxsKey(input.hostId),
-    sinceMs,
-    "+inf"
-  );
-
+  const ids = await pageAllScannerTxIds(input);
+  const txs = [];
   for (const id of ids) {
-    const tx = await getScannerTx({
+    const rawTx = await getScannerTx({
       redis: input.redis,
       hostId: input.hostId,
       txId: id,
     });
-    if (tx === null) continue;
+    if (rawTx === null) continue;
+    const tx = enrichScannerTxSolFromDetail(rawTx);
+    if (tx.solLamportsDelta !== rawTx.solLamportsDelta) {
+      await input.redis.set(scannerTxKey(input.hostId, tx.id), JSON.stringify(tx));
+    }
+    txs.push(tx);
     await bumpScannerHeadOnTx({
       redis: input.redis,
       hostId: input.hostId,
       tx,
     });
+    const multi = input.redis.multi();
+    queueScannerEconomyIncrement(multi, { hostId: input.hostId, tx });
+    await multi.exec();
+  }
+
+  const fields = aggregateDailyMarketActivity(txs);
+  const rebuildKey = dailyMarketActivityRebuildKey(input.hostId);
+  const liveKey = dailyMarketActivityKey(input.hostId);
+  await input.redis.del(rebuildKey);
+  if (Object.keys(fields).length > 0) {
+    await input.redis.hset(rebuildKey, fields);
+    await input.redis.rename(rebuildKey, liveKey);
+  } else {
+    await input.redis.del(liveKey);
+  }
+  await input.redis.set(dailyMarketActivityReadyKey(input.hostId), "1");
+
+  const playerIds = await input.redis.zrange(scannerWalletsKey(input.hostId), 0, -1);
+  for (const playerId of playerIds) {
+    const raw = await input.redis.get(scannerWalletKey(input.hostId, playerId));
+    if (raw === null) continue;
+    try {
+      const wallet = JSON.parse(raw) as {
+        powerUps?: number;
+        balanceUsd?: number;
+      };
+      const supplyKey = scannerSupplyKey(input.hostId);
+      if ((wallet.powerUps ?? 0) !== 0) {
+        await input.redis.hincrby(supplyKey, "circulatingApu", wallet.powerUps ?? 0);
+      }
+      if ((wallet.balanceUsd ?? 0) !== 0) {
+        await input.redis.hincrbyfloat(supplyKey, "marketUsd", wallet.balanceUsd ?? 0);
+      }
+      await input.redis.hincrby(supplyKey, "walletCount", 1);
+    } catch {
+      continue;
+    }
   }
 };

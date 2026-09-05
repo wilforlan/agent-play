@@ -10,9 +10,12 @@ import {
   type ScannerTxRecord,
   type ScannerWalletSnapshot,
 } from "@agent-play/sdk";
+import { queueDailyMarketActivityIncrement } from "./daily-market-activity.js";
+import { queueScannerEconomyIncrement } from "./scanner-economy-cache.js";
 import {
   playerPurchasesScanPattern,
   scannerBlocksKey,
+  scannerSupplyKey,
   scannerTxByPlayerKey,
   scannerTxKey,
   scannerTxsKey,
@@ -31,6 +34,8 @@ export const amenityKindToScannerOp = (
   amenityKind: PurchaseRecord["amenityKind"]
 ): ScannerTxOp => {
   if (amenityKind === "wallet_bundle") return "redeemWalletBundle";
+  if (amenityKind === "sol_deposit") return "solDeposit";
+  if (amenityKind === "sol_payout") return "solPayout";
   if (amenityKind === "apu_credit" || amenityKind === "apu_debit") {
     return "applyGameOutcome";
   }
@@ -83,6 +88,14 @@ export const indexPurchaseRecord = async (input: {
   multi.set(txKey, JSON.stringify(row));
   multi.zadd(scannerTxsKey(input.hostId), score, row.id);
   multi.zadd(scannerTxByPlayerKey(input.hostId, row.playerId), score, row.id);
+  queueDailyMarketActivityIncrement(multi, {
+    hostId: input.hostId,
+    tx: row,
+  });
+  queueScannerEconomyIncrement(multi, {
+    hostId: input.hostId,
+    tx: row,
+  });
   await multi.exec();
 
   const { bumpScannerHeadOnTx } = await import("./scanner-cache.js");
@@ -118,9 +131,36 @@ export const indexWalletBalance = async (input: {
   wallet: ScannerWalletSnapshot;
 }): Promise<void> => {
   const row = ScannerWalletSnapshotSchema.parse(input.wallet);
+  const walletKey = scannerWalletKey(input.hostId, row.playerId);
+  const previousRaw = await input.redis.get(walletKey);
+  let previousApu = 0;
+  let previousUsd = 0;
+  let isNew = true;
+  if (previousRaw !== null) {
+    try {
+      const previous = ScannerWalletSnapshotSchema.parse(JSON.parse(previousRaw));
+      previousApu = previous.powerUps;
+      previousUsd = previous.balanceUsd;
+      isNew = false;
+    } catch {
+      isNew = true;
+    }
+  }
   const multi = input.redis.multi();
-  multi.set(scannerWalletKey(input.hostId, row.playerId), JSON.stringify(row));
+  multi.set(walletKey, JSON.stringify(row));
   multi.zadd(scannerWalletsKey(input.hostId), row.powerUps, row.playerId);
+  const supplyKey = scannerSupplyKey(input.hostId);
+  const apuDelta = row.powerUps - previousApu;
+  const usdDelta = row.balanceUsd - previousUsd;
+  if (apuDelta !== 0) {
+    multi.hincrby(supplyKey, "circulatingApu", apuDelta);
+  }
+  if (usdDelta !== 0) {
+    multi.hincrbyfloat(supplyKey, "marketUsd", usdDelta);
+  }
+  if (isNew) {
+    multi.hincrby(supplyKey, "walletCount", 1);
+  }
   await multi.exec();
 };
 
@@ -163,10 +203,68 @@ export const getScannerTx = async (input: {
   hostId: string;
   txId: string;
 }): Promise<ScannerTxRecord | null> => {
+  const persistEnriched = async (
+    parsed: ScannerTxRecord,
+  ): Promise<ScannerTxRecord> => {
+    const {
+      enrichScannerTxFromSibling,
+      enrichScannerTxSolFromDetail,
+      counterpartyFromTransferDetail,
+      sourceFromScannerTx,
+    } = await import("./daily-market-activity.js");
+    let enriched = enrichScannerTxSolFromDetail(parsed);
+    const fromDetail = counterpartyFromTransferDetail(enriched);
+    if (enriched.counterpartyNodeId === undefined && fromDetail !== null) {
+      enriched = { ...enriched, counterpartyNodeId: fromDetail };
+    }
+    if (
+      sourceFromScannerTx(enriched) === "p2p" &&
+      (enriched.counterpartyNodeId === undefined ||
+        enriched.solLamportsDelta === undefined)
+    ) {
+      const atMs = Date.parse(enriched.at);
+      if (Number.isFinite(atMs)) {
+        const siblingIds = await input.redis.zrangebyscore(
+          scannerTxsKey(input.hostId),
+          atMs,
+          atMs,
+        );
+        for (const siblingId of siblingIds) {
+          if (siblingId === enriched.id) continue;
+          const siblingRaw = await input.redis.get(
+            scannerTxKey(input.hostId, siblingId),
+          );
+          if (siblingRaw === null) continue;
+          try {
+            const sibling = enrichScannerTxSolFromDetail(
+              ScannerTxRecordSchema.parse(JSON.parse(siblingRaw)),
+            );
+            enriched = enrichScannerTxFromSibling({
+              tx: enriched,
+              sibling,
+            });
+          } catch {
+            continue;
+          }
+        }
+      }
+    }
+    if (
+      enriched.solLamportsDelta !== parsed.solLamportsDelta ||
+      enriched.feeLamports !== parsed.feeLamports ||
+      enriched.counterpartyNodeId !== parsed.counterpartyNodeId
+    ) {
+      await input.redis.set(
+        scannerTxKey(input.hostId, enriched.id),
+        JSON.stringify(enriched),
+      );
+    }
+    return enriched;
+  };
   const raw = await input.redis.get(scannerTxKey(input.hostId, input.txId));
   if (raw !== null) {
     try {
-      return ScannerTxRecordSchema.parse(JSON.parse(raw));
+      return await persistEnriched(ScannerTxRecordSchema.parse(JSON.parse(raw)));
     } catch {
       return null;
     }
@@ -186,7 +284,7 @@ export const getScannerTx = async (input: {
     return null;
   }
   try {
-    return ScannerTxRecordSchema.parse(JSON.parse(indexed));
+    return await persistEnriched(ScannerTxRecordSchema.parse(JSON.parse(indexed)));
   } catch {
     return null;
   }

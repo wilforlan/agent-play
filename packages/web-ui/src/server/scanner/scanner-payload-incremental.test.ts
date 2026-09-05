@@ -27,6 +27,7 @@ type MockRedis = {
     count?: number
   ) => Promise<string[]>;
   zscore: (key: string, member: string) => Promise<string | null>;
+  zcard: (key: string) => Promise<number>;
   get: (key: string) => Promise<string | null>;
 };
 
@@ -73,6 +74,9 @@ const createMockRedis = (): MockRedis => {
       const score = zsets.get(key)?.get(member);
       return score !== undefined ? String(score) : null;
     },
+    async zcard(key) {
+      return zsets.get(key)?.size ?? 0;
+    },
   };
 };
 
@@ -117,5 +121,29 @@ describe("listScannerTxs incremental", () => {
     expect(page.txs.map((tx) => tx.id)).toEqual(["tx-newer", "tx-new"]);
     expect(page.nextSinceMs).toBe(3000);
     expect(page.nextCursor).toBeNull();
+  });
+
+  it("returns a numbered page of txs with totals", async () => {
+    const redis = createMockRedis();
+    const hostId = "default";
+    seedTx(redis, hostId, { id: "tx-1", atMs: 1000 });
+    seedTx(redis, hostId, { id: "tx-2", atMs: 2000 });
+    seedTx(redis, hostId, { id: "tx-3", atMs: 3000 });
+    seedTx(redis, hostId, { id: "tx-4", atMs: 4000 });
+    seedTx(redis, hostId, { id: "tx-5", atMs: 5000 });
+
+    const page = await listScannerTxs({
+      redis: redis as never,
+      hostId,
+      limit: 2,
+      page: 2,
+    });
+
+    expect(page.txs.map((tx) => tx.id)).toEqual(["tx-3", "tx-2"]);
+    expect(page.page).toBe(2);
+    expect(page.pageSize).toBe(2);
+    expect(page.total).toBe(5);
+    expect(page.pageCount).toBe(3);
+    expect(page.nextCursor).not.toBeNull();
   });
 });

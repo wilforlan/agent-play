@@ -1,4 +1,4 @@
-import { mkdirSync, readdirSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, statSync } from "node:fs";
 import { copyFile as copyFileAsync } from "node:fs/promises";
 import { extname, join } from "node:path";
 
@@ -25,6 +25,20 @@ const isSkippableCopyError = (error) => {
     return true;
   }
   return toErrorMessage(error).toLowerCase().includes("timeout");
+};
+
+const isCloudPlaceholder = (stats) => {
+  return stats.size > 0 && stats.blocks === 0;
+};
+
+const isCurrentCopy = (fromStats, toStats) => {
+  if (isCloudPlaceholder(toStats)) {
+    return true;
+  }
+  if (toStats.size !== fromStats.size) {
+    return false;
+  }
+  return toStats.mtimeMs >= fromStats.mtimeMs;
 };
 
 const withTimeout = async (work, timeoutMs) => {
@@ -55,6 +69,7 @@ export const copyLocalTree = async (options) => {
     copyTimeoutMs = DEFAULT_COPY_TIMEOUT_MS,
     log = () => undefined,
     copyFile = copyFileAsync,
+    statFile = statSync,
   } = options;
   const skippedExtensions = new Set(
     skipExtensions.map((extension) => extension.toLowerCase())
@@ -79,10 +94,14 @@ export const copyLocalTree = async (options) => {
         result.skipped += 1;
         continue;
       }
-      const stats = statSync(fromPath);
-      if (stats.size > 0 && stats.blocks === 0) {
+      const stats = statFile(fromPath);
+      if (isCloudPlaceholder(stats)) {
         result.skipped += 1;
         log(`copy-tree debug: skip cloud placeholder ${fromPath}`);
+        continue;
+      }
+      if (existsSync(toPath) && isCurrentCopy(stats, statFile(toPath))) {
+        result.skipped += 1;
         continue;
       }
       try {

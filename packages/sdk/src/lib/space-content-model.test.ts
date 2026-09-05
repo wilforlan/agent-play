@@ -358,6 +358,46 @@ describe("space-content-model: PurchaseRecordSchema", () => {
     expect(parsed.priceUsd).toBeUndefined();
   });
 
+  it("accepts a P2P debit with SOL settlement fields", () => {
+    const parsed = PurchaseRecordSchema.parse({
+      id: "p2p-debit-1",
+      playerId: "seller-1",
+      spaceId: "econext-p2p",
+      amenityKind: "apu_debit",
+      itemRef: { kind: "apu", id: "deal-1" },
+      at: "2026-09-05T12:00:00.000Z",
+      powerUpsDelta: -40,
+      creditSource: "econext:p2p",
+      token: "APU",
+      solLamportsDelta: 396_000_000,
+      feeLamports: 4_000_000,
+      counterpartyNodeId: "buyer-1",
+      solanaTxSignature: "sigP2p1",
+    });
+    expect(parsed.solLamportsDelta).toBe(396_000_000);
+    expect(parsed.feeLamports).toBe(4_000_000);
+    expect(parsed.solanaTxSignature).toBe("sigP2p1");
+    expect(parsed.counterpartyNodeId).toBe("buyer-1");
+  });
+
+  it("accepts a SOL deposit without APU movement", () => {
+    const parsed = PurchaseRecordSchema.parse({
+      id: "sol-dep-1",
+      playerId: "node-1",
+      spaceId: "econext",
+      amenityKind: "sol_deposit",
+      itemRef: { kind: "sol", id: "sig-dep-1" },
+      at: "2026-09-05T12:00:00.000Z",
+      token: "SOL",
+      solLamportsDelta: 1_000_000_000,
+      solanaTxSignature: "sigDep1",
+    });
+    expect(parsed.amenityKind).toBe("sol_deposit");
+    expect(parsed.token).toBe("SOL");
+    expect(parsed.powerUpsDelta).toBeUndefined();
+    expect(parsed.solLamportsDelta).toBe(1_000_000_000);
+  });
+
   it("rejects mismatched amenityKind enum", () => {
     expect(
       PurchaseRecordSchema.safeParse({

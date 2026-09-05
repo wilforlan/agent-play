@@ -16,7 +16,17 @@ export async function GET(req: NextRequest) {
   const cursor = req.nextUrl.searchParams.get("cursor") ?? undefined;
   const tokenParam = req.nextUrl.searchParams.get("token");
   const token =
-    tokenParam === "APU" || tokenParam === "USD" ? tokenParam : undefined;
+    tokenParam === "APU" || tokenParam === "USD" || tokenParam === "SOL"
+      ? tokenParam
+      : undefined;
+  const sourceParam = req.nextUrl.searchParams.get("source");
+  const source =
+    sourceParam === "p2p" ||
+    sourceParam === "transfer" ||
+    sourceParam === "trade" ||
+    sourceParam === "sol"
+      ? sourceParam
+      : undefined;
   const sinceMsParam = req.nextUrl.searchParams.get("sinceMs");
   const sinceMs =
     sinceMsParam !== null && sinceMsParam.length > 0
@@ -25,13 +35,21 @@ export async function GET(req: NextRequest) {
   if (sinceMsParam !== null && sinceMsParam.length > 0 && !Number.isFinite(sinceMs)) {
     return Response.json({ error: "Invalid sinceMs" }, { status: 400 });
   }
+  const pageParam = req.nextUrl.searchParams.get("page");
+  const pageNumber =
+    pageParam !== null && pageParam.length > 0 ? Number(pageParam) : undefined;
+  if (pageParam !== null && pageParam.length > 0 && !Number.isFinite(pageNumber)) {
+    return Response.json({ error: "Invalid page" }, { status: 400 });
+  }
   const page = await listScannerTxs({
     redis,
     hostId,
     limit: Number.isFinite(limit) ? limit : 25,
     cursor,
+    page: pageNumber,
     sinceMs,
     token,
+    source,
   });
   return Response.json(page);
 }

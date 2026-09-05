@@ -5,7 +5,11 @@ import { useCallback, useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import type { ScannerNodeProfile } from "@agent-play/sdk";
 import styles from "../../scanner-page.module.css";
-import { fetchScannerNodeProfile } from "../../scanner-node-api";
+import {
+  fetchScannerNodeProfile,
+  fetchScannerNodeTxs,
+} from "../../scanner-node-api";
+import { ScannerPagination } from "../../scanner-pagination";
 
 const truncate = (value: string, len = 12): string =>
   value.length <= len ? value : `${value.slice(0, len)}…`;
@@ -16,6 +20,8 @@ export function ScannerNodeClient() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [profile, setProfile] = useState<ScannerNodeProfile | null>(null);
+  const [txPage, setTxPage] = useState(1);
+  const [txPageCount, setTxPageCount] = useState(0);
 
   const load = useCallback(async () => {
     if (nodeId.length === 0) return;
@@ -23,7 +29,16 @@ export function ScannerNodeClient() {
     setError(null);
     try {
       const data = await fetchScannerNodeProfile(nodeId);
-      setProfile(data);
+      const txPageResult = await fetchScannerNodeTxs({
+        nodeId,
+        page: 1,
+      });
+      setProfile({
+        ...data,
+        txs: txPageResult.txs,
+      });
+      setTxPageCount(txPageResult.pageCount);
+      setTxPage(txPageResult.page);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load node");
     } finally {
@@ -35,11 +50,41 @@ export function ScannerNodeClient() {
     void load();
   }, [load]);
 
+  const loadTxPage = useCallback(
+    async (page: number) => {
+      if (nodeId.length === 0) return;
+      try {
+        const txPageResult = await fetchScannerNodeTxs({
+          nodeId,
+          page,
+        });
+        setProfile((current) =>
+          current === null
+            ? current
+            : { ...current, txs: txPageResult.txs },
+        );
+        setTxPageCount(txPageResult.pageCount);
+        setTxPage(txPageResult.page);
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Failed to load node");
+      }
+    },
+    [nodeId],
+  );
+
+  const amenityEntries = profile === null
+    ? []
+    : Object.entries(profile.breakdown.byAmenityKind);
+  const amenityMax = amenityEntries.reduce(
+    (max, [, count]) => (count > max ? count : max),
+    0,
+  );
+
   return (
-    <div className={styles.page}>
+    <div className={styles.page} data-scanner="true">
       <div className={styles.shell}>
         <header className={styles.header}>
-          <div>
+          <div className={styles.brand}>
             <h1 className={styles.title}>Node profile</h1>
             <p className={styles.subtitle}>
               <code>{truncate(nodeId, 24)}</code>
@@ -49,7 +94,7 @@ export function ScannerNodeClient() {
             </p>
           </div>
           <nav className={styles.nav} aria-label="Scanner navigation">
-            <Link href="/scanner?view=nodes">← Nodes</Link>
+            <Link href="/scanner?view=nodes">Nodes</Link>
             <Link href="/scanner">Scanner</Link>
           </nav>
         </header>
@@ -60,62 +105,61 @@ export function ScannerNodeClient() {
           </div>
         ) : null}
 
-        {loading ? <p>Loading node profile…</p> : null}
+        {loading ? (
+          <>
+            <div className={styles.skeletonGrid} aria-hidden="true">
+              <div className={styles.skeletonCard} />
+              <div className={styles.skeletonCard} />
+            </div>
+            <div className={styles.skeletonRow} />
+          </>
+        ) : null}
 
         {!loading && profile !== null ? (
           <>
-            <section className={styles.grid} aria-label="Ledger KPIs">
+            <section className={styles.receiptHero} aria-label="Wallet">
               <article className={styles.card}>
-                <div className={styles.cardLabel}>Transactions</div>
+                <div className={styles.cardLabel}>USD</div>
                 <div className={styles.cardValue}>
-                  {String(profile.ledger.txCount)}
+                  {`$${profile.ledger.apwVolume.toFixed(2)}`}
+                </div>
+                <div className={styles.cardHint}>
+                  {profile.ledger.txCount} txs · APW$
+                  {profile.ledger.apwVolume.toFixed(2)} transacted
                 </div>
               </article>
               <article className={styles.card}>
-                <div className={styles.cardLabel}>USD spent</div>
+                <div className={styles.cardLabel}>APU</div>
                 <div className={styles.cardValue}>
-                  ${profile.ledger.usdSpent.toFixed(2)}
+                  {profile.wallet !== null
+                    ? profile.wallet.powerUps
+                    : profile.ledger.apuMinted > 0
+                      ? profile.ledger.apuMinted
+                      : "—"}
                 </div>
-              </article>
-              <article className={styles.card}>
-                <div className={styles.cardLabel}>APU minted</div>
-                <div className={styles.cardValue}>
-                  {String(profile.ledger.apuMinted)}
-                </div>
-              </article>
-              <article className={styles.card}>
-                <div className={styles.cardLabel}>APU burned</div>
-                <div className={styles.cardValue}>
-                  {String(profile.ledger.apuBurned)}
-                </div>
-              </article>
-              <article className={styles.card}>
-                <div className={styles.cardLabel}>Events 24h</div>
-                <div className={styles.cardValue}>
-                  {String(profile.analytics.eventsLast24h)}
+                <div className={styles.cardHint}>
+                  {profile.ledger.apuMinted} minted · {profile.ledger.apuBurned} burned
                 </div>
               </article>
             </section>
 
-            <h2 className={styles.sectionTitle}>Breakdown by amenity</h2>
-            <table className={styles.table}>
-              <thead>
-                <tr>
-                  <th>Amenity</th>
-                  <th>Count</th>
-                </tr>
-              </thead>
-              <tbody>
-                {Object.entries(profile.breakdown.byAmenityKind).map(
-                  ([kind, count]) => (
-                    <tr key={kind}>
-                      <td>{kind}</td>
-                      <td>{count}</td>
-                    </tr>
-                  )
-                )}
-              </tbody>
-            </table>
+            <h2 className={styles.sectionTitle}>Amenity breakdown</h2>
+            <div className={styles.barList}>
+              {amenityEntries.map(([kind, count]) => (
+                <div key={kind} className={styles.barRow}>
+                  <span>{kind}</span>
+                  <div className={styles.barTrack}>
+                    <div
+                      className={styles.barFill}
+                      style={{
+                        width: `${amenityMax > 0 ? (count / amenityMax) * 100 : 0}%`,
+                      }}
+                    />
+                  </div>
+                  <span>{count}</span>
+                </div>
+              ))}
+            </div>
 
             <h2 className={styles.sectionTitle}>Transactions</h2>
             <table className={styles.table}>
@@ -148,6 +192,11 @@ export function ScannerNodeClient() {
                 ))}
               </tbody>
             </table>
+            <ScannerPagination
+              page={txPage}
+              pageCount={txPageCount}
+              onPageChange={(page) => void loadTxPage(page)}
+            />
 
             <h2 className={styles.sectionTitle}>Analytics timeline</h2>
             <table className={styles.table}>
@@ -164,9 +213,23 @@ export function ScannerNodeClient() {
                     <td>{event.timestamp}</td>
                     <td>{event.event}</td>
                     <td>
-                      <code>
-                        {JSON.stringify(event.properties).slice(0, 80)}
-                      </code>
+                      <details className={styles.jsonFold}>
+                        <summary>Properties</summary>
+                        <button
+                          type="button"
+                          className={styles.copyBtn}
+                          onClick={() =>
+                            void navigator.clipboard?.writeText(
+                              JSON.stringify(event.properties, null, 2),
+                            )
+                          }
+                        >
+                          Copy
+                        </button>
+                        <pre className={styles.jsonPre}>
+                          {JSON.stringify(event.properties, null, 2)}
+                        </pre>
+                      </details>
                     </td>
                   </tr>
                 ))}
@@ -176,7 +239,7 @@ export function ScannerNodeClient() {
             {profile.gameStats !== null ? (
               <>
                 <h2 className={styles.sectionTitle}>Game stats</h2>
-                <section className={styles.grid}>
+                <section className={styles.hero}>
                   <article className={styles.card}>
                     <div className={styles.cardLabel}>Day streak</div>
                     <div className={styles.cardValue}>

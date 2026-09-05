@@ -303,6 +303,8 @@ export const PurchaseRecordSchema = z.object({
     "wallet_bundle",
     "apu_credit",
     "apu_debit",
+    "sol_deposit",
+    "sol_payout",
   ]),
   itemRef: z.object({
     kind: z.enum([
@@ -316,6 +318,7 @@ export const PurchaseRecordSchema = z.object({
       "talk",
       "peer_talk",
       "bundle",
+      "sol",
     ]),
     id: NonEmpty,
   }),
@@ -328,7 +331,10 @@ export const PurchaseRecordSchema = z.object({
   debitSource: z.string().optional(),
   creditSource: z.string().optional(),
   counterpartyNodeId: z.string().optional(),
-  token: z.literal("APU").optional(),
+  token: z.enum(["APU", "USD", "SOL"]).optional(),
+  solLamportsDelta: z.number().int().optional(),
+  solanaTxSignature: z.string().optional(),
+  feeLamports: z.number().int().nonnegative().optional(),
 });
 
 /** Runtime type for {@link PurchaseRecordSchema}. @public */

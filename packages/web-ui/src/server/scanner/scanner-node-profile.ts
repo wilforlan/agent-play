@@ -15,9 +15,11 @@ import {
   analyticsTraitsKey,
 } from "../analytics/analytics-keys.js";
 import { getAnalyticsEvent } from "../analytics/analytics-tracker.js";
-import { scannerNodeCacheKey } from "./scanner-cache.js";
 import { getScannerTx } from "./scanner-indexer.js";
+import { apwFromApu, resolveApwPerApu } from "./scanner-head-resolve.js";
 import {
+  econextAccountKey,
+  playerWalletKey,
   scannerTxByPlayerKey,
   scannerWalletKey,
 } from "./scanner-keys.js";
@@ -81,11 +83,13 @@ const aggregateLedgerFromTxs = (
   usdSpent: number;
   apuMinted: number;
   apuBurned: number;
+  apuTransacted: number;
   lastTxAt: string | null;
 } => {
   let usdSpent = 0;
   let apuMinted = 0;
   let apuBurned = 0;
+  let apuTransacted = 0;
   let lastTxAt: string | null = null;
 
   for (const tx of txs) {
@@ -93,6 +97,7 @@ const aggregateLedgerFromTxs = (
     const delta = tx.powerUpsDelta ?? 0;
     if (delta > 0) apuMinted += delta;
     if (delta < 0) apuBurned += Math.abs(delta);
+    apuTransacted += Math.abs(delta);
     if (lastTxAt === null || Date.parse(tx.at) > Date.parse(lastTxAt)) {
       lastTxAt = tx.at;
     }
@@ -103,32 +108,55 @@ const aggregateLedgerFromTxs = (
     usdSpent,
     apuMinted,
     apuBurned,
+    apuTransacted,
     lastTxAt,
   };
 };
 
-const listNodeTxs = async (input: {
+export const listScannerNodeTxs = async (input: {
   redis: Redis;
   hostId: string;
   nodeId: string;
   limit: number;
   cursor?: string;
-}): Promise<{ txs: ScannerTxRecord[]; nextCursor: string | null }> => {
-  if (input.limit <= 0) return { txs: [], nextCursor: null };
+  page?: number;
+}): Promise<{
+  txs: ScannerTxRecord[];
+  nextCursor: string | null;
+  page: number;
+  pageSize: number;
+  total: number;
+  pageCount: number;
+}> => {
+  const empty = {
+    txs: [] as ScannerTxRecord[],
+    nextCursor: null,
+    page: 1,
+    pageSize: 0,
+    total: 0,
+    pageCount: 0,
+  };
+  if (input.limit <= 0) return empty;
   const limit = Math.min(Math.max(input.limit, 1), 100);
-  const maxScore =
-    input.cursor !== undefined && input.cursor.length > 0
-      ? Number(input.cursor) - 1
-      : "+inf";
+  const key = scannerTxByPlayerKey(input.hostId, input.nodeId);
+  const total = await input.redis.zcard(key);
+  const pageCount = total === 0 ? 0 : Math.ceil(total / limit);
+  const page =
+    pageCount === 0
+      ? 1
+      : Math.min(Math.max(1, Math.trunc(input.page ?? 1)), pageCount);
 
-  const ids = await input.redis.zrevrangebyscore(
-    scannerTxByPlayerKey(input.hostId, input.nodeId),
-    maxScore,
-    "-inf",
-    "LIMIT",
-    0,
-    limit
-  );
+  const ids =
+    input.cursor !== undefined && input.cursor.length > 0
+      ? await input.redis.zrevrangebyscore(
+          key,
+          Number(input.cursor) - 1,
+          "-inf",
+          "LIMIT",
+          0,
+          limit
+        )
+      : await input.redis.zrevrange(key, (page - 1) * limit, page * limit - 1);
 
   const txs: ScannerTxRecord[] = [];
   for (const id of ids) {
@@ -142,16 +170,11 @@ const listNodeTxs = async (input: {
 
   const lastId = ids[ids.length - 1];
   const nextCursor =
-    lastId !== undefined
-      ? String(
-          await input.redis.zscore(
-            scannerTxByPlayerKey(input.hostId, input.nodeId),
-            lastId
-          )
-        )
+    lastId !== undefined && page < pageCount
+      ? String(await input.redis.zscore(key, lastId))
       : null;
 
-  return { txs, nextCursor };
+  return { txs, nextCursor, page, pageSize: limit, total, pageCount };
 };
 
 const listNodeAnalyticsEvents = async (input: {
@@ -224,14 +247,6 @@ const countNodeEventsByName = async (input: {
   nodeId: string;
   limit?: number;
 }): Promise<Array<{ event: string; count: number }>> => {
-  const { txs } = await listNodeTxs({
-    redis: input.redis,
-    hostId: input.hostId,
-    nodeId: input.nodeId,
-    limit: 500,
-  });
-  void txs;
-
   const ids = await input.redis.zrevrange(
     analyticsByUserKey(input.hostId, input.nodeId),
     0,
@@ -253,6 +268,70 @@ const countNodeEventsByName = async (input: {
   return topEvents.slice(0, input.limit ?? 10);
 };
 
+const resolveNodeWallet = async (input: {
+  redis: Redis;
+  hostId: string;
+  nodeId: string;
+}): Promise<{
+  balanceUsd: number;
+  powerUps: number;
+  currency: "USD";
+  updatedAt: string;
+} | null> => {
+  const scannerRaw = await input.redis.get(
+    scannerWalletKey(input.hostId, input.nodeId),
+  );
+  if (scannerRaw !== null) {
+    try {
+      const parsed = PlayerWalletSchema.parse(JSON.parse(scannerRaw));
+      return {
+        balanceUsd: parsed.balanceUsd,
+        powerUps: parsed.powerUps,
+        currency: parsed.currency,
+        updatedAt: parsed.updatedAt,
+      };
+    } catch {
+      // Fall through to Play / Econext wallets.
+    }
+  }
+  const playRaw = await input.redis.get(
+    playerWalletKey(input.hostId, input.nodeId),
+  );
+  if (playRaw !== null) {
+    try {
+      const parsed = PlayerWalletSchema.parse(JSON.parse(playRaw));
+      return {
+        balanceUsd: parsed.balanceUsd,
+        powerUps: parsed.powerUps,
+        currency: parsed.currency,
+        updatedAt: parsed.updatedAt,
+      };
+    } catch {
+      // Fall through to Econext account.
+    }
+  }
+  const accountRaw = await input.redis.get(
+    econextAccountKey(input.hostId, input.nodeId),
+  );
+  if (accountRaw === null) return null;
+  try {
+    const parsed: unknown = JSON.parse(accountRaw);
+    if (typeof parsed !== "object" || parsed === null) return null;
+    const bankableApu = Number(
+      "bankableApu" in parsed ? parsed.bankableApu : 0,
+    );
+    if (!Number.isFinite(bankableApu) || bankableApu <= 0) return null;
+    return {
+      balanceUsd: 0,
+      powerUps: Math.trunc(bankableApu),
+      currency: "USD",
+      updatedAt: new Date().toISOString(),
+    };
+  } catch {
+    return null;
+  }
+};
+
 export const nodeProfileExists = async (input: {
   redis: Redis;
   hostId: string;
@@ -262,6 +341,16 @@ export const nodeProfileExists = async (input: {
     scannerWalletKey(input.hostId, input.nodeId)
   );
   if (walletExists > 0) return true;
+
+  const playWalletExists = await input.redis.exists(
+    playerWalletKey(input.hostId, input.nodeId)
+  );
+  if (playWalletExists > 0) return true;
+
+  const accountExists = await input.redis.exists(
+    econextAccountKey(input.hostId, input.nodeId)
+  );
+  if (accountExists > 0) return true;
 
   const txCount = await input.redis.zcard(
     scannerTxByPlayerKey(input.hostId, input.nodeId)
@@ -288,6 +377,7 @@ export const buildScannerNodeProfile = async (input: {
   nodeId: string;
   txLimit?: number;
   txCursor?: string;
+  txPage?: number;
   eventLimit?: number;
   eventCursor?: string;
 }) => {
@@ -296,46 +386,48 @@ export const buildScannerNodeProfile = async (input: {
 
   const kind = await detectNodeKind(input);
 
-  const walletRaw = await input.redis.get(
-    scannerWalletKey(input.hostId, input.nodeId)
-  );
-  let wallet = null;
-  if (walletRaw !== null) {
-    try {
-      const parsed = PlayerWalletSchema.parse(JSON.parse(walletRaw));
-      wallet = {
-        balanceUsd: parsed.balanceUsd,
-        powerUps: parsed.powerUps,
-        currency: parsed.currency,
-        updatedAt: parsed.updatedAt,
-      };
-    } catch {
-      wallet = null;
-    }
-  }
+  const wallet = await resolveNodeWallet(input);
 
-  const nodeCache = await input.redis.hgetall(
-    scannerNodeCacheKey(input.hostId, input.nodeId)
-  );
-
-  const txPage = await listNodeTxs({
+  const txPage = await listScannerNodeTxs({
     redis: input.redis,
     hostId: input.hostId,
     nodeId: input.nodeId,
     limit: input.txLimit ?? 25,
     cursor: input.txCursor,
+    page: input.txPage,
   });
-
-  const ledger =
-    Object.keys(nodeCache).length > 0
-      ? {
-          txCount: Number(nodeCache.txCount ?? 0),
-          usdSpent: Number(nodeCache.usdSpent ?? 0),
-          apuMinted: Number(nodeCache.apuMinted ?? 0),
-          apuBurned: Number(nodeCache.apuBurned ?? 0),
-          lastTxAt: nodeCache.lastTxAt ?? null,
-        }
-      : aggregateLedgerFromTxs(txPage.txs);
+  const allTxPage = await listScannerNodeTxs({
+    redis: input.redis,
+    hostId: input.hostId,
+    nodeId: input.nodeId,
+    limit: 100,
+    page: 1,
+  });
+  const allTxs: ScannerTxRecord[] = [...allTxPage.txs];
+  if (allTxPage.pageCount > 1) {
+    for (let page = 2; page <= allTxPage.pageCount; page += 1) {
+      const next = await listScannerNodeTxs({
+        redis: input.redis,
+        hostId: input.hostId,
+        nodeId: input.nodeId,
+        limit: 100,
+        page,
+      });
+      allTxs.push(...next.txs);
+    }
+  }
+  const ledgerBase = aggregateLedgerFromTxs(allTxs);
+  const apwPerApu = await resolveApwPerApu({
+    redis: input.redis,
+    hostId: input.hostId,
+  });
+  const ledger = {
+    ...ledgerBase,
+    apwVolume: apwFromApu({
+      apuAmount: ledgerBase.apuTransacted,
+      apwPerApu,
+    }),
+  };
 
   const breakdown = aggregateBreakdown(txPage.txs);
 

@@ -12,7 +12,7 @@ The repository uses npm workspaces. **`packages/sdk`** is the Node.js package `@
 
 | Document | Contents |
 |----------|----------|
-| [Development guide](development.md) | Local setup, env templates, running the stack, troubleshooting |
+| [Development guide](development.md) | Local setup, env templates, running the stack, troubleshooting, [developer debugging](development.md#developer-debugging) |
 | [World map v3](updates-world-map-v3.md) | Snapshot/RPC: occupants-only map, `getWorldSnapshot`, **`getPlayerChainNode`**, fanout **`playerChainNotify`**, 100-occupant cap |
 | [Occupant Model v1](occupant-model-v1.md) | Occupant taxonomy (`human`, `agent`, `mcp`), interaction policy, and the end-to-end fanout + player-chain convergence story across SDK/web-ui clients |
 | [Occupancy Protocol v1 (OpenAPI)](occupancy-v1.md) | Swagger/OpenAPI host contract for page-origin world clients (`occupancy-v1.openapi.yaml`); API base `https://agent-play.com/api/agent-play` |

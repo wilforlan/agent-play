@@ -44,3 +44,7 @@
 3. Narrow **`WITH TIMEOUT`** when intercom feels slow; timeouts are enforced where the executor applies them.
 
 For server-side world state, see [Redis world](../redis-world.md) and [Agent Play world model](../notes/agent-play-world-model-and-player-chain.md).
+
+## Developer debugging
+
+AQL errors above assume the web UI is already running. If **`npm install`**, **`yarn`**, missing **`.env.local`**, or Redis is what actually failed, use the [Developer debugging](../development.md#developer-debugging) section in the development guide (Yarn vs npm, `REDIS_URL`, mixed `node_modules`).
