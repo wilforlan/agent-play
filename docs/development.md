@@ -398,6 +398,93 @@ Template: **`packages/sdk/.env.example`**.
 
 ---
 
+## Developer debugging
+
+Use this section when **`npm install`** or **`npm run dev`** fails on a fresh or half-installed checkout. These are local tooling problems, not AQL or snapshot errors (those stay in [Troubleshooting](#troubleshooting) and [AQL troubleshooting](aql/troubleshooting.md)).
+
+### Yarn was used instead of npm
+
+**Symptom.** `yarn` at the repo root fails while linking workspaces. Typical messages:
+
+- `Workspaces can only be enabled in private projects.`
+- `Invariant Violation: could not find a copy of vite to link in …/node_modules/vitest/node_modules`
+
+**Cause.** This repo is an **npm workspaces** monorepo. The lockfile is **`package-lock.json`**. Yarn Classic (v1) does not resolve the workspace graph the same way and can leave `node_modules` half-linked.
+
+**Fix.** Install from the **repository root** with npm only:
+
+```bash
+npm install
+```
+
+Do not add a `yarn.lock`. If `yarn` already ran, delete any `yarn.lock` it created, then run `npm install` again so the tree matches `package-lock.json`.
+
+### Missing `packages/web-ui/.env.local`
+
+**Symptom.** First boot has no Redis URL. The process may print **Ready** and still throw on the first world/session request:
+
+```text
+REDIS_URL is required for Agent Play World session storage. Set REDIS_URL in the environment.
+```
+
+**Cause.** `get-world.ts` refuses to construct the `PlayWorld` singleton when `REDIS_URL` is unset. The template is not copied automatically.
+
+**Fix.**
+
+```bash
+cp packages/web-ui/.env.local.example packages/web-ui/.env.local
+```
+
+The example already sets `REDIS_URL=redis://127.0.0.1:6379`. Confirm Redis answers `PONG` (`redis-cli ping` or a Docker Redis on port 6379) before you treat a 500 as an application bug.
+
+### Redis is required at runtime, not optional
+
+**Symptom.** Docs in older notes call Redis optional. The current web UI is not: without `REDIS_URL` and a reachable Redis, session storage never initializes.
+
+**Fix.** Start Redis, then start the app:
+
+```bash
+docker run -d --name agent-play-redis -p 6379:6379 redis:7-alpine
+# or use a local redis-server that already listens on 6379
+npm run dev
+```
+
+Expect **`> Ready on http://127.0.0.1:3000`**. `GET /` should return **200**.
+
+### Mixed or broken `node_modules` after a failed Yarn install
+
+**Symptom.** `npm run dev` cannot resolve `tsx`, `next`, or a workspace package after a failed `yarn`.
+
+**Fix.** Reinstall from the lockfile. Only wipe `node_modules` if `npm install` still fails:
+
+```bash
+npm install
+# last resort:
+# rm -rf node_modules packages/*/node_modules
+# npm install
+```
+
+### Node engine warnings during `npm install`
+
+**Symptom.** `npm warn EBADENGINE` for a transitive package (for example `content-type` asking for Node `>=22`) while the repo `engines` field is **`node >= 20`**.
+
+**Cause.** A dependency advertises a newer engine than the workspace requires. This warning alone does not block install or `npm run dev`.
+
+**Fix.** Stay on Node 20 or newer (nvm `20` is enough for local boot). Do not switch to Yarn or bump Node just to silence `EBADENGINE` unless a package actually fails to load.
+
+### Confirm the stack after a repair
+
+```bash
+npm install
+cp packages/web-ui/.env.local.example packages/web-ui/.env.local   # if missing
+redis-cli ping   # expect PONG
+npm run dev      # expect Ready on http://127.0.0.1:3000
+```
+
+`predev` copies play-ui into `packages/web-ui/src/canvas/vendor`, copies `docs/` into `packages/web-ui/content/docs`, and writes `packages/web-ui/.root`. Those copies running is normal, not a failure.
+
+---
+
 ## Related documentation
 
 - [World map v3 (protocol updates)](updates-world-map-v3.md)

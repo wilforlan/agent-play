@@ -1,3 +1,13 @@
+export type ScannerSourceCounts = {
+  amenity: number;
+  arcade: number;
+  talk: number;
+  trade: number;
+  transfer: number;
+  p2p: number;
+  sol: number;
+};
+
 export type ScannerHeadResponse = {
   head: {
     generatedAt: string;
@@ -10,6 +20,44 @@ export type ScannerHeadResponse = {
     apuMintedLast24h: number;
     apuBurnedLast24h: number;
     migrationStatus: string;
+    txsToday: number;
+    txs7d: number;
+    txs30d: number;
+    txs90d: number;
+    txs6mo: number;
+    txs1y: number;
+    txs5y: number;
+    txsAllTime: number;
+    volumeApuToday: number;
+    volumeApu7d: number;
+    volumeApu30d: number;
+    volumeApu90d: number;
+    volumeApu6mo: number;
+    volumeApu1y: number;
+    volumeApu5y: number;
+    volumeSolToday: number;
+    volumeSol7d: number;
+    volumeSol30d: number;
+    volumeSol90d: number;
+    volumeSol6mo: number;
+    volumeSol1y: number;
+    volumeSol5y: number;
+    p2pSettlements7d: number;
+    p2pVolumeSol7d: number;
+    feeSol7d: number;
+    marketCapApw: number;
+    circulatingApu: number;
+    escrowedApu: number;
+    openP2pOrders: number;
+    apwPerApu: number;
+    bySource: ScannerSourceCounts;
+    bySourceToday: ScannerSourceCounts;
+    bySource7d: ScannerSourceCounts;
+    bySource30d: ScannerSourceCounts;
+    bySource90d: ScannerSourceCounts;
+    bySource6mo: ScannerSourceCounts;
+    bySource1y: ScannerSourceCounts;
+    bySource5y: ScannerSourceCounts;
   };
   platform: {
     cards: {
@@ -48,29 +96,35 @@ export const fetchScannerHead = async (
   };
 };
 
-export const fetchScannerTxs = async (input?: {
-  cursor?: string;
-  sinceMs?: number;
-  token?: "APU" | "USD";
-}): Promise<{
+export type ScannerTxListPage = {
   txs: unknown[];
   nextCursor: string | null;
   nextSinceMs?: number | null;
-}> => {
+  page: number;
+  pageSize: number;
+  total: number;
+  pageCount: number;
+};
+
+export const fetchScannerTxs = async (input?: {
+  cursor?: string;
+  page?: number;
+  sinceMs?: number;
+  token?: "APU" | "USD" | "SOL";
+  source?: "p2p" | "transfer" | "trade" | "sol";
+}): Promise<ScannerTxListPage> => {
   const params = new URLSearchParams();
   params.set("limit", "25");
   if (input?.cursor) params.set("cursor", input.cursor);
+  if (input?.page !== undefined) params.set("page", String(input.page));
   if (input?.sinceMs !== undefined) params.set("sinceMs", String(input.sinceMs));
   if (input?.token) params.set("token", input.token);
+  if (input?.source) params.set("source", input.source);
   const res = await fetch(`/api/scanner/txs?${params.toString()}`, {
     cache: "no-store",
   });
   if (!res.ok) throw new Error("Failed to load transactions");
-  return (await res.json()) as {
-    txs: unknown[];
-    nextCursor: string | null;
-    nextSinceMs?: number | null;
-  };
+  return (await res.json()) as ScannerTxListPage;
 };
 
 export const fetchScannerNodes = async (): Promise<{
@@ -198,12 +252,24 @@ export const fetchScannerBlocks = async (input?: {
 };
 
 export const fetchScannerSpaces = async (): Promise<{
-  spaces: Array<{ spaceId: string; txCount: number; usdVolume: number }>;
+  spaces: Array<{
+    spaceId: string;
+    txCount: number;
+    usdVolume: number;
+    apuVolume?: number;
+    solVolume?: number;
+  }>;
 }> => {
   const res = await fetch("/api/scanner/spaces", { cache: "no-store" });
   if (!res.ok) throw new Error("Failed to load spaces");
   return (await res.json()) as {
-    spaces: Array<{ spaceId: string; txCount: number; usdVolume: number }>;
+    spaces: Array<{
+      spaceId: string;
+      txCount: number;
+      usdVolume: number;
+      apuVolume?: number;
+      solVolume?: number;
+    }>;
   };
 };
 

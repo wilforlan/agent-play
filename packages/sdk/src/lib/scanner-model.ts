@@ -12,6 +12,9 @@ export const ScannerTxOpSchema = z.enum([
   "talkStop",
   "talkStart",
   "walletSeeded",
+  "p2pSettle",
+  "solDeposit",
+  "solPayout",
 ]);
 
 export type ScannerTxOp = z.infer<typeof ScannerTxOpSchema>;
@@ -92,6 +95,28 @@ export type ScannerWalletSnapshot = z.infer<typeof ScannerWalletSnapshotSchema>;
  *
  * @public
  */
+export const ScannerSourceCountsSchema = z.object({
+  amenity: z.number().int().nonnegative(),
+  arcade: z.number().int().nonnegative(),
+  talk: z.number().int().nonnegative(),
+  trade: z.number().int().nonnegative(),
+  transfer: z.number().int().nonnegative(),
+  p2p: z.number().int().nonnegative(),
+  sol: z.number().int().nonnegative(),
+});
+
+export type ScannerSourceCounts = z.infer<typeof ScannerSourceCountsSchema>;
+
+const emptySourceCounts = (): ScannerSourceCounts => ({
+  amenity: 0,
+  arcade: 0,
+  talk: 0,
+  trade: 0,
+  transfer: 0,
+  p2p: 0,
+  sol: 0,
+});
+
 export const ScannerHeadSchema = z.object({
   generatedAt: IsoTimestamp,
   hostId: NonEmpty,
@@ -103,6 +128,44 @@ export const ScannerHeadSchema = z.object({
   apuMintedLast24h: z.number().int().nonnegative(),
   apuBurnedLast24h: z.number().int().nonnegative(),
   migrationStatus: ScannerMigrationStatusSchema,
+  txsToday: z.number().int().nonnegative().default(0),
+  txs7d: z.number().int().nonnegative().default(0),
+  txs30d: z.number().int().nonnegative().default(0),
+  txs90d: z.number().int().nonnegative().default(0),
+  txs6mo: z.number().int().nonnegative().default(0),
+  txs1y: z.number().int().nonnegative().default(0),
+  txs5y: z.number().int().nonnegative().default(0),
+  txsAllTime: z.number().int().nonnegative().default(0),
+  volumeApuToday: z.number().nonnegative().default(0),
+  volumeApu7d: z.number().nonnegative().default(0),
+  volumeApu30d: z.number().nonnegative().default(0),
+  volumeApu90d: z.number().nonnegative().default(0),
+  volumeApu6mo: z.number().nonnegative().default(0),
+  volumeApu1y: z.number().nonnegative().default(0),
+  volumeApu5y: z.number().nonnegative().default(0),
+  volumeSolToday: z.number().int().nonnegative().default(0),
+  volumeSol7d: z.number().int().nonnegative().default(0),
+  volumeSol30d: z.number().int().nonnegative().default(0),
+  volumeSol90d: z.number().int().nonnegative().default(0),
+  volumeSol6mo: z.number().int().nonnegative().default(0),
+  volumeSol1y: z.number().int().nonnegative().default(0),
+  volumeSol5y: z.number().int().nonnegative().default(0),
+  p2pSettlements7d: z.number().int().nonnegative().default(0),
+  p2pVolumeSol7d: z.number().int().nonnegative().default(0),
+  feeSol7d: z.number().int().nonnegative().default(0),
+  marketCapApw: z.number().nonnegative().default(0),
+  circulatingApu: z.number().int().nonnegative().default(0),
+  escrowedApu: z.number().int().nonnegative().default(0),
+  openP2pOrders: z.number().int().nonnegative().default(0),
+  apwPerApu: z.number().nonnegative().default(0),
+  bySource: ScannerSourceCountsSchema.default(emptySourceCounts()),
+  bySourceToday: ScannerSourceCountsSchema.default(emptySourceCounts()),
+  bySource7d: ScannerSourceCountsSchema.default(emptySourceCounts()),
+  bySource30d: ScannerSourceCountsSchema.default(emptySourceCounts()),
+  bySource90d: ScannerSourceCountsSchema.default(emptySourceCounts()),
+  bySource6mo: ScannerSourceCountsSchema.default(emptySourceCounts()),
+  bySource1y: ScannerSourceCountsSchema.default(emptySourceCounts()),
+  bySource5y: ScannerSourceCountsSchema.default(emptySourceCounts()),
 });
 
 export type ScannerHead = z.infer<typeof ScannerHeadSchema>;
@@ -125,6 +188,8 @@ export const ScannerNodeLedgerKpisSchema = z.object({
   usdSpent: z.number().finite().nonnegative(),
   apuMinted: z.number().int().nonnegative(),
   apuBurned: z.number().int().nonnegative(),
+  apuTransacted: z.number().int().nonnegative().default(0),
+  apwVolume: z.number().nonnegative().default(0),
   lastTxAt: IsoTimestamp.nullable(),
 });
 

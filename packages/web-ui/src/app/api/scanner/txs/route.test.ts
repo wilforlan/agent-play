@@ -24,6 +24,14 @@ describe("GET /api/scanner/txs", () => {
     expect(body.error).toBe("Scanner unavailable");
   });
 
+  it("returns 400 for invalid page", async () => {
+    getSharedRedisClient.mockReturnValue({} as never);
+    const res = await GET(
+      new NextRequest("http://localhost/api/scanner/txs?page=bad")
+    );
+    expect(res.status).toBe(400);
+  });
+
   it("returns 400 for invalid sinceMs", async () => {
     getSharedRedisClient.mockReturnValue({} as never);
     const res = await GET(

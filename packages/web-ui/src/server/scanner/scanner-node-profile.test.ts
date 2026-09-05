@@ -6,12 +6,7 @@ import {
   analyticsEventBodyKey,
   analyticsTraitsKey,
 } from "../analytics/analytics-keys.js";
-import { scannerNodeCacheKey } from "./scanner-cache.js";
-import {
-  scannerTxByPlayerKey,
-  scannerTxKey,
-  scannerWalletKey,
-} from "./scanner-keys.js";
+import { apwPerApuRateKey, scannerTxByPlayerKey, scannerTxKey } from "./scanner-keys.js";
 
 type MockRedis = {
   strings: Map<string, string>;
@@ -131,7 +126,7 @@ describe("buildScannerNodeProfile", () => {
     const nodeId = "node-1";
 
     redis.strings.set(
-      scannerWalletKey(hostId, nodeId),
+      `agent-play:${hostId}:player:${nodeId}:wallet`,
       JSON.stringify({
         playerId: nodeId,
         balanceUsd: 8,
@@ -140,16 +135,7 @@ describe("buildScannerNodeProfile", () => {
         updatedAt: "2026-01-02T00:00:00.000Z",
       })
     );
-    redis.hashes.set(
-      scannerNodeCacheKey(hostId, nodeId),
-      new Map([
-        ["txCount", "2"],
-        ["usdSpent", "15"],
-        ["apuMinted", "5"],
-        ["apuBurned", "1"],
-        ["lastTxAt", "2026-01-02T00:00:00.000Z"],
-      ])
-    );
+    redis.strings.set(apwPerApuRateKey(hostId), "0.0664875");
 
     const tx1 = {
       id: "tx-1",
@@ -216,12 +202,93 @@ describe("buildScannerNodeProfile", () => {
     });
 
     expect(profile.nodeId).toBe(nodeId);
+    expect(profile.wallet?.powerUps).toBe(12);
     expect(profile.ledger.txCount).toBe(2);
     expect(profile.ledger.usdSpent).toBe(15);
+    expect(profile.ledger.apuTransacted).toBe(6);
+    expect(profile.ledger.apwVolume).toBeCloseTo(6 * 0.0664875, 8);
     expect(profile.breakdown.byAmenityKind.shop).toBe(1);
     expect(profile.breakdown.byAmenityKind.supermarket).toBe(1);
     expect(profile.analyticsEvents[0]?.context).toBeUndefined();
     expect(profile.traits.nodeKind).toBe("main");
     expect(profile.traits.email).toBeUndefined();
+  });
+
+  it("uses Econext bankable APU when the node has no Play wallet", async () => {
+    const redis = createMockRedis();
+    const hostId = "default";
+    const nodeId = "econext-only";
+    redis.strings.set(
+      `econext:${hostId}:account:${nodeId}`,
+      JSON.stringify({ nodeId, bankableApu: 40 }),
+    );
+    redis.strings.set(apwPerApuRateKey(hostId), "0.0664875");
+    const tx = {
+      id: "tx-mint",
+      playerId: nodeId,
+      spaceId: "space-a",
+      amenityKind: "shop",
+      itemRef: { kind: "shop", id: "item-1" },
+      priceUsd: 4,
+      powerUpsDelta: 9,
+      at: "2026-01-01T00:00:00.000Z",
+      hostId,
+      indexedAt: "2026-01-01T00:00:00.000Z",
+      op: "purchase",
+    };
+    redis.strings.set(scannerTxKey(hostId, "tx-mint"), JSON.stringify(tx));
+    redis.zsets.set(
+      scannerTxByPlayerKey(hostId, nodeId),
+      new Map([["tx-mint", Date.parse(tx.at)]]),
+    );
+
+    const profile = await buildScannerNodeProfile({
+      redis: redis as never,
+      hostId,
+      nodeId,
+    });
+
+    expect(profile?.wallet?.powerUps).toBe(40);
+    expect(profile?.wallet?.balanceUsd).toBe(0);
+    expect(profile?.ledger.apuMinted).toBe(9);
+    expect(profile?.ledger.apwVolume).toBeCloseTo(9 * 0.0664875, 8);
+  });
+
+  it("folds ledger totals from every node tx, not the current page", async () => {
+    const redis = createMockRedis();
+    const hostId = "default";
+    const nodeId = "paged-node";
+    const txs = [1, 2, 3].map((index) => ({
+      id: `tx-${index}`,
+      playerId: nodeId,
+      spaceId: "space-a",
+      amenityKind: "shop",
+      itemRef: { kind: "shop", id: `item-${index}` },
+      priceUsd: 5,
+      powerUpsDelta: 2,
+      at: `2026-01-0${index}T00:00:00.000Z`,
+      hostId,
+      indexedAt: `2026-01-0${index}T00:00:00.000Z`,
+      op: "purchase" as const,
+    }));
+    for (const tx of txs) {
+      redis.strings.set(scannerTxKey(hostId, tx.id), JSON.stringify(tx));
+    }
+    redis.zsets.set(
+      scannerTxByPlayerKey(hostId, nodeId),
+      new Map(txs.map((tx) => [tx.id, Date.parse(tx.at)])),
+    );
+
+    const profile = await buildScannerNodeProfile({
+      redis: redis as never,
+      hostId,
+      nodeId,
+      txLimit: 1,
+    });
+
+    expect(profile?.txs).toHaveLength(1);
+    expect(profile?.ledger.txCount).toBe(3);
+    expect(profile?.ledger.usdSpent).toBe(15);
+    expect(profile?.ledger.apuTransacted).toBe(6);
   });
 });

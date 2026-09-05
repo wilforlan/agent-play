@@ -1,6 +1,6 @@
 {
   "name": "@agent-play/web-ui",
-  "version": "3.6.4",
+  "version": "3.6.5",
   "private": true,
   "type": "module",
   "scripts": {
@@ -20,7 +20,7 @@
     "@agent-play/geography-mesh": "^0.1.0",
     "@agent-play/intercom": "^3.3.7",
     "@agent-play/node-tools": "^3.2.3",
-    "@agent-play/sdk": "^3.4.7",
+    "@agent-play/sdk": "^3.4.9",
     "@openai/agents": "^0.8.5",
     "@portabletext/react": "^7.0.1",
     "@radix-ui/react-avatar": "^1.2.6",

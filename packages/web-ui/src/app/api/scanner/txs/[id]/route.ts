@@ -2,6 +2,8 @@ import { NextRequest } from "next/server";
 import { logAgentPlayApi } from "@/server/agent-play/log-agent-play-api";
 import { getSharedRedisClient } from "@/server/get-world";
 import { getScannerTx } from "@/server/scanner/scanner-indexer";
+import { readLinkedSolanaWallets } from "@/server/scanner/scanner-solana-wallet";
+import { apuWalletsFromTx } from "@/app/scanner/scanner-receipt";
 
 export const dynamic = "force-dynamic";
 
@@ -20,5 +22,12 @@ export async function GET(
   if (tx === null) {
     return Response.json({ error: "Transaction not found" }, { status: 404 });
   }
-  return Response.json({ tx });
+  const wallets = apuWalletsFromTx(tx);
+  const solanaWallets = await readLinkedSolanaWallets({
+    redis,
+    hostId,
+    from: wallets.from,
+    to: wallets.to,
+  });
+  return Response.json({ tx, solanaWallets });
 }

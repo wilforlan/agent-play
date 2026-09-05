@@ -1,6 +1,10 @@
 import type Redis from "ioredis";
-import { getScannerTx } from "./scanner-indexer.js";
-import { scannerTxsKey } from "./scanner-keys.js";
+import {
+  scannerGameCacheKey,
+  scannerGameScanPattern,
+  scannerSpaceScanPattern,
+  scannerTalkCacheKey,
+} from "./scanner-keys.js";
 
 export type ScannerGameStats = {
   readonly gameId: string;
@@ -8,26 +12,38 @@ export type ScannerGameStats = {
   readonly netApu: number;
 };
 
+const SCAN_COUNT = 200;
+
+const scanKeys = async (redis: Redis, pattern: string): Promise<string[]> => {
+  const keys: string[] = [];
+  let cursor = "0";
+  do {
+    const [next, batch] = await redis.scan(
+      cursor,
+      "MATCH",
+      pattern,
+      "COUNT",
+      SCAN_COUNT
+    );
+    cursor = next;
+    keys.push(...batch);
+  } while (cursor !== "0");
+  return keys;
+};
+
 export const buildScannerGameStats = async (input: {
   redis: Redis;
   hostId: string;
   gameId: string;
 }): Promise<ScannerGameStats> => {
-  const ids = await input.redis.zrevrange(scannerTxsKey(input.hostId), 0, 2000);
-  let rounds = 0;
-  let netApu = 0;
-  for (const id of ids) {
-    const tx = await getScannerTx({
-      redis: input.redis,
-      hostId: input.hostId,
-      txId: id,
-    });
-    if (tx === null) continue;
-    if (tx.itemRef.kind !== "game" || tx.itemRef.id !== input.gameId) continue;
-    rounds += 1;
-    netApu += tx.powerUpsDelta ?? 0;
-  }
-  return { gameId: input.gameId, rounds, netApu };
+  const raw = await input.redis.hgetall(
+    scannerGameCacheKey(input.hostId, input.gameId)
+  );
+  return {
+    gameId: input.gameId,
+    rounds: Number(raw.rounds ?? 0),
+    netApu: Number(raw.netApu ?? 0),
+  };
 };
 
 export const buildScannerTalkSummary = async (input: {
@@ -38,25 +54,12 @@ export const buildScannerTalkSummary = async (input: {
   totalChargedUsd: number;
   totalApuEarned: number;
 }> => {
-  const ids = await input.redis.zrevrange(scannerTxsKey(input.hostId), 0, 2000);
-  let sessions = 0;
-  let totalChargedUsd = 0;
-  let totalApuEarned = 0;
-  for (const id of ids) {
-    const tx = await getScannerTx({
-      redis: input.redis,
-      hostId: input.hostId,
-      txId: id,
-    });
-    if (tx === null) continue;
-    if (tx.amenityKind !== "talk_time" && tx.amenityKind !== "peer_talk_time") {
-      continue;
-    }
-    sessions += 1;
-    totalChargedUsd += tx.priceUsd ?? 0;
-    totalApuEarned += tx.powerUpsEarned ?? 0;
-  }
-  return { sessions, totalChargedUsd, totalApuEarned };
+  const raw = await input.redis.hgetall(scannerTalkCacheKey(input.hostId));
+  return {
+    sessions: Number(raw.sessions ?? 0),
+    totalChargedUsd: Number(raw.totalChargedUsd ?? 0),
+    totalApuEarned: Number(raw.totalApuEarned ?? 0),
+  };
 };
 
 export const buildScannerSpacesSummary = async (input: {
@@ -67,26 +70,45 @@ export const buildScannerSpacesSummary = async (input: {
     spaceId: string;
     txCount: number;
     usdVolume: number;
+    apuVolume: number;
+    solVolume: number;
   }>
 > => {
-  const ids = await input.redis.zrevrange(scannerTxsKey(input.hostId), 0, 2000);
-  const bySpace = new Map<string, { txCount: number; usdVolume: number }>();
-  for (const id of ids) {
-    const tx = await getScannerTx({
-      redis: input.redis,
-      hostId: input.hostId,
-      txId: id,
-    });
-    if (tx === null || tx.spaceId === "__wallet__" || tx.spaceId === "__arcade__") {
-      continue;
-    }
-    const current = bySpace.get(tx.spaceId) ?? { txCount: 0, usdVolume: 0 };
-    bySpace.set(tx.spaceId, {
-      txCount: current.txCount + 1,
-      usdVolume: current.usdVolume + (tx.priceUsd ?? 0),
+  const keys = await scanKeys(
+    input.redis,
+    scannerSpaceScanPattern(input.hostId)
+  );
+  const prefix = `agent-play:${input.hostId}:scanner:cache:space:`;
+  const spaces: Array<{
+    spaceId: string;
+    txCount: number;
+    usdVolume: number;
+    apuVolume: number;
+    solVolume: number;
+  }> = [];
+  for (const key of keys) {
+    if (!key.startsWith(prefix)) continue;
+    const spaceId = key.slice(prefix.length);
+    if (spaceId === "__wallet__" || spaceId === "__arcade__") continue;
+    const raw = await input.redis.hgetall(key);
+    spaces.push({
+      spaceId,
+      txCount: Number(raw.txCount ?? 0),
+      usdVolume: Number(raw.usdVolume ?? 0),
+      apuVolume: Number(raw.apuVolume ?? 0),
+      solVolume: Number(raw.solVolume ?? 0),
     });
   }
-  return [...bySpace.entries()]
-    .map(([spaceId, stats]) => ({ spaceId, ...stats }))
-    .sort((a, b) => b.usdVolume - a.usdVolume);
+  return spaces.sort((a, b) => b.usdVolume - a.usdVolume);
+};
+
+export const listScannerGameIds = async (input: {
+  redis: Redis;
+  hostId: string;
+}): Promise<readonly string[]> => {
+  const keys = await scanKeys(input.redis, scannerGameScanPattern(input.hostId));
+  const prefix = `agent-play:${input.hostId}:scanner:cache:game:`;
+  return keys
+    .filter((key) => key.startsWith(prefix))
+    .map((key) => key.slice(prefix.length));
 };

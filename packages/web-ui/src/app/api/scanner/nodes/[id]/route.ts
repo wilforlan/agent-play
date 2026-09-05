@@ -1,7 +1,11 @@
 import { NextRequest } from "next/server";
 import { logAgentPlayApi } from "@/server/agent-play/log-agent-play-api";
 import { getSharedRedisClient } from "@/server/get-world";
-import { buildScannerNodeProfile } from "@/server/scanner/scanner-node-profile";
+import {
+  buildScannerNodeProfile,
+  listScannerNodeTxs,
+  nodeProfileExists,
+} from "@/server/scanner/scanner-node-profile";
 import {
   matchesIfNoneMatch,
   notModifiedResponse,
@@ -24,22 +28,36 @@ export async function GET(
   const section = req.nextUrl.searchParams.get("section");
   const cursor = req.nextUrl.searchParams.get("cursor") ?? undefined;
   const limit = Number(req.nextUrl.searchParams.get("limit") ?? "25");
+  const pageParam = req.nextUrl.searchParams.get("page");
+  const txPage =
+    pageParam !== null && pageParam.length > 0 && Number.isFinite(Number(pageParam))
+      ? Number(pageParam)
+      : undefined;
 
   if (section === "txs") {
-    const profile = await buildScannerNodeProfile({
+    const exists = await nodeProfileExists({
       redis,
       hostId,
       nodeId: id,
-      txLimit: Number.isFinite(limit) ? limit : 25,
-      txCursor: cursor,
-      eventLimit: 0,
     });
-    if (profile === null) {
+    if (!exists) {
       return Response.json({ error: "Node not found" }, { status: 404 });
     }
+    const txPageResult = await listScannerNodeTxs({
+      redis,
+      hostId,
+      nodeId: id,
+      limit: Number.isFinite(limit) ? limit : 25,
+      cursor,
+      page: txPage,
+    });
     return Response.json({
-      txs: profile.txs,
-      nextCursor: profile.txsNextCursor,
+      txs: txPageResult.txs,
+      nextCursor: txPageResult.nextCursor,
+      page: txPageResult.page,
+      pageSize: txPageResult.pageSize,
+      total: txPageResult.total,
+      pageCount: txPageResult.pageCount,
     });
   }
 

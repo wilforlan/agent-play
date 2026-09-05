@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  purchaseFromHistoricalLedgerEntry,
   readScannerMigrationState,
   runScannerBackfill,
 } from "./scanner-backfill.js";
@@ -25,6 +26,51 @@ const createMockRedis = () => {
     zsets,
     async get(key: string) {
       return strings.get(key) ?? null;
+    },
+    async set(key: string, value: string) {
+      strings.set(key, value);
+      return "OK";
+    },
+    async del(...keys: string[]) {
+      for (const key of keys) {
+        strings.delete(key);
+        hashes.delete(key);
+        zsets.delete(key);
+        lists.delete(key);
+      }
+      return keys.length;
+    },
+    async rename(from: string, to: string) {
+      const hash = hashes.get(from);
+      if (hash !== undefined) {
+        hashes.set(to, hash);
+        hashes.delete(from);
+      }
+      const value = strings.get(from);
+      if (value !== undefined) {
+        strings.set(to, value);
+        strings.delete(from);
+      }
+      return "OK";
+    },
+    async zcard(key: string) {
+      return zsets.get(key)?.size ?? 0;
+    },
+    async zrange(key: string) {
+      return [...(zsets.get(key)?.keys() ?? [])];
+    },
+    async zrangebyscore(key: string) {
+      return [...(zsets.get(key)?.keys() ?? [])];
+    },
+    async incr(key: string) {
+      const next = Number(strings.get(key) ?? 0) + 1;
+      strings.set(key, String(next));
+      return next;
+    },
+    async incrby(key: string, amount: number) {
+      const next = Number(strings.get(key) ?? 0) + amount;
+      strings.set(key, String(next));
+      return next;
     },
     async hgetall(key: string) {
       const bucket = hashes.get(key);
@@ -77,6 +123,20 @@ const createMockRedis = () => {
             zsets.set(key, bucket);
           });
         },
+        hincrby(key: string, field: string, increment: number) {
+          ops.push(() => {
+            const bucket = hashes.get(key) ?? new Map<string, string>();
+            bucket.set(field, String(Number(bucket.get(field) ?? 0) + increment));
+            hashes.set(key, bucket);
+          });
+        },
+        hincrbyfloat(key: string, field: string, increment: number) {
+          ops.push(() => {
+            const bucket = hashes.get(key) ?? new Map<string, string>();
+            bucket.set(field, String(Number(bucket.get(field) ?? 0) + increment));
+            hashes.set(key, bucket);
+          });
+        },
         async exec() {
           for (const op of ops) op();
           return ops.map(() => [null, "OK"] as [null, string]);
@@ -112,6 +172,37 @@ const createMockRedis = () => {
 
   return redis;
 };
+
+describe("purchaseFromHistoricalLedgerEntry", () => {
+  it("maps P2P settle ledger rows onto scanner purchases", () => {
+    const debit = purchaseFromHistoricalLedgerEntry({
+      id: "settle-out",
+      nodeId: "seller-1",
+      kind: "p2p_settle_out",
+      at: "2026-09-05T10:00:00.000Z",
+      apuDelta: -19,
+      solLamportsDelta: 5_708_062,
+      referenceId: "deal-1",
+      detail: "P2P sold 19 APU",
+    });
+    expect(debit?.amenityKind).toBe("apu_debit");
+    expect(debit?.creditSource).toBe("econext:p2p");
+    expect(debit?.solLamportsDelta).toBe(5_708_062);
+
+    const credit = purchaseFromHistoricalLedgerEntry({
+      id: "settle-in",
+      nodeId: "buyer-1",
+      kind: "p2p_settle_in",
+      at: "2026-09-05T10:00:00.000Z",
+      apuDelta: 19,
+      solLamportsDelta: -6_523_499,
+      referenceId: "deal-1",
+      detail: "P2P bought 19 APU",
+    });
+    expect(credit?.amenityKind).toBe("apu_credit");
+    expect(credit?.playerId).toBe("buyer-1");
+  });
+});
 
 describe("scanner-backfill", () => {
   it("indexes purchases and wallets idempotently", async () => {

@@ -2,6 +2,14 @@ export type CopyLocalTreeLog = (message: string) => void;
 
 export type CopyFileFn = (from: string, to: string) => Promise<void>;
 
+export type CopyLocalTreeStat = {
+  size: number;
+  blocks: number;
+  mtimeMs: number;
+};
+
+export type StatFileFn = (path: string) => CopyLocalTreeStat;
+
 export type CopyLocalTreeOptions = {
   src: string;
   dest: string;
@@ -9,6 +17,7 @@ export type CopyLocalTreeOptions = {
   copyTimeoutMs?: number;
   log?: CopyLocalTreeLog;
   copyFile?: CopyFileFn;
+  statFile?: StatFileFn;
 };
 
 export type CopyLocalTreeResult = {
