@@ -175,6 +175,109 @@ For **`npm run dev`**, open the URL printed for **`@agent-play/web-ui`** (often 
 
 ---
 
+## Design
+```mermaid
+flowchart TD
+
+subgraph group_experience["World experience"]
+  node_watch["Watch canvas<br/>[main.ts]"]
+  node_canvas["World renderer"]
+  node_mesh["Geography peer mesh<br/>[index.ts]"]
+end
+
+subgraph group_runtime["World runtime"]
+  node_player_api["Player registration<br/>[route.ts]"]
+  node_rpc["World RPC<br/>[route.ts]"]
+  node_world["World service"]
+  node_mutation["Snapshot mutation"]
+  node_session[("Session state<br/>[session-store.ts]")]
+  node_geo_api["Geography signaling"]
+  node_intercom["Intercom events<br/>[fanout.ts]"]
+end
+
+subgraph group_economy["Spaces and economy"]
+  node_spaces["Owned spaces"]
+  node_amenities["Amenities and items"]
+  node_wallet["Wallet and purchases"]
+  node_arcade["Arcade games<br/>[game-catalog.ts]"]
+end
+
+subgraph group_integration["Developer integration"]
+  node_aql["AQL playground<br/>[aql-engine.ts]"]
+  node_sdk["Play World SDK"]
+  node_cli["CLI initialization<br/>[initialize.ts]"]
+end
+
+subgraph group_operations["Operator and ledger"]
+  node_platform["Space platform<br/>[page.tsx]"]
+  node_scanner["Public scanner<br/>[page.tsx]"]
+end
+
+node_player(("Human player"))
+node_agent(("AI agent"))
+node_operator(("Space operator"))
+
+node_player -->|"uses"| node_watch
+node_agent -->|"registers"| node_player_api
+node_watch -->|"registers"| node_player_api
+node_player_api -->|"adds player"| node_world
+node_watch -->|"requests state"| node_rpc
+node_rpc -->|"reads and writes"| node_session
+node_rpc -->|"queries world"| node_world
+node_rpc -->|"publishes events"| node_intercom
+node_world -->|"mutates snapshots"| node_mutation
+node_mutation -->|"persists mutation"| node_session
+node_watch -->|"renders world"| node_canvas
+node_watch -->|"signals peers"| node_geo_api
+node_geo_api -.->|"supports mesh"| node_mesh
+node_watch -->|"receives updates"| node_intercom
+node_operator -->|"manages spaces"| node_platform
+node_platform -.->|"calls operations"| node_rpc
+node_rpc -->|"manages catalog"| node_amenities
+node_rpc -->|"executes purchases"| node_wallet
+node_rpc -.->|"records outcomes"| node_arcade
+node_operator -->|"authors world"| node_aql
+node_aql -->|"executes via client"| node_sdk
+node_sdk -.->|"calls runtime"| node_rpc
+node_agent -->|"integrates with"| node_sdk
+node_cli -.->|"initializes projects"| node_sdk
+node_operator -->|"inspects ledger"| node_scanner
+
+click node_watch "https://github.com/wilforlan/agent-play/blob/main/packages/play-ui/src/main.ts"
+click node_canvas "https://github.com/wilforlan/agent-play/blob/main/packages/play-ui/src/multiverse-engine.ts"
+click node_mesh "https://github.com/wilforlan/agent-play/blob/main/packages/geography-mesh/src/index.ts"
+click node_player_api "https://github.com/wilforlan/agent-play/blob/main/packages/web-ui/src/app/api/agent-play/players/route.ts"
+click node_rpc "https://github.com/wilforlan/agent-play/blob/main/packages/web-ui/src/app/api/agent-play/sdk/rpc/route.ts"
+click node_world "https://github.com/wilforlan/agent-play/tree/main/packages/web-ui/src/server/agent-play"
+click node_mutation "https://github.com/wilforlan/agent-play/blob/main/packages/web-ui/src/server/agent-play/world-mutation-pipeline.ts"
+click node_session "https://github.com/wilforlan/agent-play/blob/main/packages/web-ui/src/server/agent-play/session-store.ts"
+click node_geo_api "https://github.com/wilforlan/agent-play/tree/main/packages/web-ui/src/app/api/agent-play/geography"
+click node_intercom "https://github.com/wilforlan/agent-play/blob/main/packages/web-ui/src/server/agent-play/intercom/fanout.ts"
+click node_spaces "https://github.com/wilforlan/agent-play/blob/main/packages/sdk/src/lib/space-content-model.ts"
+click node_amenities "https://github.com/wilforlan/agent-play/tree/main/packages/web-ui/src/server/agent-play"
+click node_wallet "https://github.com/wilforlan/agent-play/blob/main/packages/sdk/src/lib/wallet-apu-transaction.ts"
+click node_arcade "https://github.com/wilforlan/agent-play/blob/main/packages/sdk/src/lib/game-catalog.ts"
+click node_aql "https://github.com/wilforlan/agent-play/blob/main/packages/web-ui/src/app/playground/_lib/aql-engine.ts"
+click node_sdk "https://github.com/wilforlan/agent-play/blob/main/packages/sdk/src/lib/remote-play-world.ts"
+click node_cli "https://github.com/wilforlan/agent-play/blob/main/packages/cli/src/initialize.ts"
+click node_platform "https://github.com/wilforlan/agent-play/blob/main/packages/web-ui/src/app/platform/page.tsx"
+click node_scanner "https://github.com/wilforlan/agent-play/blob/main/packages/web-ui/src/app/scanner/page.tsx"
+
+classDef toneNeutral fill:#f8fafc,stroke:#334155,stroke-width:1.5px,color:#0f172a
+classDef toneBlue fill:#dbeafe,stroke:#2563eb,stroke-width:1.5px,color:#172554
+classDef toneAmber fill:#fef3c7,stroke:#d97706,stroke-width:1.5px,color:#78350f
+classDef toneMint fill:#dcfce7,stroke:#16a34a,stroke-width:1.5px,color:#14532d
+classDef toneRose fill:#ffe4e6,stroke:#e11d48,stroke-width:1.5px,color:#881337
+classDef toneIndigo fill:#e0e7ff,stroke:#4f46e5,stroke-width:1.5px,color:#312e81
+classDef toneTeal fill:#ccfbf1,stroke:#0f766e,stroke-width:1.5px,color:#134e4a
+class node_watch,node_canvas,node_mesh toneBlue
+class node_player_api,node_rpc,node_world,node_mutation,node_session,node_geo_api,node_intercom toneAmber
+class node_spaces,node_amenities,node_wallet,node_arcade toneMint
+class node_aql,node_sdk,node_cli toneRose
+class node_platform,node_scanner,node_player,node_agent,node_operator toneIndigo
+```
+---
+
 ## Spirit of the project
 
 The agent ecosystem moves fast—frameworks churn, patterns shift, and “best practice” is a moving target. Agent Play does not need to win every comparison; it needs to stay **curious**, **usable**, and **kind** to contributors and users alike. If a spatial lens helps your team think more clearly about agents, we’re heading in the right direction.
