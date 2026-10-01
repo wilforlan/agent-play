@@ -18,8 +18,15 @@ import {
   buildAgentPlaySitemap,
   buildAgentPlayRootMetadata,
   buildLlmsTxt,
+  buildV0peerWorldSeo,
+  isAgentPlayPublicHost,
+  isV0peerPublicHost,
   listAgentPlayGamesSitemapPaths,
+  normalizeRequestHost,
+  parseWorldIndexFromHost,
   resolveAgentPlayOrigin,
+  resolveRootSeoCatalogFromHost,
+  resolveSeoOriginFromHost,
 } from "./agent-play-seo";
 
 const ORIGIN = "https://agent-play.com";
@@ -34,6 +41,115 @@ describe("Agent Play origin", () => {
     expect(
       resolveAgentPlayOrigin({ envValue: "https://staging.agent-play.com/" }),
     ).toBe("https://staging.agent-play.com");
+  });
+});
+
+describe("v0peer host and world index", () => {
+  it("normalizes host casing, www, and ports", () => {
+    expect(normalizeRequestHost("WWW.Agent-Play.com:443")).toBe("agent-play.com");
+    expect(normalizeRequestHost("world2.v0peer.org:443")).toBe("world2.v0peer.org");
+  });
+
+  it("detects agent-play and v0peer public hosts", () => {
+    expect(isAgentPlayPublicHost("agent-play.com")).toBe(true);
+    expect(isAgentPlayPublicHost("www.agent-play.com")).toBe(true);
+    expect(isV0peerPublicHost("v0peer.org")).toBe(true);
+    expect(isV0peerPublicHost("world1.v0peer.org")).toBe(true);
+    expect(isV0peerPublicHost("agent-play.com")).toBe(false);
+  });
+
+  it("parses world index only from worldN.v0peer.org", () => {
+    expect(parseWorldIndexFromHost("world1.v0peer.org")).toBe(1);
+    expect(parseWorldIndexFromHost("world2.v0peer.org")).toBe(2);
+    expect(parseWorldIndexFromHost("world3.v0peer.org")).toBe(3);
+    expect(parseWorldIndexFromHost("v0peer.org")).toBeNull();
+    expect(parseWorldIndexFromHost("agent-play.com")).toBeNull();
+    expect(parseWorldIndexFromHost("staging.v0peer.org")).toBeNull();
+  });
+
+  it("uses the request host as origin on v0peer, else the env origin", () => {
+    expect(
+      resolveSeoOriginFromHost({
+        host: "world2.v0peer.org",
+        envOrigin: "https://agent-play.com",
+      }),
+    ).toBe("https://world2.v0peer.org");
+    expect(
+      resolveSeoOriginFromHost({
+        host: "agent-play.com",
+        envOrigin: "https://agent-play.com",
+      }),
+    ).toBe("https://agent-play.com");
+  });
+});
+
+describe("v0peer world SEO catalogs", () => {
+  it("brands world1 as Main World without Convergence or World 2", () => {
+    const seo = buildV0peerWorldSeo({ worldIndex: 1 });
+    expect(seo.brandName).toBe("World 1");
+    expect(seo.siteName).toBe("World 1 — Agent Play");
+    expect(seo.defaultTitle).toContain("World 1");
+    expect(seo.defaultTitle).not.toContain("World 2");
+    expect(seo.defaultTitle).not.toMatch(/convergence/i);
+    expect(seo.defaultDescription).toMatch(/World 1|Main World|live map/i);
+    expect(seo.defaultDescription).not.toMatch(/convergence/i);
+    expect(seo.keywords.map((k) => k.toLowerCase())).toContain("world 1");
+    expect(seo.keywords.map((k) => k.toLowerCase())).not.toContain("world 2");
+    expect(seo.themeColor).toBe("#f3eee4");
+    expect(seo.ogImagePath).toBe("/opengraph-image");
+    expect(seo.variant).toBe("main-world");
+  });
+
+  it("brands world2 as Convergence with World 2", () => {
+    const seo = buildV0peerWorldSeo({ worldIndex: 2 });
+    expect(seo.brandName).toBe("World 2");
+    expect(seo.siteName).toBe("World 2 — Agent Play");
+    expect(seo.defaultTitle).toMatch(/Second Economy|Convergence/i);
+    expect(seo.defaultTitle).toContain("World 2");
+    expect(seo.defaultDescription).toMatch(/street|bank|peer|APU/i);
+    expect(seo.keywords.map((k) => k.toLowerCase())).toContain("world 2");
+    expect(seo.keywords.map((k) => k.toLowerCase())).toContain("second economy");
+    expect(seo.variant).toBe("convergence");
+  });
+
+  it("brands world3 as Convergence with World 3, not World 2", () => {
+    const seo = buildV0peerWorldSeo({ worldIndex: 3 });
+    expect(seo.brandName).toBe("World 3");
+    expect(seo.siteName).toBe("World 3 — Agent Play");
+    expect(seo.defaultTitle).toContain("World 3");
+    expect(seo.defaultTitle).not.toContain("World 2");
+    expect(seo.defaultDescription).toContain("World 3");
+    expect(seo.defaultDescription).not.toContain("World 2");
+    expect(seo.keywords.map((k) => k.toLowerCase())).toContain("world 3");
+    expect(seo.variant).toBe("convergence");
+  });
+
+  it("uses v0peer labeling for apex hosts without a world index", () => {
+    const seo = buildV0peerWorldSeo({ worldIndex: null });
+    expect(seo.brandName).toBe("v0peer");
+    expect(seo.siteName).toBe("v0peer — Agent Play");
+    expect(seo.defaultTitle).toMatch(/Second Economy|Convergence/i);
+    expect(seo.defaultTitle).not.toContain("World 2");
+    expect(seo.variant).toBe("convergence");
+  });
+
+  it("resolves catalogs from host for agent-play, world1, and worldN", () => {
+    expect(resolveRootSeoCatalogFromHost("agent-play.com")).toEqual({
+      kind: "agent-play",
+      catalog: AGENT_PLAY_SEO,
+    });
+    const world1 = resolveRootSeoCatalogFromHost("world1.v0peer.org");
+    expect(world1.kind).toBe("v0peer");
+    if (world1.kind === "v0peer") {
+      expect(world1.catalog.brandName).toBe("World 1");
+      expect(world1.catalog.variant).toBe("main-world");
+    }
+    const world2 = resolveRootSeoCatalogFromHost("world2.v0peer.org");
+    expect(world2.kind).toBe("v0peer");
+    if (world2.kind === "v0peer") {
+      expect(world2.catalog.brandName).toBe("World 2");
+      expect(world2.catalog.variant).toBe("convergence");
+    }
   });
 });
 
@@ -133,6 +249,35 @@ describe("root metadata", () => {
   it("omits verification when no token is configured", () => {
     const metadata = buildAgentPlayRootMetadata({ origin: ORIGIN });
     expect(metadata.verification).toBeUndefined();
+  });
+
+  it("publishes World 1 Main World Open Graph without World 2 Convergence", () => {
+    const catalog = buildV0peerWorldSeo({ worldIndex: 1 });
+    const metadata = buildAgentPlayRootMetadata({
+      origin: "https://world1.v0peer.org",
+      catalog,
+    });
+    expect(metadata.openGraph).toMatchObject({
+      siteName: "World 1 — Agent Play",
+      title: catalog.defaultTitle,
+      description: catalog.defaultDescription,
+    });
+    expect(String(metadata.openGraph?.title)).not.toContain("World 2");
+    expect(String(metadata.openGraph?.title)).not.toMatch(/convergence/i);
+    expect(metadata.verification).toBeUndefined();
+  });
+
+  it("publishes World 2 Convergence Open Graph", () => {
+    const catalog = buildV0peerWorldSeo({ worldIndex: 2 });
+    const metadata = buildAgentPlayRootMetadata({
+      origin: "https://world2.v0peer.org",
+      catalog,
+    });
+    expect(metadata.openGraph).toMatchObject({
+      siteName: "World 2 — Agent Play",
+      title: catalog.defaultTitle,
+    });
+    expect(String(metadata.openGraph?.title)).toMatch(/Convergence|Second Economy/i);
   });
 });
 

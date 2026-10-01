@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  applyOccupancyPageCorsHeaders,
   isOccupancyPageOrigin,
+  mergeVaryOrigin,
   occupancyPageCorsHeaders,
 } from "./occupancy-page-cors";
 
@@ -40,9 +42,33 @@ describe("occupancy page CORS", () => {
     expect(headers["Access-Control-Allow-Headers"]).toMatch(/x-node-id/i);
     expect(headers["Access-Control-Allow-Headers"]).toMatch(/x-node-passw/i);
     expect(headers["Access-Control-Allow-Credentials"]).toBeUndefined();
+    expect(headers["Vary"]).toBeUndefined();
   });
 
   it("does not echo a foreign Origin", () => {
     expect(occupancyPageCorsHeaders("https://evil.example")).toEqual({});
+  });
+
+  it("merges Origin into an existing Vary list without duplicating it", () => {
+    expect(mergeVaryOrigin(null)).toBe("Origin");
+    expect(mergeVaryOrigin("rsc, next-router-state-tree")).toBe(
+      "rsc, next-router-state-tree, Origin"
+    );
+    expect(mergeVaryOrigin("Origin, Accept-Encoding")).toBe(
+      "Origin, Accept-Encoding"
+    );
+  });
+
+  it("applies CORS and preserves upstream Vary while adding Origin", () => {
+    const headers = new Headers();
+    headers.set("Vary", "rsc, next-router-state-tree");
+    applyOccupancyPageCorsHeaders({
+      headers,
+      originHeader: "https://world2.v0peer.org",
+    });
+    expect(headers.get("Access-Control-Allow-Origin")).toBe(
+      "https://world2.v0peer.org"
+    );
+    expect(headers.get("Vary")).toBe("rsc, next-router-state-tree, Origin");
   });
 });

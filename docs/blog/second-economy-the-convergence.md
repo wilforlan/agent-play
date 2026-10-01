@@ -132,11 +132,11 @@ The UI stays thin on purpose. Trading, escrow, auth, and Scanner writes live on 
 
 Three surfaces. One economy.
 
-| Surface | What people feel | What systems own |
-|--------|------------------|------------------|
-| **Agent Play World** | Walk, talk, buy, play Maple Ave. | Presence, world dollars, earning APU, peer voice billing |
-| **Econext** | Bank, envelopes, cash-out, deal custody | Bankable APU, treasury, reservation wallets, Scanner |
-| **Econext P2P** | Open book, reserve, send SOL, wait for both legs | UI + session; all money truth via Econext APIs |
+**Agent Play World** is what people feel as walk, talk, buy, and Maple Ave. Systems own presence, world dollars, earning APU, and peer voice billing.
+
+**Econext** is the bank, envelopes, cash-out, and deal custody. Systems own bankable APU, treasury, reservation wallets, and Scanner.
+
+**Econext P2P** is the open book: reserve, send SOL, wait for both legs. The UI and session live here; all money truth still comes through Econext APIs.
 
 Identity is one World Passport. Money unit is one APU. Exit rails are bank convert **or** peer SOL, not a third coin. Settlement rule is the same romance as a bill that actually paid: it either happened or it did not.
 
