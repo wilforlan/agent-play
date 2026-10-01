@@ -117,11 +117,14 @@ import {
   parsePlayerChainNodeRpcBody,
   pickZoneForGroup,
   pointCellInZone,
+  primaryZoneForGroup,
   SPACE_STRUCTURE_ANCHOR_MIN_DISTANCE,
   sortNodeRefsForSerializedFetch,
   STREET_NAME_POOL,
   featuredGameIdForUtcDate,
   isGameId,
+  arcadeDayPassApuCost,
+  arcadeWeekPassApuCost,
   type AgentPlaySnapshot,
   type GameEvent,
   type GameId,
@@ -140,6 +143,7 @@ import {
   type ParkingStreetContent,
   type WorldBounds,
   type WorldLayout,
+  type Zone,
 } from "@agent-play/sdk/browser";
 import {
   appendChatLogLine,
@@ -279,6 +283,16 @@ import {
   type GameHowToPlayHandle,
 } from "./game-how-to-play.js";
 import { createGameResultPanel, type GameResultPanelHandle } from "./game-result-panel.js";
+import {
+  canAffordArcadePlan,
+  createArcadeAccessPanel,
+  type ArcadeAccessPanelHandle,
+} from "./arcade-access-panel.js";
+import {
+  getArcadeAccess,
+  purchaseArcadeAccess,
+  type ArcadeAccessPass,
+} from "./arcade-access-client.js";
 import {
   createGameStreakPanel,
   markGameStreakAutoPeeked,
@@ -1493,6 +1507,10 @@ function onDocumentKeyDown(e: KeyboardEvent): void {
       gameResultPanel.close();
       return;
     }
+    if (arcadeAccessPanel !== null && arcadeAccessPanel.isOpen()) {
+      e.preventDefault();
+      return;
+    }
     if (gameStreakPanel !== null && gameStreakPanel.isOpen()) {
       e.preventDefault();
       gameStreakPanel.close();
@@ -1748,6 +1766,166 @@ async function handleGameRoundComplete(
   }
 }
 
+const formatArcadePassRemaining = (): string | null => {
+  if (!isArcadePassCachedActive() || arcadeAccessPassCache === null) {
+    return null;
+  }
+  const ms = Date.parse(arcadeAccessPassCache.expiresAt) - Date.now();
+  if (!Number.isFinite(ms) || ms <= 0) return null;
+  const hours = Math.floor(ms / (60 * 60 * 1000));
+  const mins = Math.floor((ms % (60 * 60 * 1000)) / (60 * 1000));
+  if (hours >= 48) {
+    const days = Math.floor(hours / 24);
+    return `Pass · ${String(days)}d left`;
+  }
+  if (hours >= 1) {
+    return `Pass · ${String(hours)}h ${String(mins)}m left`;
+  }
+  return `Pass · ${String(mins)}m left`;
+};
+
+const isArcadePassCachedActive = (now: Date = new Date()): boolean => {
+  if (arcadeAccessPassCache === null) return false;
+  const expiresMs = Date.parse(arcadeAccessPassCache.expiresAt);
+  return Number.isFinite(expiresMs) && now.getTime() < expiresMs;
+};
+
+const ejectHumanOutsideArcadeZone = (zone: Zone): void => {
+  const humanId = getHumanPlayerId();
+  if (humanId === null) return;
+  const pos = playerWorldPos.get(humanId);
+  if (pos === undefined) return;
+  const outsideX = zone.rect.minX - 1.5;
+  const next = { x: outsideX, y: pos.y };
+  const wb = getWorldBoundsForClamp();
+  const clamped = wb !== null ? clampWorldPosition(next, wb) : next;
+  playerWorldPos.set(humanId, clamped);
+  waypointQueues.delete(humanId);
+  wasInArcadeZone = false;
+  updateCameraAndWorldRoot();
+  pendingHumanWorldPos = { x: clamped.x, y: clamped.y };
+  flushPersistedHumanWorldPos();
+};
+
+const openArcadeAccessGate = async (): Promise<boolean> => {
+  const sid = getSid();
+  const playerId = getViewerWalletPlayerId();
+  if (sid === null || playerId === null) {
+    arcadeAccessPanel?.show({
+      quotes: { day: 0, week: 0 },
+      dayApuCost: arcadeDayPassApuCost(),
+      weekApuCost: arcadeWeekPassApuCost(),
+      preferredTender: "apw",
+      balanceUsd: 0,
+      powerUps: 0,
+      canAffordDay: false,
+      canAffordWeek: false,
+      onPurchase: () => {
+        arcadeAccessPanel?.setError("Sign in to unlock the arcade.");
+      },
+      onDismiss: () => {
+        const layout = resolveWorldLayout();
+        const arcade = primaryZoneForGroup(layout, "arcade");
+        if (arcade !== undefined) ejectHumanOutsideArcadeZone(arcade);
+      },
+    });
+    return false;
+  }
+  try {
+    const snapshotAccess = await getArcadeAccess({ sid, playerId });
+    arcadeAccessPassCache = snapshotAccess.access;
+    if (snapshotAccess.access !== null) {
+      return true;
+    }
+    const dayApuCost = arcadeDayPassApuCost();
+    const weekApuCost = arcadeWeekPassApuCost();
+    arcadeAccessPanel?.show({
+      quotes: snapshotAccess.quotes,
+      dayApuCost,
+      weekApuCost,
+      preferredTender: snapshotAccess.preferredTender,
+      balanceUsd: snapshotAccess.wallet.balanceUsd,
+      powerUps: snapshotAccess.wallet.powerUps,
+      canAffordDay: canAffordArcadePlan({
+        plan: "day",
+        powerUps: snapshotAccess.wallet.powerUps,
+        balanceUsd: snapshotAccess.wallet.balanceUsd,
+        dayApuCost,
+        weekApuCost,
+        quotes: snapshotAccess.quotes,
+      }),
+      canAffordWeek: canAffordArcadePlan({
+        plan: "week",
+        powerUps: snapshotAccess.wallet.powerUps,
+        balanceUsd: snapshotAccess.wallet.balanceUsd,
+        dayApuCost,
+        weekApuCost,
+        quotes: snapshotAccess.quotes,
+      }),
+      onPurchase: async (plan) => {
+        arcadeAccessPanel?.setBusy(true);
+        try {
+          const result = await purchaseArcadeAccess({ sid, playerId, plan });
+          arcadeAccessPassCache = result.access;
+          arcadeAccessPanel?.close();
+          void refreshWalletHud();
+        } catch (error) {
+          const message =
+            error instanceof Error ? error.message : "Purchase failed";
+          arcadeAccessPanel?.setError(message.replace(/^\[agent-play:arcade-access\]\s*/, ""));
+        }
+      },
+      onDismiss: () => {
+        const layout = resolveWorldLayout();
+        const arcade = primaryZoneForGroup(layout, "arcade");
+        if (arcade !== undefined) ejectHumanOutsideArcadeZone(arcade);
+      },
+    });
+    return false;
+  } catch (error) {
+    console.warn("[agent-play:world] arcade access check failed", error);
+    return false;
+  }
+};
+
+const ensureArcadeAccessOrGate = async (): Promise<boolean> => {
+  if (isArcadePassCachedActive()) return true;
+  if (arcadeAccessPanel?.isOpen() === true) return false;
+  if (arcadeAccessCheckInFlight) return false;
+  arcadeAccessCheckInFlight = true;
+  try {
+    return await openArcadeAccessGate();
+  } finally {
+    arcadeAccessCheckInFlight = false;
+  }
+};
+
+const applyArcadeZoneProximity = (
+  humanPos: { x: number; y: number } | null
+): void => {
+  if (humanPos === null) {
+    wasInArcadeZone = false;
+    return;
+  }
+  const layout = resolveWorldLayout();
+  const arcade = primaryZoneForGroup(layout, "arcade");
+  if (arcade === undefined) {
+    wasInArcadeZone = false;
+    return;
+  }
+  const inArcade = pointCellInZone(humanPos.x, humanPos.y, arcade);
+  if (inArcade && !wasInArcadeZone) {
+    if (!isArcadePassCachedActive() && arcadeAccessPanel?.isOpen() !== true) {
+      void ensureArcadeAccessOrGate().then((allowed) => {
+        if (!allowed && arcadeAccessPanel?.isOpen() !== true) {
+          ejectHumanOutsideArcadeZone(arcade);
+        }
+      });
+    }
+  }
+  wasInArcadeZone = inArcade;
+};
+
 async function enterGameFromProximity(
   target: StructureProximityTarget
 ): Promise<void> {
@@ -1755,6 +1933,8 @@ async function enterGameFromProximity(
   if (target.gameId === undefined || stageController === null) return;
   const current = stageController.current();
   if (current !== null && current.id !== "overworld") return;
+  const allowed = await ensureArcadeAccessOrGate();
+  if (!allowed) return;
   const featured =
     cachedFeaturedGameId ?? featuredGameIdForUtcDate(new Date());
   const playableGameId = resolvePlayableGameId(target.gameId, featured);
@@ -1936,8 +2116,12 @@ let activeGameStage: ActiveGameStage | null = null;
 let gameResultPanel: GameResultPanelHandle | null = null;
 let gameStreakPanel: GameStreakPanelHandle | null = null;
 let gameHowToPlayPanel: GameHowToPlayHandle | null = null;
+let arcadeAccessPanel: ArcadeAccessPanelHandle | null = null;
 let cachedFeaturedGameId: GameId | null = null;
 let cachedGameStatsPowerUps = 0;
+let wasInArcadeZone = false;
+let arcadeAccessPassCache: ArcadeAccessPass | null = null;
+let arcadeAccessCheckInFlight = false;
 
 /**
  * Trigger `stageController.back()` and clear the active enclosed-stage
@@ -5024,6 +5208,7 @@ function onFrame(): void {
   ) {
     applyHouseDoorProximity(humanPosForParking);
     applyParkingBayProximity(humanPosForParking);
+    applyArcadeZoneProximity(humanPosForParking);
   } else {
     lastHouseNearest = null;
     lastParkingBayNearest = null;
@@ -5032,6 +5217,7 @@ function onFrame(): void {
       parkingTicketTooltip?.hide();
       parkingTooltipOpenForBay = null;
     }
+    wasInArcadeZone = false;
   }
   if (proximityLegendEl !== null) {
     if (
@@ -5107,14 +5293,21 @@ function onFrame(): void {
     } else if (lastStructureProximityTarget !== null) {
       const target = lastStructureProximityTarget;
       const targetName = target.label ?? target.spaceId ?? "cabinet";
+      const passHint = formatArcadePassRemaining();
       if (target.gameId !== undefined) {
-        proximityLegendEl.textContent = `Near ${targetName}. A: play`;
+        proximityLegendEl.textContent =
+          passHint !== null
+            ? `Near ${targetName}. A: play · ${passHint}`
+            : `Near ${targetName}. A: play`;
       } else {
         proximityLegendEl.textContent = `Near ${targetName}. A: enter space`;
       }
     } else {
+      const passHint = formatArcadePassRemaining();
       proximityLegendEl.textContent =
-        "Near another player: A: for assist · C: for chat · P: push to talk · Z: for zone · Y: for yield";
+        passHint !== null
+          ? `${passHint} · Near another player: A: for assist · C: for chat · P: push to talk`
+          : "Near another player: A: for assist · C: for chat · P: push to talk · Z: for zone · Y: for yield";
     }
   }
   if (proximityPromptEl !== null) {
@@ -5581,6 +5774,7 @@ export function bootstrap(): void {
       },
     });
     gameResultPanel = createGameResultPanel({ parent: document.body });
+    arcadeAccessPanel = createArcadeAccessPanel({ parent: document.body });
     gameStreakPanel = createGameStreakPanel({
       parent: document.body,
       pillParent: bottomHudDock.root,

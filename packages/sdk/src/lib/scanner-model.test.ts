@@ -8,6 +8,26 @@ import {
 } from "./scanner-model.js";
 
 describe("scanner-model", () => {
+  it("parses purchaseArcadeAccess scanner op for arcade_pass", () => {
+    const row = ScannerTxRecordSchema.parse({
+      id: "arcade-pass-1",
+      playerId: "node-1",
+      spaceId: "__arcade__",
+      amenityKind: "arcade_pass",
+      itemRef: { kind: "arcade_pass", id: "day" },
+      priceUsd: 1.66,
+      at: "2026-06-10T12:00:00.000Z",
+      powerUpsDelta: -25,
+      hostId: "default",
+      indexedAt: "2026-06-10T12:00:01.000Z",
+      op: "purchaseArcadeAccess",
+      blockRev: 1,
+      merkleRootHex: "abc",
+    });
+    expect(row.op).toBe("purchaseArcadeAccess");
+    expect(row.amenityKind).toBe("arcade_pass");
+  });
+
   it("parses a scanner tx record with explorer metadata", () => {
     const row = ScannerTxRecordSchema.parse({
       id: "tx-1",

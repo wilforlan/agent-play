@@ -404,7 +404,9 @@ const formatApuAmount = (delta: number): string => {
 const formatTransactionAmount = (record: PurchaseRecordDto): string => {
   if (
     record.amenityKind === "apu_credit" ||
-    record.amenityKind === "apu_debit"
+    record.amenityKind === "apu_debit" ||
+    (record.amenityKind === "arcade_pass" &&
+      typeof record.powerUpsDelta === "number")
   ) {
     const delta =
       typeof record.powerUpsDelta === "number"
@@ -458,6 +460,7 @@ const AMENITY_LABEL: Record<string, string> = {
   wallet_bundle: "Bundle",
   apu_credit: "APU Credit",
   apu_debit: "APU Debit",
+  arcade_pass: "Arcade Pass",
 };
 
 const isVoiceTalkAmenity = (
@@ -536,6 +539,15 @@ export const buildPurchaseSubtitle = (input: {
         ? input.record.detail
         : "Wallet bundle";
     return `${puPart}${detail} · ${at}`;
+  }
+  if (input.record.amenityKind === "arcade_pass") {
+    const detail =
+      typeof input.record.detail === "string" && input.record.detail.length > 0
+        ? input.record.detail
+        : input.record.itemRef.id === "week"
+          ? "Arcade weekly pass"
+          : "Arcade day pass";
+    return `${detail} · ${at}`;
   }
   if (
     input.record.amenityKind === "apu_credit" ||
@@ -771,13 +783,17 @@ export const createWalletInventoryPanel = (
           ? voiceTalkDisplayName(record.amenityKind)
           : record.amenityKind === "wallet_bundle"
             ? `+${formatUsd(record.priceUsd ?? 0)} balance`
-            : record.amenityKind === "apu_credit" ||
-                record.amenityKind === "apu_debit"
-              ? record.detail ??
-                (record.amenityKind === "apu_credit"
-                  ? "APU credit"
-                  : "APU debit")
-              : fields.name ?? amenityLabelForDisplay(record.amenityKind) + " item";
+            : record.amenityKind === "arcade_pass"
+              ? record.itemRef.id === "week"
+                ? "Arcade weekly pass"
+                : "Arcade day pass"
+              : record.amenityKind === "apu_credit" ||
+                  record.amenityKind === "apu_debit"
+                ? record.detail ??
+                  (record.amenityKind === "apu_credit"
+                    ? "APU credit"
+                    : "APU debit")
+                : fields.name ?? amenityLabelForDisplay(record.amenityKind) + " item";
       const subEl = document.createElement("div");
       subEl.className = `${PANEL_CLASS}__sub`;
       subEl.textContent = buildPurchaseSubtitle({ record, fields });
@@ -801,6 +817,7 @@ export const createWalletInventoryPanel = (
       if (
         !isVoiceTalkAmenity(record.amenityKind) &&
         record.amenityKind !== "wallet_bundle" &&
+        record.amenityKind !== "arcade_pass" &&
         record.amenityKind !== "apu_credit" &&
         record.amenityKind !== "apu_debit"
       ) {
@@ -838,11 +855,15 @@ export const createWalletInventoryPanel = (
         ? voiceTalkDisplayName(record.amenityKind)
         : record.amenityKind === "wallet_bundle"
           ? `+${formatUsd(record.priceUsd ?? 0)} balance`
-          : record.amenityKind === "apu_credit" ||
-              record.amenityKind === "apu_debit"
-            ? record.detail ??
-              (record.amenityKind === "apu_credit" ? "APU credit" : "APU debit")
-            : fields.name ?? amenityLabelForDisplay(record.amenityKind) + " item";
+          : record.amenityKind === "arcade_pass"
+            ? record.itemRef.id === "week"
+              ? "Arcade weekly pass"
+              : "Arcade day pass"
+            : record.amenityKind === "apu_credit" ||
+                record.amenityKind === "apu_debit"
+              ? record.detail ??
+                (record.amenityKind === "apu_credit" ? "APU credit" : "APU debit")
+              : fields.name ?? amenityLabelForDisplay(record.amenityKind) + " item";
     headerRow.append(back, name);
     card.appendChild(headerRow);
 
@@ -853,6 +874,8 @@ export const createWalletInventoryPanel = (
         ? "#334155"
         : record.amenityKind === "wallet_bundle"
           ? "#047857"
+          : record.amenityKind === "arcade_pass"
+            ? "#0f766e"
           : record.amenityKind === "apu_credit"
             ? "#1d4ed8"
             : record.amenityKind === "apu_debit"
@@ -870,6 +893,8 @@ export const createWalletInventoryPanel = (
           : "VOICE"
         : record.amenityKind === "wallet_bundle"
           ? "BUNDLE"
+          : record.amenityKind === "arcade_pass"
+            ? "PASS"
           : record.amenityKind === "apu_credit" ||
               record.amenityKind === "apu_debit"
             ? "APU"

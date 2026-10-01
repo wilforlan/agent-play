@@ -1483,6 +1483,59 @@ export async function POST(req: NextRequest) {
           purchase: result.record,
         });
       }
+      case "getArcadeAccess": {
+        const p = body.payload as { playerId?: unknown };
+        if (typeof p.playerId !== "string" || p.playerId.trim().length === 0) {
+          return Response.json({ error: "invalid payload" }, { status: 400 });
+        }
+        const now = new Date().toISOString();
+        const result = await store.getArcadeAccess({
+          playerId: p.playerId.trim(),
+          now,
+        });
+        return Response.json({
+          access: result.access,
+          apwPerApu: result.apwPerApu,
+          quotes: result.quotes,
+          preferredTender: result.preferredTender,
+          wallet: await resolveClientPlayerWallet({
+            wallet: result.wallet,
+            playerId: p.playerId.trim(),
+          }),
+        });
+      }
+      case "purchaseArcadeAccess": {
+        const p = body.payload as {
+          playerId?: unknown;
+          plan?: unknown;
+        };
+        if (
+          typeof p.playerId !== "string" ||
+          p.playerId.trim().length === 0 ||
+          (p.plan !== "day" && p.plan !== "week")
+        ) {
+          return Response.json({ error: "invalid payload" }, { status: 400 });
+        }
+        const now = new Date().toISOString();
+        const result = await store.purchaseArcadeAccess({
+          playerId: p.playerId.trim(),
+          plan: p.plan,
+          now,
+          recordId: `arcade-pass-${randomUUID()}`,
+        });
+        if (!result.ok) {
+          return Response.json({ error: result.error }, { status: 409 });
+        }
+        return Response.json({
+          wallet: await resolveClientPlayerWallet({
+            wallet: result.wallet,
+            playerId: p.playerId.trim(),
+          }),
+          access: result.access,
+          purchase: result.purchase,
+          tender: result.tender,
+        });
+      }
       case "getGameStats": {
         const p = body.payload as { playerId?: unknown };
         if (typeof p.playerId !== "string" || p.playerId.trim().length === 0) {

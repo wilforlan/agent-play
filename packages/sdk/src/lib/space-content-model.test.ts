@@ -380,6 +380,45 @@ describe("space-content-model: PurchaseRecordSchema", () => {
     expect(parsed.counterpartyNodeId).toBe("buyer-1");
   });
 
+  it("accepts an arcade_pass purchase settled in APU", () => {
+    const parsed = PurchaseRecordSchema.parse({
+      id: "arcade-pass-1",
+      playerId: "p1",
+      spaceId: "__arcade__",
+      amenityKind: "arcade_pass",
+      itemRef: { kind: "arcade_pass", id: "day" },
+      priceUsd: 1.66,
+      at: "2026-06-10T12:00:00.000Z",
+      powerUpsSpent: 25,
+      powerUpsDelta: -25,
+      debitSource: "wallet:apu",
+      creditSource: "arcade:pass:day",
+      token: "APU",
+      detail: "Arcade day pass",
+    });
+    expect(parsed.amenityKind).toBe("arcade_pass");
+    expect(parsed.itemRef.kind).toBe("arcade_pass");
+    expect(parsed.powerUpsDelta).toBe(-25);
+  });
+
+  it("accepts an arcade_pass purchase settled in APW$", () => {
+    const parsed = PurchaseRecordSchema.parse({
+      id: "arcade-pass-2",
+      playerId: "p1",
+      spaceId: "__arcade__",
+      amenityKind: "arcade_pass",
+      itemRef: { kind: "arcade_pass", id: "week" },
+      priceUsd: 9.3,
+      at: "2026-06-10T12:00:00.000Z",
+      debitSource: "wallet:usd",
+      creditSource: "arcade:pass:week",
+      token: "USD",
+      detail: "Arcade weekly pass",
+    });
+    expect(parsed.token).toBe("USD");
+    expect(parsed.powerUpsDelta).toBeUndefined();
+  });
+
   it("accepts a SOL deposit without APU movement", () => {
     const parsed = PurchaseRecordSchema.parse({
       id: "sol-dep-1",

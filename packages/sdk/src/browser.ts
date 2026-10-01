@@ -251,3 +251,15 @@ export {
   PLAYER_CHAIN_GENESIS_STABLE_KEY,
   PLAYER_CHAIN_HEADER_STABLE_KEY,
 } from "./lib/world-chain-keys.js";
+export {
+  ARCADE_DAY_PASS_APU,
+  ARCADE_WEEK_PASS_DAYS,
+  ARCADE_WEEK_DISCOUNT,
+  arcadeDayPassApuCost,
+  arcadeWeekPassApuCost,
+  arcadePassApuCost,
+  isArcadeAccessActive,
+  type ArcadeAccessPass,
+  type ArcadeAccessPlan,
+  type ArcadeTender,
+} from "./lib/arcade-access-catalog.js";

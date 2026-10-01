@@ -238,6 +238,7 @@ export {
   APU_TOKEN,
   buildAmenityPurchaseApuFields,
   buildApuWalletTransaction,
+  buildArcadePassPurchaseFields,
   buildWalletBundleApuFields,
 } from "./lib/wallet-apu-transaction.js";
 export {
@@ -280,6 +281,26 @@ export {
   type WalletBundleId,
   type WalletBundleOffer,
 } from "./lib/wallet-bundle-catalog.js";
+export {
+  ARCADE_DAY_PASS_APU,
+  ARCADE_DAY_PASS_HOURS,
+  ARCADE_WEEK_DISCOUNT,
+  ARCADE_WEEK_PASS_DAYS,
+  ArcadeAccessPassSchema,
+  ArcadeAccessPlanSchema,
+  ArcadeTenderSchema,
+  arcadeDayPassApuCost,
+  arcadePassApuCost,
+  arcadeWeekPassApuCost,
+  buildArcadeAccessPass,
+  chooseArcadeTender,
+  isArcadeAccessActive,
+  quoteArcadePassApw,
+  resolveArcadeTenderForPurchase,
+  type ArcadeAccessPass,
+  type ArcadeAccessPlan,
+  type ArcadeTender,
+} from "./lib/arcade-access-catalog.js";
 export {
   GAME_CABINET_CATALOG,
   PLAYABLE_GAME_IDS,

@@ -120,7 +120,7 @@ export const HOME_LANDING_ARTICLES: readonly HomeLandingArticle[] = [
       "PU are the arcade and engagement layer on top of dollars. Earn them from purchases, games, talk rewards, and streaks—spend them on wallet bundles.",
     bullets: [
       "Purchases: floor(priceUsd) × 3 PU per successful amenity buy.",
-      "Arcade: up to 100 PU per UTC day; first completed round is guaranteed net positive.",
+      "Arcade: up to 50 PU per UTC day; first completed round is guaranteed net positive.",
       "5-day streak grants a once-per-day +5 PU bonus toward the daily cap.",
     ],
     href: "/games",

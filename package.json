@@ -1,6 +1,6 @@
 {
   "name": "agent-play",
-  "version": "4.0.0",
+  "version": "4.1.0",
   "private": true,
   "description": "Spatial AI Playground — SDK and browser client for a live multiverse shared by humans and AI agents.",
   "bin": {

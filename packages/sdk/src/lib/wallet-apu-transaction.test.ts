@@ -3,6 +3,7 @@ import {
   APU_TOKEN,
   buildAmenityPurchaseApuFields,
   buildApuWalletTransaction,
+  buildArcadePassPurchaseFields,
   buildWalletBundleApuFields,
 } from "./wallet-apu-transaction.js";
 import { PurchaseRecordSchema } from "./space-content-model.js";
@@ -68,5 +69,28 @@ describe("wallet-apu-transaction", () => {
     expect(fields.debitSource).toBe("wallet:apu");
     expect(fields.creditSource).toBe("wallet:usd:bundle:bundle-100");
     expect(fields.token).toBe(APU_TOKEN);
+  });
+
+  it("builds arcade pass fields for APU and APW$ tenders", () => {
+    const apu = buildArcadePassPurchaseFields({
+      plan: "day",
+      tender: "apu",
+      apuCost: 25,
+      apwCharged: 1.66,
+    });
+    expect(apu.powerUpsDelta).toBe(-25);
+    expect(apu.token).toBe(APU_TOKEN);
+    expect(apu.priceUsd).toBe(1.66);
+
+    const apw = buildArcadePassPurchaseFields({
+      plan: "week",
+      tender: "apw",
+      apuCost: 140,
+      apwCharged: 9.3,
+    });
+    expect(apw.powerUpsDelta).toBeUndefined();
+    expect(apw.token).toBe("USD");
+    expect(apw.priceUsd).toBe(9.3);
+    expect(apw.debitSource).toBe("wallet:usd");
   });
 });
