@@ -17,8 +17,30 @@ import {
 } from "@/app/agent-play/(site)/agent-play-content";
 import { ogImageSize } from "@/app/og-image-meta";
 import { relativeMdToUrlSlugSegments } from "@/lib/docs/slug-url";
+import {
+  buildV0peerWorldSeo,
+  isAgentPlayPublicHost,
+  isV0peerPublicHost,
+  normalizeRequestHost,
+  parseWorldIndexFromHost,
+  resolveAgentPlayOrigin,
+  resolveOgImageCatalogFromHost,
+  resolveSeoOriginFromHost,
+  type V0peerWorldSeo,
+} from "@/lib/agent-play-host-seo";
 
-const DEFAULT_ORIGIN = "https://agent-play.com";
+export {
+  buildV0peerWorldSeo,
+  isAgentPlayPublicHost,
+  isV0peerPublicHost,
+  normalizeRequestHost,
+  parseWorldIndexFromHost,
+  resolveAgentPlayOrigin,
+  resolveOgImageCatalogFromHost,
+  resolveSeoOriginFromHost,
+  type V0peerWorldSeo,
+};
+
 const GITHUB_URL = "https://github.com/wilforlan/agent-play";
 const TITLE_TEMPLATE = "%s | Agent Play";
 
@@ -113,49 +135,71 @@ const PRIVATE_PATH_PREFIXES = [
   "/agent-play/watch",
 ] as const;
 
-type ResolveAgentPlayOriginOptions = {
-  envValue?: string;
-};
+export type RootSeoCatalog =
+  | typeof AGENT_PLAY_SEO
+  | V0peerWorldSeo;
 
-export const resolveAgentPlayOrigin = (
-  options: ResolveAgentPlayOriginOptions = {},
-): string => {
-  const trimmed = options.envValue?.trim();
-  if (trimmed && trimmed.length > 0) {
-    return trimmed.replace(/\/$/, "");
+export type ResolvedRootSeoCatalog =
+  | { kind: "agent-play"; catalog: typeof AGENT_PLAY_SEO }
+  | { kind: "v0peer"; catalog: V0peerWorldSeo };
+
+export const resolveRootSeoCatalogFromHost = (
+  host: string,
+): ResolvedRootSeoCatalog => {
+  const resolved = resolveOgImageCatalogFromHost(host);
+  if (resolved.kind === "v0peer") {
+    return resolved;
   }
-  return DEFAULT_ORIGIN;
+  return { kind: "agent-play", catalog: AGENT_PLAY_SEO };
 };
 
-const ogImage = {
-  url: AGENT_PLAY_SEO.ogImagePath,
-  width: ogImageSize.width,
-  height: ogImageSize.height,
-  alt: AGENT_PLAY_SEO.defaultTitle,
+const ogImageForCatalog = (catalog: RootSeoCatalog) => {
+  return {
+    url: catalog.ogImagePath,
+    width: ogImageSize.width,
+    height: ogImageSize.height,
+    alt: catalog.defaultTitle,
+  };
 };
 
 type BuildAgentPlayRootMetadataOptions = {
   origin: string;
   googleSiteVerification?: string;
+  catalog?: RootSeoCatalog;
 };
 
 export const buildAgentPlayRootMetadata = (
   options: BuildAgentPlayRootMetadataOptions,
 ): Metadata => {
-  const verificationToken = options.googleSiteVerification?.trim();
+  const catalog = options.catalog ?? AGENT_PLAY_SEO;
+  const isAgentPlayCatalog = catalog === AGENT_PLAY_SEO;
+  const verificationToken = isAgentPlayCatalog
+    ? options.googleSiteVerification?.trim()
+    : undefined;
+  const applicationName = isAgentPlayCatalog
+    ? AGENT_PLAY_SEO.brandName
+    : "siteName" in catalog
+      ? catalog.siteName
+      : catalog.brandName;
+  const siteName = isAgentPlayCatalog
+    ? AGENT_PLAY_SEO.brandName
+    : "siteName" in catalog
+      ? catalog.siteName
+      : catalog.brandName;
+  const ogImage = ogImageForCatalog(catalog);
 
   return {
     metadataBase: new URL(options.origin),
     title: {
-      default: AGENT_PLAY_SEO.defaultTitle,
+      default: catalog.defaultTitle,
       template: TITLE_TEMPLATE,
     },
-    description: AGENT_PLAY_SEO.defaultDescription,
-    applicationName: AGENT_PLAY_SEO.brandName,
-    keywords: AGENT_PLAY_SEO.keywords,
-    authors: [{ name: AGENT_PLAY_SEO.legalName }],
-    creator: AGENT_PLAY_SEO.brandName,
-    publisher: AGENT_PLAY_SEO.legalName,
+    description: catalog.defaultDescription,
+    applicationName,
+    keywords: catalog.keywords,
+    authors: [{ name: catalog.legalName }],
+    creator: siteName,
+    publisher: catalog.legalName,
     category: "technology",
     alternates: {
       canonical: "/",
@@ -175,26 +219,28 @@ export const buildAgentPlayRootMetadata = (
       type: "website",
       locale: "en_US",
       url: "/",
-      siteName: AGENT_PLAY_SEO.brandName,
-      title: AGENT_PLAY_SEO.defaultTitle,
-      description: AGENT_PLAY_SEO.defaultDescription,
+      siteName,
+      title: catalog.defaultTitle,
+      description: catalog.defaultDescription,
       images: [ogImage],
     },
     twitter: {
       card: "summary_large_image",
-      title: AGENT_PLAY_SEO.defaultTitle,
-      description: AGENT_PLAY_SEO.defaultDescription,
-      images: [AGENT_PLAY_SEO.ogImagePath],
+      title: catalog.defaultTitle,
+      description: catalog.defaultDescription,
+      images: [catalog.ogImagePath],
     },
     icons: {
-      icon: [{ url: AGENT_PLAY_SEO.logoPath, type: "image/png" }],
-      apple: [{ url: AGENT_PLAY_SEO.logoPath, type: "image/png" }],
+      icon: [{ url: catalog.logoPath, type: "image/png" }],
+      apple: [{ url: catalog.logoPath, type: "image/png" }],
     },
     ...(verificationToken
       ? { verification: { google: verificationToken } }
       : {}),
   };
 };
+
+const agentPlayOgImage = ogImageForCatalog(AGENT_PLAY_SEO);
 
 type BuildPublicPageMetadataOptions = {
   title: string;
@@ -225,7 +271,7 @@ export const buildPublicPageMetadata = (
       siteName: AGENT_PLAY_SEO.brandName,
       title: absoluteTitle,
       description,
-      images: [ogImage],
+      images: [agentPlayOgImage],
     },
     twitter: {
       card: "summary_large_image",

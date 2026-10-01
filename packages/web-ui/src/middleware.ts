@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import {
-  occupancyPageCorsHeaders,
+  applyOccupancyPageCorsHeaders,
   occupancyPagePreflightResponse,
 } from "./server/agent-play/occupancy-page-cors";
 
@@ -10,10 +10,10 @@ export const middleware = (request: NextRequest): Response => {
     return occupancyPagePreflightResponse(origin);
   }
   const response = NextResponse.next();
-  const cors = occupancyPageCorsHeaders(origin);
-  for (const [name, value] of Object.entries(cors)) {
-    response.headers.set(name, value);
-  }
+  applyOccupancyPageCorsHeaders({
+    headers: response.headers,
+    originHeader: origin,
+  });
   return response;
 };
 

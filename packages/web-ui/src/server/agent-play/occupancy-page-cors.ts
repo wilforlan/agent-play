@@ -91,15 +91,42 @@ export const occupancyPageCorsHeaders = (
     "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
     "Access-Control-Allow-Headers": OCCUPANCY_PAGE_CORS_ALLOW_HEADERS,
     "Access-Control-Max-Age": "600",
-    Vary: "Origin",
   };
+};
+
+export const mergeVaryOrigin = (existingVary: string | null): string => {
+  if (existingVary === null || existingVary.trim().length === 0) {
+    return "Origin";
+  }
+  const parts = existingVary.split(",").map((part) => part.trim());
+  const hasOrigin = parts.some((part) => part.toLowerCase() === "origin");
+  if (hasOrigin) {
+    return existingVary;
+  }
+  return `${existingVary}, Origin`;
+};
+
+export const applyOccupancyPageCorsHeaders = (options: {
+  headers: Headers;
+  originHeader: string | null;
+}): void => {
+  const cors = occupancyPageCorsHeaders(options.originHeader);
+  for (const [name, value] of Object.entries(cors)) {
+    options.headers.set(name, value);
+  }
+  if (Object.keys(cors).length === 0) {
+    return;
+  }
+  options.headers.set("Vary", mergeVaryOrigin(options.headers.get("Vary")));
 };
 
 export const occupancyPagePreflightResponse = (
   originHeader: string | null
 ): Response => {
+  const headers = new Headers();
+  applyOccupancyPageCorsHeaders({ headers, originHeader });
   return new Response(null, {
     status: 204,
-    headers: occupancyPageCorsHeaders(originHeader),
+    headers,
   });
 };
