@@ -66,8 +66,19 @@ import {
   getWalletBundleById,
   buildAmenityPurchaseApuFields,
   buildApuWalletTransaction,
+  buildArcadePassPurchaseFields,
   buildWalletBundleApuFields,
+  buildArcadeAccessPass,
+  chooseArcadeTender,
+  isArcadeAccessActive,
+  quoteArcadePassApw,
+  resolveArcadeTenderForPurchase,
+  arcadePassApuCost,
+  ArcadeAccessPassSchema,
   ANALYTICS_EVENT_NAMES,
+  type ArcadeAccessPass,
+  type ArcadeAccessPlan,
+  type ArcadeTender,
 } from "@agent-play/sdk";
 import {
   applyGameOutcomeToState,
@@ -85,6 +96,7 @@ import {
   safeIndexWallet,
   safeTrackAnalyticsEvent,
 } from "../scanner/scanner-hooks.js";
+import { resolveApwPerApu } from "../scanner/scanner-head-resolve.js";
 import { sessionEventTypeToAnalyticsEvent } from "../analytics/analytics-catalog.js";
 import { getPlayerChainGenesisSync } from "./load-player-chain-genesis.js";
 import {
@@ -217,6 +229,10 @@ function parkingHousesKey(hostId: string): string {
 
 function playerWalletKey(hostId: string, playerId: string): string {
   return `agent-play:${hostId}:player:${playerId}:wallet`;
+}
+
+function playerArcadeAccessKey(hostId: string, playerId: string): string {
+  return `agent-play:${hostId}:player:${playerId}:arcade-access`;
 }
 
 function playerGameStateKey(hostId: string, playerId: string): string {
@@ -1741,6 +1757,261 @@ export class RedisSessionStore implements SessionStore {
     }
     throw new Error(
       `redeemWalletBundle: lost ${String(maxAttempts)} CAS retries for player ${input.playerId}`
+    );
+  }
+
+  private async readArcadeAccessPass(
+    playerId: string
+  ): Promise<ArcadeAccessPass | null> {
+    const raw = await this.redis.get(
+      playerArcadeAccessKey(this.hostId, playerId)
+    );
+    if (raw === null || raw.length === 0) {
+      return null;
+    }
+    try {
+      return ArcadeAccessPassSchema.parse(JSON.parse(raw));
+    } catch {
+      return null;
+    }
+  }
+
+  async getArcadeAccess(input: {
+    playerId: string;
+    now: string;
+  }): Promise<{
+    access: ArcadeAccessPass | null;
+    apwPerApu: number;
+    quotes: { day: number; week: number };
+    preferredTender: ArcadeTender;
+    wallet: PlayerWallet;
+  }> {
+    const wallet = await this.getPlayerWallet(input.playerId);
+    const stored = await this.readArcadeAccessPass(input.playerId);
+    const access = isArcadeAccessActive(stored, new Date(input.now))
+      ? stored
+      : null;
+    const apwPerApu = await resolveApwPerApu({
+      redis: this.redis,
+      hostId: this.hostId,
+    });
+    return {
+      access,
+      apwPerApu,
+      quotes: {
+        day: quoteArcadePassApw({ plan: "day", apwPerApu }),
+        week: quoteArcadePassApw({ plan: "week", apwPerApu }),
+      },
+      preferredTender: chooseArcadeTender({
+        powerUps: wallet.powerUps ?? 0,
+        balanceUsd: wallet.balanceUsd,
+        apwPerApu,
+      }),
+      wallet,
+    };
+  }
+
+  async purchaseArcadeAccess(input: {
+    playerId: string;
+    plan: ArcadeAccessPlan;
+    now: string;
+    recordId: string;
+  }): Promise<
+    | {
+        ok: true;
+        wallet: PlayerWallet;
+        access: ArcadeAccessPass;
+        purchase: PurchaseRecord;
+        tender: ArcadeTender;
+      }
+    | { ok: false; error: "INSUFFICIENT_FUNDS" | "RATE_UNAVAILABLE" }
+  > {
+    const existing = await this.getArcadeAccess({
+      playerId: input.playerId,
+      now: input.now,
+    });
+    if (existing.access !== null) {
+      const purchases = await this.listPurchases({
+        playerId: input.playerId,
+        limit: 50,
+      });
+      const prior = purchases.find((p) => p.amenityKind === "arcade_pass");
+      const purchase =
+        prior ??
+        PurchaseRecordSchema.parse({
+          id: input.recordId,
+          playerId: input.playerId,
+          spaceId: "__arcade__",
+          amenityKind: "arcade_pass",
+          itemRef: { kind: "arcade_pass", id: existing.access.plan },
+          at: existing.access.purchasedAt,
+          detail: "Arcade access already active",
+          ...buildArcadePassPurchaseFields({
+            plan: existing.access.plan,
+            tender: existing.access.tender,
+            apuCost: existing.access.apuCost,
+            apwCharged: existing.access.apwCharged,
+          }),
+        });
+      return {
+        ok: true,
+        wallet: existing.wallet,
+        access: existing.access,
+        purchase,
+        tender: existing.access.tender,
+      };
+    }
+
+    await this.getPlayerWallet(input.playerId);
+    const walletKey = playerWalletKey(this.hostId, input.playerId);
+    const accessKey = playerArcadeAccessKey(this.hostId, input.playerId);
+    const purchasesKeyName = playerPurchasesKey(this.hostId, input.playerId);
+    const apwPerApu = await resolveApwPerApu({
+      redis: this.redis,
+      hostId: this.hostId,
+    });
+    const maxAttempts = 5;
+    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+      await this.redis.watch(walletKey, accessKey);
+      const rawAccess = await this.redis.get(accessKey);
+      if (rawAccess !== null && rawAccess.length > 0) {
+        try {
+          const raced = ArcadeAccessPassSchema.parse(JSON.parse(rawAccess));
+          if (isArcadeAccessActive(raced, new Date(input.now))) {
+            await this.redis.unwatch();
+            return this.getArcadeAccess({
+              playerId: input.playerId,
+              now: input.now,
+            }).then(async (again) => {
+              if (again.access === null) {
+                return { ok: false as const, error: "INSUFFICIENT_FUNDS" as const };
+              }
+              const purchases = await this.listPurchases({
+                playerId: input.playerId,
+                limit: 50,
+              });
+              const prior = purchases.find((p) => p.amenityKind === "arcade_pass");
+              return {
+                ok: true as const,
+                wallet: again.wallet,
+                access: again.access,
+                purchase:
+                  prior ??
+                  PurchaseRecordSchema.parse({
+                    id: input.recordId,
+                    playerId: input.playerId,
+                    spaceId: "__arcade__",
+                    amenityKind: "arcade_pass",
+                    itemRef: { kind: "arcade_pass", id: again.access.plan },
+                    at: again.access.purchasedAt,
+                    detail: "Arcade access already active",
+                    ...buildArcadePassPurchaseFields({
+                      plan: again.access.plan,
+                      tender: again.access.tender,
+                      apuCost: again.access.apuCost,
+                      apwCharged: again.access.apwCharged,
+                    }),
+                  }),
+                tender: again.access.tender,
+              };
+            });
+          }
+        } catch {
+          // continue purchase
+        }
+      }
+      const rawWallet = await this.redis.get(walletKey);
+      if (rawWallet === null || rawWallet.length === 0) {
+        await this.redis.unwatch();
+        return { ok: false, error: "INSUFFICIENT_FUNDS" };
+      }
+      let wallet: PlayerWallet;
+      try {
+        wallet = PlayerWalletSchema.parse(JSON.parse(rawWallet));
+      } catch {
+        await this.redis.unwatch();
+        return { ok: false, error: "INSUFFICIENT_FUNDS" };
+      }
+      const settled = resolveArcadeTenderForPurchase({
+        plan: input.plan,
+        powerUps: wallet.powerUps ?? 0,
+        balanceUsd: wallet.balanceUsd,
+        apwPerApu,
+      });
+      if (settled === null) {
+        await this.redis.unwatch();
+        const apuCost = arcadePassApuCost(input.plan);
+        if (apwPerApu <= 0 && (wallet.powerUps ?? 0) < apuCost) {
+          return { ok: false, error: "RATE_UNAVAILABLE" };
+        }
+        return { ok: false, error: "INSUFFICIENT_FUNDS" };
+      }
+      const updatedWallet: PlayerWallet =
+        settled.tender === "apu"
+          ? {
+              ...wallet,
+              powerUps: (wallet.powerUps ?? 0) - settled.apuCost,
+              updatedAt: input.now,
+            }
+          : {
+              ...wallet,
+              balanceUsd: wallet.balanceUsd - settled.apwCharged,
+              updatedAt: input.now,
+            };
+      const access = buildArcadeAccessPass({
+        plan: input.plan,
+        purchasedAt: input.now,
+        tender: settled.tender,
+        apuCost: settled.apuCost,
+        apwCharged: settled.apwCharged,
+      });
+      const record: PurchaseRecord = PurchaseRecordSchema.parse({
+        id: input.recordId,
+        playerId: input.playerId,
+        spaceId: "__arcade__",
+        amenityKind: "arcade_pass",
+        itemRef: { kind: "arcade_pass", id: input.plan },
+        at: input.now,
+        detail:
+          input.plan === "day"
+            ? "Arcade day pass (24h)"
+            : "Arcade weekly pass (7d, 20% off)",
+        ...buildArcadePassPurchaseFields({
+          plan: input.plan,
+          tender: settled.tender,
+          apuCost: settled.apuCost,
+          apwCharged: settled.apwCharged,
+        }),
+      });
+      const multi = this.redis.multi();
+      multi.set(walletKey, JSON.stringify(updatedWallet));
+      multi.set(accessKey, JSON.stringify(access));
+      multi.lpush(purchasesKeyName, JSON.stringify(record));
+      multi.ltrim(purchasesKeyName, 0, PURCHASES_MAX - 1);
+      const exec = await multi.exec();
+      if (exec !== null) {
+        safeIndexPurchaseRecord({
+          redis: this.redis,
+          hostId: this.hostId,
+          record,
+          op: "purchaseArcadeAccess",
+        });
+        safeIndexWallet({
+          redis: this.redis,
+          hostId: this.hostId,
+          wallet: updatedWallet,
+        });
+        return {
+          ok: true,
+          wallet: updatedWallet,
+          access,
+          purchase: record,
+          tender: settled.tender,
+        };
+      }
+    }
+    throw new Error(
+      `purchaseArcadeAccess: lost ${String(maxAttempts)} CAS retries for player ${input.playerId}`
     );
   }
 

@@ -51,7 +51,17 @@ import {
   PEER_TALK_PRICE_PER_SECOND_USD,
   buildAmenityPurchaseApuFields,
   buildApuWalletTransaction,
+  buildArcadePassPurchaseFields,
   buildWalletBundleApuFields,
+  buildArcadeAccessPass,
+  chooseArcadeTender,
+  isArcadeAccessActive,
+  quoteArcadePassApw,
+  resolveArcadeTenderForPurchase,
+  arcadePassApuCost,
+  type ArcadeAccessPass,
+  type ArcadeAccessPlan,
+  type ArcadeTender,
 } from "@agent-play/sdk";
 import {
   applyGameOutcomeToState,
@@ -124,6 +134,8 @@ export class TestSessionStore implements SessionStore {
   private houseStreet: HouseStreetContent = createEmptyHouseStreetContent();
   private readonly playerWallets = new Map<string, PlayerWallet>();
   private readonly playerPurchases = new Map<string, PurchaseRecord[]>();
+  private readonly arcadeAccessByPlayer = new Map<string, ArcadeAccessPass>();
+  private apwPerApuRate = 0;
   private readonly geographyHumans = new Map<string, GeographyHumanState>();
   private readonly geographyMembers = new Map<string, GeographyMember>();
   private readonly talkSessions = new Map<
@@ -1018,6 +1030,161 @@ export class TestSessionStore implements SessionStore {
     });
     await this.appendPurchaseRecord(record);
     return { ok: true, wallet: updatedWallet, record };
+  }
+
+  setApwPerApuRate(rate: number): void {
+    this.apwPerApuRate =
+      Number.isFinite(rate) && rate > 0 ? rate : 0;
+  }
+
+  async getArcadeAccess(input: {
+    playerId: string;
+    now: string;
+  }): Promise<{
+    access: ArcadeAccessPass | null;
+    apwPerApu: number;
+    quotes: { day: number; week: number };
+    preferredTender: ArcadeTender;
+    wallet: PlayerWallet;
+  }> {
+    const wallet = await this.getPlayerWallet(input.playerId);
+    const stored = this.arcadeAccessByPlayer.get(input.playerId) ?? null;
+    const access = isArcadeAccessActive(stored, new Date(input.now))
+      ? stored
+      : null;
+    const apwPerApu = this.apwPerApuRate;
+    return {
+      access,
+      apwPerApu,
+      quotes: {
+        day: quoteArcadePassApw({ plan: "day", apwPerApu }),
+        week: quoteArcadePassApw({ plan: "week", apwPerApu }),
+      },
+      preferredTender: chooseArcadeTender({
+        powerUps: wallet.powerUps ?? 0,
+        balanceUsd: wallet.balanceUsd,
+        apwPerApu,
+      }),
+      wallet: { ...wallet },
+    };
+  }
+
+  async purchaseArcadeAccess(input: {
+    playerId: string;
+    plan: ArcadeAccessPlan;
+    now: string;
+    recordId: string;
+  }): Promise<
+    | {
+        ok: true;
+        wallet: PlayerWallet;
+        access: ArcadeAccessPass;
+        purchase: PurchaseRecord;
+        tender: ArcadeTender;
+      }
+    | { ok: false; error: "INSUFFICIENT_FUNDS" | "RATE_UNAVAILABLE" }
+  > {
+    const existing = await this.getArcadeAccess({
+      playerId: input.playerId,
+      now: input.now,
+    });
+    if (existing.access !== null) {
+      const purchases = await this.listPurchases({
+        playerId: input.playerId,
+        limit: 50,
+      });
+      const prior = purchases.find((p) => p.amenityKind === "arcade_pass");
+      const purchase =
+        prior ??
+        PurchaseRecordSchema.parse({
+          id: input.recordId,
+          playerId: input.playerId,
+          spaceId: "__arcade__",
+          amenityKind: "arcade_pass",
+          itemRef: { kind: "arcade_pass", id: existing.access.plan },
+          at: existing.access.purchasedAt,
+          detail: "Arcade access already active",
+          ...buildArcadePassPurchaseFields({
+            plan: existing.access.plan,
+            tender: existing.access.tender,
+            apuCost: existing.access.apuCost,
+            apwCharged: existing.access.apwCharged,
+          }),
+        });
+      return {
+        ok: true,
+        wallet: existing.wallet,
+        access: existing.access,
+        purchase,
+        tender: existing.access.tender,
+      };
+    }
+
+    const wallet = await this.getPlayerWallet(input.playerId);
+    const apwPerApu = this.apwPerApuRate;
+    const settled = resolveArcadeTenderForPurchase({
+      plan: input.plan,
+      powerUps: wallet.powerUps ?? 0,
+      balanceUsd: wallet.balanceUsd,
+      apwPerApu,
+    });
+    if (settled === null) {
+      const apuCost = arcadePassApuCost(input.plan);
+      if (apwPerApu <= 0 && (wallet.powerUps ?? 0) < apuCost) {
+        return { ok: false, error: "RATE_UNAVAILABLE" };
+      }
+      return { ok: false, error: "INSUFFICIENT_FUNDS" };
+    }
+
+    const updatedWallet: PlayerWallet =
+      settled.tender === "apu"
+        ? {
+            ...wallet,
+            powerUps: (wallet.powerUps ?? 0) - settled.apuCost,
+            updatedAt: input.now,
+          }
+        : {
+            ...wallet,
+            balanceUsd: wallet.balanceUsd - settled.apwCharged,
+            updatedAt: input.now,
+          };
+    this.playerWallets.set(input.playerId, updatedWallet);
+
+    const access = buildArcadeAccessPass({
+      plan: input.plan,
+      purchasedAt: input.now,
+      tender: settled.tender,
+      apuCost: settled.apuCost,
+      apwCharged: settled.apwCharged,
+    });
+    this.arcadeAccessByPlayer.set(input.playerId, access);
+
+    const record: PurchaseRecord = PurchaseRecordSchema.parse({
+      id: input.recordId,
+      playerId: input.playerId,
+      spaceId: "__arcade__",
+      amenityKind: "arcade_pass",
+      itemRef: { kind: "arcade_pass", id: input.plan },
+      at: input.now,
+      detail:
+        input.plan === "day"
+          ? "Arcade day pass (24h)"
+          : "Arcade weekly pass (7d, 20% off)",
+      ...buildArcadePassPurchaseFields({
+        plan: input.plan,
+        tender: settled.tender,
+        apuCost: settled.apuCost,
+        apwCharged: settled.apwCharged,
+      }),
+    });
+    await this.appendPurchaseRecord(record);
+    return {
+      ok: true,
+      wallet: updatedWallet,
+      access,
+      purchase: record,
+      tender: settled.tender,
+    };
   }
 
   async startTalkSession(input: {

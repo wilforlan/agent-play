@@ -295,6 +295,34 @@ export type SessionStore = {
     | { ok: true; wallet: PlayerWallet; record: PurchaseRecord }
     | { ok: false; error: "INVALID_BUNDLE" | "INSUFFICIENT_POWER_UPS" }
   >;
+  getArcadeAccess(input: {
+    playerId: string;
+    now: string;
+  }): Promise<{
+    access: import("@agent-play/sdk").ArcadeAccessPass | null;
+    apwPerApu: number;
+    quotes: { day: number; week: number };
+    preferredTender: import("@agent-play/sdk").ArcadeTender;
+    wallet: PlayerWallet;
+  }>;
+  purchaseArcadeAccess(input: {
+    playerId: string;
+    plan: import("@agent-play/sdk").ArcadeAccessPlan;
+    now: string;
+    recordId: string;
+  }): Promise<
+    | {
+        ok: true;
+        wallet: PlayerWallet;
+        access: import("@agent-play/sdk").ArcadeAccessPass;
+        purchase: PurchaseRecord;
+        tender: import("@agent-play/sdk").ArcadeTender;
+      }
+    | {
+        ok: false;
+        error: "INSUFFICIENT_FUNDS" | "RATE_UNAVAILABLE";
+      }
+  >;
   getGameStats(input: { playerId: string; now: string }): Promise<GameStats>;
   applyGameOutcome(input: {
     playerId: string;
