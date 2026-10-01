@@ -208,7 +208,7 @@ export const AGENT_PLAY_GAMES_PAGES: readonly AgentPlayGamePage[] = [
     ],
     worldAdvantage: [
       "Map Recall drills the same structure labels you will see on Peterson St. and in proximity prompts.",
-      "Players who know the map spend less time hunting cabinets, yards, and agents, so more of the UTC day stays under the 100 APU arcade cap.",
+      "Players who know the map spend less time hunting cabinets, yards, and agents, so more of the UTC day stays under the 50 APU arcade cap.",
       "A perfect three-step run is +12 APU after the tutorial (three correct steps at +4). One miss is still net positive if the other steps land.",
     ],
     puRates: [
@@ -427,7 +427,7 @@ export const AGENT_PLAY_GAMES_PAGES: readonly AgentPlayGamePage[] = [
       "Find the glowing Featured cabinet on Maple Ave. The streak panel (G) also names today's title.",
       "Press A to enter. The door routes to the playable game for the current UTC weekday.",
       "Monday is Hidden Gems, then Map Recall, Price Check, Signal Hunt, Delivery Dash, Lease Locker, and Talk Timer on Sunday.",
-      "Scoring is the destination game's event table. The server still applies the 100 APU UTC daily arcade cap and streak bonus.",
+      "Scoring is the destination game's event table. The server still applies the 50 APU UTC daily arcade cap and streak bonus.",
     ],
     worldAdvantage: [
       "The rotator is a daily appointment. Playing it is the simplest way to keep a 5-day streak alive for the +5 APU bonus.",
@@ -480,18 +480,19 @@ export const AGENT_PLAY_GAMES_UNITS = {
     streakBonus: STREAK_BONUS_PU,
     streakThresholdDays: STREAK_BONUS_THRESHOLD_DAYS,
     howCounted:
-      "APU is a non-negative integer stored as wallet.powerUps. Displays floor fractional values. Arcade rounds send events; the server computes the delta, clamps it to the 100 APU UTC daily arcade cap, then may add a streak bonus.",
+      "APU is a non-negative integer stored as wallet.powerUps. Displays floor fractional values. Arcade rounds send events; the server computes the delta, clamps it to the 50 APU UTC daily arcade cap, then may add a streak bonus.",
   },
   howTheyCount: [
     "Wallets are keyed by your signed-in node id, not the shared in-world pawn. Unsigned viewers cannot earn or spend.",
     "The first wallet read seeds APW$ at $10.00. APU starts at 0 unless a round, purchase, talk leg, or referral writes it.",
     "Arcade scoring is event-based. Hidden Gems sends chest_open, Map Recall sends sequence_step, and so on. The client never submits an APU amount.",
-    "Positive arcade earnings stop at 100 APU per UTC day. Losses can still apply. Wallet APU never goes below 0.",
+    "Positive arcade earnings stop at 50 APU per UTC day. Losses can still apply. Wallet APU never goes below 0.",
     "Amenity purchases, billed agent talk, and referral rewards mint APU on their own paths. They do not share the arcade daily cap.",
     "The streak panel (G) shows PU today, cap remaining, featured cabinet, and distance to the next $10 bundle.",
   ],
   howToSpend: [
     "Spend APW$ in amenity interiors (shop, supermarket, car wash) and other wallet-priced world actions. Prices debit balanceUsd in one server transaction.",
+    "Entering Maple Ave arcade requires a day (25 APU) or weekly (140 APU, 20% off) pass. Fees show in APW$ from the live rate; the wallet pays with APU or APW$, whichever side is worth more.",
     "A successful amenity buy also mints floor(priceUsd) × 3 APU, so spending dollars can refill units.",
     "Spend APU on wallet bundles from the wallet panel (W). Bundles credit APW$ immediately and burn the listed APU cost.",
     "Larger bundles are more efficient: 150 APU → $10, 300 → $20, 500 → $50, 900 → $100. The $100 bundle costs 9 APU per dollar; the $10 bundle costs 15.",
@@ -502,7 +503,7 @@ export const AGENT_PLAY_GAMES_UNITS = {
       id: "arcade",
       title: "Arcade cabinets",
       detail:
-        "Up to 100 APU per UTC day from Maple Ave. rounds. Each title has its own event table. Featured routes to today's game; scoring is unchanged.",
+        "Up to 50 APU per UTC day from Maple Ave. rounds. Each title has its own event table. Featured routes to today's game; scoring is unchanged.",
     },
     {
       id: "first-round",
@@ -547,7 +548,7 @@ AgentPlayGamesEarningRateSchema.array().parse([
 ]);
 
 export const AGENT_PLAY_GAMES_WIN_LOOP: readonly string[] = [
-  "Walk Maple Ave. and play cabinets while the 100 APU UTC cap still has room. Featured (G) tells you today's title.",
+  "Walk Maple Ave. and play cabinets while the 50 APU UTC cap still has room. Featured (G) tells you today's title.",
   "Protect your streak. Five consecutive UTC days with arcade play unlock a one-time +5 APU bonus that day.",
   "Redeem APU for APW$ in the wallet (W). Prefer larger bundles when you can; they return more dollars per unit.",
   "Spend APW$ in space amenities to own inventory on the map. Those buys mint more APU and make scarcity real for every viewer.",
@@ -597,7 +598,7 @@ export const AGENT_PLAY_GAMES_FAQ: readonly AgentPlayGamesFaqItem[] =
     {
       question: "How do I earn APU?",
       answer:
-        "Play Maple Ave. cabinets up to 100 APU per UTC day, keep a 5-day streak for +5 APU, buy amenity items for floor(price)×3 APU, hold billed agent talk for 1 APU per 10 seconds (max 5 per leg), and invite friends for +25 APU when the monthly remaining allows it.",
+        "Play Maple Ave. cabinets up to 50 APU per UTC day, keep a 5-day streak for +5 APU, buy amenity items for floor(price)×3 APU, hold billed agent talk for 1 APU per 10 seconds (max 5 per leg), and invite friends for +25 APU when the monthly remaining allows it.",
     },
     {
       question: "How do I spend APU and APW$?",

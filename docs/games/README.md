@@ -12,11 +12,24 @@ The right strip on **Maple Ave.** is an arcade zone (`zone-arcade-strip`). Eight
 
 **Input priority:** agent partner interactions win over game cabinets; game cabinets win over space structures.
 
+## Arcade access pass
+
+Entering the Maple Ave arcade strip (`zone-arcade-strip`) requires a paid pass. A gamified modal offers:
+
+| Plan | APU cost | Duration |
+|------|----------|----------|
+| Day | 25 APU | 24 hours |
+| Weekly | 140 APU (20% off 7×25) | 7 days |
+
+Fees are shown in **APW$** using the live Redis `apwPerApu` rate. Settlement uses dual tender: debit APU or APW$, whichever wallet side has higher APW$-valued balance (with fallback to the other if needed). Purchases write `amenityKind: arcade_pass` and appear on the wallet history and scanner; APU tender burns APU.
+
+RPCs: `getArcadeAccess`, `purchaseArcadeAccess`.
+
 ## Power-ups (PU)
 
 | Rule | Value |
 |------|--------|
-| Daily cap | 100 PU per UTC day |
+| Daily cap | 50 PU per UTC day |
 | First ever round | Guaranteed net +PU on first completed round |
 | Streak bonus | +5 PU at 5-day streak (once per day, capped) |
 | Featured game | Daily rotator cabinet grants featured title by UTC weekday |
@@ -40,6 +53,8 @@ Server computes PU from round `events` via `applyGameOutcome`. Clients never sen
 
 - `getGameStats` — streak, PU today, cap remaining, featured game
 - `applyGameOutcome` — idempotent by `roundId`; returns `{ stats, wallet, netPu }`
+- `getArcadeAccess` — active pass, live APW$ quotes, preferred tender
+- `purchaseArcadeAccess` — buy day or week pass (dual tender)
 
 ## Per-game specs
 
