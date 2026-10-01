@@ -5,24 +5,15 @@ import "./globals.css";
 import { AgentPlayJsonLd } from "@/components/agent-play-json-ld";
 import {
   buildAgentPlayRootMetadata,
-  normalizeRequestHost,
   resolveRootSeoCatalogFromHost,
-  resolveSeoOriginFromHost,
 } from "@/lib/agent-play-seo";
-
-const readRequestHost = async (): Promise<string> => {
-  const headerList = await headers();
-  const forwarded = headerList.get("x-forwarded-host");
-  const host = headerList.get("host");
-  const raw = forwarded?.split(",")[0]?.trim() || host?.trim() || "";
-  if (raw.length === 0) {
-    return "agent-play.com";
-  }
-  return normalizeRequestHost(raw);
-};
+import {
+  readRequestHostFromHeaders,
+  resolveSeoOriginFromHost,
+} from "@/lib/agent-play-host-seo";
 
 export async function generateMetadata(): Promise<Metadata> {
-  const host = await readRequestHost();
+  const host = readRequestHostFromHeaders(await headers());
   const resolved = resolveRootSeoCatalogFromHost(host);
   const origin = resolveSeoOriginFromHost({
     host,
