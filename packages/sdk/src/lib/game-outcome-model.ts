@@ -2,7 +2,7 @@ import { z } from "zod";
 import type { GameId } from "./game-catalog.js";
 import { featuredGameIdForUtcDate, isGameId } from "./game-catalog.js";
 
-export const DAILY_GAME_PU_CAP = 100;
+export const DAILY_GAME_PU_CAP = 50;
 export const STREAK_BONUS_PU = 5;
 export const STREAK_BONUS_THRESHOLD_DAYS = 5;
 
