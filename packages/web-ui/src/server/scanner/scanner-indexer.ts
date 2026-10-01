@@ -34,6 +34,7 @@ export const amenityKindToScannerOp = (
   amenityKind: PurchaseRecord["amenityKind"]
 ): ScannerTxOp => {
   if (amenityKind === "wallet_bundle") return "redeemWalletBundle";
+  if (amenityKind === "arcade_pass") return "purchaseArcadeAccess";
   if (amenityKind === "sol_deposit") return "solDeposit";
   if (amenityKind === "sol_payout") return "solPayout";
   if (amenityKind === "apu_credit" || amenityKind === "apu_debit") {
