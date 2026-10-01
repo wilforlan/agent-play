@@ -93,3 +93,40 @@ export const buildWalletBundleApuFields = (input: {
   creditSource: `wallet:usd:bundle:${input.bundleId}`,
   token: APU_TOKEN,
 });
+
+/**
+ * Fields for Maple Ave arcade day/week pass rows settled in APU or APW$.
+ *
+ * @public
+ */
+export const buildArcadePassPurchaseFields = (input: {
+  plan: "day" | "week";
+  tender: "apu" | "apw";
+  apuCost: number;
+  apwCharged: number;
+}): Pick<
+  PurchaseRecord,
+  | "priceUsd"
+  | "powerUpsSpent"
+  | "powerUpsDelta"
+  | "debitSource"
+  | "creditSource"
+  | "token"
+> => {
+  if (input.tender === "apu") {
+    return {
+      priceUsd: input.apwCharged > 0 ? input.apwCharged : undefined,
+      powerUpsSpent: input.apuCost,
+      powerUpsDelta: -input.apuCost,
+      debitSource: "wallet:apu",
+      creditSource: `arcade:pass:${input.plan}`,
+      token: APU_TOKEN,
+    };
+  }
+  return {
+    priceUsd: input.apwCharged,
+    debitSource: "wallet:usd",
+    creditSource: `arcade:pass:${input.plan}`,
+    token: "USD",
+  };
+};

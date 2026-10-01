@@ -15,6 +15,7 @@ export const ScannerTxOpSchema = z.enum([
   "p2pSettle",
   "solDeposit",
   "solPayout",
+  "purchaseArcadeAccess",
 ]);
 
 export type ScannerTxOp = z.infer<typeof ScannerTxOpSchema>;
