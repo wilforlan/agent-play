@@ -35,7 +35,8 @@ export type PurchaseRecordDto = {
     | "peer_talk_time"
     | "wallet_bundle"
     | "apu_credit"
-    | "apu_debit";
+    | "apu_debit"
+    | "arcade_pass";
   readonly itemRef: {
     readonly kind:
       | "shop"
@@ -47,7 +48,8 @@ export type PurchaseRecordDto = {
       | "apu"
       | "talk"
       | "peer_talk"
-      | "bundle";
+      | "bundle"
+      | "arcade_pass";
     readonly id: string;
   };
   readonly priceUsd?: number;
@@ -59,7 +61,7 @@ export type PurchaseRecordDto = {
   readonly debitSource?: string;
   readonly creditSource?: string;
   readonly counterpartyNodeId?: string;
-  readonly token?: "APU";
+  readonly token?: "APU" | "USD";
 };
 
 /**
