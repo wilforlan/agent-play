@@ -10,7 +10,8 @@
 export type EducationTender = "apu" | "apw";
 
 export type EducationAccessPass = {
-  readonly centerId: string;
+  readonly facultyId?: string;
+  readonly centerId?: string;
   readonly utcDay: string;
   readonly purchasedAt: string;
   readonly expiresAt: string;
@@ -68,6 +69,7 @@ const parsePass = (raw: unknown): EducationAccessPass | null => {
   if (raw === null || raw === undefined) return null;
   if (typeof raw !== "object") return null;
   const p = raw as {
+    facultyId?: unknown;
     centerId?: unknown;
     utcDay?: unknown;
     purchasedAt?: unknown;
@@ -77,7 +79,7 @@ const parsePass = (raw: unknown): EducationAccessPass | null => {
     apwCharged?: unknown;
   };
   if (
-    typeof p.centerId !== "string" ||
+    (typeof p.facultyId !== "string" && typeof p.centerId !== "string") ||
     typeof p.utcDay !== "string" ||
     typeof p.purchasedAt !== "string" ||
     typeof p.expiresAt !== "string" ||
@@ -88,7 +90,13 @@ const parsePass = (raw: unknown): EducationAccessPass | null => {
     return null;
   }
   return {
-    centerId: p.centerId,
+    facultyId:
+      typeof p.facultyId === "string"
+        ? p.facultyId
+        : typeof p.centerId === "string"
+          ? p.centerId
+          : undefined,
+    centerId: typeof p.centerId === "string" ? p.centerId : undefined,
     utcDay: p.utcDay,
     purchasedAt: p.purchasedAt,
     expiresAt: p.expiresAt,
@@ -111,7 +119,11 @@ export const getEducationAccess = async (input: {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       op: "getEducationAccess",
-      payload: { playerId: input.playerId, centerId: input.centerId },
+      payload: {
+        playerId: input.playerId,
+        facultyId: input.centerId,
+        centerId: input.centerId,
+      },
     }),
   });
   const json = (await response.json().catch(() => ({}))) as {
@@ -170,7 +182,11 @@ export const purchaseEducationAccess = async (input: {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       op: "purchaseEducationAccess",
-      payload: { playerId: input.playerId, centerId: input.centerId },
+      payload: {
+        playerId: input.playerId,
+        facultyId: input.centerId,
+        centerId: input.centerId,
+      },
     }),
   });
   const json = (await response.json().catch(() => ({}))) as {
