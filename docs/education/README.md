@@ -1,32 +1,60 @@
 # Elm Street — Educational Arena
 
-**Status:** Design documentation only. No implementation until this package is explicitly approved for coding.
+**Status:** Campus day-gate **shipped**. Faculty classrooms / tuition / lesson cards **in implementation** — see engineering doc for remaining polish.
 
-Elm Street is Agent Play World’s **Educational Arena**: a school-campus street where visitors walk among up to **eight giant educational centers**, buy a **per-center daily gate pass** (5 APU or dual-tender equivalent), and progress through structured learning paths toward education mastery.
+## Document index
 
 | Document | Contents |
 |----------|----------|
-| [Educational Arena design](./elm-street-educational-arena.md) | Product intent, street design, centers, sprites & ambience, onboarding, transactions, learning paths, course outlines, interaction model, engineering plan, phased delivery |
+| [Change summary — faculties & classrooms](./change-summary-faculty-classroom.md) | **Start here** — what changes vs what already shipped |
+| [PRD — Faculty classroom learning](./prd-faculty-classroom-learning.md) | Product requirements, journeys, fees, acceptance |
+| [Architecture](./architecture-faculty-classroom.md) | Stages, domain model, money flows, content boundary |
+| [Engineering](./engineering-faculty-classroom.md) | Schemas, RPCs, TDD sequence, touch map, DoD |
+| [Content pack (codebase)](../../packages/play-ui/src/education/content/README.md) | Faculty outlines & lesson Markdown in-repo |
+| [Historical campus design](./elm-street-educational-arena.md) | Original arena spec (street, ambience, early 8-center vision) |
 
 ## Relationship to existing streets
 
-**Placement (locked):** On the watch, **higher Y is the top of the screen**. Today Oak Lane (parking) is already above the three column streets. Elm Street goes **above Oak Lane** (further toward the top). A **buffer gap** stays between that Elm+Oak block and St. John / Peterson / Maple so the campus is **not visible next to** those column streets. **World bounds stay the same.**
+**Placement (locked):** Higher Y is top of screen. Elm Street sits **above Oak Lane**, with a buffer from St. John / Peterson / Maple. **World bounds stay the same.**
 
 | Screen position | Zone | Street (typical) | Role |
 |-----------------|------|------------------|------|
-| **Top** | **Education** | **Elm Street** | **Eight educational centers, learning paths, mastery** |
-| Below Elm | Parking | Oak Lane (pool) | Parking street commerce |
-| Buffer | — | — | Keeps campus/parking away from column streets |
+| **Top** | **Education** | **Elm Street** | **Four faculties, day gates, classrooms, paths** |
+| Below Elm | Parking | Oak Lane | Parking street commerce |
+| Buffer | — | — | Keeps campus away from column streets |
 | Bottom L | Agents | St. John St. | Meet and talk with agents |
 | Bottom mid | Spaces / amenities | Peterson St. | Owned spaces, shop / supermarket / car wash |
-| Bottom R | Arcade | Maple Ave. | Eight game cabinets, arcade access pass, APU earn |
+| Bottom R | Arcade | Maple Ave. | Cabinets, arcade pass, APU earn |
 
-`Elm Street` already exists in the street name pool (`id: "elm"`). The Educational Arena pins that label to `zone-education-campus` above parking — not between the column sidewalks.
+## Faculties (this milestone)
 
-## Non-goals for this doc phase
+| Faculty | Covers |
+|---------|--------|
+| **Faculty of Art** | Languages, history, philosophy, visual arts |
+| **Faculty of Science** | Mathematics, physics, chemistry, biology, computer science |
+| **Faculty of Medicine** | Clinical training, nursing, medical research |
+| **Faculty of Education** | Teacher training and pedagogical studies |
 
-- No production code, schemas, RPCs, sprites, or layout migrations yet
-- No live course content authoring until the interaction shell is approved
-- No change to Maple Ave arcade pricing or PU earn rules
+## Economy (two products)
 
-When implementation begins, start from [elm-street-educational-arena.md](./elm-street-educational-arena.md) § Engineering and § Delivery phases.
+| Product | Price | Duration | Unlocks |
+|---------|-------|----------|---------|
+| Day gate | 5 APU (or APW$) | UTC day / faculty | Enter building; path/class verbs |
+| School fees | 450 / 675 / 900 APW$ by path tier (dual tender) | 365 days / path | Start class + lesson cards |
+
+## Interaction summary (after day gate)
+
+| Key | Action |
+|-----|--------|
+| **P** | Enter faculty classroom interior |
+| **A** | Choose learning path → pay annual fees (or open lesson when in class near a card) |
+| **C** | Start class (requires active enrollment) |
+
+## Implementation kickoff
+
+1. Read [change summary](./change-summary-faculty-classroom.md)  
+2. Lock PRD acceptance  
+3. Follow [engineering](./engineering-faculty-classroom.md) TDD sequence  
+4. Author/verify content under `packages/play-ui/src/education/content/`  
+
+No classroom/tuition production code until this package is explicitly approved for coding beyond the already-shipped day gate.

@@ -25,7 +25,7 @@ The repository uses npm workspaces. **`packages/sdk`** is the Node.js package `@
 | [Space platform](platform/README.md) | `/platform` — purchase KPIs, amenities, space wallet, embedded AQL |
 | [Agent Play Scanner](scanner/README.md) | `/scanner` — public ledger, nodes, analytics, tx detail |
 | [Maple Ave. Arcade](games/README.md) | Built-in arcade cabinets (replaces deprecated public MCP amenities) |
-| [Elm Street Educational Arena](education/README.md) | **Design docs only** — school campus street, eight centers, 5 APU day gates, learning paths |
+| [Elm Street Educational Arena](education/README.md) | Campus day gate **shipped**; faculty classrooms / tuition / lesson cards **documented** — see education change summary + PRD |
 | [Overview](overview.md) | How the SDK and UI relate, and why they are separate deployables |
 | [Monorepo](monorepo.md) | Workspaces, build order, root scripts |
 | [Release 3.1.1](releases/agent-play-3.1.1.md) | **World switch, amenity stages, wallet, sold state, AQL extensions** — overworld → space yard → amenity stage controller, bookstore / supermarket / car-wash stages, $70 wallet seed, `ADD SHOP ITEM`/`ADD SUPERMARKET ITEM`/`ADD CARWASH CAR`, `Esc` + exit-door exits |

@@ -10,18 +10,23 @@ Four themes are still open. Everything else in earlier roadmap drafts is either 
 
 ### Elm Street Educational Arena
 
-**Goal:** A school-campus street (**Elm Street**) where visitors learn teaching mastery across up to **eight giant educational centers**.
+**Goal:** School-campus street (**Elm Street**) with **four faculties**, day gates, classroom interiors, annual school fees, and in-class lesson cards (Senior High curricula).
 
-**Design (docs only — no code yet):** [education/README.md](education/README.md) and the full spec [education/elm-street-educational-arena.md](education/elm-street-educational-arena.md).
+**Docs (current design package):** [education/README.md](education/README.md)
 
-Locked product intent from that package:
+| Layer | Status |
+|-------|--------|
+| Campus strip, lights, name strip, **5 APU day gate** (dual tender) | **Shipped** |
+| Rename to faculties · **P** enter classroom · **A** path + **450–900 APW$** annual fees · **C** start class · lesson cards | **Documented** — [change summary](education/change-summary-faculty-classroom.md), [PRD](education/prd-faculty-classroom-learning.md), [architecture](education/architecture-faculty-classroom.md), [engineering](education/engineering-faculty-classroom.md) |
+| In-repo course content pack | Seeded under `packages/play-ui/src/education/content/` |
 
-- **Location:** Elm Street **above Oak Lane** (top of map); buffer so it is **not** next to St. John / Peterson / Maple; **no world-bounds expansion**
-- Campus ambience: trees, benches, **street lights**, **street name strip (no T-post)**, intermittent randomized flying birds (non-interactive, capped)
-- Unique realistic sprites for each educational center (giant buildings)
-- Gate: **5 APU or dual-tender APW$ equivalent per center per UTC day**
-- Structured courses, learning paths, mastery marks (APU sink for learning — not Maple Ave earn)
-- Implementation waits on explicit coding kickoff; Phase 0 is documentation alignment
+Locked product intent:
+
+- **Location:** Elm Street **above Oak Lane**; buffer from column streets; **no world-bounds expansion**
+- Day gate: **5 APU / faculty / UTC day**
+- Tuition: **450 / 675 / 900 APW$** by path complexity (dual tender, **365 days**)
+- Faculties: Art · Science · Medicine · Education
+- Implementation of the classroom milestone waits on explicit coding kickoff; follow engineering TDD sequence
 
 ### Card payments as amenities
 

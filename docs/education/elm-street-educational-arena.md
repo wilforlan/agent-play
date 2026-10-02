@@ -1,12 +1,14 @@
 # Elm Street Educational Arena — Full Design Spec
 
-**Status:** Design-locked documentation. **No code changes** until an explicit implementation kickoff.
+**Status:** Historical campus design. **Day gate / street placement shipped.** For faculties, interiors, tuition, and lesson cards, use the current package: [README](./README.md) → [change summary](./change-summary-faculty-classroom.md).
 
 **Working name:** Educational Arena  
 **Street:** Elm Street (`streetId: "elm"`, label `"Elm Street"` — already in `STREET_NAME_POOL`)  
 **Zone id (proposed):** `zone-education-campus`  
 **Primary group (proposed):** `education`  
 **Parallel product:** Maple Ave Arcade ([games/README.md](../games/README.md)) — same “eight doors on a street” metaphor, different economy and outcomes
+
+> **Superseded naming:** This document refers to “educational centers.” The active product language is **faculties** (Art, Science, Medicine, Education). Keep this file for street/ambience history; do not implement new work from §3–§8 without reconciling the faculty PRD.
 
 ---
 
