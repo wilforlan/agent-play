@@ -353,6 +353,54 @@ export type SessionStore = {
         error: "INSUFFICIENT_FUNDS" | "RATE_UNAVAILABLE" | "INVALID_CENTER";
       }
   >;
+  getEducationTuition(input: {
+    playerId: string;
+    facultyId: import("@agent-play/sdk").EducationFacultyId;
+    pathId: import("@agent-play/sdk").EducationPathId;
+    now: string;
+  }): Promise<{
+    enrollment: import("@agent-play/sdk").EducationTuitionEnrollment | null;
+    apwPerApu: number;
+    quoteApw: number;
+    apuCost: number;
+    preferredTender: import("@agent-play/sdk").EducationTender;
+    wallet: PlayerWallet;
+    path: {
+      title: string;
+      tier: import("@agent-play/sdk").EducationPathTier;
+      summary: string;
+    };
+  }>;
+  purchaseEducationTuition(input: {
+    playerId: string;
+    facultyId: import("@agent-play/sdk").EducationFacultyId;
+    pathId: import("@agent-play/sdk").EducationPathId;
+    now: string;
+    recordId: string;
+  }): Promise<
+    | {
+        ok: true;
+        wallet: PlayerWallet;
+        enrollment: import("@agent-play/sdk").EducationTuitionEnrollment;
+        purchase: PurchaseRecord;
+        tender: import("@agent-play/sdk").EducationTender;
+      }
+    | {
+        ok: false;
+        error:
+          | "INSUFFICIENT_FUNDS"
+          | "RATE_UNAVAILABLE"
+          | "INVALID_PATH"
+          | "DAY_PASS_REQUIRED";
+      }
+  >;
+  listEducationTuition(input: {
+    playerId: string;
+    facultyId?: import("@agent-play/sdk").EducationFacultyId;
+    now: string;
+  }): Promise<{
+    enrollments: import("@agent-play/sdk").EducationTuitionEnrollment[];
+  }>;
   getGameStats(input: { playerId: string; now: string }): Promise<GameStats>;
   applyGameOutcome(input: {
     playerId: string;

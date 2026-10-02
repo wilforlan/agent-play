@@ -34,6 +34,6 @@ describe("session store education access", () => {
     });
     expect(again.ok).toBe(true);
     if (!again.ok) return;
-    expect(again.access.centerId).toBe("foundations-hall");
+    expect(again.access.facultyId).toBe("faculty-art");
   });
 });
