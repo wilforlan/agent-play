@@ -44,7 +44,7 @@ const themes: Record<SceneThemeId, SceneTheme> = {
     appBackgroundColor: 0x87ceeb,
     buildScene: buildParkScene,
     crowdSeedSalt: 0x11,
-    grassBandTopRatio: 0.5,
+    grassBandTopRatio: 0.05,
     gridStroke: { color: 0x94a3b8, alpha: 0.28 },
     palettePartial: {
       text: "#0f172a",
