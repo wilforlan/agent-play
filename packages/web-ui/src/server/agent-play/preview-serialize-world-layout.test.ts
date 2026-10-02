@@ -115,4 +115,37 @@ describe("normalizePreviewSnapshot — legacy world layout", () => {
       }
     }
   });
+
+  it("accepts education primaryGroup on world layout zones", () => {
+    const layout = makeLayout({ minX: 0, minY: 0, maxX: 19, maxY: 19 });
+    const base = buildSnapshotWorldLayout(layout);
+    const withEducation: WorldLayoutJson = {
+      ...base,
+      zones: [
+        ...base.zones,
+        {
+          id: "zone-education-campus",
+          streetId: "elm",
+          streetLabel: "Elm Street",
+          rect: { minX: 0, maxX: 19, minY: 12, maxY: 14 },
+          primaryGroup: "education",
+          allowedGroups: ["education"],
+        },
+      ],
+      streets: [...base.streets, { id: "elm", label: "Elm Street" }],
+    };
+    const normalized = normalizePreviewSnapshot({
+      sid: "edu-sid",
+      rev: 1,
+      bounds: layout.bounds,
+      worldMap: { bounds: layout.bounds, occupants: [] },
+      worldLayout: withEducation,
+      spaces: [],
+    });
+    const education = normalized.worldLayout.zones.find(
+      (z) => z.primaryGroup === "education"
+    );
+    expect(education?.id).toBe("zone-education-campus");
+    expect(education?.streetId).toBe("elm");
+  });
 });

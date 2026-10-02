@@ -20,9 +20,14 @@ import {
   DEFAULT_LAYOUT_BOUNDS_WITH_PARKING,
   STREET_NAME_POOL,
   createVerticalStripSeedLayout,
+  createWorldLayoutWithEducationCampus,
   createWorldLayoutWithParkingRow,
+  getStreetPoolEntryById,
+  layoutHasEducationZone,
   layoutHasParkingZone,
+  layoutNeedsEducationCampusReseed,
   layoutNeedsParkingColumnGapMigration,
+  migrateLayoutToEducationCampus,
   migrateLayoutToParkingColumnGap,
   migrateLayoutToParkingRow,
   type CarWashCar,
@@ -170,8 +175,14 @@ export type WorldLayoutZoneJson = {
   streetId: string;
   streetLabel: string;
   rect: { minX: number; minY: number; maxX: number; maxY: number };
-  primaryGroup: "agent" | "space" | "arcade" | "parking";
-  allowedGroups: readonly ("agent" | "space" | "arcade" | "parking")[];
+  primaryGroup: "agent" | "space" | "arcade" | "parking" | "education";
+  allowedGroups: readonly (
+    | "agent"
+    | "space"
+    | "arcade"
+    | "parking"
+    | "education"
+  )[];
 };
 
 export type WorldLayoutStreetJson = {
@@ -211,13 +222,20 @@ export function getDefaultPreviewWorldLayoutJson(): WorldLayoutJson {
     const s1 = STREET_NAME_POOL[1];
     const s2 = STREET_NAME_POOL[2];
     const s3 = STREET_NAME_POOL[3];
-    if (s0 === undefined || s1 === undefined || s2 === undefined || s3 === undefined) {
+    const elm = getStreetPoolEntryById("elm");
+    if (
+      s0 === undefined ||
+      s1 === undefined ||
+      s2 === undefined ||
+      s3 === undefined ||
+      elm === undefined
+    ) {
       throw new Error("getDefaultPreviewWorldLayoutJson: STREET_NAME_POOL too small");
     }
     defaultWorldLayoutJsonCache = buildSnapshotWorldLayout(
-      createWorldLayoutWithParkingRow({
+      createWorldLayoutWithEducationCampus({
         bounds: DEFAULT_LAYOUT_BOUNDS_WITH_PARKING,
-        streets: [s0, s1, s2, s3],
+        streets: [s0, s1, s2, s3, elm],
       })
     );
   }
@@ -257,7 +275,13 @@ function normalizeWorldLayoutZoneGroup(
   if (value === LEGACY_MCP_PRIMARY_GROUP) {
     return "arcade";
   }
-  if (value === "agent" || value === "space" || value === "arcade" || value === "parking") {
+  if (
+    value === "agent" ||
+    value === "space" ||
+    value === "arcade" ||
+    value === "parking" ||
+    value === "education"
+  ) {
     return value;
   }
   throw new Error(
@@ -352,11 +376,19 @@ function ensureParkingZoneInWorldLayout(layout: WorldLayoutJson): WorldLayoutJso
   const withArcade = ensureArcadeZoneInWorldLayout(layout);
   const asLayout = worldLayoutFromJson(withArcade);
   let next = asLayout;
+  let changed = false;
   if (!layoutHasParkingZone(next)) {
     next = migrateLayoutToParkingRow(next);
+    changed = true;
   } else if (layoutNeedsParkingColumnGapMigration(next)) {
     next = migrateLayoutToParkingColumnGap(next);
-  } else {
+    changed = true;
+  }
+  if (!layoutHasEducationZone(next) || layoutNeedsEducationCampusReseed(next)) {
+    next = migrateLayoutToEducationCampus(next);
+    changed = true;
+  }
+  if (!changed) {
     return withArcade;
   }
   return {

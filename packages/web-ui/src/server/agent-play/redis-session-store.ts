@@ -67,18 +67,30 @@ import {
   buildAmenityPurchaseApuFields,
   buildApuWalletTransaction,
   buildArcadePassPurchaseFields,
+  buildEducationPassPurchaseFields,
   buildWalletBundleApuFields,
   buildArcadeAccessPass,
+  buildEducationAccessPass,
   chooseArcadeTender,
+  chooseEducationTender,
+  educationCenterDayPassApuCost,
   isArcadeAccessActive,
+  isEducationAccessActive,
+  isEducationCenterId,
   quoteArcadePassApw,
+  quoteEducationCenterDayPassApw,
   resolveArcadeTenderForPurchase,
+  resolveEducationTenderForPurchase,
   arcadePassApuCost,
   ArcadeAccessPassSchema,
+  EducationAccessPassSchema,
   ANALYTICS_EVENT_NAMES,
   type ArcadeAccessPass,
   type ArcadeAccessPlan,
   type ArcadeTender,
+  type EducationAccessPass,
+  type EducationCenterId,
+  type EducationTender,
 } from "@agent-play/sdk";
 import {
   applyGameOutcomeToState,
@@ -233,6 +245,10 @@ function playerWalletKey(hostId: string, playerId: string): string {
 
 function playerArcadeAccessKey(hostId: string, playerId: string): string {
   return `agent-play:${hostId}:player:${playerId}:arcade-access`;
+}
+
+function playerEducationAccessKey(hostId: string, playerId: string): string {
+  return `agent-play:${hostId}:player:${playerId}:education-access`;
 }
 
 function playerGameStateKey(hostId: string, playerId: string): string {
@@ -2012,6 +2028,245 @@ export class RedisSessionStore implements SessionStore {
     }
     throw new Error(
       `purchaseArcadeAccess: lost ${String(maxAttempts)} CAS retries for player ${input.playerId}`
+    );
+  }
+
+  private async readEducationAccessMap(
+    playerId: string
+  ): Promise<Map<EducationCenterId, EducationAccessPass>> {
+    const raw = await this.redis.get(
+      playerEducationAccessKey(this.hostId, playerId)
+    );
+    const out = new Map<EducationCenterId, EducationAccessPass>();
+    if (raw === null || raw.length === 0) {
+      return out;
+    }
+    try {
+      const parsed: unknown = JSON.parse(raw);
+      if (typeof parsed !== "object" || parsed === null) {
+        return out;
+      }
+      for (const [centerId, value] of Object.entries(parsed)) {
+        if (!isEducationCenterId(centerId)) {
+          continue;
+        }
+        const pass = EducationAccessPassSchema.safeParse(value);
+        if (pass.success) {
+          out.set(centerId, pass.data);
+        }
+      }
+    } catch {
+      return out;
+    }
+    return out;
+  }
+
+  async getEducationAccess(input: {
+    playerId: string;
+    centerId: EducationCenterId;
+    now: string;
+  }): Promise<{
+    access: EducationAccessPass | null;
+    apwPerApu: number;
+    quoteApw: number;
+    apuCost: number;
+    preferredTender: EducationTender;
+    wallet: PlayerWallet;
+  }> {
+    const wallet = await this.getPlayerWallet(input.playerId);
+    const map = await this.readEducationAccessMap(input.playerId);
+    const stored = map.get(input.centerId) ?? null;
+    const access = isEducationAccessActive(stored, new Date(input.now))
+      ? stored
+      : null;
+    const apwPerApu = await resolveApwPerApu({
+      redis: this.redis,
+      hostId: this.hostId,
+    });
+    const apuCost = educationCenterDayPassApuCost();
+    return {
+      access,
+      apwPerApu,
+      quoteApw: quoteEducationCenterDayPassApw({ apwPerApu }),
+      apuCost,
+      preferredTender: chooseEducationTender({
+        powerUps: wallet.powerUps ?? 0,
+        balanceUsd: wallet.balanceUsd,
+        apwPerApu,
+      }),
+      wallet,
+    };
+  }
+
+  async purchaseEducationAccess(input: {
+    playerId: string;
+    centerId: EducationCenterId;
+    now: string;
+    recordId: string;
+  }): Promise<
+    | {
+        ok: true;
+        wallet: PlayerWallet;
+        access: EducationAccessPass;
+        purchase: PurchaseRecord;
+        tender: EducationTender;
+      }
+    | {
+        ok: false;
+        error: "INSUFFICIENT_FUNDS" | "RATE_UNAVAILABLE" | "INVALID_CENTER";
+      }
+  > {
+    if (!isEducationCenterId(input.centerId)) {
+      return { ok: false, error: "INVALID_CENTER" };
+    }
+    const existing = await this.getEducationAccess({
+      playerId: input.playerId,
+      centerId: input.centerId,
+      now: input.now,
+    });
+    if (existing.access !== null) {
+      const purchases = await this.listPurchases({
+        playerId: input.playerId,
+        limit: 50,
+      });
+      const prior = purchases.find(
+        (p) =>
+          p.amenityKind === "education_pass" &&
+          p.itemRef.id === `${input.centerId}:${existing.access?.utcDay ?? ""}`
+      );
+      const purchase =
+        prior ??
+        PurchaseRecordSchema.parse({
+          id: input.recordId,
+          playerId: input.playerId,
+          spaceId: `__education__:${input.centerId}`,
+          amenityKind: "education_pass",
+          itemRef: {
+            kind: "education_pass",
+            id: `${input.centerId}:${existing.access.utcDay}`,
+          },
+          at: existing.access.purchasedAt,
+          detail: `Elm Street · ${input.centerId} · day entry already active`,
+          ...buildEducationPassPurchaseFields({
+            centerId: input.centerId,
+            utcDay: existing.access.utcDay,
+            tender: existing.access.tender,
+            apuCost: existing.access.apuCost,
+            apwCharged: existing.access.apwCharged,
+          }),
+        });
+      return {
+        ok: true,
+        wallet: existing.wallet,
+        access: existing.access,
+        purchase,
+        tender: existing.access.tender,
+      };
+    }
+
+    await this.getPlayerWallet(input.playerId);
+    const walletKey = playerWalletKey(this.hostId, input.playerId);
+    const accessKey = playerEducationAccessKey(this.hostId, input.playerId);
+    const purchasesKeyName = playerPurchasesKey(this.hostId, input.playerId);
+    const apwPerApu = await resolveApwPerApu({
+      redis: this.redis,
+      hostId: this.hostId,
+    });
+    const maxAttempts = 5;
+    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+      await this.redis.watch(walletKey, accessKey);
+      const map = await this.readEducationAccessMap(input.playerId);
+      const raced = map.get(input.centerId) ?? null;
+      if (isEducationAccessActive(raced, new Date(input.now))) {
+        await this.redis.unwatch();
+        return this.purchaseEducationAccess(input);
+      }
+      const wallet = await this.getPlayerWallet(input.playerId);
+      const settled = resolveEducationTenderForPurchase({
+        powerUps: wallet.powerUps ?? 0,
+        balanceUsd: wallet.balanceUsd,
+        apwPerApu,
+      });
+      if (settled === null) {
+        await this.redis.unwatch();
+        const apuCost = educationCenterDayPassApuCost();
+        if (apwPerApu <= 0 && (wallet.powerUps ?? 0) < apuCost) {
+          return { ok: false, error: "RATE_UNAVAILABLE" };
+        }
+        return { ok: false, error: "INSUFFICIENT_FUNDS" };
+      }
+      const updatedWallet: PlayerWallet =
+        settled.tender === "apu"
+          ? {
+              ...wallet,
+              powerUps: (wallet.powerUps ?? 0) - settled.apuCost,
+              updatedAt: input.now,
+            }
+          : {
+              ...wallet,
+              balanceUsd: wallet.balanceUsd - settled.apwCharged,
+              updatedAt: input.now,
+            };
+      const access = buildEducationAccessPass({
+        centerId: input.centerId,
+        purchasedAt: input.now,
+        tender: settled.tender,
+        apuCost: settled.apuCost,
+        apwCharged: settled.apwCharged,
+      });
+      map.set(input.centerId, access);
+      const accessPayload: Record<string, EducationAccessPass> = {};
+      for (const [centerId, pass] of map.entries()) {
+        accessPayload[centerId] = pass;
+      }
+      const record: PurchaseRecord = PurchaseRecordSchema.parse({
+        id: input.recordId,
+        playerId: input.playerId,
+        spaceId: `__education__:${input.centerId}`,
+        amenityKind: "education_pass",
+        itemRef: {
+          kind: "education_pass",
+          id: `${input.centerId}:${access.utcDay}`,
+        },
+        at: input.now,
+        detail: `Elm Street · ${input.centerId} · day entry`,
+        ...buildEducationPassPurchaseFields({
+          centerId: input.centerId,
+          utcDay: access.utcDay,
+          tender: settled.tender,
+          apuCost: settled.apuCost,
+          apwCharged: settled.apwCharged,
+        }),
+      });
+      const multi = this.redis.multi();
+      multi.set(walletKey, JSON.stringify(updatedWallet));
+      multi.set(accessKey, JSON.stringify(accessPayload));
+      multi.lpush(purchasesKeyName, JSON.stringify(record));
+      multi.ltrim(purchasesKeyName, 0, PURCHASES_MAX - 1);
+      const exec = await multi.exec();
+      if (exec !== null) {
+        safeIndexPurchaseRecord({
+          redis: this.redis,
+          hostId: this.hostId,
+          record,
+          op: "purchaseEducationAccess",
+        });
+        safeIndexWallet({
+          redis: this.redis,
+          hostId: this.hostId,
+          wallet: updatedWallet,
+        });
+        return {
+          ok: true,
+          wallet: updatedWallet,
+          access,
+          purchase: record,
+          tender: settled.tender,
+        };
+      }
+    }
+    throw new Error(
+      `purchaseEducationAccess: lost ${String(maxAttempts)} CAS retries for player ${input.playerId}`
     );
   }
 
