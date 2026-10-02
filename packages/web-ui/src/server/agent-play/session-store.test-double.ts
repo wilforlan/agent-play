@@ -52,16 +52,40 @@ import {
   buildAmenityPurchaseApuFields,
   buildApuWalletTransaction,
   buildArcadePassPurchaseFields,
+  buildEducationPassPurchaseFields,
+  buildEducationTuitionPurchaseFields,
   buildWalletBundleApuFields,
   buildArcadeAccessPass,
+  buildEducationAccessPass,
+  buildEducationTuitionEnrollment,
   chooseArcadeTender,
+  chooseEducationTender,
+  educationCenterDayPassApuCost,
+  getEducationPathDef,
   isArcadeAccessActive,
+  isEducationAccessActive,
+  isEducationCenterId,
+  isEducationPathId,
+  isEducationTuitionActive,
+  normalizeEducationFacultyId,
   quoteArcadePassApw,
+  quoteEducationCenterDayPassApw,
+  quoteEducationTuitionApu,
+  quoteEducationTuitionApw,
   resolveArcadeTenderForPurchase,
+  resolveEducationTenderForPurchase,
+  resolveEducationTuitionTender,
   arcadePassApuCost,
   type ArcadeAccessPass,
   type ArcadeAccessPlan,
   type ArcadeTender,
+  type EducationAccessPass,
+  type EducationCenterId,
+  type EducationFacultyId,
+  type EducationPathId,
+  type EducationPathTier,
+  type EducationTender,
+  type EducationTuitionEnrollment,
 } from "@agent-play/sdk";
 import {
   applyGameOutcomeToState,
@@ -135,6 +159,14 @@ export class TestSessionStore implements SessionStore {
   private readonly playerWallets = new Map<string, PlayerWallet>();
   private readonly playerPurchases = new Map<string, PurchaseRecord[]>();
   private readonly arcadeAccessByPlayer = new Map<string, ArcadeAccessPass>();
+  private readonly educationAccessByPlayer = new Map<
+    string,
+    Map<EducationFacultyId, EducationAccessPass>
+  >();
+  private readonly educationTuitionByPlayer = new Map<
+    string,
+    Map<string, EducationTuitionEnrollment>
+  >();
   private apwPerApuRate = 0;
   private readonly geographyHumans = new Map<string, GeographyHumanState>();
   private readonly geographyMembers = new Map<string, GeographyMember>();
@@ -1185,6 +1217,399 @@ export class TestSessionStore implements SessionStore {
       purchase: record,
       tender: settled.tender,
     };
+  }
+
+  async getEducationAccess(input: {
+    playerId: string;
+    centerId: EducationCenterId;
+    now: string;
+  }): Promise<{
+    access: EducationAccessPass | null;
+    apwPerApu: number;
+    quoteApw: number;
+    apuCost: number;
+    preferredTender: EducationTender;
+    wallet: PlayerWallet;
+  }> {
+    const facultyId = normalizeEducationFacultyId(input.centerId);
+    const wallet = await this.getPlayerWallet(input.playerId);
+    const byFaculty = this.educationAccessByPlayer.get(input.playerId);
+    const stored =
+      facultyId === null ? null : (byFaculty?.get(facultyId) ?? null);
+    const access = isEducationAccessActive(stored, new Date(input.now))
+      ? stored
+      : null;
+    const apwPerApu = this.apwPerApuRate;
+    const apuCost = educationCenterDayPassApuCost();
+    return {
+      access,
+      apwPerApu,
+      quoteApw: quoteEducationCenterDayPassApw({ apwPerApu }),
+      apuCost,
+      preferredTender: chooseEducationTender({
+        powerUps: wallet.powerUps ?? 0,
+        balanceUsd: wallet.balanceUsd,
+        apwPerApu,
+      }),
+      wallet: { ...wallet },
+    };
+  }
+
+  async purchaseEducationAccess(input: {
+    playerId: string;
+    centerId: EducationCenterId;
+    now: string;
+    recordId: string;
+  }): Promise<
+    | {
+        ok: true;
+        wallet: PlayerWallet;
+        access: EducationAccessPass;
+        purchase: PurchaseRecord;
+        tender: EducationTender;
+      }
+    | { ok: false; error: "INSUFFICIENT_FUNDS" | "RATE_UNAVAILABLE" | "INVALID_CENTER" }
+  > {
+    const facultyId = normalizeEducationFacultyId(input.centerId);
+    if (facultyId === null || !isEducationCenterId(input.centerId)) {
+      return { ok: false, error: "INVALID_CENTER" };
+    }
+    const existing = await this.getEducationAccess({
+      playerId: input.playerId,
+      centerId: facultyId,
+      now: input.now,
+    });
+    if (existing.access !== null) {
+      const purchases = await this.listPurchases({
+        playerId: input.playerId,
+        limit: 50,
+      });
+      const prior = purchases.find(
+        (p) =>
+          p.amenityKind === "education_pass" &&
+          p.itemRef.id === `${facultyId}:${existing.access?.utcDay ?? ""}`
+      );
+      const purchase =
+        prior ??
+        PurchaseRecordSchema.parse({
+          id: input.recordId,
+          playerId: input.playerId,
+          spaceId: `__education__:${facultyId}`,
+          amenityKind: "education_pass",
+          itemRef: {
+            kind: "education_pass",
+            id: `${facultyId}:${existing.access.utcDay}`,
+          },
+          at: existing.access.purchasedAt,
+          detail: `Elm Street · ${facultyId} · day entry already active`,
+          ...buildEducationPassPurchaseFields({
+            centerId: facultyId,
+            utcDay: existing.access.utcDay,
+            tender: existing.access.tender,
+            apuCost: existing.access.apuCost,
+            apwCharged: existing.access.apwCharged,
+          }),
+        });
+      return {
+        ok: true,
+        wallet: existing.wallet,
+        access: existing.access,
+        purchase,
+        tender: existing.access.tender,
+      };
+    }
+
+    const wallet = await this.getPlayerWallet(input.playerId);
+    const apwPerApu = this.apwPerApuRate;
+    const settled = resolveEducationTenderForPurchase({
+      powerUps: wallet.powerUps ?? 0,
+      balanceUsd: wallet.balanceUsd,
+      apwPerApu,
+    });
+    if (settled === null) {
+      const apuCost = educationCenterDayPassApuCost();
+      if (apwPerApu <= 0 && (wallet.powerUps ?? 0) < apuCost) {
+        return { ok: false, error: "RATE_UNAVAILABLE" };
+      }
+      return { ok: false, error: "INSUFFICIENT_FUNDS" };
+    }
+
+    const updatedWallet: PlayerWallet =
+      settled.tender === "apu"
+        ? {
+            ...wallet,
+            powerUps: (wallet.powerUps ?? 0) - settled.apuCost,
+            updatedAt: input.now,
+          }
+        : {
+            ...wallet,
+            balanceUsd: wallet.balanceUsd - settled.apwCharged,
+            updatedAt: input.now,
+          };
+    this.playerWallets.set(input.playerId, updatedWallet);
+
+    const access = buildEducationAccessPass({
+      facultyId,
+      purchasedAt: input.now,
+      tender: settled.tender,
+      apuCost: settled.apuCost,
+      apwCharged: settled.apwCharged,
+    });
+    const byFaculty =
+      this.educationAccessByPlayer.get(input.playerId) ??
+      new Map<EducationFacultyId, EducationAccessPass>();
+    byFaculty.set(facultyId, access);
+    this.educationAccessByPlayer.set(input.playerId, byFaculty);
+
+    const record: PurchaseRecord = PurchaseRecordSchema.parse({
+      id: input.recordId,
+      playerId: input.playerId,
+      spaceId: `__education__:${facultyId}`,
+      amenityKind: "education_pass",
+      itemRef: {
+        kind: "education_pass",
+        id: `${facultyId}:${access.utcDay}`,
+      },
+      at: input.now,
+      detail: `Elm Street · ${facultyId} · day entry`,
+      ...buildEducationPassPurchaseFields({
+        centerId: facultyId,
+        utcDay: access.utcDay,
+        tender: settled.tender,
+        apuCost: settled.apuCost,
+        apwCharged: settled.apwCharged,
+      }),
+    });
+    await this.appendPurchaseRecord(record);
+    return {
+      ok: true,
+      wallet: updatedWallet,
+      access,
+      purchase: record,
+      tender: settled.tender,
+    };
+  }
+
+  private tuitionKey(facultyId: EducationFacultyId, pathId: EducationPathId): string {
+    return `${facultyId}:${pathId}`;
+  }
+
+  async getEducationTuition(input: {
+    playerId: string;
+    facultyId: EducationFacultyId;
+    pathId: EducationPathId;
+    now: string;
+  }): Promise<{
+    enrollment: EducationTuitionEnrollment | null;
+    apwPerApu: number;
+    quoteApw: number;
+    apuCost: number;
+    preferredTender: EducationTender;
+    wallet: PlayerWallet;
+    path: { title: string; tier: EducationPathTier; summary: string };
+  }> {
+    const def = getEducationPathDef(input.pathId);
+    if (def === undefined || def.facultyId !== input.facultyId) {
+      throw new Error("INVALID_PATH");
+    }
+    const wallet = await this.getPlayerWallet(input.playerId);
+    const byPath = this.educationTuitionByPlayer.get(input.playerId);
+    const stored =
+      byPath?.get(this.tuitionKey(input.facultyId, input.pathId)) ?? null;
+    const enrollment = isEducationTuitionActive(stored, new Date(input.now))
+      ? stored
+      : null;
+    const apwPerApu = this.apwPerApuRate;
+    return {
+      enrollment,
+      apwPerApu,
+      quoteApw: quoteEducationTuitionApw({ tier: def.tier }),
+      apuCost: quoteEducationTuitionApu({ tier: def.tier, apwPerApu }),
+      preferredTender: chooseEducationTender({
+        powerUps: wallet.powerUps ?? 0,
+        balanceUsd: wallet.balanceUsd,
+        apwPerApu,
+      }),
+      wallet: { ...wallet },
+      path: {
+        title: def.title,
+        tier: def.tier,
+        summary: def.summary,
+      },
+    };
+  }
+
+  async purchaseEducationTuition(input: {
+    playerId: string;
+    facultyId: EducationFacultyId;
+    pathId: EducationPathId;
+    now: string;
+    recordId: string;
+  }): Promise<
+    | {
+        ok: true;
+        wallet: PlayerWallet;
+        enrollment: EducationTuitionEnrollment;
+        purchase: PurchaseRecord;
+        tender: EducationTender;
+      }
+    | {
+        ok: false;
+        error:
+          | "INSUFFICIENT_FUNDS"
+          | "RATE_UNAVAILABLE"
+          | "INVALID_PATH"
+          | "DAY_PASS_REQUIRED";
+      }
+  > {
+    if (!isEducationPathId(input.pathId)) {
+      return { ok: false, error: "INVALID_PATH" };
+    }
+    const def = getEducationPathDef(input.pathId);
+    if (def === undefined || def.facultyId !== input.facultyId) {
+      return { ok: false, error: "INVALID_PATH" };
+    }
+    const dayPass = await this.getEducationAccess({
+      playerId: input.playerId,
+      centerId: input.facultyId,
+      now: input.now,
+    });
+    if (dayPass.access === null) {
+      return { ok: false, error: "DAY_PASS_REQUIRED" };
+    }
+    const existing = await this.getEducationTuition(input);
+    if (existing.enrollment !== null) {
+      const purchases = await this.listPurchases({
+        playerId: input.playerId,
+        limit: 50,
+      });
+      const prior = purchases.find(
+        (p) =>
+          p.amenityKind === "education_tuition" &&
+          p.itemRef.id.startsWith(`${input.facultyId}:${input.pathId}:`)
+      );
+      const purchase =
+        prior ??
+        PurchaseRecordSchema.parse({
+          id: input.recordId,
+          playerId: input.playerId,
+          spaceId: `__education__:${input.facultyId}`,
+          amenityKind: "education_tuition",
+          itemRef: {
+            kind: "education_tuition",
+            id: `${input.facultyId}:${input.pathId}:${existing.enrollment.purchasedAt.slice(0, 10)}`,
+          },
+          at: existing.enrollment.purchasedAt,
+          detail: `Elm Street · ${def.title} · school fees already active`,
+          ...buildEducationTuitionPurchaseFields({
+            facultyId: input.facultyId,
+            pathId: input.pathId,
+            tender: existing.enrollment.tender,
+            apuCost: existing.enrollment.apuCost,
+            apwCharged: existing.enrollment.apwCharged,
+          }),
+        });
+      return {
+        ok: true,
+        wallet: existing.wallet,
+        enrollment: existing.enrollment,
+        purchase,
+        tender: existing.enrollment.tender,
+      };
+    }
+
+    const wallet = await this.getPlayerWallet(input.playerId);
+    const apwPerApu = this.apwPerApuRate;
+    const settled = resolveEducationTuitionTender({
+      tier: def.tier,
+      powerUps: wallet.powerUps ?? 0,
+      balanceUsd: wallet.balanceUsd,
+      apwPerApu,
+    });
+    if (settled === null) {
+      if (apwPerApu <= 0) {
+        return { ok: false, error: "RATE_UNAVAILABLE" };
+      }
+      return { ok: false, error: "INSUFFICIENT_FUNDS" };
+    }
+
+    const updatedWallet: PlayerWallet =
+      settled.tender === "apu"
+        ? {
+            ...wallet,
+            powerUps: (wallet.powerUps ?? 0) - settled.apuCost,
+            updatedAt: input.now,
+          }
+        : {
+            ...wallet,
+            balanceUsd: wallet.balanceUsd - settled.apwCharged,
+            updatedAt: input.now,
+          };
+    this.playerWallets.set(input.playerId, updatedWallet);
+
+    const enrollment = buildEducationTuitionEnrollment({
+      facultyId: input.facultyId,
+      pathId: input.pathId,
+      purchasedAt: input.now,
+      tender: settled.tender,
+      apuCost: settled.apuCost,
+      apwCharged: settled.apwCharged,
+    });
+    const byPath =
+      this.educationTuitionByPlayer.get(input.playerId) ??
+      new Map<string, EducationTuitionEnrollment>();
+    byPath.set(this.tuitionKey(input.facultyId, input.pathId), enrollment);
+    this.educationTuitionByPlayer.set(input.playerId, byPath);
+
+    const record: PurchaseRecord = PurchaseRecordSchema.parse({
+      id: input.recordId,
+      playerId: input.playerId,
+      spaceId: `__education__:${input.facultyId}`,
+      amenityKind: "education_tuition",
+      itemRef: {
+        kind: "education_tuition",
+        id: `${input.facultyId}:${input.pathId}:${enrollment.purchasedAt.slice(0, 10)}`,
+      },
+      at: input.now,
+      detail: `Elm Street · ${def.title} · annual school fees`,
+      ...buildEducationTuitionPurchaseFields({
+        facultyId: input.facultyId,
+        pathId: input.pathId,
+        tender: settled.tender,
+        apuCost: settled.apuCost,
+        apwCharged: settled.apwCharged,
+      }),
+    });
+    await this.appendPurchaseRecord(record);
+    return {
+      ok: true,
+      wallet: updatedWallet,
+      enrollment,
+      purchase: record,
+      tender: settled.tender,
+    };
+  }
+
+  async listEducationTuition(input: {
+    playerId: string;
+    facultyId?: EducationFacultyId;
+    now: string;
+  }): Promise<{ enrollments: EducationTuitionEnrollment[] }> {
+    const byPath = this.educationTuitionByPlayer.get(input.playerId);
+    if (byPath === undefined) {
+      return { enrollments: [] };
+    }
+    const now = new Date(input.now);
+    const enrollments: EducationTuitionEnrollment[] = [];
+    for (const enrollment of byPath.values()) {
+      if (input.facultyId !== undefined && enrollment.facultyId !== input.facultyId) {
+        continue;
+      }
+      if (isEducationTuitionActive(enrollment, now)) {
+        enrollments.push(enrollment);
+      }
+    }
+    return { enrollments };
   }
 
   async startTalkSession(input: {

@@ -16,6 +16,8 @@ export const ScannerTxOpSchema = z.enum([
   "solDeposit",
   "solPayout",
   "purchaseArcadeAccess",
+  "purchaseEducationAccess",
+  "purchaseEducationTuition",
 ]);
 
 export type ScannerTxOp = z.infer<typeof ScannerTxOpSchema>;

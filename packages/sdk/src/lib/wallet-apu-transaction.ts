@@ -130,3 +130,79 @@ export const buildArcadePassPurchaseFields = (input: {
     token: "USD",
   };
 };
+
+/**
+ * Fields for Elm Street educational center day-entry rows settled in APU or APW$.
+ *
+ * @public
+ */
+export const buildEducationPassPurchaseFields = (input: {
+  centerId: string;
+  utcDay: string;
+  tender: "apu" | "apw";
+  apuCost: number;
+  apwCharged: number;
+}): Pick<
+  PurchaseRecord,
+  | "priceUsd"
+  | "powerUpsSpent"
+  | "powerUpsDelta"
+  | "debitSource"
+  | "creditSource"
+  | "token"
+> => {
+  if (input.tender === "apu") {
+    return {
+      priceUsd: input.apwCharged > 0 ? input.apwCharged : undefined,
+      powerUpsSpent: input.apuCost,
+      powerUpsDelta: -input.apuCost,
+      debitSource: "wallet:apu",
+      creditSource: `education:pass:${input.centerId}:${input.utcDay}`,
+      token: APU_TOKEN,
+    };
+  }
+  return {
+    priceUsd: input.apwCharged,
+    debitSource: "wallet:usd",
+    creditSource: `education:pass:${input.centerId}:${input.utcDay}`,
+    token: "USD",
+  };
+};
+
+/**
+ * Fields for Elm Street annual school-fee (tuition) rows.
+ *
+ * @public
+ */
+export const buildEducationTuitionPurchaseFields = (input: {
+  facultyId: string;
+  pathId: string;
+  tender: "apu" | "apw";
+  apuCost: number;
+  apwCharged: number;
+}): Pick<
+  PurchaseRecord,
+  | "priceUsd"
+  | "powerUpsSpent"
+  | "powerUpsDelta"
+  | "debitSource"
+  | "creditSource"
+  | "token"
+> => {
+  if (input.tender === "apu") {
+    return {
+      priceUsd: input.apwCharged > 0 ? input.apwCharged : undefined,
+      powerUpsSpent: input.apuCost,
+      powerUpsDelta: -input.apuCost,
+      debitSource: "wallet:apu",
+      creditSource: `education:tuition:${input.facultyId}:${input.pathId}`,
+      token: APU_TOKEN,
+    };
+  }
+  return {
+    priceUsd: input.apwCharged,
+    debitSource: "wallet:usd",
+    creditSource: `education:tuition:${input.facultyId}:${input.pathId}`,
+    token: "USD",
+  };
+};

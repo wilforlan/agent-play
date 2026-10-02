@@ -35,6 +35,8 @@ export const amenityKindToScannerOp = (
 ): ScannerTxOp => {
   if (amenityKind === "wallet_bundle") return "redeemWalletBundle";
   if (amenityKind === "arcade_pass") return "purchaseArcadeAccess";
+  if (amenityKind === "education_pass") return "purchaseEducationAccess";
+  if (amenityKind === "education_tuition") return "purchaseEducationTuition";
   if (amenityKind === "sol_deposit") return "solDeposit";
   if (amenityKind === "sol_payout") return "solPayout";
   if (amenityKind === "apu_credit" || amenityKind === "apu_debit") {

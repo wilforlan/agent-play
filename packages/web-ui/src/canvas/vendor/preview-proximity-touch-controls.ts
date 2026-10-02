@@ -97,6 +97,39 @@ export type CreatePreviewProximityTouchControlsOptions = {
    * Precedence is below amenity Buy/Enter and above agent Push.
    */
   getPeerTalkLabel?: () => string | null | undefined;
+  /**
+   * When the human is on Elm Street near a faculty building, returns the
+   * faculty label so the pad can highlight pay / enter / paths / class.
+   */
+  getFacultyProximityLabel?: () => string | null | undefined;
+  /**
+   * Verb for `A` when day entry is still required (typically `"Pay"`).
+   */
+  getFacultyPayVerb?: () => string | null | undefined;
+  /**
+   * Verb for `P` after day entry (typically `"Enter"`).
+   */
+  getFacultyEnterVerb?: () => string | null | undefined;
+  getFacultyEnterActivatable?: () => boolean;
+  /**
+   * Verb for `A` after day entry (typically `"Paths"`).
+   */
+  getFacultyPathVerb?: () => string | null | undefined;
+  getFacultyPathActivatable?: () => boolean;
+  /**
+   * Verb for `C` after day entry (typically `"Class"`).
+   */
+  getFacultyClassVerb?: () => string | null | undefined;
+  getFacultyClassActivatable?: () => boolean;
+  /**
+   * When inside a faculty classroom near a learning-path scroll or lesson
+   * card, returns the target label for the `A` button.
+   */
+  getFacultyClassroomProximityLabel?: () => string | null | undefined;
+  /**
+   * Verb shown on `A` near a classroom target (`"Enroll"` / `"Open"`).
+   */
+  getFacultyClassroomProximityVerb?: () => string | null | undefined;
   onAssist: () => void;
   onChat: () => void;
   onPushToTalk: () => void;
@@ -254,6 +287,9 @@ export function createPreviewProximityTouchControls(
     const inHouseInteriorPurchase =
       typeof houseInteriorPurchaseLabel === "string" &&
       houseInteriorPurchaseLabel.length > 0;
+    const classroomLabel = options.getFacultyClassroomProximityLabel?.() ?? null;
+    const nearFacultyClassroom =
+      typeof classroomLabel === "string" && classroomLabel.length > 0;
     const itemActionLabel = options.getAmenityItemActionLabel?.() ?? null;
     const nearAmenityItem =
       typeof itemActionLabel === "string" && itemActionLabel.length > 0;
@@ -263,6 +299,9 @@ export function createPreviewProximityTouchControls(
     const gameStageLabel = options.getGameStageProximityLabel?.() ?? null;
     const nearGameStage =
       typeof gameStageLabel === "string" && gameStageLabel.length > 0;
+    const facultyLabel = options.getFacultyProximityLabel?.() ?? null;
+    const nearFaculty =
+      typeof facultyLabel === "string" && facultyLabel.length > 0;
     const parkingLabel = options.getParkingProximityLabel?.() ?? null;
     const nearParking =
       typeof parkingLabel === "string" && parkingLabel.length > 0;
@@ -284,6 +323,12 @@ export function createPreviewProximityTouchControls(
         "preview-proximity-touch-pad__key--proximity-hint"
       );
       btnChat.disabled = !can;
+      subC.textContent = "Chat";
+      btnChat.classList.remove(
+        "preview-proximity-touch-pad__key--proximity-active",
+        "preview-proximity-touch-pad__key--proximity-hint"
+      );
+      btnChat.removeAttribute("aria-label");
       btnPushToTalk.disabled = !can;
       subP.textContent = "Push";
       btnPushToTalk.classList.remove(
@@ -296,7 +341,16 @@ export function createPreviewProximityTouchControls(
       btnAssist.disabled = true;
       subA.textContent = "Assist";
       btnAssist.removeAttribute("aria-label");
+      btnAssist.classList.remove(
+        "preview-proximity-touch-pad__key--proximity-active",
+        "preview-proximity-touch-pad__key--proximity-hint"
+      );
       btnChat.disabled = true;
+      subC.textContent = "Chat";
+      btnChat.classList.remove(
+        "preview-proximity-touch-pad__key--proximity-active",
+        "preview-proximity-touch-pad__key--proximity-hint"
+      );
       btnPushToTalk.disabled = false;
       subP.textContent = houseInteriorPurchaseLabel ?? "Buy";
       btnPushToTalk.classList.add("preview-proximity-touch-pad__key--proximity-active");
@@ -305,6 +359,30 @@ export function createPreviewProximityTouchControls(
         "aria-label",
         `${houseInteriorPurchaseLabel ?? "Buy"} house`
       );
+    } else if (nearFacultyClassroom) {
+      const verb = options.getFacultyClassroomProximityVerb?.() ?? "Open";
+      btnAssist.disabled = false;
+      subA.textContent = verb;
+      btnAssist.classList.add("preview-proximity-touch-pad__key--proximity-active");
+      btnAssist.classList.remove("preview-proximity-touch-pad__key--proximity-hint");
+      btnAssist.setAttribute(
+        "aria-label",
+        `${verb} ${classroomLabel ?? "learning path"}`
+      );
+      btnChat.disabled = true;
+      subC.textContent = "Chat";
+      btnChat.classList.remove(
+        "preview-proximity-touch-pad__key--proximity-active",
+        "preview-proximity-touch-pad__key--proximity-hint"
+      );
+      btnChat.removeAttribute("aria-label");
+      btnPushToTalk.disabled = true;
+      subP.textContent = "Push";
+      btnPushToTalk.classList.remove(
+        "preview-proximity-touch-pad__key--proximity-active",
+        "preview-proximity-touch-pad__key--proximity-hint"
+      );
+      btnPushToTalk.removeAttribute("aria-label");
     } else if (nearPeerTalk && peerTalkLabel === "End") {
       btnAssist.disabled = true;
       subA.textContent = "Assist";
@@ -416,6 +494,12 @@ export function createPreviewProximityTouchControls(
         btnAssist.removeAttribute("aria-label");
       }
       btnChat.disabled = true;
+      subC.textContent = "Chat";
+      btnChat.classList.remove(
+        "preview-proximity-touch-pad__key--proximity-active",
+        "preview-proximity-touch-pad__key--proximity-hint"
+      );
+      btnChat.removeAttribute("aria-label");
       btnPushToTalk.disabled = false;
       subP.textContent = inspectVerb;
       btnPushToTalk.classList.add("preview-proximity-touch-pad__key--proximity-active");
@@ -424,6 +508,105 @@ export function createPreviewProximityTouchControls(
         "aria-label",
         `${inspectVerb} ${houseLabel ?? "house"}`
       );
+    } else if (nearFaculty) {
+      const payVerb = options.getFacultyPayVerb?.() ?? null;
+      const needsDayEntry =
+        typeof payVerb === "string" && payVerb.length > 0;
+      if (needsDayEntry) {
+        btnAssist.disabled = false;
+        subA.textContent = payVerb;
+        btnAssist.classList.add(
+          "preview-proximity-touch-pad__key--proximity-active"
+        );
+        btnAssist.classList.remove(
+          "preview-proximity-touch-pad__key--proximity-hint"
+        );
+        btnAssist.setAttribute(
+          "aria-label",
+          `${payVerb} ${facultyLabel ?? "faculty"} day entry`
+        );
+        btnChat.disabled = true;
+        subC.textContent = "Chat";
+        btnChat.classList.remove(
+          "preview-proximity-touch-pad__key--proximity-active",
+          "preview-proximity-touch-pad__key--proximity-hint"
+        );
+        btnChat.removeAttribute("aria-label");
+        btnPushToTalk.disabled = true;
+        subP.textContent = "Push";
+        btnPushToTalk.classList.remove(
+          "preview-proximity-touch-pad__key--proximity-active",
+          "preview-proximity-touch-pad__key--proximity-hint"
+        );
+        btnPushToTalk.removeAttribute("aria-label");
+      } else {
+        const enterVerb = options.getFacultyEnterVerb?.() ?? "Enter";
+        const enterActivatable =
+          options.getFacultyEnterActivatable?.() ?? true;
+        const pathVerb = options.getFacultyPathVerb?.() ?? "Paths";
+        const pathActivatable =
+          options.getFacultyPathActivatable?.() ?? true;
+        const classVerb = options.getFacultyClassVerb?.() ?? "Class";
+        const classActivatable =
+          options.getFacultyClassActivatable?.() ?? false;
+        btnAssist.disabled = !pathActivatable;
+        subA.textContent = pathVerb;
+        btnAssist.classList.toggle(
+          "preview-proximity-touch-pad__key--proximity-active",
+          pathActivatable
+        );
+        btnAssist.classList.toggle(
+          "preview-proximity-touch-pad__key--proximity-hint",
+          !pathActivatable
+        );
+        if (pathActivatable) {
+          btnAssist.setAttribute(
+            "aria-label",
+            `${pathVerb} ${facultyLabel ?? "faculty"}`
+          );
+        } else {
+          btnAssist.removeAttribute("aria-label");
+        }
+        btnPushToTalk.disabled = !enterActivatable;
+        subP.textContent = enterVerb;
+        btnPushToTalk.classList.toggle(
+          "preview-proximity-touch-pad__key--proximity-active",
+          enterActivatable
+        );
+        btnPushToTalk.classList.toggle(
+          "preview-proximity-touch-pad__key--proximity-hint",
+          !enterActivatable
+        );
+        if (enterActivatable) {
+          btnPushToTalk.setAttribute(
+            "aria-label",
+            `${enterVerb} ${facultyLabel ?? "faculty"}`
+          );
+        } else {
+          btnPushToTalk.removeAttribute("aria-label");
+        }
+        btnChat.disabled = !classActivatable;
+        subC.textContent = classVerb;
+        btnChat.classList.toggle(
+          "preview-proximity-touch-pad__key--proximity-active",
+          classActivatable
+        );
+        btnChat.classList.toggle(
+          "preview-proximity-touch-pad__key--proximity-hint",
+          !classActivatable
+        );
+        if (classActivatable) {
+          btnChat.setAttribute(
+            "aria-label",
+            `${classVerb} ${facultyLabel ?? "faculty"}`
+          );
+        } else {
+          btnChat.setAttribute(
+            "aria-label",
+            `${classVerb} needs school fees`
+          );
+        }
+      }
     } else if (nearPeerTalk) {
       btnAssist.disabled = true;
       subA.textContent = "Assist";

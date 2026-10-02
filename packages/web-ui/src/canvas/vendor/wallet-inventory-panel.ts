@@ -461,6 +461,8 @@ const AMENITY_LABEL: Record<string, string> = {
   apu_credit: "APU Credit",
   apu_debit: "APU Debit",
   arcade_pass: "Arcade Pass",
+  education_pass: "Education Pass",
+  education_tuition: "School Fees",
 };
 
 const isVoiceTalkAmenity = (
@@ -547,6 +549,20 @@ export const buildPurchaseSubtitle = (input: {
         : input.record.itemRef.id === "week"
           ? "Arcade weekly pass"
           : "Arcade day pass";
+    return `${detail} · ${at}`;
+  }
+  if (input.record.amenityKind === "education_pass") {
+    const detail =
+      typeof input.record.detail === "string" && input.record.detail.length > 0
+        ? input.record.detail
+        : "Elm Street day entry";
+    return `${detail} · ${at}`;
+  }
+  if (input.record.amenityKind === "education_tuition") {
+    const detail =
+      typeof input.record.detail === "string" && input.record.detail.length > 0
+        ? input.record.detail
+        : "Elm Street school fees";
     return `${detail} · ${at}`;
   }
   if (
@@ -787,6 +803,8 @@ export const createWalletInventoryPanel = (
               ? record.itemRef.id === "week"
                 ? "Arcade weekly pass"
                 : "Arcade day pass"
+              : record.amenityKind === "education_pass"
+                ? record.detail ?? "Elm Street day entry"
               : record.amenityKind === "apu_credit" ||
                   record.amenityKind === "apu_debit"
                 ? record.detail ??
@@ -818,6 +836,8 @@ export const createWalletInventoryPanel = (
         !isVoiceTalkAmenity(record.amenityKind) &&
         record.amenityKind !== "wallet_bundle" &&
         record.amenityKind !== "arcade_pass" &&
+        record.amenityKind !== "education_pass" &&
+        record.amenityKind !== "education_tuition" &&
         record.amenityKind !== "apu_credit" &&
         record.amenityKind !== "apu_debit"
       ) {
@@ -859,6 +879,8 @@ export const createWalletInventoryPanel = (
             ? record.itemRef.id === "week"
               ? "Arcade weekly pass"
               : "Arcade day pass"
+            : record.amenityKind === "education_pass"
+              ? record.detail ?? "Elm Street day entry"
             : record.amenityKind === "apu_credit" ||
                 record.amenityKind === "apu_debit"
               ? record.detail ??
@@ -876,6 +898,8 @@ export const createWalletInventoryPanel = (
           ? "#047857"
           : record.amenityKind === "arcade_pass"
             ? "#0f766e"
+          : record.amenityKind === "education_pass"
+            ? "#166534"
           : record.amenityKind === "apu_credit"
             ? "#1d4ed8"
             : record.amenityKind === "apu_debit"
@@ -895,6 +919,8 @@ export const createWalletInventoryPanel = (
           ? "BUNDLE"
           : record.amenityKind === "arcade_pass"
             ? "PASS"
+          : record.amenityKind === "education_pass"
+            ? "ELM"
           : record.amenityKind === "apu_credit" ||
               record.amenityKind === "apu_debit"
             ? "APU"

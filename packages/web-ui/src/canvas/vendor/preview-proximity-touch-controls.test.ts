@@ -891,4 +891,203 @@ describe("createPreviewProximityTouchControls", () => {
     expect(root.style.right).toBe("auto");
     expect(commits.at(-1)).toEqual({ leftPx: 120, topPx: 236 });
   });
+
+  it("faculty day-entry: highlights A as Pay and leaves P/C idle", () => {
+    const { root } = createPreviewProximityTouchControls({
+      parent,
+      getBoundsElement: () => parent,
+      getCanAct: () => false,
+      getFacultyProximityLabel: () => "Faculty of Science",
+      getFacultyPayVerb: () => "Pay",
+      getFacultyEnterActivatable: () => false,
+      getFacultyPathActivatable: () => false,
+      getFacultyClassActivatable: () => false,
+      onAssist,
+      onChat,
+      onPushToTalk,
+    });
+    const assistBtn = root.querySelector(
+      ".preview-proximity-touch-pad__key--assist"
+    ) as HTMLButtonElement;
+    const chatBtn = root.querySelector(
+      ".preview-proximity-touch-pad__key--chat"
+    ) as HTMLButtonElement;
+    const pttBtn = root.querySelector(
+      ".preview-proximity-touch-pad__key--ptt"
+    ) as HTMLButtonElement;
+    expect(assistBtn.disabled).toBe(false);
+    expect(
+      assistBtn.classList.contains(
+        "preview-proximity-touch-pad__key--proximity-active"
+      )
+    ).toBe(true);
+    expect(
+      root.querySelector(
+        ".preview-proximity-touch-pad__key--assist .preview-proximity-touch-pad__key-sub"
+      )?.textContent
+    ).toBe("Pay");
+    expect(pttBtn.disabled).toBe(true);
+    expect(chatBtn.disabled).toBe(true);
+    assistBtn.click();
+    expect(onAssist).toHaveBeenCalledTimes(1);
+  });
+
+  it("faculty post-gate: highlights P Enter, A Paths, and C Class when enrolled", () => {
+    const { root } = createPreviewProximityTouchControls({
+      parent,
+      getBoundsElement: () => parent,
+      getCanAct: () => false,
+      getFacultyProximityLabel: () => "Faculty of Art",
+      getFacultyEnterVerb: () => "Enter",
+      getFacultyEnterActivatable: () => true,
+      getFacultyPathVerb: () => "Paths",
+      getFacultyPathActivatable: () => true,
+      getFacultyClassVerb: () => "Class",
+      getFacultyClassActivatable: () => true,
+      onAssist,
+      onChat,
+      onPushToTalk,
+    });
+    const assistBtn = root.querySelector(
+      ".preview-proximity-touch-pad__key--assist"
+    ) as HTMLButtonElement;
+    const chatBtn = root.querySelector(
+      ".preview-proximity-touch-pad__key--chat"
+    ) as HTMLButtonElement;
+    const pttBtn = root.querySelector(
+      ".preview-proximity-touch-pad__key--ptt"
+    ) as HTMLButtonElement;
+    expect(assistBtn.disabled).toBe(false);
+    expect(pttBtn.disabled).toBe(false);
+    expect(chatBtn.disabled).toBe(false);
+    expect(
+      root.querySelector(
+        ".preview-proximity-touch-pad__key--assist .preview-proximity-touch-pad__key-sub"
+      )?.textContent
+    ).toBe("Paths");
+    expect(
+      root.querySelector(
+        ".preview-proximity-touch-pad__key--ptt .preview-proximity-touch-pad__key-sub"
+      )?.textContent
+    ).toBe("Enter");
+    expect(
+      root.querySelector(
+        ".preview-proximity-touch-pad__key--chat .preview-proximity-touch-pad__key-sub"
+      )?.textContent
+    ).toBe("Class");
+    expect(
+      assistBtn.classList.contains(
+        "preview-proximity-touch-pad__key--proximity-active"
+      )
+    ).toBe(true);
+    expect(
+      pttBtn.classList.contains(
+        "preview-proximity-touch-pad__key--proximity-active"
+      )
+    ).toBe(true);
+    expect(
+      chatBtn.classList.contains(
+        "preview-proximity-touch-pad__key--proximity-active"
+      )
+    ).toBe(true);
+    chatBtn.click();
+    expect(onChat).toHaveBeenCalledTimes(1);
+    pttBtn.click();
+    expect(onPushToTalk).toHaveBeenCalledTimes(1);
+  });
+
+  it("faculty post-gate without fees: Class is hint-only, not active", () => {
+    const { root } = createPreviewProximityTouchControls({
+      parent,
+      getBoundsElement: () => parent,
+      getCanAct: () => false,
+      getFacultyProximityLabel: () => "Faculty of Medicine",
+      getFacultyEnterVerb: () => "Enter",
+      getFacultyEnterActivatable: () => true,
+      getFacultyPathVerb: () => "Paths",
+      getFacultyPathActivatable: () => true,
+      getFacultyClassVerb: () => "Class",
+      getFacultyClassActivatable: () => false,
+      onAssist,
+      onChat,
+      onPushToTalk,
+    });
+    const chatBtn = root.querySelector(
+      ".preview-proximity-touch-pad__key--chat"
+    ) as HTMLButtonElement;
+    expect(chatBtn.disabled).toBe(true);
+    expect(
+      chatBtn.classList.contains(
+        "preview-proximity-touch-pad__key--proximity-hint"
+      )
+    ).toBe(true);
+    expect(
+      root.querySelector(
+        ".preview-proximity-touch-pad__key--chat .preview-proximity-touch-pad__key-sub"
+      )?.textContent
+    ).toBe("Class");
+  });
+
+  it("classroom learning path: highlights A with Enroll verb", () => {
+    const { root } = createPreviewProximityTouchControls({
+      parent,
+      getBoundsElement: () => parent,
+      getCanAct: () => false,
+      getFacultyClassroomProximityLabel: () => "Computer Modeling",
+      getFacultyClassroomProximityVerb: () => "Enroll",
+      onAssist,
+      onChat,
+      onPushToTalk,
+    });
+    const assistBtn = root.querySelector(
+      ".preview-proximity-touch-pad__key--assist"
+    ) as HTMLButtonElement;
+    const chatBtn = root.querySelector(
+      ".preview-proximity-touch-pad__key--chat"
+    ) as HTMLButtonElement;
+    const pttBtn = root.querySelector(
+      ".preview-proximity-touch-pad__key--ptt"
+    ) as HTMLButtonElement;
+    expect(assistBtn.disabled).toBe(false);
+    expect(
+      assistBtn.classList.contains(
+        "preview-proximity-touch-pad__key--proximity-active"
+      )
+    ).toBe(true);
+    expect(
+      root.querySelector(
+        ".preview-proximity-touch-pad__key--assist .preview-proximity-touch-pad__key-sub"
+      )?.textContent
+    ).toBe("Enroll");
+    expect(chatBtn.disabled).toBe(true);
+    expect(pttBtn.disabled).toBe(true);
+    assistBtn.click();
+    expect(onAssist).toHaveBeenCalledTimes(1);
+  });
+
+  it("classroom lesson card: highlights A with Open verb", () => {
+    const { root } = createPreviewProximityTouchControls({
+      parent,
+      getBoundsElement: () => parent,
+      getCanAct: () => false,
+      getFacultyClassroomProximityLabel: () => "Model Critique",
+      getFacultyClassroomProximityVerb: () => "Open",
+      onAssist,
+      onChat,
+      onPushToTalk,
+    });
+    const assistBtn = root.querySelector(
+      ".preview-proximity-touch-pad__key--assist"
+    ) as HTMLButtonElement;
+    expect(
+      root.querySelector(
+        ".preview-proximity-touch-pad__key--assist .preview-proximity-touch-pad__key-sub"
+      )?.textContent
+    ).toBe("Open");
+    expect(
+      assistBtn.classList.contains(
+        "preview-proximity-touch-pad__key--proximity-active"
+      )
+    ).toBe(true);
+  });
 });

@@ -6,7 +6,27 @@ This page describes **directional work** that is not fully implemented today. It
 
 ## Remaining backlog
 
-Three themes are still open. Everything else in earlier roadmap drafts is either **shipped**, **superseded**, or **deprioritized** for now.
+Four themes are still open. Everything else in earlier roadmap drafts is either **shipped**, **superseded**, or **deprioritized** for now.
+
+### Elm Street Educational Arena
+
+**Goal:** School-campus street (**Elm Street**) with **four faculties**, day gates, classroom interiors, annual school fees, and in-class lesson cards (Senior High curricula).
+
+**Docs (current design package):** [education/README.md](education/README.md)
+
+| Layer | Status |
+|-------|--------|
+| Campus strip, lights, name strip, **5 APU day gate** (dual tender) | **Shipped** |
+| Rename to faculties · **P** enter classroom · **A** path + **450–900 APW$** annual fees · **C** start class · lesson cards | **Documented** — [change summary](education/change-summary-faculty-classroom.md), [PRD](education/prd-faculty-classroom-learning.md), [architecture](education/architecture-faculty-classroom.md), [engineering](education/engineering-faculty-classroom.md) |
+| In-repo course content pack | Seeded under `packages/play-ui/src/education/content/` |
+
+Locked product intent:
+
+- **Location:** Elm Street **above Oak Lane**; buffer from column streets; **no world-bounds expansion**
+- Day gate: **5 APU / faculty / UTC day**
+- Tuition: **450 / 675 / 900 APW$** by path complexity (dual tender, **365 days**)
+- Faculties: Art · Science · Medicine · Education
+- Implementation of the classroom milestone waits on explicit coding kickoff; follow engineering TDD sequence
 
 ### Card payments as amenities
 

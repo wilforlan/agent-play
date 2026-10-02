@@ -103,9 +103,10 @@ import {
 } from "./overworld-fixed-panel-position.js";
 import {
   clampWorldPosition,
-  createWorldLayoutWithParkingRow,
+  createWorldLayoutWithEducationCampus,
   DEFAULT_AGENT_SPAWN_MIN_DISTANCE,
   expandBoundsToMinimumPlayArea,
+  getStreetPoolEntryById,
   isAgentSpawnOccupancyPointAvailableInZone,
   isSpaceAnchorOccupancyPointAvailableInZone,
   listOccupancyPointsForZone,
@@ -217,7 +218,7 @@ import {
 } from "@agent-play/geography-mesh";
 import {
   mountStreetSignPosts,
-  type StreetSignZone,
+  toStreetSignZones,
 } from "./world-street-signs.js";
 import { createPixiPreview, type PixiPreviewHandle } from "./pixi-multiverse.js";
 import {
@@ -294,6 +295,45 @@ import {
   type ArcadeAccessPass,
 } from "./arcade-access-client.js";
 import {
+  canAffordEducationDayPass,
+  createEducationAccessPanel,
+  type EducationAccessPanelHandle,
+} from "./education-access-panel.js";
+import {
+  getEducationAccess,
+  purchaseEducationAccess,
+  type EducationAccessPass,
+} from "./education-access-client.js";
+import {
+  canAffordEducationTuition,
+  createEducationTuitionPanel,
+  type EducationTuitionPanelHandle,
+} from "./education-tuition-panel.js";
+import {
+  getEducationTuition,
+  listEducationTuition,
+  purchaseEducationTuition,
+  type EducationTuitionEnrollment,
+} from "./education-tuition-client.js";
+import {
+  createEducationPathPanel,
+  type EducationPathPanelHandle,
+} from "./education-path-panel.js";
+import {
+  createEducationLessonPanel,
+  type EducationLessonPanelHandle,
+} from "./education-lesson-panel.js";
+import { resolveFacultyProximityActions } from "./education-faculty-prompt.js";
+import {
+  FACULTY_CLASSROOM_BOUNDS,
+  buildFacultyClassroomStage,
+  facultyClassroomSpawnPosition,
+  findNearestFacultyClassroomTarget,
+  type FacultyClassroomStageHandle,
+} from "./education-faculty-interior-stage.js";
+import { getFacultyContent, getPathContent } from "./education/content/catalog.js";
+import { loadEducationLessonBody } from "./education/content/lesson-loader.js";
+import {
   createGameStreakPanel,
   markGameStreakAutoPeeked,
   shouldAutoPeekGameStreak,
@@ -301,8 +341,22 @@ import {
 } from "./game-streak-panel.js";
 import { fetchGameStats } from "./game-stats-client.js";
 import { applyGameOutcome } from "./apply-game-outcome-client.js";
-import { buildParkWorldBackdrop } from "./scene-backgrounds.js";
+import {
+  buildParkWorldBackdrop,
+  computeParkWorldBackdropPlacement,
+} from "./scene-backgrounds.js";
 import { buildParkingStreetLayer } from "./parking-street-layer.js";
+import {
+  buildEducationCampusLayer,
+  pickEducationCampusZone,
+} from "./education-campus-layer.js";
+import {
+  EDUCATION_CENTER_DAY_PASS_APU,
+  educationCenterDayPassLabel,
+  findNearestEducationCenter,
+  listEducationCenterAnchorsForZone,
+  type EducationCenterProximityTarget,
+} from "./education-campus-proximity.js";
 import {
   findNearestParkingBay,
   isParkingBayVacant,
@@ -833,20 +887,20 @@ function rebuildParkWorldBackdrop(): void {
     parkBackdropLayer.removeChild(ch);
     ch.destroy({ children: true });
   }
-  const pad = 1;
-  const cols = Math.max(
-    1,
-    Math.ceil(gridBounds.maxX - gridBounds.minX + 2 * pad)
+  const placement = computeParkWorldBackdropPlacement({
+    originX: ORIGIN_X,
+    worldOriginScreenY,
+    cellScale,
+    mapMinX,
+    mapMinY,
+    mapMaxX,
+    mapMaxY,
+  });
+  parkBackdropLayer.position.set(placement.x, placement.y);
+  deepLogObject("rebuildParkWorldBackdrop", placement);
+  parkBackdropLayer.addChild(
+    buildParkWorldBackdrop(placement.widthPx, placement.heightPx, 0x5cafe)
   );
-  const rows = Math.max(
-    1,
-    Math.ceil(gridBounds.maxY - gridBounds.minY + 2 * pad)
-  );
-  const gy0 = worldOriginScreenY;
-  const w = ORIGIN_X + cols * cellScale + 56;
-  const h = Math.max(VIEW_H, gy0 + rows * cellScale + WORLD_BOTTOM_MARGIN);
-  deepLogObject("rebuildParkWorldBackdrop", { w, h, cols, rows });
-  parkBackdropLayer.addChild(buildParkWorldBackdrop(w, h, 0x5cafe));
 }
 
 function worldToWorldRootLocal(wx: number, wy: number): { x: number; y: number } {
@@ -1025,12 +1079,19 @@ function resolveWorldLayout(): WorldLayout {
   const s1 = STREET_NAME_POOL[1];
   const s2 = STREET_NAME_POOL[2];
   const s3 = STREET_NAME_POOL[3];
-  if (s0 === undefined || s1 === undefined || s2 === undefined || s3 === undefined) {
+  const elm = getStreetPoolEntryById("elm");
+  if (
+    s0 === undefined ||
+    s1 === undefined ||
+    s2 === undefined ||
+    s3 === undefined ||
+    elm === undefined
+  ) {
     throw new Error("resolveWorldLayout: invalid street pool");
   }
-  return createWorldLayoutWithParkingRow({
+  return createWorldLayoutWithEducationCampus({
     bounds: DEFAULT_LAYOUT_BOUNDS_WITH_PARKING,
-    streets: [s0, s1, s2, s3],
+    streets: [s0, s1, s2, s3, elm],
   });
 }
 
@@ -1050,6 +1111,9 @@ function zoneDebugStroke(primary: OccupantGroup): {
   }
   if (primary === "parking") {
     return { width: 3, color: 0x94a3b8, alpha: 0.95 };
+  }
+  if (primary === "education") {
+    return { width: 3, color: 0x4ade80, alpha: 0.95 };
   }
   return { width: 3, color: 0xa855f7, alpha: 0.95 };
 }
@@ -1382,6 +1446,21 @@ async function triggerProximityPushToTalk(): Promise<void> {
  * @returns whether the caller should treat the input as handled (e.g. preventDefault).
  */
 function dispatchProximityPAction(): boolean {
+  if (
+    lastEducationCenterNearest !== null &&
+    activeAmenityStage === null &&
+    activeGameStage === null &&
+    activeHouseStage === null &&
+    activeFacultyClassroom === null &&
+    stageController?.current()?.id === "overworld" &&
+    isEducationPassCachedActive(lastEducationCenterNearest.centerId)
+  ) {
+    void enterFacultyClassroom({
+      facultyId: lastEducationCenterNearest.centerId,
+      mode: "browse",
+    });
+    return true;
+  }
   const peerTalkLabel = peerCallController?.getPeerTalkLabel() ?? null;
   const agentPartner = registeredAgentPartnerForProximityOrNull(
     lastProximityPartnerId
@@ -1511,6 +1590,24 @@ function onDocumentKeyDown(e: KeyboardEvent): void {
       e.preventDefault();
       return;
     }
+    if (educationAccessPanel !== null && educationAccessPanel.isOpen()) {
+      e.preventDefault();
+      return;
+    }
+    if (educationPathPanel !== null && educationPathPanel.isOpen()) {
+      e.preventDefault();
+      educationPathPanel.close();
+      return;
+    }
+    if (educationTuitionPanel !== null && educationTuitionPanel.isOpen()) {
+      e.preventDefault();
+      return;
+    }
+    if (educationLessonPanel !== null && educationLessonPanel.isOpen()) {
+      e.preventDefault();
+      educationLessonPanel.close();
+      return;
+    }
     if (gameStreakPanel !== null && gameStreakPanel.isOpen()) {
       e.preventDefault();
       gameStreakPanel.close();
@@ -1537,6 +1634,15 @@ function onDocumentKeyDown(e: KeyboardEvent): void {
     if (dispatchProximityPAction()) {
       e.preventDefault();
     }
+    return;
+  }
+  if (
+    e.key.toLowerCase() === "a" &&
+    stageController?.current()?.id === "facultyClassroom" &&
+    activeFacultyClassroom !== null
+  ) {
+    e.preventDefault();
+    activateFacultyClassroomAssist();
     return;
   }
   const partner = registeredAgentPartnerForProximityOrNull(
@@ -1566,6 +1672,29 @@ function onDocumentKeyDown(e: KeyboardEvent): void {
         });
         return;
       }
+    }
+    if (
+      e.key.toLowerCase() === "a" &&
+      lastEducationCenterNearest !== null &&
+      stageController?.current()?.id === "overworld"
+    ) {
+      e.preventDefault();
+      const target = lastEducationCenterNearest;
+      if (!isEducationPassCachedActive(target.centerId)) {
+        void openEducationAccessGate(target);
+      } else {
+        void openEducationPathPicker(target);
+      }
+      return;
+    }
+    if (
+      e.key.toLowerCase() === "c" &&
+      lastEducationCenterNearest !== null &&
+      stageController?.current()?.id === "overworld"
+    ) {
+      e.preventDefault();
+      void startFacultyClass(lastEducationCenterNearest);
+      return;
     }
     if (
       e.key.toLowerCase() === "a" &&
@@ -1613,6 +1742,7 @@ const agentsLayer = new Container();
 const parkBackdropLayer = new Container();
 const streetSignsLayer = new Container();
 const parkingStreetLayer = new Container();
+const educationCampusLayer = new Container();
 const worldRoot = new Container();
 /**
  * The DOM element that contains the Pixi canvas. Captured by
@@ -1926,6 +2056,547 @@ const applyArcadeZoneProximity = (
   wasInArcadeZone = inArcade;
 };
 
+const isEducationPassCachedActive = (
+  centerId: string,
+  now: Date = new Date()
+): boolean => {
+  const pass = educationAccessPassCache.get(centerId);
+  if (pass === undefined) return false;
+  const utcDay = now.toISOString().slice(0, 10);
+  if (pass.utcDay !== utcDay) return false;
+  const expiresMs = Date.parse(pass.expiresAt);
+  if (!Number.isFinite(expiresMs)) return false;
+  return now.getTime() < expiresMs;
+};
+
+const openEducationAccessGate = async (
+  target: EducationCenterProximityTarget
+): Promise<boolean> => {
+  if (isEducationPassCachedActive(target.centerId)) {
+    return true;
+  }
+  if (educationAccessPanel?.isOpen() === true) {
+    return false;
+  }
+  const sid = getSid();
+  const playerId = getViewerWalletPlayerId();
+  if (sid === null || playerId === null) {
+    educationAccessPanel?.show({
+      centerId: target.centerId,
+      centerLabel: target.label,
+      apuCost: EDUCATION_CENTER_DAY_PASS_APU,
+      quoteApw: 0,
+      preferredTender: "apw",
+      balanceUsd: 0,
+      powerUps: 0,
+      canAfford: false,
+      onPurchase: () => {
+        educationAccessPanel?.setError("Sign in to unlock this center.");
+      },
+      onDismiss: () => {},
+    });
+    return false;
+  }
+  try {
+    const snapshotAccess = await getEducationAccess({
+      sid,
+      playerId,
+      centerId: target.centerId,
+    });
+    if (snapshotAccess.access !== null) {
+      educationAccessPassCache.set(target.centerId, snapshotAccess.access);
+      return true;
+    }
+    const canAfford = canAffordEducationDayPass({
+      powerUps: snapshotAccess.wallet.powerUps,
+      balanceUsd: snapshotAccess.wallet.balanceUsd,
+      apuCost: snapshotAccess.apuCost,
+      quoteApw: snapshotAccess.quoteApw,
+    });
+    educationAccessPanel?.show({
+      centerId: target.centerId,
+      centerLabel: target.label,
+      apuCost: snapshotAccess.apuCost,
+      quoteApw: snapshotAccess.quoteApw,
+      preferredTender: snapshotAccess.preferredTender,
+      balanceUsd: snapshotAccess.wallet.balanceUsd,
+      powerUps: snapshotAccess.wallet.powerUps,
+      canAfford,
+      onPurchase: async () => {
+        educationAccessPanel?.setBusy(true);
+        try {
+          const result = await purchaseEducationAccess({
+            sid,
+            playerId,
+            centerId: target.centerId,
+          });
+          educationAccessPassCache.set(target.centerId, result.access);
+          educationAccessPanel?.close();
+          void refreshWalletHud();
+        } catch (error) {
+          const message =
+            error instanceof Error ? error.message : "Purchase failed";
+          educationAccessPanel?.setError(
+            message.replace(/^\[agent-play:education-access\]\s*/, "")
+          );
+        }
+      },
+      onDismiss: () => {},
+    });
+    return false;
+  } catch (error) {
+    console.warn("[agent-play:world] education access check failed", error);
+    return false;
+  }
+};
+
+const applyEducationCenterProximity = (
+  humanPos: { x: number; y: number } | null
+): void => {
+  if (humanPos === null) {
+    lastEducationCenterNearest = null;
+    return;
+  }
+  const layout = resolveWorldLayout();
+  const educationZone = pickEducationCampusZone(layout.zones);
+  if (educationZone === undefined) {
+    lastEducationCenterNearest = null;
+    return;
+  }
+  const anchors = listEducationCenterAnchorsForZone({
+    zone: educationZone,
+    clampBounds: getWorldBoundsForClamp(),
+  });
+  const nearest = findNearestEducationCenter({
+    playerWorld: humanPos,
+    anchors,
+  });
+  const prevId = lastEducationCenterNearest?.centerId ?? null;
+  lastEducationCenterNearest = nearest;
+  if (
+    nearest !== null &&
+    nearest.centerId !== prevId &&
+    !isEducationPassCachedActive(nearest.centerId) &&
+    educationAccessPanel?.isOpen() !== true &&
+    !educationAccessCheckInFlight
+  ) {
+    educationAccessCheckInFlight = true;
+    void openEducationAccessGate(nearest).finally(() => {
+      educationAccessCheckInFlight = false;
+    });
+  }
+};
+
+const tuitionCacheKey = (facultyId: string, pathId: string): string =>
+  `${facultyId}:${pathId}`;
+
+const isEducationTuitionCachedActive = (
+  facultyId: string,
+  pathId?: string,
+  now: Date = new Date()
+): boolean => {
+  if (pathId !== undefined) {
+    const enrollment = educationTuitionCache.get(
+      tuitionCacheKey(facultyId, pathId)
+    );
+    if (enrollment === undefined) return false;
+    const expiresMs = Date.parse(enrollment.expiresAt);
+    return Number.isFinite(expiresMs) && now.getTime() < expiresMs;
+  }
+  for (const [key, enrollment] of educationTuitionCache.entries()) {
+    if (!key.startsWith(`${facultyId}:`)) continue;
+    const expiresMs = Date.parse(enrollment.expiresAt);
+    if (Number.isFinite(expiresMs) && now.getTime() < expiresMs) {
+      return true;
+    }
+  }
+  return false;
+};
+
+const refreshEducationTuitionCache = async (
+  facultyId: string
+): Promise<void> => {
+  const sid = getSid();
+  const playerId = getViewerWalletPlayerId();
+  if (sid === null || playerId === null) return;
+  try {
+    const enrollments = await listEducationTuition({
+      sid,
+      playerId,
+      facultyId,
+    });
+    for (const enrollment of enrollments) {
+      educationTuitionCache.set(
+        tuitionCacheKey(enrollment.facultyId, enrollment.pathId),
+        enrollment
+      );
+    }
+  } catch (error) {
+    console.warn("[agent-play:world] list education tuition failed", error);
+  }
+};
+
+const openEducationPathPicker = async (
+  target: EducationCenterProximityTarget
+): Promise<void> => {
+  if (educationPathPanel?.isOpen() === true) return;
+  if (!isEducationPassCachedActive(target.centerId)) {
+    await openEducationAccessGate(target);
+    return;
+  }
+  await refreshEducationTuitionCache(target.centerId);
+  const faculty = getFacultyContent(
+    target.centerId as
+      | "faculty-art"
+      | "faculty-science"
+      | "faculty-medicine"
+      | "faculty-education"
+  );
+  const paths = (faculty?.paths ?? []).map((path) => ({
+    pathId: path.pathId,
+    title: path.title,
+    summary: path.summary,
+    tier: path.tier,
+    tuitionApw: path.tuitionApw,
+  }));
+  educationPathPanel?.show({
+    facultyLabel: target.label,
+    paths,
+    onSelectPath: async (pathId) => {
+      educationPathPanel?.setBusy(true);
+      educationPathPanel?.close();
+      await openEducationTuitionGate({
+        facultyId: target.centerId,
+        facultyLabel: target.label,
+        pathId,
+      });
+    },
+    onDismiss: () => {},
+  });
+};
+
+const openEducationTuitionGate = async (input: {
+  facultyId: string;
+  facultyLabel: string;
+  pathId: string;
+}): Promise<void> => {
+  const sid = getSid();
+  const playerId = getViewerWalletPlayerId();
+  const pathMeta = getPathContent(input.pathId);
+  if (sid === null || playerId === null || pathMeta === undefined) {
+    educationTuitionPanel?.show({
+      facultyLabel: input.facultyLabel,
+      pathTitle: pathMeta?.title ?? input.pathId,
+      quoteApw: pathMeta?.tuitionApw ?? 0,
+      apuCost: 0,
+      preferredTender: "apw",
+      balanceUsd: 0,
+      powerUps: 0,
+      canAfford: false,
+      onPurchase: () => {
+        educationTuitionPanel?.setError("Sign in to pay school fees.");
+      },
+      onDismiss: () => {},
+    });
+    return;
+  }
+  try {
+    const snapshot = await getEducationTuition({
+      sid,
+      playerId,
+      facultyId: input.facultyId,
+      pathId: input.pathId,
+    });
+    if (snapshot.enrollment !== null) {
+      educationTuitionCache.set(
+        tuitionCacheKey(input.facultyId, input.pathId),
+        snapshot.enrollment
+      );
+      activeClassPathByFaculty.set(input.facultyId, input.pathId);
+      return;
+    }
+    const canAfford = canAffordEducationTuition({
+      powerUps: snapshot.wallet.powerUps,
+      balanceUsd: snapshot.wallet.balanceUsd,
+      apuCost: snapshot.apuCost,
+      quoteApw: snapshot.quoteApw,
+    });
+    educationTuitionPanel?.show({
+      facultyLabel: input.facultyLabel,
+      pathTitle: snapshot.path.title,
+      quoteApw: snapshot.quoteApw,
+      apuCost: snapshot.apuCost,
+      preferredTender: snapshot.preferredTender,
+      balanceUsd: snapshot.wallet.balanceUsd,
+      powerUps: snapshot.wallet.powerUps,
+      canAfford,
+      onPurchase: async () => {
+        educationTuitionPanel?.setBusy(true);
+        try {
+          const result = await purchaseEducationTuition({
+            sid,
+            playerId,
+            facultyId: input.facultyId,
+            pathId: input.pathId,
+          });
+          educationTuitionCache.set(
+            tuitionCacheKey(input.facultyId, input.pathId),
+            result.enrollment
+          );
+          activeClassPathByFaculty.set(input.facultyId, input.pathId);
+          educationTuitionPanel?.close();
+          void refreshWalletHud();
+        } catch (error) {
+          const message =
+            error instanceof Error ? error.message : "Purchase failed";
+          educationTuitionPanel?.setError(
+            message.replace(/^\[agent-play:education-tuition\]\s*/, "")
+          );
+        }
+      },
+      onDismiss: () => {},
+    });
+  } catch (error) {
+    console.warn("[agent-play:world] education tuition check failed", error);
+  }
+};
+
+const startFacultyClass = async (
+  target: EducationCenterProximityTarget
+): Promise<void> => {
+  if (!isEducationPassCachedActive(target.centerId)) {
+    await openEducationAccessGate(target);
+    return;
+  }
+  await refreshEducationTuitionCache(target.centerId);
+  if (!isEducationTuitionCachedActive(target.centerId)) {
+    await openEducationPathPicker(target);
+    return;
+  }
+  const pathId =
+    activeClassPathByFaculty.get(target.centerId) ??
+    [...educationTuitionCache.values()].find(
+      (enrollment) => enrollment.facultyId === target.centerId
+    )?.pathId;
+  if (pathId === undefined) {
+    await openEducationPathPicker(target);
+    return;
+  }
+  activeClassPathByFaculty.set(target.centerId, pathId);
+  await enterFacultyClassroom({
+    facultyId: target.centerId,
+    mode: "class",
+    pathId,
+  });
+};
+
+const enterFacultyClassroom = async (input: {
+  facultyId: string;
+  mode: "browse" | "class";
+  pathId?: string;
+}): Promise<void> => {
+  if (stageController === null) return;
+  if (!isEducationPassCachedActive(input.facultyId)) return;
+  const current = stageController.current();
+  if (current !== null && current.id === "facultyClassroom") {
+    await stageController.back();
+    activeFacultyClassroom = null;
+  } else if (current === null || current.id !== "overworld") {
+    return;
+  }
+  const cell = Math.max(28, Math.min(48, Math.floor(VIEW_W / 16)));
+  const built = buildFacultyClassroomStage({
+    facultyId: input.facultyId,
+    mode: input.mode,
+    pathId: input.pathId,
+    cellScale: cell,
+  });
+  const boundsW =
+    FACULTY_CLASSROOM_BOUNDS.maxX - FACULTY_CLASSROOM_BOUNDS.minX;
+  const boundsH =
+    FACULTY_CLASSROOM_BOUNDS.maxY - FACULTY_CLASSROOM_BOUNDS.minY;
+  const stageW = boundsW * cell;
+  const stageH = boundsH * cell;
+  const offsetX = (VIEW_W - stageW) / 2;
+  const offsetY = (VIEW_H - stageH) / 2;
+  built.root.position.set(offsetX, offsetY);
+  const heroGraphic = new Graphics();
+  built.playerLayer.addChild(heroGraphic);
+  facultyClassroomPlayerState.pos = built.clampPosition(
+    facultyClassroomSpawnPosition()
+  );
+  facultyClassroomPlayerState.facing =
+    getHumanPlayerId() !== null
+      ? facingByPlayer.get(getHumanPlayerId() as string) ?? "right"
+      : "right";
+  facultyClassroomPlayerState.walkPhase = 0;
+  facultyClassroomPlayerState.isMoving = false;
+  facultyClassroomExitDebounceMs = 250;
+  activeFacultyClassroom = {
+    facultyId: input.facultyId,
+    handle: built,
+    pathId: input.pathId ?? null,
+    cellScale: cell,
+    playerLayer: built.playerLayer,
+    heroGraphic,
+    exitDoorAnchor: built.exitDoor,
+    nearestTarget: null,
+  };
+  renderFacultyClassroomPlayer(activeFacultyClassroom);
+  proximityTouchPadHandle?.refresh();
+  await stageController.enter({
+    id: "facultyClassroom",
+    root: built.root,
+    attach: () => {},
+    detach: () => {},
+    destroy: () => {
+      built.destroy();
+      activeFacultyClassroom = null;
+    },
+  });
+};
+
+const refreshFacultyClassroomNearestTarget = (): void => {
+  const classroom = activeFacultyClassroom;
+  if (classroom === null) return;
+  if (classroom.handle.mode === "class") {
+    const nearestLesson = findNearestFacultyClassroomTarget({
+      player: facultyClassroomPlayerState.pos,
+      anchors: classroom.handle.lessonAnchors.map((lesson) => ({
+        id: lesson.lessonId,
+        label: lesson.title,
+        x: lesson.x,
+        y: lesson.y,
+      })),
+    });
+    classroom.nearestTarget =
+      nearestLesson === null
+        ? null
+        : { id: nearestLesson.id, label: nearestLesson.label, kind: "lesson" };
+    return;
+  }
+  const nearestPath = findNearestFacultyClassroomTarget({
+    player: facultyClassroomPlayerState.pos,
+    anchors: classroom.handle.pathAnchors.map((path) => ({
+      id: path.pathId,
+      label: path.title,
+      x: path.x,
+      y: path.y,
+    })),
+  });
+  classroom.nearestTarget =
+    nearestPath === null
+      ? null
+      : { id: nearestPath.id, label: nearestPath.label, kind: "path" };
+};
+
+const activateFacultyClassroomAssist = (): void => {
+  const classroom = activeFacultyClassroom;
+  if (classroom === null) return;
+  refreshFacultyClassroomNearestTarget();
+  const nearest = classroom.nearestTarget;
+  if (nearest === null) return;
+  if (nearest.kind === "lesson") {
+    const path = getPathContent(classroom.pathId ?? "");
+    const lessonMeta = path?.lessons.find((lesson) => lesson.id === nearest.id);
+    const body =
+      lessonMeta !== undefined
+        ? loadEducationLessonBody(lessonMeta.file)
+        : nearest.label;
+    educationLessonPanel?.show({
+      facultyLabel:
+        getFacultyContent(
+          classroom.facultyId as
+            | "faculty-art"
+            | "faculty-science"
+            | "faculty-medicine"
+            | "faculty-education"
+        )?.title ?? classroom.facultyId,
+      pathTitle: path?.title ?? "Learning path",
+      lessonTitle: nearest.label,
+      body,
+    });
+    return;
+  }
+  void openEducationTuitionGate({
+    facultyId: classroom.facultyId,
+    facultyLabel:
+      getFacultyContent(
+        classroom.facultyId as
+          | "faculty-art"
+          | "faculty-science"
+          | "faculty-medicine"
+          | "faculty-education"
+      )?.title ?? classroom.facultyId,
+    pathId: nearest.id,
+  });
+};
+
+function renderFacultyClassroomPlayer(stage: NonNullable<
+  typeof activeFacultyClassroom
+>): void {
+  stage.playerLayer.position.set(
+    facultyClassroomPlayerState.pos.x * stage.cellScale,
+    facultyClassroomPlayerState.pos.y * stage.cellScale
+  );
+  const playerScale = Math.max(0.5, Math.min(1.1, stage.cellScale / 48));
+  drawPlatformHero(stage.heroGraphic, {
+    scale: playerScale,
+    facing: facultyClassroomPlayerState.facing,
+    walkPhase: facultyClassroomPlayerState.walkPhase,
+    isMoving: facultyClassroomPlayerState.isMoving,
+  });
+}
+
+function tickFacultyClassroomPlayer(dtSec: number): void {
+  const stage = activeFacultyClassroom;
+  if (stage === null) return;
+  const direction = nextEnclosedStageInputDirection({
+    joystickEnabled: getPreviewViewSettings().joystickEnabled,
+    joystickVector: getJoystickVector(),
+    arrowKeys,
+  });
+  const { dx, dy, source } = direction;
+  const isMoving = source !== "idle";
+  if (isMoving) {
+    const step = FACULTY_CLASSROOM_PLAYER_SPEED_CELLS_PER_SEC * dtSec;
+    facultyClassroomPlayerState.pos.x =
+      facultyClassroomPlayerState.pos.x + dx * step;
+    facultyClassroomPlayerState.pos.y =
+      facultyClassroomPlayerState.pos.y + dy * step;
+    facultyClassroomPlayerState.pos = stage.handle.clampPosition(
+      facultyClassroomPlayerState.pos
+    );
+    if (dx !== 0) {
+      facultyClassroomPlayerState.facing = dx > 0 ? "right" : "left";
+    }
+    facultyClassroomPlayerState.walkPhase =
+      (facultyClassroomPlayerState.walkPhase + dtSec * 4) % 1;
+  } else {
+    facultyClassroomPlayerState.walkPhase = 0;
+  }
+  facultyClassroomPlayerState.isMoving = isMoving;
+  renderFacultyClassroomPlayer(stage);
+  refreshFacultyClassroomNearestTarget();
+
+  if (facultyClassroomExitDebounceMs > 0) {
+    facultyClassroomExitDebounceMs = Math.max(
+      0,
+      facultyClassroomExitDebounceMs - dtSec * 1000
+    );
+    return;
+  }
+  const door = stage.exitDoorAnchor;
+  const distToDoor = Math.hypot(
+    facultyClassroomPlayerState.pos.x - door.x,
+    facultyClassroomPlayerState.pos.y - door.y
+  );
+  if (distToDoor <= EXIT_DOOR_PROXIMITY_RADIUS_WORLD) {
+    facultyClassroomExitDebounceMs = 400;
+    leaveCurrentEnclosedStageToPrevious();
+  }
+}
+
 async function enterGameFromProximity(
   target: StructureProximityTarget
 ): Promise<void> {
@@ -2117,11 +2788,47 @@ let gameResultPanel: GameResultPanelHandle | null = null;
 let gameStreakPanel: GameStreakPanelHandle | null = null;
 let gameHowToPlayPanel: GameHowToPlayHandle | null = null;
 let arcadeAccessPanel: ArcadeAccessPanelHandle | null = null;
+let educationAccessPanel: EducationAccessPanelHandle | null = null;
+let educationPathPanel: EducationPathPanelHandle | null = null;
+let educationTuitionPanel: EducationTuitionPanelHandle | null = null;
+let educationLessonPanel: EducationLessonPanelHandle | null = null;
 let cachedFeaturedGameId: GameId | null = null;
 let cachedGameStatsPowerUps = 0;
 let wasInArcadeZone = false;
 let arcadeAccessPassCache: ArcadeAccessPass | null = null;
 let arcadeAccessCheckInFlight = false;
+let educationAccessPassCache = new Map<string, EducationAccessPass>();
+let educationTuitionCache = new Map<string, EducationTuitionEnrollment>();
+let educationAccessCheckInFlight = false;
+let lastEducationCenterNearest: EducationCenterProximityTarget | null = null;
+let activeFacultyClassroom: {
+  facultyId: string;
+  handle: FacultyClassroomStageHandle;
+  pathId: string | null;
+  cellScale: number;
+  playerLayer: Container;
+  heroGraphic: Graphics;
+  exitDoorAnchor: { x: number; y: number };
+  nearestTarget: {
+    id: string;
+    label: string;
+    kind: "path" | "lesson";
+  } | null;
+} | null = null;
+let activeClassPathByFaculty = new Map<string, string>();
+const facultyClassroomPlayerState: {
+  pos: { x: number; y: number };
+  facing: "left" | "right";
+  walkPhase: number;
+  isMoving: boolean;
+} = {
+  pos: facultyClassroomSpawnPosition(),
+  facing: "right",
+  walkPhase: 0,
+  isMoving: false,
+};
+let facultyClassroomExitDebounceMs = 0;
+const FACULTY_CLASSROOM_PLAYER_SPEED_CELLS_PER_SEC = 3.2;
 
 /**
  * Trigger `stageController.back()` and clear the active enclosed-stage
@@ -2136,6 +2843,7 @@ function leaveCurrentEnclosedStageToPrevious(): void {
   const wasGame = activeGameStage !== null;
   const wasAmenity = activeAmenityStage !== null;
   const wasHouse = activeHouseStage !== null;
+  const wasFaculty = activeFacultyClassroom !== null;
   void controller
     .back()
     .then(() => {
@@ -2149,6 +2857,9 @@ function leaveCurrentEnclosedStageToPrevious(): void {
       } else if (wasAmenity) {
         activeAmenityStage = null;
         amenityItemTooltip?.hide();
+      } else if (wasFaculty) {
+        activeFacultyClassroom = null;
+        educationLessonPanel?.close();
       } else {
         activeYardStage = null;
         activeYardSpaceId = null;
@@ -3433,6 +4144,7 @@ function ingestSnapshot(snap: Snapshot): void {
   }
   paintStreetSigns();
   paintParkingStreet();
+  paintEducationCampus();
   const wbSpawn = getWorldBoundsForClamp();
   const storedHuman = loadHumanWorldPosition({ sid: getSid() });
   const humanSpawn =
@@ -4504,13 +5216,7 @@ function paintStreetSigns(): void {
     return;
   }
   const layout = resolveWorldLayout();
-  const zones: StreetSignZone[] = layout.zones
-    .filter((z) => z.primaryGroup !== "parking")
-    .map((z) => ({
-      id: z.id,
-      streetLabel: z.streetLabel,
-      rect: { ...z.rect },
-    }));
+  const zones = toStreetSignZones(layout.zones);
   mountStreetSignPosts({
     layer: streetSignsLayer,
     palette,
@@ -4710,6 +5416,39 @@ function paintParkingStreet(): void {
   });
   parkingStreetLayer.addChild(layer);
   scheduleParkingExpiryRefresh();
+}
+
+function paintEducationCampus(): void {
+  for (const ch of [...educationCampusLayer.children]) {
+    educationCampusLayer.removeChild(ch);
+    ch.destroy({ children: true });
+  }
+  if (snapshot === null) {
+    return;
+  }
+  const layout = resolveWorldLayout();
+  const educationZone = pickEducationCampusZone(layout.zones);
+  if (educationZone === undefined) {
+    return;
+  }
+  const clampBounds = getWorldBoundsForClamp();
+  const bandRect =
+    clampBounds !== null
+      ? {
+          minX: clampBounds.minX,
+          maxX: clampBounds.maxX,
+          minY: educationZone.rect.minY,
+          maxY: educationZone.rect.maxY,
+        }
+      : educationZone.rect;
+  const layer = buildEducationCampusLayer({
+    palette,
+    cellScale,
+    worldToLocal: worldToWorldRootLocal,
+    zone: educationZone,
+    bandRect,
+  });
+  educationCampusLayer.addChild(layer);
 }
 
 function paintGrid(): void {
@@ -4932,6 +5671,8 @@ function rebuildSceneForTheme(): void {
   }
   rebuildParkWorldBackdrop();
   paintStreetSigns();
+  paintParkingStreet();
+  paintEducationCampus();
   skyDecor?.setBounds(VIEW_W, VIEW_H, theme.grassBandTopRatio);
 }
 
@@ -5055,6 +5796,8 @@ function onTick(dt: number): void {
     tickYardPlayer(dt);
   } else if (currentStageId === "houseInterior") {
     tickHousePlayer(dt);
+  } else if (currentStageId === "facultyClassroom") {
+    tickFacultyClassroomPlayer(dt);
   } else if (
     currentStageId === "amenityShop" ||
     currentStageId === "amenitySupermarket" ||
@@ -5209,10 +5952,12 @@ function onFrame(): void {
     applyHouseDoorProximity(humanPosForParking);
     applyParkingBayProximity(humanPosForParking);
     applyArcadeZoneProximity(humanPosForParking);
+    applyEducationCenterProximity(humanPosForParking);
   } else {
     lastHouseNearest = null;
     lastParkingBayNearest = null;
     lastParkingBayTarget = null;
+    lastEducationCenterNearest = null;
     if (parkingTooltipOpenForBay !== null) {
       parkingTicketTooltip?.hide();
       parkingTooltipOpenForBay = null;
@@ -5221,6 +5966,20 @@ function onFrame(): void {
   }
   if (proximityLegendEl !== null) {
     if (
+      activeFacultyClassroom !== null &&
+      stageController?.current()?.id === "facultyClassroom"
+    ) {
+      refreshFacultyClassroomNearestTarget();
+      const nearest = activeFacultyClassroom.nearestTarget;
+      if (nearest !== null && nearest.kind === "lesson") {
+        proximityLegendEl.textContent = `Near ${nearest.label}. A: open lesson · Walk to exit door to leave`;
+      } else if (nearest !== null && nearest.kind === "path") {
+        proximityLegendEl.textContent = `Near ${nearest.label} scroll. A: enroll / choose path · Walk to exit door to leave`;
+      } else {
+        proximityLegendEl.textContent =
+          "Joystick or arrows to move · Walk to learning-path scrolls · Exit top-left";
+      }
+    } else if (
       activeHouseStage !== null &&
       stageController?.current()?.id === "houseInterior"
     ) {
@@ -5290,6 +6049,18 @@ function onFrame(): void {
         proximityLegendEl.textContent =
           `Near parking bay ${String(bay.bay)} (layer ${String(bay.layer)}). P: inspect spot`;
       }
+    } else if (lastEducationCenterNearest !== null) {
+      const center = lastEducationCenterNearest;
+      const hasPass = isEducationPassCachedActive(center.centerId);
+      const hasEnrollment = isEducationTuitionCachedActive(center.centerId);
+      const actions = resolveFacultyProximityActions({
+        hasDayPass: hasPass,
+        hasEnrollment,
+        facultyLabel: center.label,
+      });
+      proximityLegendEl.textContent = hasPass
+        ? actions.legend
+        : `Near ${educationCenterDayPassLabel(center.label)}. A: pay day entry`;
     } else if (lastStructureProximityTarget !== null) {
       const target = lastStructureProximityTarget;
       const targetName = target.label ?? target.spaceId ?? "cabinet";
@@ -5312,6 +6083,35 @@ function onFrame(): void {
   }
   if (proximityPromptEl !== null) {
     if (
+      activeFacultyClassroom !== null &&
+      stageController?.current()?.id === "facultyClassroom"
+    ) {
+      refreshFacultyClassroomNearestTarget();
+      const nearest = activeFacultyClassroom.nearestTarget;
+      if (nearest !== null) {
+        proximityPromptEl.textContent =
+          nearest.kind === "lesson"
+            ? `A: open ${nearest.label}`
+            : `A: enroll ${nearest.label}`;
+        proximityPromptEl.style.display = "block";
+        const localX =
+          (VIEW_W -
+            (FACULTY_CLASSROOM_BOUNDS.maxX - FACULTY_CLASSROOM_BOUNDS.minX) *
+              activeFacultyClassroom.cellScale) /
+            2 +
+          facultyClassroomPlayerState.pos.x * activeFacultyClassroom.cellScale;
+        const localY =
+          (VIEW_H -
+            (FACULTY_CLASSROOM_BOUNDS.maxY - FACULTY_CLASSROOM_BOUNDS.minY) *
+              activeFacultyClassroom.cellScale) /
+            2 +
+          facultyClassroomPlayerState.pos.y * activeFacultyClassroom.cellScale;
+        proximityPromptEl.style.left = `${localX}px`;
+        proximityPromptEl.style.top = `${localY - box * 1.4}px`;
+      } else {
+        proximityPromptEl.style.display = "none";
+      }
+    } else if (
       activeGameStage !== null &&
       lastGameStageProximityTarget !== null
     ) {
@@ -5382,6 +6182,23 @@ function onFrame(): void {
         lastParkingBayTarget !== null
           ? "P: buy parking ticket"
           : "P: inspect parking spot";
+      proximityPromptEl.style.display = "block";
+      proximityPromptEl.style.left = `${screen.x}px`;
+      proximityPromptEl.style.top = `${screen.y - box * 1.4}px`;
+    } else if (lastEducationCenterNearest !== null) {
+      const center = lastEducationCenterNearest;
+      const local = worldToWorldRootLocal(center.x, center.y);
+      const screen = worldRootLocalToCanvas(local.x, local.y);
+      const hasPass = isEducationPassCachedActive(center.centerId);
+      const hasEnrollment = isEducationTuitionCachedActive(center.centerId);
+      const actions = resolveFacultyProximityActions({
+        hasDayPass: hasPass,
+        hasEnrollment,
+        facultyLabel: center.label,
+      });
+      proximityPromptEl.textContent = hasPass
+        ? actions.prompt
+        : `A: ${educationCenterDayPassLabel(center.label)}`;
       proximityPromptEl.style.display = "block";
       proximityPromptEl.style.left = `${screen.x}px`;
       proximityPromptEl.style.top = `${screen.y - box * 1.4}px`;
@@ -5642,6 +6459,7 @@ export function bootstrap(): void {
     worldRoot.addChild(parkBackdropLayer);
     worldRoot.addChild(streetSignsLayer);
     worldRoot.addChild(parkingStreetLayer);
+    worldRoot.addChild(educationCampusLayer);
     worldRoot.addChild(gridGraphics);
     worldRoot.addChild(structureLayer);
     worldRoot.addChild(agentsLayer);
@@ -5775,6 +6593,12 @@ export function bootstrap(): void {
     });
     gameResultPanel = createGameResultPanel({ parent: document.body });
     arcadeAccessPanel = createArcadeAccessPanel({ parent: document.body });
+    educationAccessPanel = createEducationAccessPanel({ parent: document.body });
+    educationPathPanel = createEducationPathPanel({ parent: document.body });
+    educationTuitionPanel = createEducationTuitionPanel({
+      parent: document.body,
+    });
+    educationLessonPanel = createEducationLessonPanel({ parent: document.body });
     gameStreakPanel = createGameStreakPanel({
       parent: document.body,
       pillParent: bottomHudDock.root,
@@ -5881,14 +6705,90 @@ export function bootstrap(): void {
         if (target === null) return false;
         return target.activatable !== false;
       },
+      getFacultyProximityLabel: () => {
+        if (lastProximityPartnerId !== null) return null;
+        if (activeFacultyClassroom !== null) return null;
+        if (lastEducationCenterNearest === null) return null;
+        return lastEducationCenterNearest.label;
+      },
+      getFacultyPayVerb: () => {
+        if (lastEducationCenterNearest === null) return null;
+        if (isEducationPassCachedActive(lastEducationCenterNearest.centerId)) {
+          return null;
+        }
+        return "Pay";
+      },
+      getFacultyEnterVerb: () => {
+        if (lastEducationCenterNearest === null) return null;
+        if (!isEducationPassCachedActive(lastEducationCenterNearest.centerId)) {
+          return null;
+        }
+        return "Enter";
+      },
+      getFacultyEnterActivatable: () => {
+        if (lastEducationCenterNearest === null) return false;
+        return isEducationPassCachedActive(lastEducationCenterNearest.centerId);
+      },
+      getFacultyPathVerb: () => {
+        if (lastEducationCenterNearest === null) return null;
+        if (!isEducationPassCachedActive(lastEducationCenterNearest.centerId)) {
+          return null;
+        }
+        return "Paths";
+      },
+      getFacultyPathActivatable: () => {
+        if (lastEducationCenterNearest === null) return false;
+        return isEducationPassCachedActive(lastEducationCenterNearest.centerId);
+      },
+      getFacultyClassVerb: () => {
+        if (lastEducationCenterNearest === null) return null;
+        if (!isEducationPassCachedActive(lastEducationCenterNearest.centerId)) {
+          return null;
+        }
+        return "Class";
+      },
+      getFacultyClassActivatable: () => {
+        if (lastEducationCenterNearest === null) return false;
+        if (!isEducationPassCachedActive(lastEducationCenterNearest.centerId)) {
+          return false;
+        }
+        return isEducationTuitionCachedActive(
+          lastEducationCenterNearest.centerId
+        );
+      },
+      getFacultyClassroomProximityLabel: () => {
+        if (activeFacultyClassroom === null) return null;
+        refreshFacultyClassroomNearestTarget();
+        return activeFacultyClassroom.nearestTarget?.label ?? null;
+      },
+      getFacultyClassroomProximityVerb: () => {
+        if (activeFacultyClassroom === null) return null;
+        refreshFacultyClassroomNearestTarget();
+        const nearest = activeFacultyClassroom.nearestTarget;
+        if (nearest === null) return null;
+        return nearest.kind === "lesson" ? "Open" : "Enroll";
+      },
       getPeerTalkLabel: () => peerCallController?.getPeerTalkLabel() ?? null,
       onAssist: () => {
         noteArrivalQuestStep("touch_control");
+        if (activeFacultyClassroom !== null) {
+          activateFacultyClassroomAssist();
+          return;
+        }
         const partner = registeredAgentPartnerForProximityOrNull(
           lastProximityPartnerId
         );
         if (partner !== null && partner !== HUMAN_VIEWER_PLAYER_ID) {
           triggerProximityAssistOrChat("assist");
+          return;
+        }
+        if (lastEducationCenterNearest !== null) {
+          const target = lastEducationCenterNearest;
+          if (!isEducationPassCachedActive(target.centerId)) {
+            void openEducationAccessGate(target);
+          } else {
+            void openEducationPathPicker(target);
+          }
           return;
         }
         if (lastHouseNearest !== null) {
@@ -5926,6 +6826,14 @@ export function bootstrap(): void {
       },
       onChat: () => {
         noteArrivalQuestStep("touch_control");
+        if (
+          lastEducationCenterNearest !== null &&
+          activeFacultyClassroom === null &&
+          stageController?.current()?.id === "overworld"
+        ) {
+          void startFacultyClass(lastEducationCenterNearest);
+          return;
+        }
         triggerProximityAssistOrChat("chat");
       },
       onPushToTalk: () => {

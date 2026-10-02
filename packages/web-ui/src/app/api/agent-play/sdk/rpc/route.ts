@@ -41,7 +41,10 @@ import {
   CarWashCarSchema,
   ShopItemSchema,
   SupermarketItemSchema,
+  isEducationCenterId,
+  isEducationPathId,
   isGameId,
+  normalizeEducationFacultyId,
   ANALYTICS_EVENT_NAMES,
   type CarWashCar,
   type ShopItem,
@@ -1535,6 +1538,193 @@ export async function POST(req: NextRequest) {
           purchase: result.purchase,
           tender: result.tender,
         });
+      }
+      case "getEducationAccess": {
+        const p = body.payload as {
+          playerId?: unknown;
+          centerId?: unknown;
+          facultyId?: unknown;
+        };
+        const rawFaculty =
+          typeof p.facultyId === "string"
+            ? p.facultyId
+            : typeof p.centerId === "string"
+              ? p.centerId
+              : null;
+        const facultyId =
+          rawFaculty === null ? null : normalizeEducationFacultyId(rawFaculty);
+        if (
+          typeof p.playerId !== "string" ||
+          p.playerId.trim().length === 0 ||
+          facultyId === null
+        ) {
+          return Response.json({ error: "invalid payload" }, { status: 400 });
+        }
+        const now = new Date().toISOString();
+        const result = await store.getEducationAccess({
+          playerId: p.playerId.trim(),
+          centerId: facultyId,
+          now,
+        });
+        return Response.json({
+          access: result.access,
+          apwPerApu: result.apwPerApu,
+          quoteApw: result.quoteApw,
+          apuCost: result.apuCost,
+          preferredTender: result.preferredTender,
+          wallet: await resolveClientPlayerWallet({
+            wallet: result.wallet,
+            playerId: p.playerId.trim(),
+          }),
+        });
+      }
+      case "purchaseEducationAccess": {
+        const p = body.payload as {
+          playerId?: unknown;
+          centerId?: unknown;
+          facultyId?: unknown;
+        };
+        const rawFaculty =
+          typeof p.facultyId === "string"
+            ? p.facultyId
+            : typeof p.centerId === "string"
+              ? p.centerId
+              : null;
+        const facultyId =
+          rawFaculty === null ? null : normalizeEducationFacultyId(rawFaculty);
+        if (
+          typeof p.playerId !== "string" ||
+          p.playerId.trim().length === 0 ||
+          facultyId === null
+        ) {
+          return Response.json({ error: "invalid payload" }, { status: 400 });
+        }
+        const now = new Date().toISOString();
+        const result = await store.purchaseEducationAccess({
+          playerId: p.playerId.trim(),
+          centerId: facultyId,
+          now,
+          recordId: `education-pass-${randomUUID()}`,
+        });
+        if (!result.ok) {
+          return Response.json({ error: result.error }, { status: 409 });
+        }
+        return Response.json({
+          wallet: await resolveClientPlayerWallet({
+            wallet: result.wallet,
+            playerId: p.playerId.trim(),
+          }),
+          access: result.access,
+          purchase: result.purchase,
+          tender: result.tender,
+        });
+      }
+      case "getEducationTuition": {
+        const p = body.payload as {
+          playerId?: unknown;
+          facultyId?: unknown;
+          pathId?: unknown;
+        };
+        if (
+          typeof p.playerId !== "string" ||
+          p.playerId.trim().length === 0 ||
+          typeof p.facultyId !== "string" ||
+          normalizeEducationFacultyId(p.facultyId) === null ||
+          typeof p.pathId !== "string" ||
+          !isEducationPathId(p.pathId)
+        ) {
+          return Response.json({ error: "invalid payload" }, { status: 400 });
+        }
+        const facultyId = normalizeEducationFacultyId(p.facultyId);
+        if (facultyId === null) {
+          return Response.json({ error: "invalid payload" }, { status: 400 });
+        }
+        const now = new Date().toISOString();
+        const result = await store.getEducationTuition({
+          playerId: p.playerId.trim(),
+          facultyId,
+          pathId: p.pathId,
+          now,
+        });
+        return Response.json({
+          enrollment: result.enrollment,
+          apwPerApu: result.apwPerApu,
+          quoteApw: result.quoteApw,
+          apuCost: result.apuCost,
+          preferredTender: result.preferredTender,
+          path: result.path,
+          wallet: await resolveClientPlayerWallet({
+            wallet: result.wallet,
+            playerId: p.playerId.trim(),
+          }),
+        });
+      }
+      case "purchaseEducationTuition": {
+        const p = body.payload as {
+          playerId?: unknown;
+          facultyId?: unknown;
+          pathId?: unknown;
+        };
+        if (
+          typeof p.playerId !== "string" ||
+          p.playerId.trim().length === 0 ||
+          typeof p.facultyId !== "string" ||
+          normalizeEducationFacultyId(p.facultyId) === null ||
+          typeof p.pathId !== "string" ||
+          !isEducationPathId(p.pathId)
+        ) {
+          return Response.json({ error: "invalid payload" }, { status: 400 });
+        }
+        const facultyId = normalizeEducationFacultyId(p.facultyId);
+        if (facultyId === null) {
+          return Response.json({ error: "invalid payload" }, { status: 400 });
+        }
+        const now = new Date().toISOString();
+        const result = await store.purchaseEducationTuition({
+          playerId: p.playerId.trim(),
+          facultyId,
+          pathId: p.pathId,
+          now,
+          recordId: `education-tuition-${randomUUID()}`,
+        });
+        if (!result.ok) {
+          return Response.json({ error: result.error }, { status: 409 });
+        }
+        return Response.json({
+          wallet: await resolveClientPlayerWallet({
+            wallet: result.wallet,
+            playerId: p.playerId.trim(),
+          }),
+          enrollment: result.enrollment,
+          purchase: result.purchase,
+          tender: result.tender,
+        });
+      }
+      case "listEducationTuition": {
+        const p = body.payload as {
+          playerId?: unknown;
+          facultyId?: unknown;
+        };
+        if (
+          typeof p.playerId !== "string" ||
+          p.playerId.trim().length === 0
+        ) {
+          return Response.json({ error: "invalid payload" }, { status: 400 });
+        }
+        const facultyId =
+          typeof p.facultyId === "string"
+            ? normalizeEducationFacultyId(p.facultyId)
+            : undefined;
+        if (p.facultyId !== undefined && facultyId === null) {
+          return Response.json({ error: "invalid payload" }, { status: 400 });
+        }
+        const now = new Date().toISOString();
+        const result = await store.listEducationTuition({
+          playerId: p.playerId.trim(),
+          facultyId: facultyId ?? undefined,
+          now,
+        });
+        return Response.json({ enrollments: result.enrollments });
       }
       case "getGameStats": {
         const p = body.payload as { playerId?: unknown };

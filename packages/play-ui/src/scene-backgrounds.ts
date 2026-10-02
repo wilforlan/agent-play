@@ -13,6 +13,9 @@ function mulberry32(seed: number): () => number {
   };
 }
 
+/** Fraction of backdrop height reserved for sky; grass fills the remainder (95%). */
+export const PARK_SKY_GRASS_RATIO = 0.05;
+
 export function buildParkScene(
   width: number,
   height: number,
@@ -21,14 +24,11 @@ export function buildParkScene(
   const root = new Container();
   const rng = mulberry32(seed);
   const sky = new Graphics();
-  sky.rect(0, 0, width, height * 0.55).fill({ color: 0x7ec8e3 });
-  sky
-    .rect(0, height * 0.55, width, height * 0.45)
-    .fill({ color: 0xb8dfe8 });
+  const grassTop = height * PARK_SKY_GRASS_RATIO;
+  sky.rect(0, 0, width, grassTop).fill({ color: 0x7ec8e3 });
   root.addChild(sky);
 
   const grass = new Graphics();
-  const grassTop = height * 0.58;
   grass.rect(0, grassTop, width, height - grassTop).fill({ color: 0x4caf6a });
   for (let x = 0; x < width; x += 6) {
     const h = 2 + Math.floor(rng() * 4);
@@ -55,14 +55,53 @@ export function buildParkScene(
   return root;
 }
 
-export const PARK_SKY_GRASS_RATIO = 0.5;
-
 export function getParkBackdropLayoutMetrics(heightPx: number): {
   grassTop: number;
   skyHeight: number;
 } {
   const grassTop = heightPx * PARK_SKY_GRASS_RATIO;
   return { grassTop, skyHeight: grassTop };
+}
+
+export type ParkWorldBackdropPlacement = {
+  x: number;
+  y: number;
+  widthPx: number;
+  heightPx: number;
+};
+
+/**
+ * Places the park backdrop over the full padded world rect so grass/sky ratios
+ * apply to world height (not the viewport).
+ */
+export function computeParkWorldBackdropPlacement(options: {
+  originX: number;
+  worldOriginScreenY: number;
+  cellScale: number;
+  mapMinX: number;
+  mapMinY: number;
+  mapMaxX: number;
+  mapMaxY: number;
+  trailingMarginX?: number;
+}): ParkWorldBackdropPlacement {
+  const {
+    originX,
+    worldOriginScreenY,
+    cellScale,
+    mapMinX,
+    mapMinY,
+    mapMaxX,
+    mapMaxY,
+    trailingMarginX = 56,
+  } = options;
+  const cols = Math.max(1, mapMaxX - mapMinX + 1);
+  const rows = Math.max(1, mapMaxY - mapMinY + 1);
+  return {
+    x: 0,
+    y: worldOriginScreenY,
+    widthPx: originX + cols * cellScale + trailingMarginX,
+    heightPx: rows * cellScale,
+  };
 }
 
 /**
