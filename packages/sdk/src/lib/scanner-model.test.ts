@@ -32,9 +32,9 @@ describe("scanner-model", () => {
     const row = ScannerTxRecordSchema.parse({
       id: "education-pass-1",
       playerId: "node-1",
-      spaceId: "__education__:foundations-hall",
+      spaceId: "__education__:faculty-art",
       amenityKind: "education_pass",
-      itemRef: { kind: "education_pass", id: "foundations-hall:2026-10-02" },
+      itemRef: { kind: "education_pass", id: "faculty-art:2026-10-02" },
       priceUsd: 0.33,
       at: "2026-10-02T12:00:00.000Z",
       powerUpsDelta: -5,
@@ -46,6 +46,26 @@ describe("scanner-model", () => {
     });
     expect(row.op).toBe("purchaseEducationAccess");
     expect(row.amenityKind).toBe("education_pass");
+  });
+
+  it("parses purchaseEducationTuition scanner op for education_tuition", () => {
+    const row = ScannerTxRecordSchema.parse({
+      id: "education-tuition-1",
+      playerId: "node-1",
+      spaceId: "__education__:faculty-science",
+      amenityKind: "education_tuition",
+      itemRef: {
+        kind: "education_tuition",
+        id: "faculty-science:sci-mathematics:2026-10-02",
+      },
+      priceUsd: 450,
+      at: "2026-10-02T12:00:00.000Z",
+      hostId: "default",
+      indexedAt: "2026-10-02T12:00:01.000Z",
+      op: "purchaseEducationTuition",
+    });
+    expect(row.op).toBe("purchaseEducationTuition");
+    expect(row.amenityKind).toBe("education_tuition");
   });
 
   it("parses a scanner tx record with explorer metadata", () => {

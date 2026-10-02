@@ -22,12 +22,13 @@ describe("education access catalog", () => {
 
   it("builds a UTC-day pass that expires at next UTC midnight", () => {
     const pass = buildEducationAccessPass({
-      centerId: "foundations-hall",
+      facultyId: "faculty-art",
       purchasedAt: "2026-10-02T15:30:00.000Z",
       tender: "apu",
       apuCost: 5,
       apwCharged: 0.5,
     });
+    expect(pass.facultyId).toBe("faculty-art");
     expect(pass.utcDay).toBe("2026-10-02");
     expect(pass.expiresAt).toBe(utcDayEndIso(new Date("2026-10-02T15:30:00.000Z")));
     expect(isEducationAccessActive(pass, new Date("2026-10-02T23:59:00.000Z"))).toBe(
@@ -36,6 +37,17 @@ describe("education access catalog", () => {
     expect(isEducationAccessActive(pass, new Date("2026-10-03T00:00:00.000Z"))).toBe(
       false
     );
+  });
+
+  it("accepts legacy centerId when building a pass", () => {
+    const pass = buildEducationAccessPass({
+      centerId: "foundations-hall",
+      purchasedAt: "2026-10-02T15:30:00.000Z",
+      tender: "apu",
+      apuCost: 5,
+      apwCharged: 0.5,
+    });
+    expect(pass.facultyId).toBe("faculty-art");
   });
 
   it("prefers APU tender when APU wealth is higher", () => {
