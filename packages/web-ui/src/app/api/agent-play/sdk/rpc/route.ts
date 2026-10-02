@@ -41,6 +41,7 @@ import {
   CarWashCarSchema,
   ShopItemSchema,
   SupermarketItemSchema,
+  isEducationCenterId,
   isGameId,
   ANALYTICS_EVENT_NAMES,
   type CarWashCar,
@@ -1522,6 +1523,70 @@ export async function POST(req: NextRequest) {
           plan: p.plan,
           now,
           recordId: `arcade-pass-${randomUUID()}`,
+        });
+        if (!result.ok) {
+          return Response.json({ error: result.error }, { status: 409 });
+        }
+        return Response.json({
+          wallet: await resolveClientPlayerWallet({
+            wallet: result.wallet,
+            playerId: p.playerId.trim(),
+          }),
+          access: result.access,
+          purchase: result.purchase,
+          tender: result.tender,
+        });
+      }
+      case "getEducationAccess": {
+        const p = body.payload as {
+          playerId?: unknown;
+          centerId?: unknown;
+        };
+        if (
+          typeof p.playerId !== "string" ||
+          p.playerId.trim().length === 0 ||
+          typeof p.centerId !== "string" ||
+          !isEducationCenterId(p.centerId)
+        ) {
+          return Response.json({ error: "invalid payload" }, { status: 400 });
+        }
+        const now = new Date().toISOString();
+        const result = await store.getEducationAccess({
+          playerId: p.playerId.trim(),
+          centerId: p.centerId,
+          now,
+        });
+        return Response.json({
+          access: result.access,
+          apwPerApu: result.apwPerApu,
+          quoteApw: result.quoteApw,
+          apuCost: result.apuCost,
+          preferredTender: result.preferredTender,
+          wallet: await resolveClientPlayerWallet({
+            wallet: result.wallet,
+            playerId: p.playerId.trim(),
+          }),
+        });
+      }
+      case "purchaseEducationAccess": {
+        const p = body.payload as {
+          playerId?: unknown;
+          centerId?: unknown;
+        };
+        if (
+          typeof p.playerId !== "string" ||
+          p.playerId.trim().length === 0 ||
+          typeof p.centerId !== "string" ||
+          !isEducationCenterId(p.centerId)
+        ) {
+          return Response.json({ error: "invalid payload" }, { status: 400 });
+        }
+        const now = new Date().toISOString();
+        const result = await store.purchaseEducationAccess({
+          playerId: p.playerId.trim(),
+          centerId: p.centerId,
+          now,
+          recordId: `education-pass-${randomUUID()}`,
         });
         if (!result.ok) {
           return Response.json({ error: result.error }, { status: 409 });
