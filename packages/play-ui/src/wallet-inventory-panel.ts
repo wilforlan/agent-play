@@ -462,6 +462,7 @@ const AMENITY_LABEL: Record<string, string> = {
   apu_debit: "APU Debit",
   arcade_pass: "Arcade Pass",
   education_pass: "Education Pass",
+  education_tuition: "School Fees",
 };
 
 const isVoiceTalkAmenity = (
@@ -555,6 +556,13 @@ export const buildPurchaseSubtitle = (input: {
       typeof input.record.detail === "string" && input.record.detail.length > 0
         ? input.record.detail
         : "Elm Street day entry";
+    return `${detail} · ${at}`;
+  }
+  if (input.record.amenityKind === "education_tuition") {
+    const detail =
+      typeof input.record.detail === "string" && input.record.detail.length > 0
+        ? input.record.detail
+        : "Elm Street school fees";
     return `${detail} · ${at}`;
   }
   if (
@@ -829,6 +837,7 @@ export const createWalletInventoryPanel = (
         record.amenityKind !== "wallet_bundle" &&
         record.amenityKind !== "arcade_pass" &&
         record.amenityKind !== "education_pass" &&
+        record.amenityKind !== "education_tuition" &&
         record.amenityKind !== "apu_credit" &&
         record.amenityKind !== "apu_debit"
       ) {
