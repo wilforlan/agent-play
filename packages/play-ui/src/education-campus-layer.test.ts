@@ -64,7 +64,7 @@ describe("education campus layer", () => {
       .filter((child) => child instanceof Text)
       .map((t) => t.text);
     expect(labels).toContain("Elm Street");
-    expect(labels).toContain("Foundations");
+    expect(labels).toContain("Faculty of Art");
     expect(layer.children.length).toBeGreaterThan(
       EDUCATION_STREET_LIGHT_COUNT + EDUCATION_CENTER_COUNT
     );
@@ -85,13 +85,13 @@ describe("education campus proximity", () => {
       playerWorld: { x: first.x + 0.4, y: first.y },
       anchors,
     });
-    expect(nearest?.centerId).toBe(first.centerId);
+    expect(nearest?.centerId).toBe("faculty-art");
   });
 
   it("labels day entry at 5 APU", () => {
     expect(EDUCATION_CENTER_DAY_PASS_APU).toBe(5);
-    expect(educationCenterDayPassLabel("Foundations")).toBe(
-      "Foundations · 5 APU day entry"
+    expect(educationCenterDayPassLabel("Faculty of Art")).toBe(
+      "Faculty of Art · 5 APU day entry"
     );
   });
 });
