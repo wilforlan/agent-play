@@ -16,6 +16,7 @@ export type FacultyClassroomPathAnchor = {
   readonly title: string;
   readonly x: number;
   readonly y: number;
+  readonly presentation: "scroll";
 };
 
 export type FacultyClassroomStageHandle = {
@@ -25,6 +26,8 @@ export type FacultyClassroomStageHandle = {
   readonly lessonAnchors: readonly FacultyClassroomLessonAnchor[];
   readonly mode: FacultyClassroomMode;
   readonly pathId: string | null;
+  readonly playerLayer: Container;
+  clampPosition(pos: { x: number; y: number }): { x: number; y: number };
   destroy(): void;
 };
 
@@ -41,6 +44,106 @@ export const FACULTY_CLASSROOM_BOUNDS = {
   minY: 0,
   maxY: 10,
 } as const;
+
+const EDGE_INSET = 0.4;
+
+export const clampFacultyClassroomPosition = (pos: {
+  x: number;
+  y: number;
+}): { x: number; y: number } => ({
+  x: Math.min(
+    FACULTY_CLASSROOM_BOUNDS.maxX - EDGE_INSET,
+    Math.max(FACULTY_CLASSROOM_BOUNDS.minX + EDGE_INSET, pos.x)
+  ),
+  y: Math.min(
+    FACULTY_CLASSROOM_BOUNDS.maxY - EDGE_INSET,
+    Math.max(FACULTY_CLASSROOM_BOUNDS.minY + EDGE_INSET, pos.y)
+  ),
+});
+
+export const facultyClassroomSpawnPosition = (): { x: number; y: number } =>
+  clampFacultyClassroomPosition({
+    x: FACULTY_CLASSROOM_BOUNDS.maxX - 2.2,
+    y: FACULTY_CLASSROOM_BOUNDS.maxY - 1.6,
+  });
+
+const drawLearningPathScroll = (input: {
+  root: Container;
+  scale: number;
+  x: number;
+  y: number;
+  title: string;
+  tierLabel: string;
+}): void => {
+  const { root, scale, x, y, title, tierLabel } = input;
+  const scroll = new Graphics({ roundPixels: true });
+  const bodyW = scale * 2.4;
+  const bodyH = scale * 2.8;
+  const left = -bodyW / 2;
+  const top = -bodyH / 2;
+
+  scroll.roundRect(left, top + scale * 0.22, bodyW, bodyH - scale * 0.44, 4);
+  scroll.fill({ color: 0xf5e6c8, alpha: 0.98 });
+  scroll.stroke({ width: 1.5, color: 0xb45309, alpha: 0.55 });
+
+  scroll.ellipse(0, top + scale * 0.18, bodyW * 0.52, scale * 0.22);
+  scroll.fill({ color: 0xd6b27a, alpha: 0.98 });
+  scroll.stroke({ width: 1.2, color: 0x92400e, alpha: 0.7 });
+
+  scroll.ellipse(0, top + bodyH - scale * 0.18, bodyW * 0.52, scale * 0.22);
+  scroll.fill({ color: 0xd6b27a, alpha: 0.98 });
+  scroll.stroke({ width: 1.2, color: 0x92400e, alpha: 0.7 });
+
+  scroll.roundRect(-scale * 0.12, top + scale * 0.55, scale * 0.24, scale * 1.7, 2);
+  scroll.fill({ color: 0xb91c1c, alpha: 0.85 });
+
+  scroll.position.set(x * scale, y * scale);
+  root.addChild(scroll);
+
+  const rubric = new Text({
+    text: "RUBRIC",
+    style: {
+      fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+      fontSize: Math.max(7, Math.round(scale * 0.2)),
+      fontWeight: "700",
+      fill: 0x7c2d12,
+      letterSpacing: 1,
+    },
+  });
+  rubric.anchor.set(0.5, 0.5);
+  rubric.position.set(x * scale, (y - 0.95) * scale);
+  root.addChild(rubric);
+
+  const label = new Text({
+    text: title,
+    style: {
+      fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+      fontSize: Math.max(9, Math.round(scale * 0.26)),
+      fontWeight: "700",
+      fill: 0x451a03,
+      align: "center",
+      wordWrap: true,
+      wordWrapWidth: scale * 2.0,
+    },
+  });
+  label.anchor.set(0.5, 0.5);
+  label.position.set(x * scale, (y + 0.15) * scale);
+  root.addChild(label);
+
+  const tier = new Text({
+    text: tierLabel,
+    style: {
+      fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+      fontSize: Math.max(8, Math.round(scale * 0.22)),
+      fontWeight: "600",
+      fill: 0x92400e,
+      align: "center",
+    },
+  });
+  tier.anchor.set(0.5, 0.5);
+  tier.position.set(x * scale, (y + 0.95) * scale);
+  root.addChild(tier);
+};
 
 export const buildFacultyClassroomStage = (input: {
   facultyId: string;
@@ -60,7 +163,7 @@ export const buildFacultyClassroomStage = (input: {
   root.addChild(floor);
 
   const board = new Graphics({ roundPixels: true });
-  board.roundRect(width * 0.18, scale * 0.4, width * 0.64, scale * 1.4, 8);
+  board.roundRect(width * 0.28, scale * 0.35, width * 0.56, scale * 1.35, 8);
   board.fill({ color: 0x14532d, alpha: 0.92 });
   root.addChild(board);
 
@@ -81,42 +184,32 @@ export const buildFacultyClassroomStage = (input: {
     },
   });
   title.anchor.set(0.5, 0.5);
-  title.position.set(width * 0.5, scale * 1.05);
+  title.position.set(width * 0.56, scale * 1.0);
   root.addChild(title);
 
   const pathAnchors: FacultyClassroomPathAnchor[] = [];
   const paths = faculty?.paths ?? [];
-  paths.forEach((path, index) => {
-    const x = 2 + index * 4;
-    const y = 4.2;
-    const plaque = new Graphics({ roundPixels: true });
-    plaque.roundRect(-scale * 1.3, -scale * 0.7, scale * 2.6, scale * 1.4, 6);
-    plaque.fill({ color: 0xffffff, alpha: 0.92 });
-    plaque.stroke({ width: 1.5, color: 0x166534, alpha: 0.55 });
-    plaque.position.set(x * scale, y * scale);
-    root.addChild(plaque);
-    const label = new Text({
-      text: path.title,
-      style: {
-        fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
-        fontSize: Math.max(9, Math.round(scale * 0.28)),
-        fontWeight: "600",
-        fill: 0x14532d,
-        align: "center",
-        wordWrap: true,
-        wordWrapWidth: scale * 2.3,
-      },
+  if (input.mode === "browse") {
+    paths.forEach((path, index) => {
+      const x = 3.2 + index * 4;
+      const y = 5.1;
+      drawLearningPathScroll({
+        root,
+        scale,
+        x,
+        y,
+        title: path.title,
+        tierLabel: path.tier,
+      });
+      pathAnchors.push({
+        pathId: path.pathId,
+        title: path.title,
+        x,
+        y,
+        presentation: "scroll",
+      });
     });
-    label.anchor.set(0.5, 0.5);
-    label.position.set(x * scale, y * scale);
-    root.addChild(label);
-    pathAnchors.push({
-      pathId: path.pathId,
-      title: path.title,
-      x,
-      y,
-    });
-  });
+  }
 
   const lessonAnchors: FacultyClassroomLessonAnchor[] = [];
   if (input.mode === "class" && input.pathId !== undefined) {
@@ -125,8 +218,8 @@ export const buildFacultyClassroomStage = (input: {
     lessons.forEach((lesson, index) => {
       const col = index % 5;
       const row = Math.floor(index / 5);
-      const x = 2 + col * 2.4;
-      const y = 7.2 + row * 1.4;
+      const x = 2.8 + col * 2.4;
+      const y = 4.2 + row * 1.5;
       const card = new Graphics({ roundPixels: true });
       card.roundRect(-scale * 0.9, -scale * 0.55, scale * 1.8, scale * 1.1, 5);
       card.fill({ color: 0xfffbeb, alpha: 0.96 });
@@ -158,17 +251,18 @@ export const buildFacultyClassroomStage = (input: {
     });
   }
 
-  const exitDoor = { x: width * 0.5 / scale, y: FACULTY_CLASSROOM_BOUNDS.maxY - 0.4 };
+  const exitDoor = { x: 1.2, y: 0.7 };
   const door = new Graphics({ roundPixels: true });
-  door.rect(-scale * 0.45, -scale * 0.15, scale * 0.9, scale * 0.3);
-  door.fill({ color: 0x1e293b, alpha: 0.85 });
+  door.roundRect(-scale * 0.35, -scale * 0.55, scale * 0.7, scale * 1.1, 4);
+  door.fill({ color: 0x1e293b, alpha: 0.9 });
+  door.stroke({ width: 1.5, color: 0xf8fafc, alpha: 0.35 });
   door.position.set(exitDoor.x * scale, exitDoor.y * scale);
   root.addChild(door);
   const exitLabel = new Text({
     text: "EXIT",
     style: {
       fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
-      fontSize: Math.max(9, Math.round(scale * 0.26)),
+      fontSize: Math.max(9, Math.round(scale * 0.24)),
       fontWeight: "700",
       fill: 0xf8fafc,
     },
@@ -177,6 +271,9 @@ export const buildFacultyClassroomStage = (input: {
   exitLabel.position.set(exitDoor.x * scale, exitDoor.y * scale);
   root.addChild(exitLabel);
 
+  const playerLayer = new Container();
+  root.addChild(playerLayer);
+
   return {
     root,
     exitDoor,
@@ -184,6 +281,8 @@ export const buildFacultyClassroomStage = (input: {
     lessonAnchors,
     mode: input.mode,
     pathId: input.pathId ?? null,
+    playerLayer,
+    clampPosition: clampFacultyClassroomPosition,
     destroy: () => {
       root.destroy({ children: true });
     },

@@ -1,6 +1,6 @@
 /**
  * Typed index for Elm Street faculty curricula (Senior High).
- * Markdown sources live under ./faculties/** — load with Vite ?raw at runtime.
+ * Markdown sources live under ./faculties/**; bodies are packed into lesson-bodies.ts.
  */
 
 export const EDUCATION_TUITION_APW_BY_TIER = {

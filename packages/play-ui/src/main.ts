@@ -327,6 +327,7 @@ import { resolveFacultyProximityActions } from "./education-faculty-prompt.js";
 import {
   FACULTY_CLASSROOM_BOUNDS,
   buildFacultyClassroomStage,
+  facultyClassroomSpawnPosition,
   findNearestFacultyClassroomTarget,
   type FacultyClassroomStageHandle,
 } from "./education-faculty-interior-stage.js";
@@ -1641,65 +1642,7 @@ function onDocumentKeyDown(e: KeyboardEvent): void {
     activeFacultyClassroom !== null
   ) {
     e.preventDefault();
-    const classroom = activeFacultyClassroom;
-    if (classroom.handle.mode === "class") {
-      const nearestLesson = findNearestFacultyClassroomTarget({
-        player: facultyClassroomPlayerPos,
-        anchors: classroom.handle.lessonAnchors.map((lesson) => ({
-          id: lesson.lessonId,
-          label: lesson.title,
-          x: lesson.x,
-          y: lesson.y,
-        })),
-      });
-      if (nearestLesson !== null) {
-        const path = getPathContent(classroom.pathId ?? "");
-        const lessonMeta = path?.lessons.find(
-          (lesson) => lesson.id === nearestLesson.id
-        );
-        const body =
-          lessonMeta !== undefined
-            ? loadEducationLessonBody(lessonMeta.file)
-            : nearestLesson.label;
-        educationLessonPanel?.show({
-          facultyLabel:
-            getFacultyContent(
-              classroom.facultyId as
-                | "faculty-art"
-                | "faculty-science"
-                | "faculty-medicine"
-                | "faculty-education"
-            )?.title ?? classroom.facultyId,
-          pathTitle: path?.title ?? "Learning path",
-          lessonTitle: nearestLesson.label,
-          body,
-        });
-      }
-      return;
-    }
-    const nearestPath = findNearestFacultyClassroomTarget({
-      player: facultyClassroomPlayerPos,
-      anchors: classroom.handle.pathAnchors.map((path) => ({
-        id: path.pathId,
-        label: path.title,
-        x: path.x,
-        y: path.y,
-      })),
-    });
-    if (nearestPath !== null) {
-      void openEducationTuitionGate({
-        facultyId: classroom.facultyId,
-        facultyLabel:
-          getFacultyContent(
-            classroom.facultyId as
-              | "faculty-art"
-              | "faculty-science"
-              | "faculty-medicine"
-              | "faculty-education"
-          )?.title ?? classroom.facultyId,
-        pathId: nearestPath.id,
-      });
-    }
+    activateFacultyClassroomAssist();
     return;
   }
   const partner = registeredAgentPartnerForProximityOrNull(
@@ -2477,12 +2420,30 @@ const enterFacultyClassroom = async (input: {
   const offsetX = (VIEW_W - stageW) / 2;
   const offsetY = (VIEW_H - stageH) / 2;
   built.root.position.set(offsetX, offsetY);
-  facultyClassroomPlayerPos = { x: 7, y: 8 };
+  const heroGraphic = new Graphics();
+  built.playerLayer.addChild(heroGraphic);
+  facultyClassroomPlayerState.pos = built.clampPosition(
+    facultyClassroomSpawnPosition()
+  );
+  facultyClassroomPlayerState.facing =
+    getHumanPlayerId() !== null
+      ? facingByPlayer.get(getHumanPlayerId() as string) ?? "right"
+      : "right";
+  facultyClassroomPlayerState.walkPhase = 0;
+  facultyClassroomPlayerState.isMoving = false;
+  facultyClassroomExitDebounceMs = 250;
   activeFacultyClassroom = {
     facultyId: input.facultyId,
     handle: built,
     pathId: input.pathId ?? null,
+    cellScale: cell,
+    playerLayer: built.playerLayer,
+    heroGraphic,
+    exitDoorAnchor: built.exitDoor,
+    nearestTarget: null,
   };
+  renderFacultyClassroomPlayer(activeFacultyClassroom);
+  proximityTouchPadHandle?.refresh();
   await stageController.enter({
     id: "facultyClassroom",
     root: built.root,
@@ -2494,6 +2455,147 @@ const enterFacultyClassroom = async (input: {
     },
   });
 };
+
+const refreshFacultyClassroomNearestTarget = (): void => {
+  const classroom = activeFacultyClassroom;
+  if (classroom === null) return;
+  if (classroom.handle.mode === "class") {
+    const nearestLesson = findNearestFacultyClassroomTarget({
+      player: facultyClassroomPlayerState.pos,
+      anchors: classroom.handle.lessonAnchors.map((lesson) => ({
+        id: lesson.lessonId,
+        label: lesson.title,
+        x: lesson.x,
+        y: lesson.y,
+      })),
+    });
+    classroom.nearestTarget =
+      nearestLesson === null
+        ? null
+        : { id: nearestLesson.id, label: nearestLesson.label, kind: "lesson" };
+    return;
+  }
+  const nearestPath = findNearestFacultyClassroomTarget({
+    player: facultyClassroomPlayerState.pos,
+    anchors: classroom.handle.pathAnchors.map((path) => ({
+      id: path.pathId,
+      label: path.title,
+      x: path.x,
+      y: path.y,
+    })),
+  });
+  classroom.nearestTarget =
+    nearestPath === null
+      ? null
+      : { id: nearestPath.id, label: nearestPath.label, kind: "path" };
+};
+
+const activateFacultyClassroomAssist = (): void => {
+  const classroom = activeFacultyClassroom;
+  if (classroom === null) return;
+  refreshFacultyClassroomNearestTarget();
+  const nearest = classroom.nearestTarget;
+  if (nearest === null) return;
+  if (nearest.kind === "lesson") {
+    const path = getPathContent(classroom.pathId ?? "");
+    const lessonMeta = path?.lessons.find((lesson) => lesson.id === nearest.id);
+    const body =
+      lessonMeta !== undefined
+        ? loadEducationLessonBody(lessonMeta.file)
+        : nearest.label;
+    educationLessonPanel?.show({
+      facultyLabel:
+        getFacultyContent(
+          classroom.facultyId as
+            | "faculty-art"
+            | "faculty-science"
+            | "faculty-medicine"
+            | "faculty-education"
+        )?.title ?? classroom.facultyId,
+      pathTitle: path?.title ?? "Learning path",
+      lessonTitle: nearest.label,
+      body,
+    });
+    return;
+  }
+  void openEducationTuitionGate({
+    facultyId: classroom.facultyId,
+    facultyLabel:
+      getFacultyContent(
+        classroom.facultyId as
+          | "faculty-art"
+          | "faculty-science"
+          | "faculty-medicine"
+          | "faculty-education"
+      )?.title ?? classroom.facultyId,
+    pathId: nearest.id,
+  });
+};
+
+function renderFacultyClassroomPlayer(stage: NonNullable<
+  typeof activeFacultyClassroom
+>): void {
+  stage.playerLayer.position.set(
+    facultyClassroomPlayerState.pos.x * stage.cellScale,
+    facultyClassroomPlayerState.pos.y * stage.cellScale
+  );
+  const playerScale = Math.max(0.5, Math.min(1.1, stage.cellScale / 48));
+  drawPlatformHero(stage.heroGraphic, {
+    scale: playerScale,
+    facing: facultyClassroomPlayerState.facing,
+    walkPhase: facultyClassroomPlayerState.walkPhase,
+    isMoving: facultyClassroomPlayerState.isMoving,
+  });
+}
+
+function tickFacultyClassroomPlayer(dtSec: number): void {
+  const stage = activeFacultyClassroom;
+  if (stage === null) return;
+  const direction = nextEnclosedStageInputDirection({
+    joystickEnabled: getPreviewViewSettings().joystickEnabled,
+    joystickVector: getJoystickVector(),
+    arrowKeys,
+  });
+  const { dx, dy, source } = direction;
+  const isMoving = source !== "idle";
+  if (isMoving) {
+    const step = FACULTY_CLASSROOM_PLAYER_SPEED_CELLS_PER_SEC * dtSec;
+    facultyClassroomPlayerState.pos.x =
+      facultyClassroomPlayerState.pos.x + dx * step;
+    facultyClassroomPlayerState.pos.y =
+      facultyClassroomPlayerState.pos.y + dy * step;
+    facultyClassroomPlayerState.pos = stage.handle.clampPosition(
+      facultyClassroomPlayerState.pos
+    );
+    if (dx !== 0) {
+      facultyClassroomPlayerState.facing = dx > 0 ? "right" : "left";
+    }
+    facultyClassroomPlayerState.walkPhase =
+      (facultyClassroomPlayerState.walkPhase + dtSec * 4) % 1;
+  } else {
+    facultyClassroomPlayerState.walkPhase = 0;
+  }
+  facultyClassroomPlayerState.isMoving = isMoving;
+  renderFacultyClassroomPlayer(stage);
+  refreshFacultyClassroomNearestTarget();
+
+  if (facultyClassroomExitDebounceMs > 0) {
+    facultyClassroomExitDebounceMs = Math.max(
+      0,
+      facultyClassroomExitDebounceMs - dtSec * 1000
+    );
+    return;
+  }
+  const door = stage.exitDoorAnchor;
+  const distToDoor = Math.hypot(
+    facultyClassroomPlayerState.pos.x - door.x,
+    facultyClassroomPlayerState.pos.y - door.y
+  );
+  if (distToDoor <= EXIT_DOOR_PROXIMITY_RADIUS_WORLD) {
+    facultyClassroomExitDebounceMs = 400;
+    leaveCurrentEnclosedStageToPrevious();
+  }
+}
 
 async function enterGameFromProximity(
   target: StructureProximityTarget
@@ -2703,9 +2805,30 @@ let activeFacultyClassroom: {
   facultyId: string;
   handle: FacultyClassroomStageHandle;
   pathId: string | null;
+  cellScale: number;
+  playerLayer: Container;
+  heroGraphic: Graphics;
+  exitDoorAnchor: { x: number; y: number };
+  nearestTarget: {
+    id: string;
+    label: string;
+    kind: "path" | "lesson";
+  } | null;
 } | null = null;
 let activeClassPathByFaculty = new Map<string, string>();
-let facultyClassroomPlayerPos = { x: 7, y: 8 };
+const facultyClassroomPlayerState: {
+  pos: { x: number; y: number };
+  facing: "left" | "right";
+  walkPhase: number;
+  isMoving: boolean;
+} = {
+  pos: facultyClassroomSpawnPosition(),
+  facing: "right",
+  walkPhase: 0,
+  isMoving: false,
+};
+let facultyClassroomExitDebounceMs = 0;
+const FACULTY_CLASSROOM_PLAYER_SPEED_CELLS_PER_SEC = 3.2;
 
 /**
  * Trigger `stageController.back()` and clear the active enclosed-stage
@@ -5673,6 +5796,8 @@ function onTick(dt: number): void {
     tickYardPlayer(dt);
   } else if (currentStageId === "houseInterior") {
     tickHousePlayer(dt);
+  } else if (currentStageId === "facultyClassroom") {
+    tickFacultyClassroomPlayer(dt);
   } else if (
     currentStageId === "amenityShop" ||
     currentStageId === "amenitySupermarket" ||
@@ -5841,6 +5966,20 @@ function onFrame(): void {
   }
   if (proximityLegendEl !== null) {
     if (
+      activeFacultyClassroom !== null &&
+      stageController?.current()?.id === "facultyClassroom"
+    ) {
+      refreshFacultyClassroomNearestTarget();
+      const nearest = activeFacultyClassroom.nearestTarget;
+      if (nearest !== null && nearest.kind === "lesson") {
+        proximityLegendEl.textContent = `Near ${nearest.label}. A: open lesson · Walk to exit door to leave`;
+      } else if (nearest !== null && nearest.kind === "path") {
+        proximityLegendEl.textContent = `Near ${nearest.label} scroll. A: enroll / choose path · Walk to exit door to leave`;
+      } else {
+        proximityLegendEl.textContent =
+          "Joystick or arrows to move · Walk to learning-path scrolls · Exit top-left";
+      }
+    } else if (
       activeHouseStage !== null &&
       stageController?.current()?.id === "houseInterior"
     ) {
@@ -5944,6 +6083,35 @@ function onFrame(): void {
   }
   if (proximityPromptEl !== null) {
     if (
+      activeFacultyClassroom !== null &&
+      stageController?.current()?.id === "facultyClassroom"
+    ) {
+      refreshFacultyClassroomNearestTarget();
+      const nearest = activeFacultyClassroom.nearestTarget;
+      if (nearest !== null) {
+        proximityPromptEl.textContent =
+          nearest.kind === "lesson"
+            ? `A: open ${nearest.label}`
+            : `A: enroll ${nearest.label}`;
+        proximityPromptEl.style.display = "block";
+        const localX =
+          (VIEW_W -
+            (FACULTY_CLASSROOM_BOUNDS.maxX - FACULTY_CLASSROOM_BOUNDS.minX) *
+              activeFacultyClassroom.cellScale) /
+            2 +
+          facultyClassroomPlayerState.pos.x * activeFacultyClassroom.cellScale;
+        const localY =
+          (VIEW_H -
+            (FACULTY_CLASSROOM_BOUNDS.maxY - FACULTY_CLASSROOM_BOUNDS.minY) *
+              activeFacultyClassroom.cellScale) /
+            2 +
+          facultyClassroomPlayerState.pos.y * activeFacultyClassroom.cellScale;
+        proximityPromptEl.style.left = `${localX}px`;
+        proximityPromptEl.style.top = `${localY - box * 1.4}px`;
+      } else {
+        proximityPromptEl.style.display = "none";
+      }
+    } else if (
       activeGameStage !== null &&
       lastGameStageProximityTarget !== null
     ) {
@@ -6537,14 +6705,90 @@ export function bootstrap(): void {
         if (target === null) return false;
         return target.activatable !== false;
       },
+      getFacultyProximityLabel: () => {
+        if (lastProximityPartnerId !== null) return null;
+        if (activeFacultyClassroom !== null) return null;
+        if (lastEducationCenterNearest === null) return null;
+        return lastEducationCenterNearest.label;
+      },
+      getFacultyPayVerb: () => {
+        if (lastEducationCenterNearest === null) return null;
+        if (isEducationPassCachedActive(lastEducationCenterNearest.centerId)) {
+          return null;
+        }
+        return "Pay";
+      },
+      getFacultyEnterVerb: () => {
+        if (lastEducationCenterNearest === null) return null;
+        if (!isEducationPassCachedActive(lastEducationCenterNearest.centerId)) {
+          return null;
+        }
+        return "Enter";
+      },
+      getFacultyEnterActivatable: () => {
+        if (lastEducationCenterNearest === null) return false;
+        return isEducationPassCachedActive(lastEducationCenterNearest.centerId);
+      },
+      getFacultyPathVerb: () => {
+        if (lastEducationCenterNearest === null) return null;
+        if (!isEducationPassCachedActive(lastEducationCenterNearest.centerId)) {
+          return null;
+        }
+        return "Paths";
+      },
+      getFacultyPathActivatable: () => {
+        if (lastEducationCenterNearest === null) return false;
+        return isEducationPassCachedActive(lastEducationCenterNearest.centerId);
+      },
+      getFacultyClassVerb: () => {
+        if (lastEducationCenterNearest === null) return null;
+        if (!isEducationPassCachedActive(lastEducationCenterNearest.centerId)) {
+          return null;
+        }
+        return "Class";
+      },
+      getFacultyClassActivatable: () => {
+        if (lastEducationCenterNearest === null) return false;
+        if (!isEducationPassCachedActive(lastEducationCenterNearest.centerId)) {
+          return false;
+        }
+        return isEducationTuitionCachedActive(
+          lastEducationCenterNearest.centerId
+        );
+      },
+      getFacultyClassroomProximityLabel: () => {
+        if (activeFacultyClassroom === null) return null;
+        refreshFacultyClassroomNearestTarget();
+        return activeFacultyClassroom.nearestTarget?.label ?? null;
+      },
+      getFacultyClassroomProximityVerb: () => {
+        if (activeFacultyClassroom === null) return null;
+        refreshFacultyClassroomNearestTarget();
+        const nearest = activeFacultyClassroom.nearestTarget;
+        if (nearest === null) return null;
+        return nearest.kind === "lesson" ? "Open" : "Enroll";
+      },
       getPeerTalkLabel: () => peerCallController?.getPeerTalkLabel() ?? null,
       onAssist: () => {
         noteArrivalQuestStep("touch_control");
+        if (activeFacultyClassroom !== null) {
+          activateFacultyClassroomAssist();
+          return;
+        }
         const partner = registeredAgentPartnerForProximityOrNull(
           lastProximityPartnerId
         );
         if (partner !== null && partner !== HUMAN_VIEWER_PLAYER_ID) {
           triggerProximityAssistOrChat("assist");
+          return;
+        }
+        if (lastEducationCenterNearest !== null) {
+          const target = lastEducationCenterNearest;
+          if (!isEducationPassCachedActive(target.centerId)) {
+            void openEducationAccessGate(target);
+          } else {
+            void openEducationPathPicker(target);
+          }
           return;
         }
         if (lastHouseNearest !== null) {
@@ -6582,6 +6826,14 @@ export function bootstrap(): void {
       },
       onChat: () => {
         noteArrivalQuestStep("touch_control");
+        if (
+          lastEducationCenterNearest !== null &&
+          activeFacultyClassroom === null &&
+          stageController?.current()?.id === "overworld"
+        ) {
+          void startFacultyClass(lastEducationCenterNearest);
+          return;
+        }
         triggerProximityAssistOrChat("chat");
       },
       onPushToTalk: () => {
