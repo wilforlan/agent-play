@@ -66,4 +66,39 @@ describe("education-access-panel", () => {
     panel.destroy();
     parent.remove();
   });
+
+  it("prompts Finance Hub and P2P when the wallet cannot afford day entry", () => {
+    const parent = document.createElement("div");
+    document.body.appendChild(parent);
+    const panel = createEducationAccessPanel({ parent });
+    panel.show({
+      centerId: "faculty-science",
+      centerLabel: "Faculty of Science",
+      apuCost: 5,
+      quoteApw: 0.33,
+      preferredTender: "apu",
+      balanceUsd: 0,
+      powerUps: 0,
+      canAfford: false,
+      onPurchase: () => {},
+      onDismiss: () => {},
+    });
+    expect(parent.textContent).toContain("0 APU");
+    expect(parent.textContent).toContain("Finance Hub");
+    expect(parent.textContent).toContain("Find a peer to trade");
+    const finance = parent.querySelector(
+      'a[href="https://econext.llc"]'
+    ) as HTMLAnchorElement | null;
+    const p2p = parent.querySelector(
+      'a[href="https://p2p.econext.llc"]'
+    ) as HTMLAnchorElement | null;
+    expect(finance?.target).toBe("_blank");
+    expect(p2p?.target).toBe("_blank");
+    const unlock = Array.from(parent.querySelectorAll("button")).find((b) =>
+      (b.textContent ?? "").includes("Unlock")
+    );
+    expect(unlock?.disabled).toBe(true);
+    panel.destroy();
+    parent.remove();
+  });
 });

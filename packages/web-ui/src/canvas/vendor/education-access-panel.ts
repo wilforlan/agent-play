@@ -8,6 +8,11 @@
  */
 
 import type { EducationTender } from "./education-access-client.js";
+import {
+  educationFinanceHubCtaStyles,
+  mountEducationFinanceHubCta,
+  shouldShowEducationFinanceHubCta,
+} from "./education-finance-hub-cta.js";
 
 const PANEL_CLASS = "preview-education-access";
 
@@ -137,6 +142,7 @@ const ensureStyles = (): void => {
   border: 1px solid rgba(37,99,235,0.35);
 }
 .${PANEL_CLASS}__btn--ghost:hover { background: rgba(37,99,235,0.08); }
+${educationFinanceHubCtaStyles(PANEL_CLASS)}
 `;
   document.head.appendChild(style);
 };
@@ -219,6 +225,9 @@ export const createEducationAccessPanel = (
   walletEl.className = `${PANEL_CLASS}__wallet`;
   const errorEl = document.createElement("p");
   errorEl.className = `${PANEL_CLASS}__error`;
+  const financeHubEl = document.createElement("div");
+  financeHubEl.className = `${PANEL_CLASS}__finance-hub`;
+  financeHubEl.hidden = true;
 
   const actions = document.createElement("div");
   actions.className = `${PANEL_CLASS}__actions`;
@@ -231,13 +240,14 @@ export const createEducationAccessPanel = (
   dismissBtn.textContent = "Not now";
   actions.append(unlockBtn, dismissBtn);
 
-  body.append(priceCard, tenderEl, walletEl, errorEl, actions);
+  body.append(priceCard, tenderEl, walletEl, errorEl, financeHubEl, actions);
   panel.appendChild(body);
   options.parent.appendChild(backdrop);
 
   let isOpen = false;
   let busy = false;
   let current: EducationAccessPanelShowInput | null = null;
+  let stickyError: string | null = null;
 
   const refresh = (): void => {
     if (current === null) return;
@@ -254,7 +264,13 @@ export const createEducationAccessPanel = (
     unlockBtn.textContent = busy
       ? "Unlocking…"
       : `Unlock ${current.centerLabel} · ${String(current.apuCost)} APU`;
-    if (!current.canAfford && !busy) {
+    const showFinanceHub = shouldShowEducationFinanceHubCta({
+      canAfford: current.canAfford,
+      errorMessage: stickyError,
+    });
+    if (stickyError !== null && !busy) {
+      errorEl.textContent = stickyError;
+    } else if (!current.canAfford && !busy) {
       errorEl.textContent =
         current.quoteApw > 0
           ? `Need ${String(current.apuCost)} APU or ${formatApw(current.quoteApw)}`
@@ -262,6 +278,11 @@ export const createEducationAccessPanel = (
     } else if (!busy) {
       errorEl.textContent = "";
     }
+    mountEducationFinanceHubCta({
+      container: financeHubEl,
+      powerUps: current.powerUps,
+      visible: showFinanceHub && !busy,
+    });
   };
 
   const close = (): void => {
@@ -269,12 +290,14 @@ export const createEducationAccessPanel = (
     isOpen = false;
     busy = false;
     current = null;
+    stickyError = null;
     backdrop.classList.remove(`${PANEL_CLASS}-backdrop--open`);
   };
 
   const show = (input: EducationAccessPanelShowInput): void => {
     current = input;
     busy = false;
+    stickyError = null;
     isOpen = true;
     errorEl.textContent = "";
     backdrop.classList.add(`${PANEL_CLASS}-backdrop--open`);
@@ -309,6 +332,7 @@ export const createEducationAccessPanel = (
       refresh();
     },
     setError: (message: string) => {
+      stickyError = message;
       errorEl.textContent = message;
       busy = false;
       refresh();

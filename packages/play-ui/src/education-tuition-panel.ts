@@ -3,6 +3,11 @@
  */
 
 import type { EducationTender } from "./education-tuition-client.js";
+import {
+  educationFinanceHubCtaStyles,
+  mountEducationFinanceHubCta,
+  shouldShowEducationFinanceHubCta,
+} from "./education-finance-hub-cta.js";
 
 const PANEL_CLASS = "preview-education-tuition";
 
@@ -49,6 +54,7 @@ const ensureStyles = (): void => {
 .${PANEL_CLASS}__btn--ghost {
   background: transparent; color: #2563eb; border: 1px solid rgba(37,99,235,0.35);
 }
+${educationFinanceHubCtaStyles(PANEL_CLASS)}
 `;
   document.head.appendChild(style);
 };
@@ -113,6 +119,9 @@ export const createEducationTuitionPanel = (options: {
   wallet.className = `${PANEL_CLASS}__wallet`;
   const errorEl = document.createElement("p");
   errorEl.className = `${PANEL_CLASS}__error`;
+  const financeHubEl = document.createElement("div");
+  financeHubEl.className = `${PANEL_CLASS}__finance-hub`;
+  financeHubEl.hidden = true;
   const actions = document.createElement("div");
   actions.className = `${PANEL_CLASS}__actions`;
   const payBtn = document.createElement("button");
@@ -123,13 +132,14 @@ export const createEducationTuitionPanel = (options: {
   dismissBtn.className = `${PANEL_CLASS}__btn ${PANEL_CLASS}__btn--ghost`;
   dismissBtn.textContent = "Not now";
   actions.append(payBtn, dismissBtn);
-  body.append(price, meta, tender, wallet, errorEl, actions);
+  body.append(price, meta, tender, wallet, errorEl, financeHubEl, actions);
   panel.append(header, body);
   options.parent.appendChild(backdrop);
 
   let isOpen = false;
   let busy = false;
   let current: EducationTuitionPanelShowInput | null = null;
+  let stickyError: string | null = null;
 
   const refresh = (): void => {
     if (current === null) return;
@@ -141,17 +151,29 @@ export const createEducationTuitionPanel = (options: {
     wallet.textContent = `Wallet: ${String(current.powerUps)} APU · APW$ ${current.balanceUsd.toFixed(2)}`;
     payBtn.disabled = busy || !current.canAfford;
     payBtn.textContent = busy ? "Paying…" : "Pay school fees";
-    if (!current.canAfford && !busy) {
+    const showFinanceHub = shouldShowEducationFinanceHubCta({
+      canAfford: current.canAfford,
+      errorMessage: stickyError,
+    });
+    if (stickyError !== null && !busy) {
+      errorEl.textContent = stickyError;
+    } else if (!current.canAfford && !busy) {
       errorEl.textContent = `Need APW$ ${current.quoteApw.toFixed(2)} or ${String(current.apuCost)} APU`;
     } else if (!busy) {
       errorEl.textContent = "";
     }
+    mountEducationFinanceHubCta({
+      container: financeHubEl,
+      powerUps: current.powerUps,
+      visible: showFinanceHub && !busy,
+    });
   };
 
   const close = (): void => {
     isOpen = false;
     busy = false;
     current = null;
+    stickyError = null;
     backdrop.classList.remove(`${PANEL_CLASS}-backdrop--open`);
   };
 
@@ -170,6 +192,7 @@ export const createEducationTuitionPanel = (options: {
     show: (input) => {
       current = input;
       busy = false;
+      stickyError = null;
       isOpen = true;
       errorEl.textContent = "";
       backdrop.classList.add(`${PANEL_CLASS}-backdrop--open`);
@@ -180,6 +203,7 @@ export const createEducationTuitionPanel = (options: {
       refresh();
     },
     setError: (message) => {
+      stickyError = message;
       errorEl.textContent = message;
       busy = false;
       refresh();
