@@ -103,9 +103,10 @@ import {
 } from "./overworld-fixed-panel-position.js";
 import {
   clampWorldPosition,
-  createWorldLayoutWithParkingRow,
+  createWorldLayoutWithEducationCampus,
   DEFAULT_AGENT_SPAWN_MIN_DISTANCE,
   expandBoundsToMinimumPlayArea,
+  getStreetPoolEntryById,
   isAgentSpawnOccupancyPointAvailableInZone,
   isSpaceAnchorOccupancyPointAvailableInZone,
   listOccupancyPointsForZone,
@@ -217,7 +218,7 @@ import {
 } from "@agent-play/geography-mesh";
 import {
   mountStreetSignPosts,
-  type StreetSignZone,
+  toStreetSignZones,
 } from "./world-street-signs.js";
 import { createPixiPreview, type PixiPreviewHandle } from "./pixi-multiverse.js";
 import {
@@ -294,6 +295,16 @@ import {
   type ArcadeAccessPass,
 } from "./arcade-access-client.js";
 import {
+  canAffordEducationDayPass,
+  createEducationAccessPanel,
+  type EducationAccessPanelHandle,
+} from "./education-access-panel.js";
+import {
+  getEducationAccess,
+  purchaseEducationAccess,
+  type EducationAccessPass,
+} from "./education-access-client.js";
+import {
   createGameStreakPanel,
   markGameStreakAutoPeeked,
   shouldAutoPeekGameStreak,
@@ -301,8 +312,22 @@ import {
 } from "./game-streak-panel.js";
 import { fetchGameStats } from "./game-stats-client.js";
 import { applyGameOutcome } from "./apply-game-outcome-client.js";
-import { buildParkWorldBackdrop } from "./scene-backgrounds.js";
+import {
+  buildParkWorldBackdrop,
+  computeParkWorldBackdropPlacement,
+} from "./scene-backgrounds.js";
 import { buildParkingStreetLayer } from "./parking-street-layer.js";
+import {
+  buildEducationCampusLayer,
+  pickEducationCampusZone,
+} from "./education-campus-layer.js";
+import {
+  EDUCATION_CENTER_DAY_PASS_APU,
+  educationCenterDayPassLabel,
+  findNearestEducationCenter,
+  listEducationCenterAnchorsForZone,
+  type EducationCenterProximityTarget,
+} from "./education-campus-proximity.js";
 import {
   findNearestParkingBay,
   isParkingBayVacant,
@@ -833,20 +858,20 @@ function rebuildParkWorldBackdrop(): void {
     parkBackdropLayer.removeChild(ch);
     ch.destroy({ children: true });
   }
-  const pad = 1;
-  const cols = Math.max(
-    1,
-    Math.ceil(gridBounds.maxX - gridBounds.minX + 2 * pad)
+  const placement = computeParkWorldBackdropPlacement({
+    originX: ORIGIN_X,
+    worldOriginScreenY,
+    cellScale,
+    mapMinX,
+    mapMinY,
+    mapMaxX,
+    mapMaxY,
+  });
+  parkBackdropLayer.position.set(placement.x, placement.y);
+  deepLogObject("rebuildParkWorldBackdrop", placement);
+  parkBackdropLayer.addChild(
+    buildParkWorldBackdrop(placement.widthPx, placement.heightPx, 0x5cafe)
   );
-  const rows = Math.max(
-    1,
-    Math.ceil(gridBounds.maxY - gridBounds.minY + 2 * pad)
-  );
-  const gy0 = worldOriginScreenY;
-  const w = ORIGIN_X + cols * cellScale + 56;
-  const h = Math.max(VIEW_H, gy0 + rows * cellScale + WORLD_BOTTOM_MARGIN);
-  deepLogObject("rebuildParkWorldBackdrop", { w, h, cols, rows });
-  parkBackdropLayer.addChild(buildParkWorldBackdrop(w, h, 0x5cafe));
 }
 
 function worldToWorldRootLocal(wx: number, wy: number): { x: number; y: number } {
@@ -1025,12 +1050,19 @@ function resolveWorldLayout(): WorldLayout {
   const s1 = STREET_NAME_POOL[1];
   const s2 = STREET_NAME_POOL[2];
   const s3 = STREET_NAME_POOL[3];
-  if (s0 === undefined || s1 === undefined || s2 === undefined || s3 === undefined) {
+  const elm = getStreetPoolEntryById("elm");
+  if (
+    s0 === undefined ||
+    s1 === undefined ||
+    s2 === undefined ||
+    s3 === undefined ||
+    elm === undefined
+  ) {
     throw new Error("resolveWorldLayout: invalid street pool");
   }
-  return createWorldLayoutWithParkingRow({
+  return createWorldLayoutWithEducationCampus({
     bounds: DEFAULT_LAYOUT_BOUNDS_WITH_PARKING,
-    streets: [s0, s1, s2, s3],
+    streets: [s0, s1, s2, s3, elm],
   });
 }
 
@@ -1050,6 +1082,9 @@ function zoneDebugStroke(primary: OccupantGroup): {
   }
   if (primary === "parking") {
     return { width: 3, color: 0x94a3b8, alpha: 0.95 };
+  }
+  if (primary === "education") {
+    return { width: 3, color: 0x4ade80, alpha: 0.95 };
   }
   return { width: 3, color: 0xa855f7, alpha: 0.95 };
 }
@@ -1511,6 +1546,10 @@ function onDocumentKeyDown(e: KeyboardEvent): void {
       e.preventDefault();
       return;
     }
+    if (educationAccessPanel !== null && educationAccessPanel.isOpen()) {
+      e.preventDefault();
+      return;
+    }
     if (gameStreakPanel !== null && gameStreakPanel.isOpen()) {
       e.preventDefault();
       gameStreakPanel.close();
@@ -1569,6 +1608,15 @@ function onDocumentKeyDown(e: KeyboardEvent): void {
     }
     if (
       e.key.toLowerCase() === "a" &&
+      lastEducationCenterNearest !== null &&
+      stageController?.current()?.id === "overworld"
+    ) {
+      e.preventDefault();
+      void openEducationAccessGate(lastEducationCenterNearest);
+      return;
+    }
+    if (
+      e.key.toLowerCase() === "a" &&
       lastStructureProximityTarget !== null
     ) {
       e.preventDefault();
@@ -1613,6 +1661,7 @@ const agentsLayer = new Container();
 const parkBackdropLayer = new Container();
 const streetSignsLayer = new Container();
 const parkingStreetLayer = new Container();
+const educationCampusLayer = new Container();
 const worldRoot = new Container();
 /**
  * The DOM element that contains the Pixi canvas. Captured by
@@ -1926,6 +1975,137 @@ const applyArcadeZoneProximity = (
   wasInArcadeZone = inArcade;
 };
 
+const isEducationPassCachedActive = (
+  centerId: string,
+  now: Date = new Date()
+): boolean => {
+  const pass = educationAccessPassCache.get(centerId);
+  if (pass === undefined) return false;
+  const utcDay = now.toISOString().slice(0, 10);
+  if (pass.utcDay !== utcDay) return false;
+  const expiresMs = Date.parse(pass.expiresAt);
+  if (!Number.isFinite(expiresMs)) return false;
+  return now.getTime() < expiresMs;
+};
+
+const openEducationAccessGate = async (
+  target: EducationCenterProximityTarget
+): Promise<boolean> => {
+  if (isEducationPassCachedActive(target.centerId)) {
+    return true;
+  }
+  if (educationAccessPanel?.isOpen() === true) {
+    return false;
+  }
+  const sid = getSid();
+  const playerId = getViewerWalletPlayerId();
+  if (sid === null || playerId === null) {
+    educationAccessPanel?.show({
+      centerId: target.centerId,
+      centerLabel: target.label,
+      apuCost: EDUCATION_CENTER_DAY_PASS_APU,
+      quoteApw: 0,
+      preferredTender: "apw",
+      balanceUsd: 0,
+      powerUps: 0,
+      canAfford: false,
+      onPurchase: () => {
+        educationAccessPanel?.setError("Sign in to unlock this center.");
+      },
+      onDismiss: () => {},
+    });
+    return false;
+  }
+  try {
+    const snapshotAccess = await getEducationAccess({
+      sid,
+      playerId,
+      centerId: target.centerId,
+    });
+    if (snapshotAccess.access !== null) {
+      educationAccessPassCache.set(target.centerId, snapshotAccess.access);
+      return true;
+    }
+    const canAfford = canAffordEducationDayPass({
+      powerUps: snapshotAccess.wallet.powerUps,
+      balanceUsd: snapshotAccess.wallet.balanceUsd,
+      apuCost: snapshotAccess.apuCost,
+      quoteApw: snapshotAccess.quoteApw,
+    });
+    educationAccessPanel?.show({
+      centerId: target.centerId,
+      centerLabel: target.label,
+      apuCost: snapshotAccess.apuCost,
+      quoteApw: snapshotAccess.quoteApw,
+      preferredTender: snapshotAccess.preferredTender,
+      balanceUsd: snapshotAccess.wallet.balanceUsd,
+      powerUps: snapshotAccess.wallet.powerUps,
+      canAfford,
+      onPurchase: async () => {
+        educationAccessPanel?.setBusy(true);
+        try {
+          const result = await purchaseEducationAccess({
+            sid,
+            playerId,
+            centerId: target.centerId,
+          });
+          educationAccessPassCache.set(target.centerId, result.access);
+          educationAccessPanel?.close();
+          void refreshWalletHud();
+        } catch (error) {
+          const message =
+            error instanceof Error ? error.message : "Purchase failed";
+          educationAccessPanel?.setError(
+            message.replace(/^\[agent-play:education-access\]\s*/, "")
+          );
+        }
+      },
+      onDismiss: () => {},
+    });
+    return false;
+  } catch (error) {
+    console.warn("[agent-play:world] education access check failed", error);
+    return false;
+  }
+};
+
+const applyEducationCenterProximity = (
+  humanPos: { x: number; y: number } | null
+): void => {
+  if (humanPos === null) {
+    lastEducationCenterNearest = null;
+    return;
+  }
+  const layout = resolveWorldLayout();
+  const educationZone = pickEducationCampusZone(layout.zones);
+  if (educationZone === undefined) {
+    lastEducationCenterNearest = null;
+    return;
+  }
+  const anchors = listEducationCenterAnchorsForZone({
+    zone: educationZone,
+    clampBounds: getWorldBoundsForClamp(),
+  });
+  const nearest = findNearestEducationCenter({
+    playerWorld: humanPos,
+    anchors,
+  });
+  const prevId = lastEducationCenterNearest?.centerId ?? null;
+  lastEducationCenterNearest = nearest;
+  if (
+    nearest !== null &&
+    nearest.centerId !== prevId &&
+    !isEducationPassCachedActive(nearest.centerId) &&
+    educationAccessPanel?.isOpen() !== true &&
+    !educationAccessCheckInFlight
+  ) {
+    educationAccessCheckInFlight = true;
+    void openEducationAccessGate(nearest).finally(() => {
+      educationAccessCheckInFlight = false;
+    });
+  }
+};
+
 async function enterGameFromProximity(
   target: StructureProximityTarget
 ): Promise<void> {
@@ -2117,11 +2297,15 @@ let gameResultPanel: GameResultPanelHandle | null = null;
 let gameStreakPanel: GameStreakPanelHandle | null = null;
 let gameHowToPlayPanel: GameHowToPlayHandle | null = null;
 let arcadeAccessPanel: ArcadeAccessPanelHandle | null = null;
+let educationAccessPanel: EducationAccessPanelHandle | null = null;
 let cachedFeaturedGameId: GameId | null = null;
 let cachedGameStatsPowerUps = 0;
 let wasInArcadeZone = false;
 let arcadeAccessPassCache: ArcadeAccessPass | null = null;
 let arcadeAccessCheckInFlight = false;
+let educationAccessPassCache = new Map<string, EducationAccessPass>();
+let educationAccessCheckInFlight = false;
+let lastEducationCenterNearest: EducationCenterProximityTarget | null = null;
 
 /**
  * Trigger `stageController.back()` and clear the active enclosed-stage
@@ -3433,6 +3617,7 @@ function ingestSnapshot(snap: Snapshot): void {
   }
   paintStreetSigns();
   paintParkingStreet();
+  paintEducationCampus();
   const wbSpawn = getWorldBoundsForClamp();
   const storedHuman = loadHumanWorldPosition({ sid: getSid() });
   const humanSpawn =
@@ -4504,13 +4689,7 @@ function paintStreetSigns(): void {
     return;
   }
   const layout = resolveWorldLayout();
-  const zones: StreetSignZone[] = layout.zones
-    .filter((z) => z.primaryGroup !== "parking")
-    .map((z) => ({
-      id: z.id,
-      streetLabel: z.streetLabel,
-      rect: { ...z.rect },
-    }));
+  const zones = toStreetSignZones(layout.zones);
   mountStreetSignPosts({
     layer: streetSignsLayer,
     palette,
@@ -4710,6 +4889,39 @@ function paintParkingStreet(): void {
   });
   parkingStreetLayer.addChild(layer);
   scheduleParkingExpiryRefresh();
+}
+
+function paintEducationCampus(): void {
+  for (const ch of [...educationCampusLayer.children]) {
+    educationCampusLayer.removeChild(ch);
+    ch.destroy({ children: true });
+  }
+  if (snapshot === null) {
+    return;
+  }
+  const layout = resolveWorldLayout();
+  const educationZone = pickEducationCampusZone(layout.zones);
+  if (educationZone === undefined) {
+    return;
+  }
+  const clampBounds = getWorldBoundsForClamp();
+  const bandRect =
+    clampBounds !== null
+      ? {
+          minX: clampBounds.minX,
+          maxX: clampBounds.maxX,
+          minY: educationZone.rect.minY,
+          maxY: educationZone.rect.maxY,
+        }
+      : educationZone.rect;
+  const layer = buildEducationCampusLayer({
+    palette,
+    cellScale,
+    worldToLocal: worldToWorldRootLocal,
+    zone: educationZone,
+    bandRect,
+  });
+  educationCampusLayer.addChild(layer);
 }
 
 function paintGrid(): void {
@@ -4932,6 +5144,8 @@ function rebuildSceneForTheme(): void {
   }
   rebuildParkWorldBackdrop();
   paintStreetSigns();
+  paintParkingStreet();
+  paintEducationCampus();
   skyDecor?.setBounds(VIEW_W, VIEW_H, theme.grassBandTopRatio);
 }
 
@@ -5209,10 +5423,12 @@ function onFrame(): void {
     applyHouseDoorProximity(humanPosForParking);
     applyParkingBayProximity(humanPosForParking);
     applyArcadeZoneProximity(humanPosForParking);
+    applyEducationCenterProximity(humanPosForParking);
   } else {
     lastHouseNearest = null;
     lastParkingBayNearest = null;
     lastParkingBayTarget = null;
+    lastEducationCenterNearest = null;
     if (parkingTooltipOpenForBay !== null) {
       parkingTicketTooltip?.hide();
       parkingTooltipOpenForBay = null;
@@ -5290,6 +5506,12 @@ function onFrame(): void {
         proximityLegendEl.textContent =
           `Near parking bay ${String(bay.bay)} (layer ${String(bay.layer)}). P: inspect spot`;
       }
+    } else if (lastEducationCenterNearest !== null) {
+      const center = lastEducationCenterNearest;
+      const hasPass = isEducationPassCachedActive(center.centerId);
+      proximityLegendEl.textContent = hasPass
+        ? `Near ${center.label}. Day pass active`
+        : `Near ${educationCenterDayPassLabel(center.label)}. A: pay day entry`;
     } else if (lastStructureProximityTarget !== null) {
       const target = lastStructureProximityTarget;
       const targetName = target.label ?? target.spaceId ?? "cabinet";
@@ -5382,6 +5604,17 @@ function onFrame(): void {
         lastParkingBayTarget !== null
           ? "P: buy parking ticket"
           : "P: inspect parking spot";
+      proximityPromptEl.style.display = "block";
+      proximityPromptEl.style.left = `${screen.x}px`;
+      proximityPromptEl.style.top = `${screen.y - box * 1.4}px`;
+    } else if (lastEducationCenterNearest !== null) {
+      const center = lastEducationCenterNearest;
+      const local = worldToWorldRootLocal(center.x, center.y);
+      const screen = worldRootLocalToCanvas(local.x, local.y);
+      const hasPass = isEducationPassCachedActive(center.centerId);
+      proximityPromptEl.textContent = hasPass
+        ? `${center.label}\nDay pass active`
+        : `A: ${educationCenterDayPassLabel(center.label)}`;
       proximityPromptEl.style.display = "block";
       proximityPromptEl.style.left = `${screen.x}px`;
       proximityPromptEl.style.top = `${screen.y - box * 1.4}px`;
@@ -5642,6 +5875,7 @@ export function bootstrap(): void {
     worldRoot.addChild(parkBackdropLayer);
     worldRoot.addChild(streetSignsLayer);
     worldRoot.addChild(parkingStreetLayer);
+    worldRoot.addChild(educationCampusLayer);
     worldRoot.addChild(gridGraphics);
     worldRoot.addChild(structureLayer);
     worldRoot.addChild(agentsLayer);
@@ -5775,6 +6009,7 @@ export function bootstrap(): void {
     });
     gameResultPanel = createGameResultPanel({ parent: document.body });
     arcadeAccessPanel = createArcadeAccessPanel({ parent: document.body });
+    educationAccessPanel = createEducationAccessPanel({ parent: document.body });
     gameStreakPanel = createGameStreakPanel({
       parent: document.body,
       pillParent: bottomHudDock.root,
