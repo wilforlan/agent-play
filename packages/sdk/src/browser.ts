@@ -273,10 +273,28 @@ export {
 export {
   EDUCATION_CENTER_DAY_PASS_APU,
   EDUCATION_CENTER_IDS,
+  EDUCATION_FACULTY_DAY_PASS_APU,
+  EDUCATION_FACULTY_IDS,
+  LEGACY_EDUCATION_CENTER_TO_FACULTY,
   educationCenterDayPassApuCost,
+  educationFacultyDayPassApuCost,
   isEducationAccessActive,
   isEducationCenterId,
+  isEducationFacultyId,
+  normalizeEducationFacultyId,
   type EducationAccessPass,
   type EducationCenterId,
+  type EducationFacultyId,
   type EducationTender,
 } from "./lib/education-access-catalog.js";
+export {
+  EDUCATION_TUITION_APW_BY_TIER,
+  EDUCATION_TUITION_DAYS,
+  getEducationPathDef,
+  isEducationPathId,
+  isEducationTuitionActive,
+  listEducationPathsForFaculty,
+  type EducationPathId,
+  type EducationPathTier,
+  type EducationTuitionEnrollment,
+} from "./lib/education-tuition-catalog.js";

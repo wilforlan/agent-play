@@ -84,11 +84,11 @@ describe("POST /api/agent-play/sdk/rpc — education access", () => {
     expect(res.status).toBe(200);
     const body = (await res.json()) as {
       tender: string;
-      access: { centerId: string; apuCost: number };
+      access: { facultyId: string; apuCost: number };
       purchase: { amenityKind: string };
     };
     expect(body.tender).toBe("apw");
-    expect(body.access.centerId).toBe("curriculum-tower");
+    expect(body.access.facultyId).toBe("faculty-science");
     expect(body.access.apuCost).toBe(5);
     expect(body.purchase.amenityKind).toBe("education_pass");
   });
