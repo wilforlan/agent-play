@@ -60,6 +60,27 @@ describe("education access catalog", () => {
     expect(resolved?.apuCost).toBe(5);
   });
 
+  it("charges APW$ equivalent when wallet has APW$ but not enough APU", () => {
+    const resolved = resolveEducationTenderForPurchase({
+      powerUps: 0,
+      balanceUsd: 2,
+      apwPerApu: 0.1,
+    });
+    expect(resolved).not.toBeNull();
+    expect(resolved?.tender).toBe("apw");
+    expect(resolved?.apuCost).toBe(5);
+    expect(resolved?.apwCharged).toBe(0.5);
+  });
+
+  it("returns null when neither tender covers the day gate", () => {
+    const resolved = resolveEducationTenderForPurchase({
+      powerUps: 2,
+      balanceUsd: 0.1,
+      apwPerApu: 0.1,
+    });
+    expect(resolved).toBeNull();
+  });
+
   it("exposes utc day helpers", () => {
     expect(utcDayKey(new Date("2026-10-02T01:00:00.000Z"))).toBe("2026-10-02");
   });

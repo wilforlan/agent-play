@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   canAffordEducationDayPass,
   createEducationAccessPanel,
+  resolveEducationDayPassCharge,
 } from "./education-access-panel.js";
 
 describe("education-access-panel", () => {
@@ -33,6 +34,32 @@ describe("education-access-panel", () => {
     ).toBe(false);
   });
 
+  it("charges the APW$ equivalent when APU is short but cash covers the quote", () => {
+    const charge = resolveEducationDayPassCharge({
+      preferredTender: "apw",
+      powerUps: 0,
+      balanceUsd: 2,
+      apuCost: 5,
+      quoteApw: 0.5,
+    });
+    expect(charge.tender).toBe("apw");
+    expect(charge.primaryLabel).toBe("APW$ 0.50");
+    expect(charge.alternateLabel).toBe("5 APU");
+    expect(charge.unlockLabel).toBe("APW$ 0.50");
+  });
+
+  it("falls back to APW$ charge when APU is preferred but insufficient", () => {
+    const charge = resolveEducationDayPassCharge({
+      preferredTender: "apu",
+      powerUps: 2,
+      balanceUsd: 1,
+      apuCost: 5,
+      quoteApw: 0.5,
+    });
+    expect(charge.tender).toBe("apw");
+    expect(charge.unlockLabel).toBe("APW$ 0.50");
+  });
+
   it("shows center cost and purchases day entry", async () => {
     const parent = document.createElement("div");
     document.body.appendChild(parent);
@@ -54,12 +81,14 @@ describe("education-access-panel", () => {
     expect(panel.isOpen()).toBe(true);
     expect(parent.textContent).toContain("Elm Street");
     expect(parent.textContent).toContain("Foundations");
-    expect(parent.textContent).toContain("5 APU");
+    expect(parent.textContent).toContain("APW$ 0.33");
+    expect(parent.textContent).toContain("or 5 APU");
     expect(parent.textContent).toContain("Paying with APW$");
 
     const unlock = Array.from(parent.querySelectorAll("button")).find((b) =>
       (b.textContent ?? "").includes("Unlock Foundations")
     );
+    expect(unlock?.textContent).toContain("APW$ 0.33");
     expect(unlock).toBeDefined();
     unlock?.click();
     expect(onPurchase).toHaveBeenCalledTimes(1);
@@ -75,15 +104,16 @@ describe("education-access-panel", () => {
       centerId: "faculty-science",
       centerLabel: "Faculty of Science",
       apuCost: 5,
-      quoteApw: 0.33,
-      preferredTender: "apu",
-      balanceUsd: 0,
+      quoteApw: 0.5,
+      preferredTender: "apw",
+      balanceUsd: 0.1,
       powerUps: 0,
       canAfford: false,
       onPurchase: () => {},
       onDismiss: () => {},
     });
     expect(parent.textContent).toContain("0 APU");
+    expect(parent.textContent).toContain("Need 5 APU or APW$ 0.50");
     expect(parent.textContent).toContain("Finance Hub");
     expect(parent.textContent).toContain("Find a peer to trade");
     const finance = parent.querySelector(

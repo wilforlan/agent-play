@@ -36,4 +36,33 @@ describe("session store education access", () => {
     if (!again.ok) return;
     expect(again.access.facultyId).toBe("faculty-art");
   });
+
+  it("charges APW$ equivalent for day entry when APU is zero", async () => {
+    const store = new TestSessionStore();
+    await store.loadOrCreateSessionId();
+    store.setApwPerApuRate(0.1);
+    await store.setPlayerWalletBalance({ playerId: "p2", balanceUsd: 3 });
+
+    const quoted = await store.getEducationAccess({
+      playerId: "p2",
+      centerId: "faculty-science",
+      now: "2026-10-02T12:00:00.000Z",
+    });
+    expect(quoted.quoteApw).toBe(0.5);
+    expect(quoted.preferredTender).toBe("apw");
+    expect(quoted.wallet.powerUps ?? 0).toBe(0);
+
+    const bought = await store.purchaseEducationAccess({
+      playerId: "p2",
+      centerId: "faculty-science",
+      now: "2026-10-02T12:00:00.000Z",
+      recordId: "edu-apw-1",
+    });
+    expect(bought.ok).toBe(true);
+    if (!bought.ok) return;
+    expect(bought.tender).toBe("apw");
+    expect(bought.access.apwCharged).toBe(0.5);
+    expect(bought.wallet.balanceUsd).toBeCloseTo(2.5, 8);
+    expect(bought.wallet.powerUps ?? 0).toBe(0);
+  });
 });

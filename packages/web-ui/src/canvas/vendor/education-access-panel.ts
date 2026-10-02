@@ -176,6 +176,53 @@ export type CreateEducationAccessPanelOptions = {
 
 const formatApw = (amount: number): string => `APW$ ${amount.toFixed(2)}`;
 
+export const resolveEducationDayPassCharge = (input: {
+  preferredTender: EducationTender;
+  powerUps: number;
+  balanceUsd: number;
+  apuCost: number;
+  quoteApw: number;
+}): {
+  tender: EducationTender;
+  primaryLabel: string;
+  alternateLabel: string | null;
+  unlockLabel: string;
+} => {
+  const canPayApu = input.powerUps >= input.apuCost;
+  const canPayApw =
+    input.quoteApw > 0 && input.balanceUsd >= input.quoteApw;
+  let tender: EducationTender = input.preferredTender;
+  if (input.preferredTender === "apu" && canPayApu) {
+    tender = "apu";
+  } else if (input.preferredTender === "apw" && canPayApw) {
+    tender = "apw";
+  } else if (canPayApw) {
+    tender = "apw";
+  } else if (canPayApu) {
+    tender = "apu";
+  } else if (input.quoteApw > 0 && input.preferredTender === "apw") {
+    tender = "apw";
+  } else {
+    tender = "apu";
+  }
+
+  if (tender === "apw" && input.quoteApw > 0) {
+    return {
+      tender,
+      primaryLabel: formatApw(input.quoteApw),
+      alternateLabel: `${String(input.apuCost)} APU`,
+      unlockLabel: formatApw(input.quoteApw),
+    };
+  }
+  return {
+    tender: "apu",
+    primaryLabel: `${String(input.apuCost)} APU`,
+    alternateLabel:
+      input.quoteApw > 0 ? formatApw(input.quoteApw) : null,
+    unlockLabel: `${String(input.apuCost)} APU`,
+  };
+};
+
 /**
  * Create the education center day-entry gate panel.
  *
@@ -251,19 +298,26 @@ export const createEducationAccessPanel = (
 
   const refresh = (): void => {
     if (current === null) return;
+    const charge = resolveEducationDayPassCharge({
+      preferredTender: current.preferredTender,
+      powerUps: current.powerUps,
+      balanceUsd: current.balanceUsd,
+      apuCost: current.apuCost,
+      quoteApw: current.quoteApw,
+    });
     priceLabel.textContent = current.centerLabel;
-    priceEl.textContent = `${String(current.apuCost)} APU`;
+    priceEl.textContent = charge.primaryLabel;
     priceMeta.textContent =
-      current.quoteApw > 0
-        ? `or ${formatApw(current.quoteApw)} · UTC day pass`
+      charge.alternateLabel !== null
+        ? `or ${charge.alternateLabel} · UTC day pass`
         : "UTC day pass";
     tenderEl.textContent =
-      current.preferredTender === "apu" ? "Paying with APU" : "Paying with APW$";
+      charge.tender === "apu" ? "Paying with APU" : "Paying with APW$";
     walletEl.textContent = `Wallet: ${String(current.powerUps)} APU · ${formatApw(current.balanceUsd)}`;
     unlockBtn.disabled = busy || !current.canAfford;
     unlockBtn.textContent = busy
       ? "Unlocking…"
-      : `Unlock ${current.centerLabel} · ${String(current.apuCost)} APU`;
+      : `Unlock ${current.centerLabel} · ${charge.unlockLabel}`;
     const showFinanceHub = shouldShowEducationFinanceHubCta({
       canAfford: current.canAfford,
       errorMessage: stickyError,
