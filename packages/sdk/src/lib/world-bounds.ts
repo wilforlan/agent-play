@@ -41,6 +41,19 @@ export const COLUMN_STREET_ROW_HEIGHT = 3;
 /** Height in grid rows of the single-zone parking street band above column streets. */
 export const PARKING_STREET_ROW_HEIGHT = 4;
 
+/**
+ * Height in grid rows of the Elm Street education campus band above parking.
+ * ~15% of {@link MINIMUM_PLAY_WORLD_BOUNDS} span (20 rows → 3).
+ * Kept inside the playable world — does not grow maxY past 19.
+ */
+export const EDUCATION_STREET_ROW_HEIGHT = 3;
+
+/**
+ * Empty grid rows between Oak Lane (parking) and Elm Street so Oak street-light
+ * poles do not visually overlap the education campus band.
+ */
+export const EDUCATION_PARKING_GAP_ROWS = 2;
+
 /** Empty grid rows between column street signs and the parking asphalt band. */
 export const PARKING_COLUMN_GAP_ROWS = 2.5;
 
@@ -55,12 +68,29 @@ export const parkingZoneMaxYFromColumnBase = (columnMinY: number): number => {
   );
 };
 
-/** Default bounds: column streets (Y 0–2), gap, parking row (Y 6–9). */
+/** Elm Street starts above parking after {@link EDUCATION_PARKING_GAP_ROWS}. */
+export const educationZoneMinYFromColumnBase = (columnMinY: number): number => {
+  return Math.ceil(
+    parkingZoneMaxYFromColumnBase(columnMinY) + 1 + EDUCATION_PARKING_GAP_ROWS
+  );
+};
+
+export const educationZoneMaxYFromColumnBase = (columnMinY: number): number => {
+  return (
+    educationZoneMinYFromColumnBase(columnMinY) + EDUCATION_STREET_ROW_HEIGHT - 1
+  );
+};
+
+/**
+ * Default street-layout bounds: columns (Y 0–2), gap, parking (Y 6–9),
+ * buffer, Elm Street (~15% height, e.g. Y 12–14).
+ * Playable world remains {@link MINIMUM_PLAY_WORLD_BOUNDS} (maxY 19).
+ */
 export const DEFAULT_LAYOUT_BOUNDS_WITH_PARKING: WorldBounds = {
   minX: 0,
   minY: 0,
   maxX: 19,
-  maxY: parkingZoneMaxYFromColumnBase(0),
+  maxY: educationZoneMaxYFromColumnBase(0),
 };
 
 export function expandBoundsToMinimumPlayArea(bounds: WorldBounds): WorldBounds {

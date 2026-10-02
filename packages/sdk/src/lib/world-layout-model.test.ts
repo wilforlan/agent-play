@@ -2,13 +2,17 @@ import { describe, expect, it } from "vitest";
 import {
   COLUMN_STREET_ROW_HEIGHT,
   DEFAULT_LAYOUT_BOUNDS_WITH_PARKING,
+  EDUCATION_STREET_ROW_HEIGHT,
+  MINIMUM_PLAY_WORLD_BOUNDS,
   MINIMUM_STREET_LAYOUT_BOUNDS,
   PARKING_COLUMN_GAP_ROWS,
   PARKING_STREET_ROW_HEIGHT,
+  educationZoneMinYFromColumnBase,
+  educationZoneMaxYFromColumnBase,
   parkingZoneMinYFromColumnBase,
   parkingZoneMaxYFromColumnBase,
 } from "./world-bounds.js";
-import { STREET_NAME_POOL } from "./world-streets-pool.js";
+import { STREET_NAME_POOL, getStreetPoolEntryById } from "./world-streets-pool.js";
 import {
   applyBoundsFieldUpdateToLayout,
   availableCellsForZone,
@@ -16,9 +20,13 @@ import {
   cellsForZone,
   centerOfZone,
   createVerticalStripSeedLayout,
+  createWorldLayoutWithEducationCampus,
   createWorldLayoutWithParkingRow,
+  layoutHasEducationZone,
   layoutHasParkingZone,
+  layoutNeedsEducationCampusReseed,
   layoutNeedsParkingColumnGapMigration,
+  migrateLayoutToEducationCampus,
   migrateLayoutToParkingColumnGap,
   migrateLayoutToParkingRow,
   migrateWorldLayoutBounds,
@@ -68,9 +76,135 @@ const fourSeedStreets = (): [
 
 const getParkingSeedLayout = () =>
   createWorldLayoutWithParkingRow({
-    bounds: DEFAULT_LAYOUT_BOUNDS_WITH_PARKING,
+    bounds: {
+      minX: 0,
+      minY: 0,
+      maxX: 19,
+      maxY: parkingZoneMaxYFromColumnBase(0),
+    },
     streets: fourSeedStreets(),
   });
+
+const fiveSeedStreets = (): [
+  (typeof STREET_NAME_POOL)[number],
+  (typeof STREET_NAME_POOL)[number],
+  (typeof STREET_NAME_POOL)[number],
+  (typeof STREET_NAME_POOL)[number],
+  (typeof STREET_NAME_POOL)[number],
+] => {
+  const a = STREET_NAME_POOL[0];
+  const b = STREET_NAME_POOL[1];
+  const c = STREET_NAME_POOL[2];
+  const d = STREET_NAME_POOL[3];
+  const elm = getStreetPoolEntryById("elm");
+  if (
+    a === undefined ||
+    b === undefined ||
+    c === undefined ||
+    d === undefined ||
+    elm === undefined
+  ) {
+    throw new Error("STREET_NAME_POOL must include elm and four prior streets");
+  }
+  return [a, b, c, d, elm];
+};
+
+const getEducationCampusSeedLayout = () =>
+  createWorldLayoutWithEducationCampus({
+    bounds: DEFAULT_LAYOUT_BOUNDS_WITH_PARKING,
+    streets: fiveSeedStreets(),
+  });
+
+describe("createWorldLayoutWithEducationCampus", () => {
+  it("places Elm Street education band above Oak Lane parking with buffer from columns", () => {
+    const layout = getEducationCampusSeedLayout();
+    expect(layout.zones.length).toBe(5);
+    const agent = pickZoneForGroup(layout, "agent");
+    const parking = pickZoneForGroup(layout, "parking");
+    const education = pickZoneForGroup(layout, "education");
+
+    expect(agent.rect.minY).toBe(0);
+    expect(agent.rect.maxY).toBe(COLUMN_STREET_ROW_HEIGHT - 1);
+
+    expect(parking.id).toBe("zone-parking-strip");
+    expect(parking.rect.minY).toBe(
+      parkingZoneMinYFromColumnBase(agent.rect.minY)
+    );
+    expect(parking.rect.maxY).toBe(
+      parkingZoneMaxYFromColumnBase(agent.rect.minY)
+    );
+
+    expect(education.id).toBe("zone-education-campus");
+    expect(education.streetId).toBe("elm");
+    expect(education.streetLabel).toBe("Elm Street");
+    expect(education.rect.minY).toBe(
+      educationZoneMinYFromColumnBase(agent.rect.minY)
+    );
+    expect(education.rect.maxY).toBe(
+      educationZoneMaxYFromColumnBase(agent.rect.minY)
+    );
+    expect(education.rect.minY).toBeGreaterThan(parking.rect.maxY + 1);
+    expect(education.rect.maxY - education.rect.minY + 1).toBe(
+      EDUCATION_STREET_ROW_HEIGHT
+    );
+    expect(education.rect.minX).toBe(DEFAULT_LAYOUT_BOUNDS_WITH_PARKING.minX);
+    expect(education.rect.maxX).toBe(DEFAULT_LAYOUT_BOUNDS_WITH_PARKING.maxX);
+
+    expect(parking.rect.minY).toBeGreaterThan(agent.rect.maxY + 1);
+    expect(layout.bounds.maxY).toBe(education.rect.maxY);
+    expect(layout.bounds.maxY).toBeLessThanOrEqual(
+      MINIMUM_PLAY_WORLD_BOUNDS.maxY
+    );
+  });
+
+  it("migrates parking-only layouts to add Elm Street above parking", () => {
+    const parkingOnly = getParkingSeedLayout();
+    expect(layoutHasEducationZone(parkingOnly)).toBe(false);
+    const migrated = migrateLayoutToEducationCampus(parkingOnly);
+    expect(layoutHasEducationZone(migrated)).toBe(true);
+    expect(layoutHasParkingZone(migrated)).toBe(true);
+    const education = pickZoneForGroup(migrated, "education");
+    const parking = pickZoneForGroup(migrated, "parking");
+    expect(education.streetId).toBe("elm");
+    expect(education.rect.minY).toBe(educationZoneMinYFromColumnBase(0));
+    expect(education.rect.minY).toBeGreaterThan(parking.rect.maxY + 1);
+    expect(pickZoneForGroup(migrated, "agent").streetId).toBe(
+      pickZoneForGroup(parkingOnly, "agent").streetId
+    );
+    expect(migrated.bounds.maxY).toBeLessThanOrEqual(
+      MINIMUM_PLAY_WORLD_BOUNDS.maxY
+    );
+  });
+
+  it("reseeds stale Elm Street geometry that sat flush against parking", () => {
+    const current = getEducationCampusSeedLayout();
+    const parking = pickZoneForGroup(current, "parking");
+    const stale: WorldLayout = {
+      ...current,
+      rev: 9,
+      bounds: { ...current.bounds, maxY: parking.rect.maxY + 3 },
+      zones: current.zones.map((zone) => {
+        if (zone.primaryGroup !== "education") {
+          return zone;
+        }
+        return {
+          ...zone,
+          rect: {
+            ...zone.rect,
+            minY: parking.rect.maxY + 1,
+            maxY: parking.rect.maxY + 3,
+          },
+        };
+      }),
+    };
+    expect(layoutNeedsEducationCampusReseed(stale)).toBe(true);
+    const migrated = migrateLayoutToEducationCampus(stale);
+    expect(layoutNeedsEducationCampusReseed(migrated)).toBe(false);
+    expect(pickZoneForGroup(migrated, "education").rect.minY).toBe(
+      educationZoneMinYFromColumnBase(0)
+    );
+  });
+});
 
 describe("createWorldLayoutWithParkingRow", () => {
   it("places column streets on Y 0–2 and parking strip on Y 6–9 spanning full X", () => {

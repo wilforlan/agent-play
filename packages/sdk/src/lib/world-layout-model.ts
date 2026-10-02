@@ -1,8 +1,11 @@
 import type { WorldBounds } from "./world-bounds.js";
 import {
   COLUMN_STREET_ROW_HEIGHT,
+  EDUCATION_STREET_ROW_HEIGHT,
   PARKING_COLUMN_GAP_ROWS,
   PARKING_STREET_ROW_HEIGHT,
+  educationZoneMaxYFromColumnBase,
+  educationZoneMinYFromColumnBase,
   parkingZoneMinYFromColumnBase,
   parkingZoneMaxYFromColumnBase,
 } from "./world-bounds.js";
@@ -14,7 +17,10 @@ import {
   type OccupancyGridPoint,
 } from "./occupancy-grid-model.js";
 import type { StreetPoolEntry } from "./world-streets-pool.js";
-import { STREET_NAME_POOL } from "./world-streets-pool.js";
+import {
+  getStreetPoolEntryById,
+  STREET_NAME_POOL,
+} from "./world-streets-pool.js";
 
 const LEGACY_MCP_PRIMARY_GROUP = "mcp";
 
@@ -26,7 +32,8 @@ function normalizeLegacyOccupantGroup(value: string): OccupantGroup {
     value === "agent" ||
     value === "space" ||
     value === "arcade" ||
-    value === "parking"
+    value === "parking" ||
+    value === "education"
   ) {
     return value;
   }
@@ -91,7 +98,12 @@ export function normalizeLegacyWorldLayout(layout: WorldLayout): WorldLayout {
   return { ...rebuilt, rev: layout.rev };
 }
 
-export type OccupantGroup = "agent" | "space" | "arcade" | "parking";
+export type OccupantGroup =
+  | "agent"
+  | "space"
+  | "arcade"
+  | "parking"
+  | "education";
 
 export type Street = {
   id: string;
@@ -365,6 +377,30 @@ export function layoutHasParkingZone(layout: WorldLayout): boolean {
   return layout.zones.some((z) => z.primaryGroup === "parking");
 }
 
+export function layoutHasEducationZone(layout: WorldLayout): boolean {
+  return layout.zones.some((z) => z.primaryGroup === "education");
+}
+
+export function layoutNeedsEducationCampusReseed(
+  layout: WorldLayout
+): boolean {
+  if (!layoutHasEducationZone(layout)) {
+    return false;
+  }
+  const agent = primaryZoneForGroup(layout, "agent");
+  const education = primaryZoneForGroup(layout, "education");
+  if (agent === undefined || education === undefined) {
+    return false;
+  }
+  const expectedMinY = educationZoneMinYFromColumnBase(agent.rect.minY);
+  const expectedMaxY = educationZoneMaxYFromColumnBase(agent.rect.minY);
+  return (
+    education.rect.minY !== expectedMinY ||
+    education.rect.maxY !== expectedMaxY ||
+    layout.bounds.maxY < expectedMaxY
+  );
+}
+
 function streetsFromLayoutWithParking(
   layout: WorldLayout
 ): readonly [
@@ -393,6 +429,28 @@ function streetsFromLayoutWithParking(
   ];
 }
 
+function streetsFromLayoutWithEducationCampus(
+  layout: WorldLayout
+): readonly [
+  StreetPoolEntry,
+  StreetPoolEntry,
+  StreetPoolEntry,
+  StreetPoolEntry,
+  StreetPoolEntry,
+] {
+  const parkingStreets = streetsFromLayoutWithParking(layout);
+  const education = primaryZoneForGroup(layout, "education");
+  const elm = getStreetPoolEntryById("elm");
+  if (elm === undefined) {
+    throw new Error("streetsFromLayoutWithEducationCampus: elm missing from pool");
+  }
+  const educationStreet =
+    education !== undefined
+      ? { id: education.streetId, label: education.streetLabel }
+      : elm;
+  return [...parkingStreets, educationStreet];
+}
+
 function streetsFromLayoutPrimaryGroups(
   layout: WorldLayout
 ): readonly [StreetPoolEntry, StreetPoolEntry, StreetPoolEntry] {
@@ -419,6 +477,14 @@ export function migrateWorldLayoutBounds(input: {
   bounds: WorldBounds;
 }): WorldLayout {
   assertValidLayoutBounds(input.bounds);
+  if (layoutHasEducationZone(input.layout)) {
+    const streets = streetsFromLayoutWithEducationCampus(input.layout);
+    const reseeded = createWorldLayoutWithEducationCampus({
+      bounds: input.bounds,
+      streets,
+    });
+    return { ...reseeded, rev: input.layout.rev + 1 };
+  }
   if (layoutHasParkingZone(input.layout)) {
     const streets = streetsFromLayoutWithParking(input.layout);
     const reseeded = createWorldLayoutWithParkingRow({
@@ -614,4 +680,122 @@ export function createWorldLayoutWithParkingRow(input: {
     zones: [...columnZones, parkingZone],
     streets,
   };
+}
+
+export function createWorldLayoutWithEducationCampus(input: {
+  bounds: WorldBounds;
+  streets: readonly [
+    StreetPoolEntry,
+    StreetPoolEntry,
+    StreetPoolEntry,
+    StreetPoolEntry,
+    StreetPoolEntry,
+  ];
+}): WorldLayout {
+  const { minX, maxX, minY, maxY } = input.bounds;
+  const spanX = maxX - minX + 1;
+  if (spanX < 3) {
+    throw new Error(
+      "createWorldLayoutWithEducationCampus: bounds spanX too small"
+    );
+  }
+  const columnMinY = minY;
+  const requiredMaxY = educationZoneMaxYFromColumnBase(columnMinY);
+  if (maxY < requiredMaxY) {
+    throw new Error(
+      `createWorldLayoutWithEducationCampus: spanY must reach Y ${String(requiredMaxY)}`
+    );
+  }
+  const s0 = input.streets[0];
+  const s1 = input.streets[1];
+  const s2 = input.streets[2];
+  const s3 = input.streets[3];
+  const s4 = input.streets[4];
+  if (
+    s0 === undefined ||
+    s1 === undefined ||
+    s2 === undefined ||
+    s3 === undefined ||
+    s4 === undefined
+  ) {
+    throw new Error(
+      "createWorldLayoutWithEducationCampus: expected five streets"
+    );
+  }
+  const parkingLayout = createWorldLayoutWithParkingRow({
+    bounds: input.bounds,
+    streets: [s0, s1, s2, s3],
+  });
+  const educationMinY = educationZoneMinYFromColumnBase(columnMinY);
+  const educationMaxY = educationMinY + EDUCATION_STREET_ROW_HEIGHT - 1;
+  if (educationMaxY > maxY) {
+    throw new Error(
+      "createWorldLayoutWithEducationCampus: education band exceeds bounds"
+    );
+  }
+  const educationZone: Zone = {
+    id: "zone-education-campus",
+    streetId: s4.id,
+    streetLabel: s4.label,
+    rect: { minX, maxX, minY: educationMinY, maxY: educationMaxY },
+    primaryGroup: "education",
+    allowedGroups: ["education"],
+  };
+  return {
+    rev: 1,
+    bounds: input.bounds,
+    zones: [...parkingLayout.zones, educationZone],
+    streets: [...parkingLayout.streets, streetFromPoolEntry(s4)],
+  };
+}
+
+export function migrateLayoutToEducationCampus(
+  layout: WorldLayout
+): WorldLayout {
+  const normalized = normalizeLegacyWorldLayout(layout);
+  if (
+    layoutHasEducationZone(normalized) &&
+    !layoutNeedsEducationCampusReseed(normalized)
+  ) {
+    return normalized;
+  }
+  const withParking = layoutHasParkingZone(normalized)
+    ? normalized
+    : migrateLayoutToParkingRow(normalized);
+  const streets = layoutHasEducationZone(withParking)
+    ? streetsFromLayoutWithEducationCampus(withParking)
+    : (() => {
+        const parkingStreets = streetsFromLayoutWithParking(withParking);
+        const elm = getStreetPoolEntryById("elm");
+        if (elm === undefined) {
+          throw new Error(
+            "migrateLayoutToEducationCampus: elm missing from pool"
+          );
+        }
+        const usedIds = new Set(withParking.streets.map((s) => s.id));
+        const educationStreet = usedIds.has(elm.id)
+          ? (() => {
+              const next = nextStreetFromPool(usedIds);
+              if (next === undefined) {
+                throw new Error(
+                  "migrateLayoutToEducationCampus: no street available for education"
+                );
+              }
+              return next;
+            })()
+          : elm;
+        return [...parkingStreets, educationStreet] as const;
+      })();
+  const nextBounds: WorldBounds = {
+    ...withParking.bounds,
+    maxY: Math.max(
+      withParking.bounds.maxY,
+      educationZoneMaxYFromColumnBase(withParking.bounds.minY)
+    ),
+  };
+  const seeded = createWorldLayoutWithEducationCampus({
+    bounds: nextBounds,
+    streets,
+  });
+  return { ...seeded, rev: withParking.rev + 1 };
 }
