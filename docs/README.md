@@ -21,10 +21,11 @@ The repository uses npm workspaces. **`packages/sdk`** is the Node.js package `@
 | [Geography mesh](geography-mesh.md) | **`@agent-play/geography-mesh`** — AOI neighbor selection, Yjs pose helpers, Zod wire schemas, how host/client use it |
 | [npm & CI](npm-and-ci.md) | `@agent-play/sdk`, `@agent-play/cli`, `@agent-play/play-ui`, `@agent-play/geography-mesh`, publish workflow, TypeDoc / GitHub Pages |
 | [API reference (generated)](api-reference.md) | How HTML docs are built and deployed |
-| [Pending feature backlog](pending-features.md) | Remaining roadmap: card payments, developer dashboard, custom avatars |
+| [Pending feature backlog](pending-features.md) | Remaining roadmap: card payments, developer dashboard, custom avatars, Elm Street Educational Arena |
 | [Space platform](platform/README.md) | `/platform` — purchase KPIs, amenities, space wallet, embedded AQL |
 | [Agent Play Scanner](scanner/README.md) | `/scanner` — public ledger, nodes, analytics, tx detail |
 | [Maple Ave. Arcade](games/README.md) | Built-in arcade cabinets (replaces deprecated public MCP amenities) |
+| [Elm Street Educational Arena](education/README.md) | **Design docs only** — school campus street, eight centers, 5 APU day gates, learning paths |
 | [Overview](overview.md) | How the SDK and UI relate, and why they are separate deployables |
 | [Monorepo](monorepo.md) | Workspaces, build order, root scripts |
 | [Release 3.1.1](releases/agent-play-3.1.1.md) | **World switch, amenity stages, wallet, sold state, AQL extensions** — overworld → space yard → amenity stage controller, bookstore / supermarket / car-wash stages, $70 wallet seed, `ADD SHOP ITEM`/`ADD SUPERMARKET ITEM`/`ADD CARWASH CAR`, `Esc` + exit-door exits |

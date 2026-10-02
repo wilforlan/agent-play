@@ -6,7 +6,22 @@ This page describes **directional work** that is not fully implemented today. It
 
 ## Remaining backlog
 
-Three themes are still open. Everything else in earlier roadmap drafts is either **shipped**, **superseded**, or **deprioritized** for now.
+Four themes are still open. Everything else in earlier roadmap drafts is either **shipped**, **superseded**, or **deprioritized** for now.
+
+### Elm Street Educational Arena
+
+**Goal:** A school-campus street (**Elm Street**) where visitors learn teaching mastery across up to **eight giant educational centers**.
+
+**Design (docs only — no code yet):** [education/README.md](education/README.md) and the full spec [education/elm-street-educational-arena.md](education/elm-street-educational-arena.md).
+
+Locked product intent from that package:
+
+- **Location:** Elm Street **above Oak Lane** (top of map); buffer so it is **not** next to St. John / Peterson / Maple; **no world-bounds expansion**
+- Campus ambience: trees, benches, **street lights**, **street name strip (no T-post)**, intermittent randomized flying birds (non-interactive, capped)
+- Unique realistic sprites for each educational center (giant buildings)
+- Gate: **5 APU or dual-tender APW$ equivalent per center per UTC day**
+- Structured courses, learning paths, mastery marks (APU sink for learning — not Maple Ave earn)
+- Implementation waits on explicit coding kickoff; Phase 0 is documentation alignment
 
 ### Card payments as amenities
 
