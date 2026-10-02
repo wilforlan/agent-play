@@ -28,6 +28,26 @@ describe("scanner-model", () => {
     expect(row.amenityKind).toBe("arcade_pass");
   });
 
+  it("parses purchaseEducationAccess scanner op for education_pass", () => {
+    const row = ScannerTxRecordSchema.parse({
+      id: "education-pass-1",
+      playerId: "node-1",
+      spaceId: "__education__:foundations-hall",
+      amenityKind: "education_pass",
+      itemRef: { kind: "education_pass", id: "foundations-hall:2026-10-02" },
+      priceUsd: 0.33,
+      at: "2026-10-02T12:00:00.000Z",
+      powerUpsDelta: -5,
+      hostId: "default",
+      indexedAt: "2026-10-02T12:00:01.000Z",
+      op: "purchaseEducationAccess",
+      blockRev: 1,
+      merkleRootHex: "abc",
+    });
+    expect(row.op).toBe("purchaseEducationAccess");
+    expect(row.amenityKind).toBe("education_pass");
+  });
+
   it("parses a scanner tx record with explorer metadata", () => {
     const row = ScannerTxRecordSchema.parse({
       id: "tx-1",
