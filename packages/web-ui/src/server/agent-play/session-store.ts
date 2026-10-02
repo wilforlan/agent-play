@@ -323,6 +323,36 @@ export type SessionStore = {
         error: "INSUFFICIENT_FUNDS" | "RATE_UNAVAILABLE";
       }
   >;
+  getEducationAccess(input: {
+    playerId: string;
+    centerId: import("@agent-play/sdk").EducationCenterId;
+    now: string;
+  }): Promise<{
+    access: import("@agent-play/sdk").EducationAccessPass | null;
+    apwPerApu: number;
+    quoteApw: number;
+    apuCost: number;
+    preferredTender: import("@agent-play/sdk").EducationTender;
+    wallet: PlayerWallet;
+  }>;
+  purchaseEducationAccess(input: {
+    playerId: string;
+    centerId: import("@agent-play/sdk").EducationCenterId;
+    now: string;
+    recordId: string;
+  }): Promise<
+    | {
+        ok: true;
+        wallet: PlayerWallet;
+        access: import("@agent-play/sdk").EducationAccessPass;
+        purchase: PurchaseRecord;
+        tender: import("@agent-play/sdk").EducationTender;
+      }
+    | {
+        ok: false;
+        error: "INSUFFICIENT_FUNDS" | "RATE_UNAVAILABLE" | "INVALID_CENTER";
+      }
+  >;
   getGameStats(input: { playerId: string; now: string }): Promise<GameStats>;
   applyGameOutcome(input: {
     playerId: string;

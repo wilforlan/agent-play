@@ -171,7 +171,28 @@ describe("bootstrapWorldLayoutIfNeeded", () => {
     expect(pickZoneForGroup(migrated, "parking").rect.minY).toBe(
       parkingZoneMinYFromColumnBase(0)
     );
-    expect(migrated.bounds.maxY).toBe(9);
-    expect(migrated.rev).toBe(4);
+    expect(pickZoneForGroup(migrated, "education").streetId).toBe("elm");
+    expect(pickZoneForGroup(migrated, "education").rect.minY).toBeGreaterThan(
+      pickZoneForGroup(migrated, "parking").rect.maxY + 1
+    );
+    expect(migrated.bounds.maxY).toBe(
+      pickZoneForGroup(migrated, "education").rect.maxY
+    );
+    expect(migrated.rev).toBeGreaterThanOrEqual(4);
+  });
+
+  it("seeds Elm Street education campus above parking for new hosts", async () => {
+    const redis = new FakeRedis();
+    const repo = new WorldLayoutRepository({
+      redis: redis as never,
+      hostId: "h-edu",
+    });
+    const layout = await bootstrapWorldLayoutIfNeeded({ repo });
+    expect(layout.zones.length).toBe(5);
+    expect(pickZoneForGroup(layout, "education").streetId).toBe("elm");
+    expect(pickZoneForGroup(layout, "education").streetLabel).toBe("Elm Street");
+    expect(pickZoneForGroup(layout, "education").rect.minY).toBeGreaterThan(
+      pickZoneForGroup(layout, "parking").rect.maxY + 1
+    );
   });
 });

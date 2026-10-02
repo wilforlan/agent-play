@@ -52,16 +52,27 @@ import {
   buildAmenityPurchaseApuFields,
   buildApuWalletTransaction,
   buildArcadePassPurchaseFields,
+  buildEducationPassPurchaseFields,
   buildWalletBundleApuFields,
   buildArcadeAccessPass,
+  buildEducationAccessPass,
   chooseArcadeTender,
+  chooseEducationTender,
+  educationCenterDayPassApuCost,
   isArcadeAccessActive,
+  isEducationAccessActive,
+  isEducationCenterId,
   quoteArcadePassApw,
+  quoteEducationCenterDayPassApw,
   resolveArcadeTenderForPurchase,
+  resolveEducationTenderForPurchase,
   arcadePassApuCost,
   type ArcadeAccessPass,
   type ArcadeAccessPlan,
   type ArcadeTender,
+  type EducationAccessPass,
+  type EducationCenterId,
+  type EducationTender,
 } from "@agent-play/sdk";
 import {
   applyGameOutcomeToState,
@@ -135,6 +146,10 @@ export class TestSessionStore implements SessionStore {
   private readonly playerWallets = new Map<string, PlayerWallet>();
   private readonly playerPurchases = new Map<string, PurchaseRecord[]>();
   private readonly arcadeAccessByPlayer = new Map<string, ArcadeAccessPass>();
+  private readonly educationAccessByPlayer = new Map<
+    string,
+    Map<EducationCenterId, EducationAccessPass>
+  >();
   private apwPerApuRate = 0;
   private readonly geographyHumans = new Map<string, GeographyHumanState>();
   private readonly geographyMembers = new Map<string, GeographyMember>();
@@ -1172,6 +1187,174 @@ export class TestSessionStore implements SessionStore {
           : "Arcade weekly pass (7d, 20% off)",
       ...buildArcadePassPurchaseFields({
         plan: input.plan,
+        tender: settled.tender,
+        apuCost: settled.apuCost,
+        apwCharged: settled.apwCharged,
+      }),
+    });
+    await this.appendPurchaseRecord(record);
+    return {
+      ok: true,
+      wallet: updatedWallet,
+      access,
+      purchase: record,
+      tender: settled.tender,
+    };
+  }
+
+  async getEducationAccess(input: {
+    playerId: string;
+    centerId: EducationCenterId;
+    now: string;
+  }): Promise<{
+    access: EducationAccessPass | null;
+    apwPerApu: number;
+    quoteApw: number;
+    apuCost: number;
+    preferredTender: EducationTender;
+    wallet: PlayerWallet;
+  }> {
+    const wallet = await this.getPlayerWallet(input.playerId);
+    const byCenter = this.educationAccessByPlayer.get(input.playerId);
+    const stored = byCenter?.get(input.centerId) ?? null;
+    const access = isEducationAccessActive(stored, new Date(input.now))
+      ? stored
+      : null;
+    const apwPerApu = this.apwPerApuRate;
+    const apuCost = educationCenterDayPassApuCost();
+    return {
+      access,
+      apwPerApu,
+      quoteApw: quoteEducationCenterDayPassApw({ apwPerApu }),
+      apuCost,
+      preferredTender: chooseEducationTender({
+        powerUps: wallet.powerUps ?? 0,
+        balanceUsd: wallet.balanceUsd,
+        apwPerApu,
+      }),
+      wallet: { ...wallet },
+    };
+  }
+
+  async purchaseEducationAccess(input: {
+    playerId: string;
+    centerId: EducationCenterId;
+    now: string;
+    recordId: string;
+  }): Promise<
+    | {
+        ok: true;
+        wallet: PlayerWallet;
+        access: EducationAccessPass;
+        purchase: PurchaseRecord;
+        tender: EducationTender;
+      }
+    | { ok: false; error: "INSUFFICIENT_FUNDS" | "RATE_UNAVAILABLE" | "INVALID_CENTER" }
+  > {
+    if (!isEducationCenterId(input.centerId)) {
+      return { ok: false, error: "INVALID_CENTER" };
+    }
+    const existing = await this.getEducationAccess({
+      playerId: input.playerId,
+      centerId: input.centerId,
+      now: input.now,
+    });
+    if (existing.access !== null) {
+      const purchases = await this.listPurchases({
+        playerId: input.playerId,
+        limit: 50,
+      });
+      const prior = purchases.find(
+        (p) =>
+          p.amenityKind === "education_pass" &&
+          p.itemRef.id === `${input.centerId}:${existing.access?.utcDay ?? ""}`
+      );
+      const purchase =
+        prior ??
+        PurchaseRecordSchema.parse({
+          id: input.recordId,
+          playerId: input.playerId,
+          spaceId: `__education__:${input.centerId}`,
+          amenityKind: "education_pass",
+          itemRef: {
+            kind: "education_pass",
+            id: `${input.centerId}:${existing.access.utcDay}`,
+          },
+          at: existing.access.purchasedAt,
+          detail: `Elm Street · ${input.centerId} · day entry already active`,
+          ...buildEducationPassPurchaseFields({
+            centerId: input.centerId,
+            utcDay: existing.access.utcDay,
+            tender: existing.access.tender,
+            apuCost: existing.access.apuCost,
+            apwCharged: existing.access.apwCharged,
+          }),
+        });
+      return {
+        ok: true,
+        wallet: existing.wallet,
+        access: existing.access,
+        purchase,
+        tender: existing.access.tender,
+      };
+    }
+
+    const wallet = await this.getPlayerWallet(input.playerId);
+    const apwPerApu = this.apwPerApuRate;
+    const settled = resolveEducationTenderForPurchase({
+      powerUps: wallet.powerUps ?? 0,
+      balanceUsd: wallet.balanceUsd,
+      apwPerApu,
+    });
+    if (settled === null) {
+      const apuCost = educationCenterDayPassApuCost();
+      if (apwPerApu <= 0 && (wallet.powerUps ?? 0) < apuCost) {
+        return { ok: false, error: "RATE_UNAVAILABLE" };
+      }
+      return { ok: false, error: "INSUFFICIENT_FUNDS" };
+    }
+
+    const updatedWallet: PlayerWallet =
+      settled.tender === "apu"
+        ? {
+            ...wallet,
+            powerUps: (wallet.powerUps ?? 0) - settled.apuCost,
+            updatedAt: input.now,
+          }
+        : {
+            ...wallet,
+            balanceUsd: wallet.balanceUsd - settled.apwCharged,
+            updatedAt: input.now,
+          };
+    this.playerWallets.set(input.playerId, updatedWallet);
+
+    const access = buildEducationAccessPass({
+      centerId: input.centerId,
+      purchasedAt: input.now,
+      tender: settled.tender,
+      apuCost: settled.apuCost,
+      apwCharged: settled.apwCharged,
+    });
+    const byCenter =
+      this.educationAccessByPlayer.get(input.playerId) ??
+      new Map<EducationCenterId, EducationAccessPass>();
+    byCenter.set(input.centerId, access);
+    this.educationAccessByPlayer.set(input.playerId, byCenter);
+
+    const record: PurchaseRecord = PurchaseRecordSchema.parse({
+      id: input.recordId,
+      playerId: input.playerId,
+      spaceId: `__education__:${input.centerId}`,
+      amenityKind: "education_pass",
+      itemRef: {
+        kind: "education_pass",
+        id: `${input.centerId}:${access.utcDay}`,
+      },
+      at: input.now,
+      detail: `Elm Street · ${input.centerId} · day entry`,
+      ...buildEducationPassPurchaseFields({
+        centerId: input.centerId,
+        utcDay: access.utcDay,
         tender: settled.tender,
         apuCost: settled.apuCost,
         apwCharged: settled.apwCharged,
