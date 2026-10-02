@@ -7,6 +7,9 @@ export {
   MINIMUM_PLAY_WORLD_BOUNDS,
   MINIMUM_STREET_LAYOUT_BOUNDS,
   DEFAULT_LAYOUT_BOUNDS_WITH_PARKING,
+  EDUCATION_STREET_ROW_HEIGHT,
+  educationZoneMinYFromColumnBase,
+  educationZoneMaxYFromColumnBase,
 } from "./lib/world-bounds.js";
 export {
   type OccupancyGridPoint,
@@ -61,8 +64,12 @@ export {
   isSpaceAnchorOccupancyPointAvailableInZone,
   createVerticalStripSeedLayout,
   createWorldLayoutWithParkingRow,
+  createWorldLayoutWithEducationCampus,
   migrateLayoutToParkingRow,
+  migrateLayoutToEducationCampus,
   layoutHasParkingZone,
+  layoutHasEducationZone,
+  layoutNeedsEducationCampusReseed,
   migrateWorldLayoutBounds,
   applyBoundsFieldUpdateToLayout,
   type WorldLayoutBoundsField,
@@ -263,3 +270,13 @@ export {
   type ArcadeAccessPlan,
   type ArcadeTender,
 } from "./lib/arcade-access-catalog.js";
+export {
+  EDUCATION_CENTER_DAY_PASS_APU,
+  EDUCATION_CENTER_IDS,
+  educationCenterDayPassApuCost,
+  isEducationAccessActive,
+  isEducationCenterId,
+  type EducationAccessPass,
+  type EducationCenterId,
+  type EducationTender,
+} from "./lib/education-access-catalog.js";

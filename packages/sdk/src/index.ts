@@ -81,9 +81,13 @@ export {
   COLUMN_STREET_ROW_HEIGHT,
   PARKING_COLUMN_GAP_ROWS,
   PARKING_STREET_ROW_HEIGHT,
+  EDUCATION_STREET_ROW_HEIGHT,
+  EDUCATION_PARKING_GAP_ROWS,
   DEFAULT_LAYOUT_BOUNDS_WITH_PARKING,
   parkingZoneMinYFromColumnBase,
   parkingZoneMaxYFromColumnBase,
+  educationZoneMinYFromColumnBase,
+  educationZoneMaxYFromColumnBase,
   type WorldBounds,
 } from "./lib/world-bounds.js";
 export {
@@ -139,10 +143,14 @@ export {
   isSpaceAnchorOccupancyPointAvailableInZone,
   createVerticalStripSeedLayout,
   createWorldLayoutWithParkingRow,
+  createWorldLayoutWithEducationCampus,
   migrateLayoutToParkingRow,
+  migrateLayoutToEducationCampus,
   layoutNeedsParkingColumnGapMigration,
   migrateLayoutToParkingColumnGap,
   layoutHasParkingZone,
+  layoutHasEducationZone,
+  layoutNeedsEducationCampusReseed,
   migrateWorldLayoutBounds,
   applyBoundsFieldUpdateToLayout,
   type WorldLayoutBoundsField,
@@ -239,6 +247,7 @@ export {
   buildAmenityPurchaseApuFields,
   buildApuWalletTransaction,
   buildArcadePassPurchaseFields,
+  buildEducationPassPurchaseFields,
   buildWalletBundleApuFields,
 } from "./lib/wallet-apu-transaction.js";
 export {
@@ -301,6 +310,24 @@ export {
   type ArcadeAccessPlan,
   type ArcadeTender,
 } from "./lib/arcade-access-catalog.js";
+export {
+  EDUCATION_CENTER_DAY_PASS_APU,
+  EDUCATION_CENTER_IDS,
+  EducationAccessPassSchema,
+  EducationCenterIdSchema,
+  buildEducationAccessPass,
+  chooseEducationTender,
+  educationCenterDayPassApuCost,
+  isEducationAccessActive,
+  isEducationCenterId,
+  quoteEducationCenterDayPassApw,
+  resolveEducationTenderForPurchase,
+  utcDayEndIso,
+  utcDayKey,
+  type EducationAccessPass,
+  type EducationCenterId,
+  type EducationTender,
+} from "./lib/education-access-catalog.js";
 export {
   GAME_CABINET_CATALOG,
   PLAYABLE_GAME_IDS,

@@ -1,5 +1,6 @@
 import { Container, Graphics, Text } from "pixi.js";
 import type { WorldBounds } from "@agent-play/sdk/browser";
+import { HOUSE_WORLD_X } from "@agent-play/sdk/browser";
 import { cssColorToPixi, type MultiversePalette } from "./multiverse-engine.js";
 
 type WorldToLocal = (wx: number, wy: number) => { x: number; y: number };
@@ -8,7 +9,28 @@ export type StreetSignZone = {
   id: string;
   streetLabel: string;
   rect: WorldBounds;
+  scale?: number;
+  lightCount?: number;
 };
+
+export type StreetSignMetrics = {
+  poleW: number;
+  poleH: number;
+  panelW: number;
+  panelH: number;
+};
+
+export type StreetLightMetrics = {
+  poleW: number;
+  poleH: number;
+  lampW: number;
+  lampH: number;
+};
+
+export const PARKING_STREET_SIGN_SCALE = 1.75;
+export const PARKING_STREET_LIGHT_COUNT = 4;
+/** World-X offset left of each house so poles sit beside the facade, not on it. */
+export const PARKING_STREET_FURNITURE_BESIDE_OFFSET = 1.2;
 
 const POLE_COLOR = 0x475569;
 const POLE_HIGHLIGHT = 0x64748b;
@@ -16,20 +38,97 @@ const SIGN_PANEL_COLOR = 0x0f172a;
 const LAMP_COLOR = 0xfde68a;
 const LAMP_GLOW_COLOR = 0xfef3c7;
 
+export const isParkingStreetSignZone = (zone: StreetSignZone): boolean => {
+  return zone.lightCount !== undefined || zone.scale !== undefined;
+};
+
+export const parkingStreetFurnitureWorldY = (zone: StreetSignZone): number => {
+  return zone.rect.maxY - 0.2;
+};
+
+export const parkingStreetLightWorldXs = (opts: {
+  rect: WorldBounds;
+  lightCount: number;
+}): readonly number[] => {
+  const count = Math.max(1, opts.lightCount);
+  return Array.from({ length: count }, (_, index) => {
+    const houseX = HOUSE_WORLD_X[index] ?? opts.rect.minX + index * 5;
+    return houseX - PARKING_STREET_FURNITURE_BESIDE_OFFSET;
+  });
+};
+
+export const parkingStreetSignWorldX = (): number => {
+  const firstHouseX = HOUSE_WORLD_X[0] ?? 3;
+  return firstHouseX - PARKING_STREET_FURNITURE_BESIDE_OFFSET * 2;
+};
+
+export function streetSignMetrics(opts: {
+  cellScale: number;
+  scale?: number;
+}): StreetSignMetrics {
+  const cellScale = opts.cellScale * (opts.scale ?? 1);
+  return {
+    poleW: Math.max(3, cellScale * 0.07),
+    poleH: Math.max(28, cellScale * 0.85),
+    panelW: Math.max(76, cellScale * 2.4),
+    panelH: Math.max(16, cellScale * 0.38),
+  };
+}
+
+export function streetLightMetrics(opts: {
+  cellScale: number;
+  scale?: number;
+}): StreetLightMetrics {
+  const cellScale = opts.cellScale * (opts.scale ?? 1);
+  return {
+    poleW: Math.max(2.6, cellScale * 0.06),
+    poleH: Math.max(34, cellScale * 1.0),
+    lampW: Math.max(10, cellScale * 0.28),
+    lampH: Math.max(8, cellScale * 0.22),
+  };
+}
+
+export function toStreetSignZones(
+  zones: readonly {
+    id: string;
+    streetLabel: string;
+    rect: WorldBounds;
+    primaryGroup: string;
+  }[]
+): StreetSignZone[] {
+  return zones
+    .filter((zone) => zone.primaryGroup !== "education")
+    .map((zone) => {
+      const base: StreetSignZone = {
+        id: zone.id,
+        streetLabel: zone.streetLabel,
+        rect: { ...zone.rect },
+      };
+      if (zone.primaryGroup !== "parking") {
+        return base;
+      }
+      return {
+        ...base,
+        scale: PARKING_STREET_SIGN_SCALE,
+        lightCount: PARKING_STREET_LIGHT_COUNT,
+      };
+    });
+}
+
 export function buildTSignPost(opts: {
   palette: MultiversePalette;
   cellScale: number;
   label: string;
+  scale?: number;
 }): Container {
-  const { palette, cellScale, label } = opts;
+  const { palette, label } = opts;
   const root = new Container();
   const strokeColor = cssColorToPixi(palette.stroke);
   const textColor = 0xffffff;
-
-  const poleW = Math.max(3, cellScale * 0.07);
-  const poleH = Math.max(28, cellScale * 0.85);
-  const panelW = Math.max(76, cellScale * 2.4);
-  const panelH = Math.max(16, cellScale * 0.38);
+  const { poleW, poleH, panelW, panelH } = streetSignMetrics({
+    cellScale: opts.cellScale,
+    scale: opts.scale,
+  });
 
   const pole = new Graphics({ roundPixels: true });
   pole.rect(-poleW / 2, -poleH, poleW, poleH);
@@ -67,22 +166,23 @@ export function buildTSignPost(opts: {
   return root;
 }
 
-function buildStreetLightPost(opts: {
+export function buildStreetLightPost(opts: {
   palette: MultiversePalette;
   cellScale: number;
+  scale?: number;
 }): Container {
-  const { palette, cellScale } = opts;
+  const { palette } = opts;
   const root = new Container();
   const strokeColor = cssColorToPixi(palette.stroke);
-
-  const poleW = Math.max(2.6, cellScale * 0.06);
-  const poleH = Math.max(34, cellScale * 1.0);
-  const lampW = Math.max(10, cellScale * 0.28);
-  const lampH = Math.max(8, cellScale * 0.22);
+  const { poleW, poleH, lampW, lampH } = streetLightMetrics({
+    cellScale: opts.cellScale,
+    scale: opts.scale,
+  });
   const lampRadius = Math.min(lampW, lampH) * 0.4;
+  const scale = opts.scale ?? 1;
 
   const glow = new Graphics({ roundPixels: false });
-  const glowR = Math.max(14, cellScale * 0.6);
+  const glowR = Math.max(14, opts.cellScale * scale * 0.6);
   glow.circle(0, -poleH - lampH * 0.5, glowR);
   glow.fill({ color: LAMP_GLOW_COLOR, alpha: 0.16 });
   root.addChild(glow);
@@ -97,7 +197,7 @@ function buildStreetLightPost(opts: {
   root.addChild(pole);
 
   const fixture = new Graphics({ roundPixels: true });
-  const fixtureH = Math.max(3, cellScale * 0.08);
+  const fixtureH = Math.max(3, opts.cellScale * scale * 0.08);
   fixture.rect(-lampW / 2, -poleH - fixtureH, lampW, fixtureH);
   fixture.fill({ color: POLE_COLOR, alpha: 0.95 });
   fixture.stroke({ width: 1, color: strokeColor, alpha: 0.85 });
@@ -124,6 +224,42 @@ function buildStreetLightPost(opts: {
   return root;
 }
 
+const lightWorldXForZone = (opts: {
+  zone: StreetSignZone;
+  index: number;
+  lightCount: number;
+}): number => {
+  const { zone, index, lightCount } = opts;
+  if (isParkingStreetSignZone(zone)) {
+    const xs = parkingStreetLightWorldXs({
+      rect: zone.rect,
+      lightCount,
+    });
+    return xs[index] ?? zone.rect.minX;
+  }
+  if (lightCount <= 1) {
+    return Math.min(zone.rect.maxX + 1 - 0.25, zone.rect.maxX + 0.75);
+  }
+  const span = zone.rect.maxX - zone.rect.minX + 1;
+  const inset = Math.min(0.75, span * 0.08);
+  const usable = Math.max(span - inset * 2, 0.1);
+  return zone.rect.minX + inset + ((index + 0.5) / lightCount) * usable;
+};
+
+const signWorldXForZone = (zone: StreetSignZone): number => {
+  if (isParkingStreetSignZone(zone)) {
+    return parkingStreetSignWorldX();
+  }
+  return (zone.rect.minX + zone.rect.maxX + 1) / 2;
+};
+
+const furnitureWorldYForZone = (zone: StreetSignZone): number => {
+  if (isParkingStreetSignZone(zone)) {
+    return parkingStreetFurnitureWorldY(zone);
+  }
+  return zone.rect.maxY + 1;
+};
+
 export function mountStreetSignPosts(options: {
   layer: Container;
   palette: MultiversePalette;
@@ -137,21 +273,28 @@ export function mountStreetSignPosts(options: {
     ch.destroy({ children: true });
   }
   for (const zone of zones) {
-    const centerX = (zone.rect.minX + zone.rect.maxX + 1) / 2;
-    const topY = zone.rect.maxY + 1;
-    const signAnchor = worldToLocal(centerX, topY);
+    const furnitureY = furnitureWorldYForZone(zone);
+    const signAnchor = worldToLocal(signWorldXForZone(zone), furnitureY);
     const signPost = buildTSignPost({
       palette,
       cellScale,
       label: zone.streetLabel,
+      scale: zone.scale,
     });
     signPost.position.set(signAnchor.x, signAnchor.y);
     layer.addChild(signPost);
 
-    const lightX = Math.min(zone.rect.maxX + 1 - 0.25, zone.rect.maxX + 0.75);
-    const lightAnchor = worldToLocal(lightX, topY);
-    const lightPost = buildStreetLightPost({ palette, cellScale });
-    lightPost.position.set(lightAnchor.x, lightAnchor.y);
-    layer.addChild(lightPost);
+    const lightCount = Math.max(1, zone.lightCount ?? 1);
+    for (let i = 0; i < lightCount; i += 1) {
+      const lightX = lightWorldXForZone({ zone, index: i, lightCount });
+      const lightAnchor = worldToLocal(lightX, furnitureY);
+      const lightPost = buildStreetLightPost({
+        palette,
+        cellScale,
+        scale: zone.scale,
+      });
+      lightPost.position.set(lightAnchor.x, lightAnchor.y);
+      layer.addChild(lightPost);
+    }
   }
 }
