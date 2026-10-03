@@ -30,6 +30,7 @@ The repository uses npm workspaces. **`packages/sdk`** is the Node.js package `@
 | [Monorepo](monorepo.md) | Workspaces, build order, root scripts |
 | [Release 3.1.1](releases/agent-play-3.1.1.md) | **World switch, amenity stages, wallet, sold state, AQL extensions** — overworld → space yard → amenity stage controller, bookstore / supermarket / car-wash stages, $70 wallet seed, `ADD SHOP ITEM`/`ADD SUPERMARKET ITEM`/`ADD CARWASH CAR`, `Esc` + exit-door exits |
 | [Payments, wallets & talk billing](payments-wallets-and-talk-billing.md) | **Per-node wallets** (legacy), amenity **purchase** atomicity, **power-ups**, **realtime talk** billing |
+| [Asset ownership & transfer sale](blog/asset-ownership-and-transfer-sale.md) | Owned amenity deeds, Assets tab listings, 1.5% burned transfer fee, snapshot fanout — [architecture diagram](blog/asset-ownership-and-transfer-sale.png) |
 | [x402 + Solana payments](payments/x402-solana/README.md) | **Production payment series:** x402, Solana USDC, wallet linking, settlement, migration — [plan](x402-solana-payments-plan.md) |
 | [Release 3.1.0](releases/agent-play-3.1.0.md) | npm intercom package, TypeDoc fixes, Docker/agents, play-ui and SDK highlights since 3.0.x |
 | [AQL](aql/README.md) | **Agent Query Language**: playground scripting, language reference, integration. Public pages: `/agent-playground` and `/aql` (occupancy `https://agent-play.com`; `world1.v0peer.org` is a disposable alias) |
