@@ -30,6 +30,7 @@ export { desaturateColor };
  * @public
  */
 export const soldBadgeBannerColor = 0xcc1f1f;
+export const mineBadgeBannerColor = 0x16a34a;
 
 const SOLD_BADGE_SHADOW_COLOR = 0x000000;
 const SOLD_BADGE_TEXT_COLOR = 0xffffff;
@@ -48,6 +49,8 @@ export type BuildSoldBadgeOptions = {
   height: number;
   /** Optional label override; defaults to `"SOLD"`. */
   label?: string;
+  /** Optional banner fill; defaults to {@link soldBadgeBannerColor}. */
+  bannerColor?: number;
 };
 
 /**
@@ -68,7 +71,12 @@ export type BuildSoldBadgeOptions = {
  * @public
  */
 export const buildSoldBadge = (options: BuildSoldBadgeOptions): Container => {
-  const { width, height, label = "SOLD" } = options;
+  const {
+    width,
+    height,
+    label = "SOLD",
+    bannerColor = soldBadgeBannerColor,
+  } = options;
   const container = new Container();
   container.x = width / 2;
   container.y = height / 2;
@@ -90,7 +98,7 @@ export const buildSoldBadge = (options: BuildSoldBadgeOptions): Container => {
 
   const banner = new Graphics();
   banner.rect(-bannerWidth / 2, -bannerHeight / 2, bannerWidth, bannerHeight);
-  banner.fill({ color: soldBadgeBannerColor });
+  banner.fill({ color: bannerColor });
   banner.rotation = Math.atan2(height, width);
   container.addChild(banner);
 
@@ -112,3 +120,19 @@ export const buildSoldBadge = (options: BuildSoldBadgeOptions): Container => {
 
   return container;
 };
+
+/**
+ * Green diagonal `MINE` placard for items owned by the current viewer.
+ *
+ * @public
+ */
+export const buildMineBadge = (options: {
+  width: number;
+  height: number;
+}): Container =>
+  buildSoldBadge({
+    width: options.width,
+    height: options.height,
+    label: "MINE",
+    bannerColor: mineBadgeBannerColor,
+  });

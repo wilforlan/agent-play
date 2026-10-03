@@ -16,7 +16,7 @@
 
 import { Container, Graphics, Text } from "pixi.js";
 import { desaturateColor } from "@agent-play/sdk/browser";
-import { buildSoldBadge } from "./sprite-sold-overlay.js";
+import { buildMineBadge, buildSoldBadge } from "./sprite-sold-overlay.js";
 
 /**
  * Shop item type the sprite supports.
@@ -58,6 +58,7 @@ export const shopItemTypeColor = (type: ShopItemSpriteType): number =>
 export type BuildShopItemSpriteOptions = {
   type: ShopItemSpriteType;
   sold: boolean;
+  mine?: boolean;
   label: string;
 };
 
@@ -137,7 +138,11 @@ export const buildShopItemSprite = (
   labelText.position.set(0, -CARD_HEIGHT / 2 + bandHeight + 8);
   root.addChild(labelText);
 
-  if (options.sold) {
+  if (options.mine === true) {
+    const badge = buildMineBadge({ width: CARD_WIDTH, height: CARD_HEIGHT });
+    badge.position.set(-CARD_WIDTH / 2, -CARD_HEIGHT / 2);
+    root.addChild(badge);
+  } else if (options.sold) {
     const badge = buildSoldBadge({ width: CARD_WIDTH, height: CARD_HEIGHT });
     badge.position.set(-CARD_WIDTH / 2, -CARD_HEIGHT / 2);
     root.addChild(badge);

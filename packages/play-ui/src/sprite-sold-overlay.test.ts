@@ -1,6 +1,11 @@
 // @vitest-environment happy-dom
 import { describe, expect, it } from "vitest";
-import { buildSoldBadge, soldBadgeBannerColor } from "./sprite-sold-overlay.js";
+import {
+  buildMineBadge,
+  buildSoldBadge,
+  mineBadgeBannerColor,
+  soldBadgeBannerColor,
+} from "./sprite-sold-overlay.js";
 
 describe("sprite-sold-overlay", () => {
   it("returns a container that holds the banner graphics and SOLD label", () => {
@@ -36,5 +41,15 @@ describe("sprite-sold-overlay", () => {
   it("exposes a stable red banner color constant", () => {
     expect(typeof soldBadgeBannerColor).toBe("number");
     expect(soldBadgeBannerColor & 0xff0000).toBeGreaterThan(0);
+  });
+
+  it("builds a green MINE placard", () => {
+    const container = buildMineBadge({ width: 80, height: 60 });
+    const text = container.children.find(
+      (child) =>
+        typeof (child as unknown as { text?: unknown }).text === "string"
+    );
+    expect((text as unknown as { text: string }).text).toBe("MINE");
+    expect(mineBadgeBannerColor).toBe(0x16a34a);
   });
 });
