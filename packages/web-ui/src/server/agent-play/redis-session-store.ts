@@ -94,6 +94,8 @@ import {
   ArcadeAccessPassSchema,
   EducationAccessPassSchema,
   EducationTuitionEnrollmentSchema,
+  EducationLessonProgressSchema,
+  educationProgressKey,
   ANALYTICS_EVENT_NAMES,
   type ArcadeAccessPass,
   type ArcadeAccessPlan,
@@ -101,6 +103,7 @@ import {
   type EducationAccessPass,
   type EducationCenterId,
   type EducationFacultyId,
+  type EducationLessonProgress,
   type EducationPathId,
   type EducationPathTier,
   type EducationTender,
@@ -267,6 +270,10 @@ function playerEducationAccessKey(hostId: string, playerId: string): string {
 
 function playerEducationTuitionKey(hostId: string, playerId: string): string {
   return `agent-play:${hostId}:player:${playerId}:education-tuition`;
+}
+
+function playerEducationProgressKey(hostId: string, playerId: string): string {
+  return `agent-play:${hostId}:player:${playerId}:education-progress`;
 }
 
 function playerGameStateKey(hostId: string, playerId: string): string {
@@ -2358,7 +2365,7 @@ export class RedisSessionStore implements SessionStore {
     return {
       enrollment,
       apwPerApu,
-      quoteApw: quoteEducationTuitionApw({ tier: def.tier }),
+      quoteApw: quoteEducationTuitionApw({ tier: def.tier, apwPerApu }),
       apuCost: quoteEducationTuitionApu({ tier: def.tier, apwPerApu }),
       preferredTender: chooseEducationTender({
         powerUps: wallet.powerUps ?? 0,
@@ -2581,6 +2588,109 @@ export class RedisSessionStore implements SessionStore {
       }
     }
     return { enrollments };
+  }
+
+  private async readEducationProgressMap(
+    playerId: string
+  ): Promise<Map<string, EducationLessonProgress>> {
+    const key = playerEducationProgressKey(this.hostId, playerId);
+    const raw = await this.redis.get(key);
+    const out = new Map<string, EducationLessonProgress>();
+    if (raw === null || raw.length === 0) return out;
+    try {
+      const parsed: unknown = JSON.parse(raw);
+      if (typeof parsed !== "object" || parsed === null) return out;
+      for (const [mapKey, value] of Object.entries(
+        parsed as Record<string, unknown>
+      )) {
+        const progress = EducationLessonProgressSchema.safeParse(value);
+        if (progress.success) {
+          out.set(mapKey, progress.data);
+        }
+      }
+    } catch {
+      return out;
+    }
+    return out;
+  }
+
+  async getEducationProgress(input: {
+    playerId: string;
+    facultyId: EducationFacultyId;
+    pathId: EducationPathId;
+  }): Promise<{ progress: EducationLessonProgress[] }> {
+    const map = await this.readEducationProgressMap(input.playerId);
+    const prefix = `${input.facultyId}:${input.pathId}:`;
+    const progress = [...map.values()].filter(
+      (row) =>
+        row.facultyId === input.facultyId && row.pathId === input.pathId
+    );
+    void prefix;
+    return { progress };
+  }
+
+  async recordEducationLessonComplete(input: {
+    playerId: string;
+    facultyId: EducationFacultyId;
+    pathId: EducationPathId;
+    lessonId: string;
+    now: string;
+    reflection?: string;
+  }): Promise<
+    | { ok: true; progress: EducationLessonProgress }
+    | { ok: false; error: "INVALID_PATH" | "DAY_PASS_REQUIRED" | "NOT_ENROLLED" }
+  > {
+    if (!isEducationPathId(input.pathId)) {
+      return { ok: false, error: "INVALID_PATH" };
+    }
+    const def = getEducationPathDef(input.pathId);
+    if (def === undefined || def.facultyId !== input.facultyId) {
+      return { ok: false, error: "INVALID_PATH" };
+    }
+    const dayPass = await this.getEducationAccess({
+      playerId: input.playerId,
+      centerId: input.facultyId,
+      now: input.now,
+    });
+    if (dayPass.access === null) {
+      return { ok: false, error: "DAY_PASS_REQUIRED" };
+    }
+    const tuition = await this.getEducationTuition({
+      playerId: input.playerId,
+      facultyId: input.facultyId,
+      pathId: input.pathId,
+      now: input.now,
+    });
+    if (tuition.enrollment === null) {
+      return { ok: false, error: "NOT_ENROLLED" };
+    }
+    const key = playerEducationProgressKey(this.hostId, input.playerId);
+    const map = await this.readEducationProgressMap(input.playerId);
+    const mapKey = educationProgressKey({
+      facultyId: input.facultyId,
+      pathId: input.pathId,
+      lessonId: input.lessonId,
+    });
+    const existing = map.get(mapKey);
+    if (existing !== undefined) {
+      return { ok: true, progress: existing };
+    }
+    const progress = EducationLessonProgressSchema.parse({
+      facultyId: input.facultyId,
+      pathId: input.pathId,
+      lessonId: input.lessonId,
+      completedAt: input.now,
+      ...(input.reflection !== undefined && input.reflection.length > 0
+        ? { reflection: input.reflection }
+        : {}),
+    });
+    map.set(mapKey, progress);
+    const payload: Record<string, EducationLessonProgress> = {};
+    for (const [k, value] of map.entries()) {
+      payload[k] = value;
+    }
+    await this.redis.set(key, JSON.stringify(payload));
+    return { ok: true, progress };
   }
 
   private async loadGamePlayerState(
