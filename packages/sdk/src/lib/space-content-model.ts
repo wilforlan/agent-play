@@ -48,10 +48,22 @@ const PositivePrice = z.number().finite().positive();
  *
  * @public
  */
+export const TransferListingSchema = z.object({
+  listingId: NonEmpty,
+  sellerPlayerId: NonEmpty,
+  priceUsd: PositivePrice,
+  listedAt: IsoTimestamp,
+  updatedAt: IsoTimestamp,
+});
+
+/** Runtime type for {@link TransferListingSchema}. @public */
+export type TransferListing = z.infer<typeof TransferListingSchema>;
+
 export const SaleStateSchema = z.object({
-  status: z.enum(["available", "sold"]),
+  status: z.enum(["available", "sold", "transfer_available"]),
   soldToPlayerId: NonEmpty.optional(),
   soldAt: IsoTimestamp.optional(),
+  transferListing: TransferListingSchema.optional(),
 });
 
 /** Runtime type derived from {@link SaleStateSchema}. @public */
@@ -341,6 +353,8 @@ export const PurchaseRecordSchema = z.object({
   solLamportsDelta: z.number().int().optional(),
   solanaTxSignature: z.string().optional(),
   feeLamports: z.number().int().nonnegative().optional(),
+  feeUsd: z.number().finite().nonnegative().optional(),
+  saleKind: z.enum(["primary", "transfer"]).optional(),
 });
 
 /** Runtime type for {@link PurchaseRecordSchema}. @public */
@@ -367,7 +381,37 @@ export type PurchaseRecord = z.infer<typeof PurchaseRecordSchema>;
 export function isItemAvailableForPurchase(item: {
   sale: SaleState;
 }): boolean {
-  return item.sale.status === "available";
+  return (
+    item.sale.status === "available" ||
+    item.sale.status === "transfer_available"
+  );
+}
+
+/**
+ * Returns whether the sale is a player transfer listing (secondary market).
+ *
+ * @public
+ */
+export function isTransferSaleListing(item: { sale: SaleState }): boolean {
+  return item.sale.status === "transfer_available";
+}
+
+/**
+ * Effective buy price: listing ask for transfer sales, otherwise catalog price.
+ *
+ * @public
+ */
+export function getEffectiveSalePriceUsd(item: {
+  priceUsd: number;
+  sale: SaleState;
+}): number {
+  if (
+    item.sale.status === "transfer_available" &&
+    item.sale.transferListing !== undefined
+  ) {
+    return item.sale.transferListing.priceUsd;
+  }
+  return item.priceUsd;
 }
 
 /**
