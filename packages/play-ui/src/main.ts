@@ -7313,7 +7313,7 @@ export function bootstrap(): void {
         element: controlStack,
         getBoundsElement: () =>
           previewDockStationaryActive() ? rightCol : canvasStage,
-        label: "Human agent interaction",
+        label: "Interaction Panel",
         initialPlacement: previewSessionFloatingPlacement(),
         initialCollapsed: getPanelPlacement("session")?.collapsed === true,
         className: "preview-floating-panel--session",

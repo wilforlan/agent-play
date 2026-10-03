@@ -359,7 +359,7 @@ describe("attachPreviewFloatingPanelDrag", () => {
     const { expand } = attachPreviewFloatingPanelDrag({
       element: panel,
       getBoundsElement: () => bounds,
-      label: "Human agent interaction",
+      label: "Interaction Panel",
       initialPlacement: { leftPx: 24, topPx: 32 },
       initialCollapsed: true,
       resolvePlacement: () => ({ leftPx: 24, topPx: 32 }),
