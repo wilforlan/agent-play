@@ -59,6 +59,8 @@ export type PurchaseRecordDto = {
   readonly priceUsd?: number;
   readonly at: string;
   readonly detail?: string;
+  readonly feeUsd?: number;
+  readonly saleKind?: "primary" | "transfer";
   readonly powerUpsSpent?: number;
   readonly powerUpsEarned?: number;
   readonly powerUpsDelta?: number;
