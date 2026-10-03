@@ -221,7 +221,7 @@ async function fanoutAmenityContentUpdated(input: {
   world: Awaited<ReturnType<typeof getPlayWorld>>;
   spaceId: string;
   amenityKind: "shop" | "supermarket" | "car_wash";
-  reason: "added" | "removed" | "sold";
+  reason: "added" | "removed" | "sold" | "listed" | "unlisted";
   itemRef: { kind: "shop" | "supermarket" | "carwash"; id: string };
 }): Promise<void> {
   const snap = await input.world.getSnapshotJson();
@@ -1221,6 +1221,144 @@ export async function POST(req: NextRequest) {
         });
         return Response.json({ wallet });
       }
+      case "listOwnedAssets": {
+        const p = body.payload as { playerId?: unknown };
+        if (typeof p.playerId !== "string" || p.playerId.trim().length === 0) {
+          return Response.json({ error: "invalid payload" }, { status: 400 });
+        }
+        const playerId = p.playerId.trim();
+        const assets = await store.listOwnedAssets({ playerId });
+        const storedWallet = await store.getPlayerWallet(playerId);
+        const wallet = await resolveClientPlayerWallet({
+          wallet: storedWallet,
+          playerId,
+        });
+        return Response.json({
+          wallet,
+          assets: assets.map((entry) => ({
+            ref: entry.ref,
+            item: entry.item,
+          })),
+        });
+      }
+      case "createTransferListing":
+      case "updateTransferListingPrice":
+      case "cancelTransferListing": {
+        const p = body.payload as {
+          playerId?: unknown;
+          spaceId?: unknown;
+          amenityKind?: unknown;
+          itemRef?: { kind?: unknown; id?: unknown };
+          priceUsd?: unknown;
+        };
+        if (
+          typeof p.playerId !== "string" ||
+          typeof p.spaceId !== "string" ||
+          typeof p.amenityKind !== "string" ||
+          p.itemRef === undefined ||
+          p.itemRef === null ||
+          typeof p.itemRef.kind !== "string" ||
+          typeof p.itemRef.id !== "string"
+        ) {
+          return Response.json({ error: "invalid payload" }, { status: 400 });
+        }
+        const amenityKind = p.amenityKind;
+        const refKind = p.itemRef.kind;
+        if (
+          amenityKind !== "shop" &&
+          amenityKind !== "supermarket" &&
+          amenityKind !== "car_wash"
+        ) {
+          return Response.json(
+            { error: "invalid amenity kind" },
+            { status: 400 }
+          );
+        }
+        if (
+          refKind !== "shop" &&
+          refKind !== "supermarket" &&
+          refKind !== "carwash"
+        ) {
+          return Response.json({ error: "invalid itemRef.kind" }, { status: 400 });
+        }
+        const itemRef: {
+          kind: "shop" | "supermarket" | "carwash";
+          id: string;
+        } = { kind: refKind, id: p.itemRef.id.trim() };
+        const spaceId = p.spaceId.trim();
+        const sellerPlayerId = p.playerId.trim();
+        const now = new Date().toISOString();
+        if (body.op === "createTransferListing") {
+          if (typeof p.priceUsd !== "number" || !(p.priceUsd > 0)) {
+            return Response.json({ error: "invalid priceUsd" }, { status: 400 });
+          }
+          const result = await store.createTransferListing({
+            spaceId,
+            amenityKind,
+            itemRef,
+            sellerPlayerId,
+            priceUsd: p.priceUsd,
+            listingId: `listing-${randomUUID()}`,
+            now,
+          });
+          if (!result.ok) {
+            return Response.json({ error: result.error }, { status: 409 });
+          }
+          await fanoutAmenityContentUpdated({
+            store,
+            world,
+            spaceId,
+            amenityKind,
+            reason: "listed",
+            itemRef,
+          });
+          return Response.json({ item: result.item });
+        }
+        if (body.op === "updateTransferListingPrice") {
+          if (typeof p.priceUsd !== "number" || !(p.priceUsd > 0)) {
+            return Response.json({ error: "invalid priceUsd" }, { status: 400 });
+          }
+          const result = await store.updateTransferListingPrice({
+            spaceId,
+            amenityKind,
+            itemRef,
+            sellerPlayerId,
+            priceUsd: p.priceUsd,
+            now,
+          });
+          if (!result.ok) {
+            return Response.json({ error: result.error }, { status: 409 });
+          }
+          await fanoutAmenityContentUpdated({
+            store,
+            world,
+            spaceId,
+            amenityKind,
+            reason: "listed",
+            itemRef,
+          });
+          return Response.json({ item: result.item });
+        }
+        const result = await store.cancelTransferListing({
+          spaceId,
+          amenityKind,
+          itemRef,
+          sellerPlayerId,
+          now,
+        });
+        if (!result.ok) {
+          return Response.json({ error: result.error }, { status: 409 });
+        }
+        await fanoutAmenityContentUpdated({
+          store,
+          world,
+          spaceId,
+          amenityKind,
+          reason: "unlisted",
+          itemRef,
+        });
+        return Response.json({ item: result.item });
+      }
       case "purchase": {
         const p = body.payload as {
           playerId?: unknown;
@@ -1262,16 +1400,75 @@ export async function POST(req: NextRequest) {
           kind: "shop" | "supermarket" | "carwash";
           id: string;
         } = { kind: refKind, id: p.itemRef.id.trim() };
+        const spaceId = p.spaceId.trim();
+        const playerId = p.playerId.trim();
+        const itemsForPeek =
+          amenityKind === "shop"
+            ? await store.listShopItems(spaceId)
+            : amenityKind === "supermarket"
+              ? await store.listSupermarketItems(spaceId)
+              : await store.listCarWashCars(spaceId);
+        const peeked = itemsForPeek.find((it) => it.id === purchaseItemRef.id);
+        if (peeked === undefined) {
+          return Response.json({ error: "ITEM_NOT_FOUND" }, { status: 409 });
+        }
+        if (peeked.sale.status === "transfer_available") {
+          const transferResult = await store.executeTransferPurchase({
+            spaceId,
+            amenityKind,
+            itemRef: purchaseItemRef,
+            buyerPlayerId: playerId,
+            now: new Date().toISOString(),
+            buyerRecordId: `xfer-buy-${randomUUID()}`,
+            sellerRecordId: `xfer-sell-${randomUUID()}`,
+          });
+          if (!transferResult.ok) {
+            return Response.json({ error: transferResult.error }, { status: 409 });
+          }
+          await store.appendSpaceAmenityLog({
+            spaceId,
+            amenityKind,
+            entry: {
+              at: transferResult.buyerRecord.at,
+              action: "purchase",
+              detail: {
+                playerId: transferResult.buyerRecord.playerId,
+                itemRef: purchaseItemRef,
+                priceUsd: transferResult.buyerRecord.priceUsd,
+                saleKind: "transfer",
+                feeUsd: transferResult.feeUsd,
+              },
+            },
+          });
+          await fanoutAmenityContentUpdated({
+            store,
+            world,
+            spaceId,
+            amenityKind,
+            reason: "sold",
+            itemRef: purchaseItemRef,
+          });
+          return Response.json({
+            purchase: transferResult.buyerRecord,
+            wallet: await resolveClientPlayerWallet({
+              wallet: transferResult.buyerWallet,
+              playerId: transferResult.buyerRecord.playerId,
+            }),
+            item: transferResult.updatedItem,
+            feeUsd: transferResult.feeUsd,
+            saleKind: "transfer",
+          });
+        }
         const snap = await world.getSnapshotJson();
         const spaceOwnerWalletPlayerId = resolveSpaceOwnerWalletPlayerId(
           snap,
-          p.spaceId.trim()
+          spaceId
         );
         const result = await store.executePurchase({
-          spaceId: p.spaceId.trim(),
+          spaceId,
           amenityKind,
           itemRef: purchaseItemRef,
-          playerId: p.playerId.trim(),
+          playerId,
           now: new Date().toISOString(),
           recordId: `pur-${randomUUID()}`,
           ...(spaceOwnerWalletPlayerId !== null
@@ -1282,7 +1479,7 @@ export async function POST(req: NextRequest) {
           return Response.json({ error: result.error }, { status: 409 });
         }
         await store.appendSpaceAmenityLog({
-          spaceId: p.spaceId.trim(),
+          spaceId,
           amenityKind,
           entry: {
             at: result.record.at,
@@ -1297,7 +1494,7 @@ export async function POST(req: NextRequest) {
         await fanoutAmenityContentUpdated({
           store,
           world,
-          spaceId: p.spaceId.trim(),
+          spaceId,
           amenityKind,
           reason: "sold",
           itemRef: purchaseItemRef,
@@ -1309,6 +1506,7 @@ export async function POST(req: NextRequest) {
             playerId: result.record.playerId,
           }),
           item: result.updatedItem,
+          saleKind: "primary",
         });
       }
       case "buyParkingTicket": {

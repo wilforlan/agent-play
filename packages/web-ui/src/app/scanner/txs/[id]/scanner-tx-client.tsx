@@ -27,6 +27,9 @@ const formatSol = (lamports: number | undefined): string | null => {
 };
 
 const kindFromTx = (tx: ScannerTxRecord): string => {
+  if (tx.op === "transferSale" || tx.saleKind === "transfer") {
+    return "Transfer sale";
+  }
   if (tx.creditSource === "econext:p2p" || tx.spaceId === "econext-p2p") {
     return "P2P";
   }
@@ -97,10 +100,13 @@ export function ScannerTxClient() {
     () => (tx !== null ? formatSol(tx.solLamportsDelta) : null),
     [tx],
   );
-  const fee = useMemo(
-    () => (tx !== null ? formatSol(tx.feeLamports) : null),
-    [tx],
-  );
+  const fee = useMemo(() => {
+    if (tx === null) return null;
+    if (tx.feeUsd !== undefined) {
+      return `${formatUsd(tx.feeUsd)} burned`;
+    }
+    return formatSol(tx.feeLamports);
+  }, [tx]);
 
   return (
     <div className={styles.page} data-scanner="true">
