@@ -290,11 +290,21 @@ export {
 export {
   EDUCATION_TUITION_APW_BY_TIER,
   EDUCATION_TUITION_DAYS,
+  EDUCATION_TUITION_DEV_APU_BY_TIER,
   getEducationPathDef,
+  isEducationDevFeesEnabled,
   isEducationPathId,
   isEducationTuitionActive,
   listEducationPathsForFaculty,
+  quoteEducationTuitionApu,
+  quoteEducationTuitionApw,
   type EducationPathId,
   type EducationPathTier,
   type EducationTuitionEnrollment,
+  type EducationTuitionEnv,
 } from "./lib/education-tuition-catalog.js";
+export {
+  educationProgressKey,
+  resolveEducationPathProgress,
+  type EducationLessonProgress,
+} from "./lib/education-progress-catalog.js";

@@ -343,11 +343,13 @@ export {
   EDUCATION_PATH_IDS,
   EDUCATION_TUITION_APW_BY_TIER,
   EDUCATION_TUITION_DAYS,
+  EDUCATION_TUITION_DEV_APU_BY_TIER,
   EducationPathIdSchema,
   EducationPathTierSchema,
   EducationTuitionEnrollmentSchema,
   buildEducationTuitionEnrollment,
   getEducationPathDef,
+  isEducationDevFeesEnabled,
   isEducationPathId,
   isEducationTuitionActive,
   listEducationPathsForFaculty,
@@ -358,7 +360,14 @@ export {
   type EducationPathId,
   type EducationPathTier,
   type EducationTuitionEnrollment,
+  type EducationTuitionEnv,
 } from "./lib/education-tuition-catalog.js";
+export {
+  EducationLessonProgressSchema,
+  educationProgressKey,
+  resolveEducationPathProgress,
+  type EducationLessonProgress,
+} from "./lib/education-progress-catalog.js";
 export {
   GAME_CABINET_CATALOG,
   PLAYABLE_GAME_IDS,
