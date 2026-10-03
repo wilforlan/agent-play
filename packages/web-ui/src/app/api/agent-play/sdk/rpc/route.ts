@@ -1788,6 +1788,86 @@ export async function POST(req: NextRequest) {
         }
         return Response.json({ progress: result.progress });
       }
+      case "getJoeLessonChat": {
+        const p = body.payload as {
+          playerId?: unknown;
+          facultyId?: unknown;
+          pathId?: unknown;
+          lessonId?: unknown;
+        };
+        if (
+          typeof p.playerId !== "string" ||
+          p.playerId.trim().length === 0 ||
+          typeof p.facultyId !== "string" ||
+          typeof p.pathId !== "string" ||
+          typeof p.lessonId !== "string" ||
+          p.lessonId.trim().length === 0
+        ) {
+          return Response.json({ error: "invalid payload" }, { status: 400 });
+        }
+        const facultyId = normalizeEducationFacultyId(p.facultyId);
+        if (facultyId === null || !isEducationPathId(p.pathId)) {
+          return Response.json({ error: "invalid payload" }, { status: 400 });
+        }
+        const result = await store.getJoeLessonChat({
+          playerId: p.playerId.trim(),
+          facultyId,
+          pathId: p.pathId,
+          lessonId: p.lessonId.trim(),
+        });
+        return Response.json({ thread: result.thread });
+      }
+      case "sendJoeLessonMessage": {
+        const p = body.payload as {
+          playerId?: unknown;
+          facultyId?: unknown;
+          pathId?: unknown;
+          lessonId?: unknown;
+          text?: unknown;
+          lessonTitle?: unknown;
+          lessonBody?: unknown;
+          pathTitle?: unknown;
+          facultyLabel?: unknown;
+        };
+        if (
+          typeof p.playerId !== "string" ||
+          p.playerId.trim().length === 0 ||
+          typeof p.facultyId !== "string" ||
+          typeof p.pathId !== "string" ||
+          typeof p.lessonId !== "string" ||
+          p.lessonId.trim().length === 0 ||
+          typeof p.text !== "string" ||
+          typeof p.lessonTitle !== "string" ||
+          typeof p.lessonBody !== "string"
+        ) {
+          return Response.json({ error: "invalid payload" }, { status: 400 });
+        }
+        const facultyId = normalizeEducationFacultyId(p.facultyId);
+        if (facultyId === null || !isEducationPathId(p.pathId)) {
+          return Response.json({ error: "invalid payload" }, { status: 400 });
+        }
+        const now = new Date().toISOString();
+        const result = await store.sendJoeLessonMessage({
+          playerId: p.playerId.trim(),
+          facultyId,
+          pathId: p.pathId,
+          lessonId: p.lessonId.trim(),
+          text: p.text,
+          lessonTitle: p.lessonTitle,
+          lessonBody: p.lessonBody,
+          now,
+          ...(typeof p.pathTitle === "string"
+            ? { pathTitle: p.pathTitle }
+            : {}),
+          ...(typeof p.facultyLabel === "string"
+            ? { facultyLabel: p.facultyLabel }
+            : {}),
+        });
+        if (!result.ok) {
+          return Response.json({ error: result.error }, { status: 400 });
+        }
+        return Response.json({ thread: result.thread });
+      }
       case "getGameStats": {
         const p = body.payload as { playerId?: unknown };
         if (typeof p.playerId !== "string" || p.playerId.trim().length === 0) {
