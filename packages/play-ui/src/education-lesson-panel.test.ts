@@ -33,6 +33,66 @@ describe("education lesson panel", () => {
     panel.destroy();
   });
 
+  it("loads and sends Joe chat turns", async () => {
+    const panel = createEducationLessonPanel({ parent });
+    const onLoadJoeChat = vi.fn(async () => [
+      {
+        id: "s1",
+        role: "student" as const,
+        text: "How do I start?",
+        createdAt: "2026-10-03T12:00:00.000Z",
+      },
+    ]);
+    const onSendJoeMessage = vi.fn(async () => [
+      {
+        id: "s1",
+        role: "student" as const,
+        text: "How do I start?",
+        createdAt: "2026-10-03T12:00:00.000Z",
+      },
+      {
+        id: "j1",
+        role: "joe" as const,
+        text: "Contour first",
+        createdAt: "2026-10-03T12:00:01.000Z",
+        structured: {
+          headline: "Contour first",
+          blocks: [
+            { kind: "concept" as const, body: "Use contour lines." },
+            { kind: "probe" as const, body: "Which edge?" },
+          ],
+          nextMove: "Trace one rim.",
+          relevance: 0.91,
+        },
+      },
+    ]);
+    panel.show({
+      facultyLabel: "Faculty of Art",
+      pathTitle: "Visual Arts Studio",
+      lessonTitle: "Seeing Before Drawing",
+      body: "Contour matters.",
+      onLoadJoeChat,
+      onSendJoeMessage,
+    });
+    await vi.waitFor(() => {
+      expect(parent.textContent).toContain("How do I start?");
+    });
+    const input = parent.querySelector(
+      `.preview-education-lesson__composer input`
+    ) as HTMLInputElement;
+    input.value = "What next?";
+    const sendBtn = [...parent.querySelectorAll("button")].find(
+      (btn) => btn.textContent === "SEND"
+    ) as HTMLButtonElement;
+    sendBtn.click();
+    await vi.waitFor(() => {
+      expect(onSendJoeMessage).toHaveBeenCalledWith("What next?");
+      expect(parent.textContent).toContain("Contour first");
+      expect(parent.textContent).toContain("NEXT // Trace one rim.");
+    });
+    panel.destroy();
+  });
+
   it("marks a lesson complete without grading", async () => {
     const panel = createEducationLessonPanel({ parent });
     const onComplete = vi.fn(async () => undefined);
