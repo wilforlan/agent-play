@@ -1034,7 +1034,7 @@ describe("createPreviewProximityTouchControls", () => {
       getBoundsElement: () => parent,
       getCanAct: () => false,
       getFacultyClassroomProximityLabel: () => "Computer Modeling",
-      getFacultyClassroomProximityVerb: () => "Enroll",
+      getFacultyClassroomAssistVerb: () => "Enroll",
       onAssist,
       onChat,
       onPushToTalk,
@@ -1065,13 +1065,15 @@ describe("createPreviewProximityTouchControls", () => {
     expect(onAssist).toHaveBeenCalledTimes(1);
   });
 
-  it("classroom lesson card: highlights A with Open verb", () => {
+  it("classroom lesson card: A Outline, C Choose, P Start", () => {
     const { root } = createPreviewProximityTouchControls({
       parent,
       getBoundsElement: () => parent,
       getCanAct: () => false,
       getFacultyClassroomProximityLabel: () => "Model Critique",
-      getFacultyClassroomProximityVerb: () => "Open",
+      getFacultyClassroomAssistVerb: () => "Outline",
+      getFacultyClassroomChatVerb: () => "Choose",
+      getFacultyClassroomPushVerb: () => "Start",
       onAssist,
       onChat,
       onPushToTalk,
@@ -1079,15 +1081,33 @@ describe("createPreviewProximityTouchControls", () => {
     const assistBtn = root.querySelector(
       ".preview-proximity-touch-pad__key--assist"
     ) as HTMLButtonElement;
+    const chatBtn = root.querySelector(
+      ".preview-proximity-touch-pad__key--chat"
+    ) as HTMLButtonElement;
+    const pttBtn = root.querySelector(
+      ".preview-proximity-touch-pad__key--ptt"
+    ) as HTMLButtonElement;
     expect(
       root.querySelector(
         ".preview-proximity-touch-pad__key--assist .preview-proximity-touch-pad__key-sub"
       )?.textContent
-    ).toBe("Open");
+    ).toBe("Outline");
     expect(
-      assistBtn.classList.contains(
-        "preview-proximity-touch-pad__key--proximity-active"
-      )
-    ).toBe(true);
+      root.querySelector(
+        ".preview-proximity-touch-pad__key--chat .preview-proximity-touch-pad__key-sub"
+      )?.textContent
+    ).toBe("Choose");
+    expect(
+      root.querySelector(
+        ".preview-proximity-touch-pad__key--ptt .preview-proximity-touch-pad__key-sub"
+      )?.textContent
+    ).toBe("Start");
+    expect(assistBtn.disabled).toBe(false);
+    expect(chatBtn.disabled).toBe(false);
+    expect(pttBtn.disabled).toBe(false);
+    chatBtn.click();
+    pttBtn.click();
+    expect(onChat).toHaveBeenCalledTimes(1);
+    expect(onPushToTalk).toHaveBeenCalledTimes(1);
   });
 });
