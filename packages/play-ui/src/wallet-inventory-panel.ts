@@ -16,6 +16,7 @@
 
 import type { PurchaseRecordDto } from "./wallet-purchases-client.js";
 import { buildPurchaseItemKey } from "./wallet-purchases-client.js";
+import type { OwnedAssetEntryDto } from "./wallet-owned-assets-client.js";
 import { createWalletDisplayStrip } from "./wallet-display-strip.js";
 import { WALLET_BUNDLE_OFFERS } from "@agent-play/sdk/browser";
 import type { ParkingDurationTier } from "@agent-play/sdk/browser";
@@ -64,6 +65,7 @@ export type WalletInventoryPanelHandle = {
     powerUps: number;
     purchases: ReadonlyArray<PurchaseRecordDto>;
     items: Readonly<Record<string, unknown>>;
+    assets?: ReadonlyArray<OwnedAssetEntryDto>;
     activeParking?: ReadonlyArray<ActiveParkingRow>;
     parkingCapacityHint?: string;
   }): void;
@@ -91,6 +93,23 @@ export type CreateWalletInventoryPanelOptions = {
    * bundles (see `./wallet-bundle-client`).
    */
   readonly onRedeemBundle?: (bundleId: string) => Promise<void>;
+  readonly onCreateTransferListing?: (input: {
+    spaceId: string;
+    amenityKind: OwnedAssetEntryDto["ref"]["amenityKind"];
+    itemId: string;
+    priceUsd: number;
+  }) => Promise<void>;
+  readonly onUpdateTransferListingPrice?: (input: {
+    spaceId: string;
+    amenityKind: OwnedAssetEntryDto["ref"]["amenityKind"];
+    itemId: string;
+    priceUsd: number;
+  }) => Promise<void>;
+  readonly onCancelTransferListing?: (input: {
+    spaceId: string;
+    amenityKind: OwnedAssetEntryDto["ref"]["amenityKind"];
+    itemId: string;
+  }) => Promise<void>;
 };
 
 const PANEL_CLASS = "preview-wallet-inventory";
@@ -138,6 +157,140 @@ const ensureStyles = (): void => {
   font-size: 18px;
   font-weight: 800;
   letter-spacing: 0.4px;
+}
+.${PANEL_CLASS}__tabs {
+  display: flex;
+  gap: 8px;
+  padding: 10px 16px 0;
+  margin-bottom: 16px;
+  border-bottom: 1px solid rgba(15,23,42,0.08);
+}
+.${PANEL_CLASS}__tab {
+  border: none;
+  background: transparent;
+  padding: 8px 12px;
+  font-weight: 700;
+  font-size: 13px;
+  color: #64748b;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+}
+.${PANEL_CLASS}__tab--active {
+  color: #0f172a;
+  border-bottom-color: #16a34a;
+}
+.${PANEL_CLASS}__asset-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 12px;
+}
+.${PANEL_CLASS}__asset-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(15,23,42,0.08);
+  background: #ffffff;
+  box-shadow: 0 4px 14px rgba(15,23,42,0.08);
+  min-width: 0;
+}
+.${PANEL_CLASS}__asset-sprite {
+  width: 100%;
+  aspect-ratio: 1.35;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 800;
+  font-size: 18px;
+  letter-spacing: 0.04em;
+  color: #ffffff;
+}
+.${PANEL_CLASS}__asset-sprite--shop { background: #b45309; }
+.${PANEL_CLASS}__asset-sprite--supermarket { background: #0f766e; }
+.${PANEL_CLASS}__asset-sprite--car_wash { background: #334155; }
+.${PANEL_CLASS}__asset-card-title {
+  font-weight: 800;
+  font-size: 14px;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+.${PANEL_CLASS}__asset-card-meta {
+  font-size: 12px;
+  color: #64748b;
+  overflow-wrap: anywhere;
+}
+.${PANEL_CLASS}__asset-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: auto;
+}
+.${PANEL_CLASS}__asset-btn {
+  border: none;
+  border-radius: 999px;
+  padding: 8px 12px;
+  font-weight: 700;
+  font-size: 12px;
+  cursor: pointer;
+  background: #16a34a;
+  color: #fff;
+}
+.${PANEL_CLASS}__asset-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.${PANEL_CLASS}__asset-btn--secondary {
+  background: #e2e8f0;
+  color: #0f172a;
+}
+.${PANEL_CLASS}__asset-btn--danger {
+  background: #b91c1c;
+}
+.${PANEL_CLASS}__available-tag {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #86efac;
+  color: #14532d;
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+  vertical-align: middle;
+}
+.${PANEL_CLASS}__asset-step {
+  padding: 16px;
+  border-radius: 14px;
+  border: 1px solid rgba(15,23,42,0.08);
+  background: #ffffff;
+  box-shadow: 0 4px 16px rgba(15,23,42,0.10);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.${PANEL_CLASS}__asset-step-title {
+  font-size: 16px;
+  font-weight: 800;
+}
+.${PANEL_CLASS}__asset-step-copy {
+  font-size: 13px;
+  color: #475569;
+  line-height: 1.4;
+}
+.${PANEL_CLASS}__price-input {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid rgba(15,23,42,0.16);
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 15px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.${PANEL_CLASS}__asset-step-error {
+  color: #b91c1c;
+  font-size: 12px;
 }
 .${PANEL_CLASS}__balance {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
@@ -662,6 +815,22 @@ export const createWalletInventoryPanel = (
 
   options.parent.appendChild(backdrop);
 
+  type PanelTab = "assets" | "activity";
+
+  type AssetFlow =
+    | {
+        kind: "sell";
+        entry: OwnedAssetEntryDto;
+        priceText: string;
+        error: string | null;
+        busy: boolean;
+      }
+    | {
+        kind: "cancel";
+        entry: OwnedAssetEntryDto;
+        busy: boolean;
+      };
+
   type ViewState =
     | { kind: "loading" }
     | { kind: "error"; message: string }
@@ -671,13 +840,41 @@ export const createWalletInventoryPanel = (
         powerUps: number;
         purchases: ReadonlyArray<PurchaseRecordDto>;
         items: Readonly<Record<string, unknown>>;
+        assets: ReadonlyArray<OwnedAssetEntryDto>;
         selectedId: string | null;
         activeParking: ReadonlyArray<ActiveParkingRow>;
         parkingCapacityHint: string;
+        tab: PanelTab;
+        assetFlow: AssetFlow | null;
       };
 
   let state: ViewState = { kind: "loading" };
   let isOpen = false;
+  let activeTab: PanelTab = "activity";
+
+  const assetKey = (entry: OwnedAssetEntryDto): string =>
+    `${entry.ref.amenityKind}:${entry.ref.spaceId}:${entry.ref.itemId}`;
+
+  const assetSpriteLabel = (entry: OwnedAssetEntryDto): string => {
+    if (entry.ref.amenityKind === "car_wash") {
+      return (entry.item.model ?? entry.item.name ?? "CAR").slice(0, 6).toUpperCase();
+    }
+    if (entry.ref.amenityKind === "shop") {
+      return (entry.item.type ?? "SHOP").slice(0, 6).toUpperCase();
+    }
+    return "ITEM";
+  };
+
+  const assetSpriteColor = (entry: OwnedAssetEntryDto): string | null => {
+    if (
+      entry.ref.amenityKind === "car_wash" &&
+      typeof entry.item.colorHex === "string" &&
+      entry.item.colorHex.length > 0
+    ) {
+      return entry.item.colorHex;
+    }
+    return null;
+  };
 
   const appendBundleExchangeSection = (
     parent: HTMLElement,
@@ -754,6 +951,309 @@ export const createWalletInventoryPanel = (
       }
     }
     parent.appendChild(wrap);
+  };
+
+  const renderTabs = (parent: HTMLElement, tab: PanelTab): void => {
+    const tabs = document.createElement("div");
+    tabs.className = `${PANEL_CLASS}__tabs`;
+    for (const entry of [
+      { id: "assets" as const, label: "Assets" },
+      { id: "activity" as const, label: "Activity" },
+    ]) {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = `${PANEL_CLASS}__tab${
+        tab === entry.id ? ` ${PANEL_CLASS}__tab--active` : ""
+      }`;
+      btn.textContent = entry.label;
+      btn.addEventListener("click", () => {
+        activeTab = entry.id;
+        if (state.kind === "data") {
+          state = {
+            ...state,
+            tab: entry.id,
+            selectedId: null,
+            assetFlow: null,
+          };
+          renderCurrent();
+        }
+      });
+      tabs.appendChild(btn);
+    }
+    parent.appendChild(tabs);
+  };
+
+  const renderAssetStep = (parent: HTMLElement, flow: AssetFlow): void => {
+    const step = document.createElement("div");
+    step.className = `${PANEL_CLASS}__asset-step`;
+
+    const back = document.createElement("button");
+    back.type = "button";
+    back.className = `${PANEL_CLASS}__back`;
+    back.textContent = "← Back to assets";
+    back.disabled = flow.busy;
+    back.addEventListener("click", () => {
+      if (state.kind !== "data" || flow.busy) return;
+      state = { ...state, assetFlow: null };
+      renderCurrent();
+    });
+    step.appendChild(back);
+
+    const title = document.createElement("div");
+    title.className = `${PANEL_CLASS}__asset-step-title`;
+    title.textContent =
+      flow.kind === "sell" ? "Set sale price" : "Cancel this sale?";
+    step.appendChild(title);
+
+    const sprite = document.createElement("div");
+    sprite.className = `${PANEL_CLASS}__asset-sprite ${PANEL_CLASS}__asset-sprite--${flow.entry.ref.amenityKind}`;
+    sprite.textContent = assetSpriteLabel(flow.entry);
+    const spriteColor = assetSpriteColor(flow.entry);
+    if (spriteColor !== null) {
+      sprite.style.background = spriteColor;
+    }
+    step.appendChild(sprite);
+
+    const copy = document.createElement("div");
+    copy.className = `${PANEL_CLASS}__asset-step-copy`;
+    const itemName = flow.entry.item.name ?? flow.entry.ref.itemId;
+    if (flow.kind === "sell") {
+      copy.textContent = `List ${itemName} on the amenity map. Buyers pay this APW$ price; the platform burns 1.5% (capped at $100).`;
+    } else {
+      const ask = flow.entry.item.sale.transferListing?.priceUsd;
+      copy.textContent =
+        ask !== undefined
+          ? `${itemName} is listed at $${ask.toFixed(2)}. Cancel removes it from the market.`
+          : `${itemName} will be removed from the market.`;
+    }
+    step.appendChild(copy);
+
+    if (flow.kind === "sell") {
+      const input = document.createElement("input");
+      input.className = `${PANEL_CLASS}__price-input`;
+      input.type = "number";
+      input.min = "0.01";
+      input.step = "0.01";
+      input.placeholder = "Price in APW$";
+      input.value = flow.priceText;
+      input.disabled = flow.busy;
+      input.addEventListener("input", () => {
+        if (state.kind !== "data" || state.assetFlow?.kind !== "sell") return;
+        state = {
+          ...state,
+          assetFlow: {
+            ...state.assetFlow,
+            priceText: input.value,
+            error: null,
+          },
+        };
+      });
+      step.appendChild(input);
+      if (flow.error !== null) {
+        const err = document.createElement("div");
+        err.className = `${PANEL_CLASS}__asset-step-error`;
+        err.textContent = flow.error;
+        step.appendChild(err);
+      }
+      const actions = document.createElement("div");
+      actions.className = `${PANEL_CLASS}__asset-actions`;
+      const listBtn = document.createElement("button");
+      listBtn.type = "button";
+      listBtn.className = `${PANEL_CLASS}__asset-btn`;
+      listBtn.textContent = flow.busy ? "Listing…" : "List for sale";
+      listBtn.disabled = flow.busy;
+      listBtn.addEventListener("click", async () => {
+        if (state.kind !== "data" || state.assetFlow?.kind !== "sell") return;
+        if (options.onCreateTransferListing === undefined) return;
+        const priceUsd = Number(state.assetFlow.priceText);
+        if (!(Number.isFinite(priceUsd) && priceUsd > 0)) {
+          state = {
+            ...state,
+            assetFlow: {
+              ...state.assetFlow,
+              error: "Enter a positive price in APW$.",
+            },
+          };
+          renderCurrent();
+          return;
+        }
+        state = {
+          ...state,
+          assetFlow: { ...state.assetFlow, busy: true, error: null },
+        };
+        renderCurrent();
+        try {
+          await options.onCreateTransferListing({
+            spaceId: flow.entry.ref.spaceId,
+            amenityKind: flow.entry.ref.amenityKind,
+            itemId: flow.entry.ref.itemId,
+            priceUsd,
+          });
+          if (state.kind === "data") {
+            state = { ...state, assetFlow: null };
+          }
+        } catch (error) {
+          if (state.kind === "data" && state.assetFlow?.kind === "sell") {
+            state = {
+              ...state,
+              assetFlow: {
+                ...state.assetFlow,
+                busy: false,
+                error:
+                  error instanceof Error ? error.message : "Could not list item",
+              },
+            };
+          }
+        }
+        renderCurrent();
+      });
+      actions.appendChild(listBtn);
+      step.appendChild(actions);
+    } else {
+      const actions = document.createElement("div");
+      actions.className = `${PANEL_CLASS}__asset-actions`;
+      const keep = document.createElement("button");
+      keep.type = "button";
+      keep.className = `${PANEL_CLASS}__asset-btn ${PANEL_CLASS}__asset-btn--secondary`;
+      keep.textContent = "Keep listed";
+      keep.disabled = flow.busy;
+      keep.addEventListener("click", () => {
+        if (state.kind !== "data" || flow.busy) return;
+        state = { ...state, assetFlow: null };
+        renderCurrent();
+      });
+      const confirm = document.createElement("button");
+      confirm.type = "button";
+      confirm.className = `${PANEL_CLASS}__asset-btn ${PANEL_CLASS}__asset-btn--danger`;
+      confirm.textContent = flow.busy ? "Cancelling…" : "Confirm cancel";
+      confirm.disabled = flow.busy;
+      confirm.addEventListener("click", async () => {
+        if (state.kind !== "data" || state.assetFlow?.kind !== "cancel") return;
+        if (options.onCancelTransferListing === undefined) return;
+        state = {
+          ...state,
+          assetFlow: { ...state.assetFlow, busy: true },
+        };
+        renderCurrent();
+        try {
+          await options.onCancelTransferListing({
+            spaceId: flow.entry.ref.spaceId,
+            amenityKind: flow.entry.ref.amenityKind,
+            itemId: flow.entry.ref.itemId,
+          });
+          if (state.kind === "data") {
+            state = { ...state, assetFlow: null };
+          }
+        } catch {
+          if (state.kind === "data" && state.assetFlow?.kind === "cancel") {
+            state = {
+              ...state,
+              assetFlow: { ...state.assetFlow, busy: false },
+            };
+          }
+        }
+        renderCurrent();
+      });
+      actions.append(keep, confirm);
+      step.appendChild(actions);
+    }
+
+    parent.appendChild(step);
+  };
+
+  const renderAssetsList = (
+    parent: HTMLElement,
+    assets: ReadonlyArray<OwnedAssetEntryDto>
+  ): void => {
+    if (assets.length === 0) {
+      const empty = document.createElement("div");
+      empty.className = `${PANEL_CLASS}__empty`;
+      empty.textContent = "No owned amenity assets yet.";
+      parent.appendChild(empty);
+      return;
+    }
+    const grid = document.createElement("div");
+    grid.className = `${PANEL_CLASS}__asset-grid`;
+    for (const entry of assets) {
+      const card = document.createElement("div");
+      card.className = `${PANEL_CLASS}__asset-card`;
+      card.dataset.assetKey = assetKey(entry);
+
+      const sprite = document.createElement("div");
+      sprite.className = `${PANEL_CLASS}__asset-sprite ${PANEL_CLASS}__asset-sprite--${entry.ref.amenityKind}`;
+      sprite.textContent = assetSpriteLabel(entry);
+      const spriteColor = assetSpriteColor(entry);
+      if (spriteColor !== null) {
+        sprite.style.background = spriteColor;
+      }
+      card.appendChild(sprite);
+
+      const title = document.createElement("div");
+      title.className = `${PANEL_CLASS}__asset-card-title`;
+      title.append(document.createTextNode(entry.item.name ?? entry.ref.itemId));
+      if (entry.item.sale.status === "transfer_available") {
+        const tag = document.createElement("span");
+        tag.className = `${PANEL_CLASS}__available-tag`;
+        tag.textContent = "available";
+        title.appendChild(tag);
+      }
+      card.appendChild(title);
+
+      const meta = document.createElement("div");
+      meta.className = `${PANEL_CLASS}__asset-card-meta`;
+      const ask =
+        entry.item.sale.transferListing?.priceUsd ?? entry.item.priceUsd;
+      meta.textContent =
+        entry.item.sale.status === "transfer_available"
+          ? `Listed at $${ask.toFixed(2)}`
+          : `Owned · $${entry.item.priceUsd.toFixed(2)}`;
+      card.appendChild(meta);
+
+      const actions = document.createElement("div");
+      actions.className = `${PANEL_CLASS}__asset-actions`;
+      if (entry.item.sale.status === "sold") {
+        const sell = document.createElement("button");
+        sell.type = "button";
+        sell.className = `${PANEL_CLASS}__asset-btn`;
+        sell.textContent = "Sell";
+        sell.addEventListener("click", () => {
+          if (state.kind !== "data") return;
+          state = {
+            ...state,
+            assetFlow: {
+              kind: "sell",
+              entry,
+              priceText: String(entry.item.priceUsd),
+              error: null,
+              busy: false,
+            },
+          };
+          renderCurrent();
+        });
+        actions.appendChild(sell);
+      } else if (entry.item.sale.status === "transfer_available") {
+        const cancel = document.createElement("button");
+        cancel.type = "button";
+        cancel.className = `${PANEL_CLASS}__asset-btn ${PANEL_CLASS}__asset-btn--danger`;
+        cancel.textContent = "Cancel sale";
+        cancel.addEventListener("click", () => {
+          if (state.kind !== "data") return;
+          state = {
+            ...state,
+            assetFlow: {
+              kind: "cancel",
+              entry,
+              busy: false,
+            },
+          };
+          renderCurrent();
+        });
+        actions.appendChild(cancel);
+      }
+      card.appendChild(actions);
+      grid.appendChild(card);
+    }
+    parent.appendChild(grid);
   };
 
   const renderPurchasesList = (
@@ -938,6 +1438,12 @@ export const createWalletInventoryPanel = (
       meta.append(k, v);
     };
     pushMeta("Amenity", amenityLabelForDisplay(record.amenityKind));
+    if (record.saleKind === "transfer") {
+      pushMeta("Sale", "Transfer sale");
+      if (typeof record.feeUsd === "number") {
+        pushMeta("Platform fee burned", formatUsd(record.feeUsd));
+      }
+    }
     if (isVoiceTalkAmenity(record.amenityKind)) {
       if (
         typeof record.detail === "string" &&
@@ -1098,7 +1604,16 @@ export const createWalletInventoryPanel = (
       data.activeParking,
       data.parkingCapacityHint
     );
-    renderPurchasesList(body, data.purchases, data.items);
+    renderTabs(body, data.tab);
+    if (data.tab === "assets") {
+      if (data.assetFlow !== null) {
+        renderAssetStep(body, data.assetFlow);
+      } else {
+        renderAssetsList(body, data.assets);
+      }
+    } else {
+      renderPurchasesList(body, data.purchases, data.items);
+    }
   };
 
   const open = (): void => {
@@ -1130,16 +1645,50 @@ export const createWalletInventoryPanel = (
     open,
     close,
     isOpen: () => isOpen,
-    setData: ({ balanceUsd, powerUps, purchases, items, activeParking, parkingCapacityHint }) => {
+    setData: ({
+      balanceUsd,
+      powerUps,
+      purchases,
+      items,
+      assets,
+      activeParking,
+      parkingCapacityHint,
+    }) => {
+      const previousFlow =
+        state.kind === "data" && state.assetFlow !== null
+          ? state.assetFlow
+          : null;
+      let nextFlow: AssetFlow | null = null;
+      if (previousFlow !== null) {
+        const stillOwned = (assets ?? []).find(
+          (entry) => assetKey(entry) === assetKey(previousFlow.entry)
+        );
+        if (stillOwned !== undefined) {
+          if (
+            previousFlow.kind === "sell" &&
+            stillOwned.item.sale.status === "sold"
+          ) {
+            nextFlow = { ...previousFlow, entry: stillOwned, busy: false };
+          } else if (
+            previousFlow.kind === "cancel" &&
+            stillOwned.item.sale.status === "transfer_available"
+          ) {
+            nextFlow = { ...previousFlow, entry: stillOwned, busy: false };
+          }
+        }
+      }
       state = {
         kind: "data",
         balanceUsd,
         powerUps,
         purchases,
         items,
+        assets: assets ?? [],
         selectedId: null,
         activeParking: activeParking ?? [],
         parkingCapacityHint: parkingCapacityHint ?? "0 of 2 timed spots",
+        tab: activeTab,
+        assetFlow: nextFlow,
       };
       if (isOpen) renderCurrent();
     },
