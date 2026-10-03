@@ -1,4 +1,5 @@
 import type Redis from "ioredis";
+import { coalesceApwPerApu } from "@agent-play/sdk";
 import {
   apwPerApuRateKey,
   econextAccountScanPattern,
@@ -8,6 +9,15 @@ import {
   playerWalletScanPattern,
   scannerSupplyKey,
 } from "./scanner-keys.js";
+
+const envApwPerApuFallback = (): number | undefined => {
+  const raw = process.env.AGENT_PLAY_APW_PER_APU;
+  if (typeof raw !== "string" || raw.trim().length === 0) {
+    return undefined;
+  }
+  const rate = Number(raw);
+  return Number.isFinite(rate) && rate > 0 ? rate : undefined;
+};
 
 const MARKET_CAP_CACHE_TTL_SECONDS = 120;
 const SCAN_COUNT = 200;
@@ -170,7 +180,10 @@ export const resolveApwPerApu = async (input: {
 }): Promise<number> => {
   const raw = await input.redis.get(apwPerApuRateKey(input.hostId));
   const rate = Number(raw ?? 0);
-  return Number.isFinite(rate) && rate > 0 ? rate : 0;
+  return coalesceApwPerApu({
+    rate: Number.isFinite(rate) ? rate : 0,
+    fallbackRate: envApwPerApuFallback(),
+  });
 };
 
 export const resolveMarketCapApw = async (input: {

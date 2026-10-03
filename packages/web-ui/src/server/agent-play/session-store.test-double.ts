@@ -60,6 +60,7 @@ import {
   buildEducationTuitionEnrollment,
   chooseArcadeTender,
   chooseEducationTender,
+  coalesceApwPerApu,
   educationCenterDayPassApuCost,
   getEducationPathDef,
   isArcadeAccessActive,
@@ -1088,6 +1089,10 @@ export class TestSessionStore implements SessionStore {
       Number.isFinite(rate) && rate > 0 ? rate : 0;
   }
 
+  private resolveApwPerApuRate(): number {
+    return coalesceApwPerApu({ rate: this.apwPerApuRate });
+  }
+
   async getArcadeAccess(input: {
     playerId: string;
     now: string;
@@ -1103,7 +1108,7 @@ export class TestSessionStore implements SessionStore {
     const access = isArcadeAccessActive(stored, new Date(input.now))
       ? stored
       : null;
-    const apwPerApu = this.apwPerApuRate;
+    const apwPerApu = this.resolveApwPerApuRate();
     return {
       access,
       apwPerApu,
@@ -1172,7 +1177,7 @@ export class TestSessionStore implements SessionStore {
     }
 
     const wallet = await this.getPlayerWallet(input.playerId);
-    const apwPerApu = this.apwPerApuRate;
+    const apwPerApu = this.resolveApwPerApuRate();
     const settled = resolveArcadeTenderForPurchase({
       plan: input.plan,
       powerUps: wallet.powerUps ?? 0,
@@ -1258,7 +1263,7 @@ export class TestSessionStore implements SessionStore {
     const access = isEducationAccessActive(stored, new Date(input.now))
       ? stored
       : null;
-    const apwPerApu = this.apwPerApuRate;
+    const apwPerApu = this.resolveApwPerApuRate();
     const apuCost = educationCenterDayPassApuCost();
     return {
       access,
@@ -1339,7 +1344,7 @@ export class TestSessionStore implements SessionStore {
     }
 
     const wallet = await this.getPlayerWallet(input.playerId);
-    const apwPerApu = this.apwPerApuRate;
+    const apwPerApu = this.resolveApwPerApuRate();
     const settled = resolveEducationTenderForPurchase({
       powerUps: wallet.powerUps ?? 0,
       balanceUsd: wallet.balanceUsd,
@@ -1438,7 +1443,7 @@ export class TestSessionStore implements SessionStore {
     const enrollment = isEducationTuitionActive(stored, new Date(input.now))
       ? stored
       : null;
-    const apwPerApu = this.apwPerApuRate;
+    const apwPerApu = this.resolveApwPerApuRate();
     return {
       enrollment,
       apwPerApu,
@@ -1538,7 +1543,7 @@ export class TestSessionStore implements SessionStore {
     }
 
     const wallet = await this.getPlayerWallet(input.playerId);
-    const apwPerApu = this.apwPerApuRate;
+    const apwPerApu = this.resolveApwPerApuRate();
     const settled = resolveEducationTuitionTender({
       tier: def.tier,
       powerUps: wallet.powerUps ?? 0,

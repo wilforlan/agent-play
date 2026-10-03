@@ -292,6 +292,10 @@ export {
   type WalletBundleOffer,
 } from "./lib/wallet-bundle-catalog.js";
 export {
+  REFERENCE_APW_PER_APU,
+  coalesceApwPerApu,
+} from "./lib/apw-per-apu.js";
+export {
   ARCADE_DAY_PASS_APU,
   ARCADE_DAY_PASS_HOURS,
   ARCADE_WEEK_DISCOUNT,
