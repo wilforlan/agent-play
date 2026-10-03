@@ -24,6 +24,7 @@ import {
   type AmenityStageBounds,
 } from "./amenity-stage-base.js";
 import type { StageHandle } from "./stage-controller.js";
+import { amenityOwnershipFlags } from "./amenity-ownership.js";
 
 /**
  * Walkable bounds for the supermarket stage.
@@ -60,7 +61,17 @@ export type SupermarketItemSnapshot = {
   readonly column: 1 | 2 | 3 | 4 | 5;
   readonly name: string;
   readonly priceUsd: number;
-  readonly sale: { status: "available" | "sold"; soldToPlayerId?: string };
+  readonly sale: {
+    status: "available" | "sold" | "transfer_available";
+    soldToPlayerId?: string;
+    transferListing?: {
+      listingId: string;
+      sellerPlayerId: string;
+      priceUsd: number;
+      listedAt: string;
+      updatedAt: string;
+    };
+  };
 };
 
 /**
@@ -182,7 +193,10 @@ const buildRowBanners = (cellScale: number): Container => {
  * @public
  */
 export type AmenitySupermarketStageHandle = StageHandle & {
-  refresh(items: ReadonlyArray<SupermarketItemSnapshot>): void;
+  refresh(
+    items: ReadonlyArray<SupermarketItemSnapshot>,
+    options?: { viewerPlayerId?: string | null }
+  ): void;
   getSlots(): ReadonlyArray<SupermarketSlot>;
   findNearbyItem(
     playerWorld: { x: number; y: number }
@@ -199,6 +213,7 @@ export type AmenitySupermarketStageHandle = StageHandle & {
 export const buildAmenitySupermarketStage = (input: {
   cellScale: number;
   items: ReadonlyArray<SupermarketItemSnapshot>;
+  viewerPlayerId?: string | null;
 }): AmenitySupermarketStageHandle => {
   const root = new Container();
   root.addChild(buildSupermarketBackdrop(input.cellScale));
@@ -209,9 +224,13 @@ export const buildAmenitySupermarketStage = (input: {
 
   let slots: SupermarketSlot[] = [];
 
-  const refresh = (next: ReadonlyArray<SupermarketItemSnapshot>): void => {
+  const refresh = (
+    next: ReadonlyArray<SupermarketItemSnapshot>,
+    options?: { viewerPlayerId?: string | null }
+  ): void => {
     itemsLayer.removeChildren();
     slots = layoutSupermarketSlots(next);
+    const viewerPlayerId = options?.viewerPlayerId ?? null;
     for (const slot of slots) {
       if (slot.item === null) {
         const placeholder = new Graphics();
@@ -229,9 +248,14 @@ export const buildAmenitySupermarketStage = (input: {
         name: slot.item.name,
         row: slot.row,
       });
+      const ownership = amenityOwnershipFlags({
+        sale: slot.item.sale,
+        viewerPlayerId,
+      });
       const sprite = buildGroceryItemSprite({
         variant,
-        sold: slot.item.sale.status === "sold",
+        sold: ownership.sold,
+        mine: ownership.mine,
         label: slot.item.name,
       });
       sprite.position.set(
@@ -242,7 +266,7 @@ export const buildAmenitySupermarketStage = (input: {
     }
   };
 
-  refresh(input.items);
+  refresh(input.items, { viewerPlayerId: input.viewerPlayerId ?? null });
   const exitDoorAnchor = mountExitDoor({ root, cellScale: input.cellScale });
 
   return {

@@ -24,6 +24,7 @@ import {
   type AmenityStageBounds,
 } from "./amenity-stage-base.js";
 import type { StageHandle } from "./stage-controller.js";
+import { amenityOwnershipFlags } from "./amenity-ownership.js";
 
 /**
  * Walkable bounds for the shop stage.
@@ -47,7 +48,17 @@ export type ShopItemSnapshot = {
   readonly type: ShopItemSpriteType;
   readonly name: string;
   readonly priceUsd: number;
-  readonly sale: { status: "available" | "sold"; soldToPlayerId?: string };
+  readonly sale: {
+    status: "available" | "sold" | "transfer_available";
+    soldToPlayerId?: string;
+    transferListing?: {
+      listingId: string;
+      sellerPlayerId: string;
+      priceUsd: number;
+      listedAt: string;
+      updatedAt: string;
+    };
+  };
 };
 
 /**
@@ -506,7 +517,10 @@ const buildShopBanner = (cellScale: number): Text => {
  * @public
  */
 export type AmenityShopStageHandle = StageHandle & {
-  refresh(items: ReadonlyArray<ShopItemSnapshot>): void;
+  refresh(
+    items: ReadonlyArray<ShopItemSnapshot>,
+    options?: { viewerPlayerId?: string | null }
+  ): void;
   getSlots(): ReadonlyArray<ShopItemSlot>;
   findNearbyItem(playerWorld: { x: number; y: number }): ShopItemSlot | null;
   clampPosition(pos: { x: number; y: number }): { x: number; y: number };
@@ -521,6 +535,7 @@ export type AmenityShopStageHandle = StageHandle & {
 export const buildAmenityShopStage = (input: {
   cellScale: number;
   items: ReadonlyArray<ShopItemSnapshot>;
+  viewerPlayerId?: string | null;
 }): AmenityShopStageHandle => {
   const root = new Container();
   root.addChild(buildShopBackdrop(input.cellScale));
@@ -531,13 +546,22 @@ export const buildAmenityShopStage = (input: {
 
   let slots: ShopItemSlot[] = [];
 
-  const refresh = (next: ReadonlyArray<ShopItemSnapshot>): void => {
+  const refresh = (
+    next: ReadonlyArray<ShopItemSnapshot>,
+    options?: { viewerPlayerId?: string | null }
+  ): void => {
     itemsLayer.removeChildren();
     slots = layoutShopSlots(next);
+    const viewerPlayerId = options?.viewerPlayerId ?? null;
     for (const slot of slots) {
+      const ownership = amenityOwnershipFlags({
+        sale: slot.item.sale,
+        viewerPlayerId,
+      });
       const sprite = buildShopItemSprite({
         type: slot.item.type,
-        sold: slot.item.sale.status === "sold",
+        sold: ownership.sold,
+        mine: ownership.mine,
         label: slot.item.name,
       });
       sprite.position.set(
@@ -548,7 +572,7 @@ export const buildAmenityShopStage = (input: {
     }
   };
 
-  refresh(input.items);
+  refresh(input.items, { viewerPlayerId: input.viewerPlayerId ?? null });
   const exitDoorAnchor = mountExitDoor({ root, cellScale: input.cellScale });
 
   return {
