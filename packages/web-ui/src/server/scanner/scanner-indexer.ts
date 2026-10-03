@@ -31,8 +31,10 @@ const timestampToScore = (iso: string): number => {
 };
 
 export const amenityKindToScannerOp = (
-  amenityKind: PurchaseRecord["amenityKind"]
+  amenityKind: PurchaseRecord["amenityKind"],
+  saleKind?: PurchaseRecord["saleKind"]
 ): ScannerTxOp => {
+  if (saleKind === "transfer") return "transferSale";
   if (amenityKind === "wallet_bundle") return "redeemWalletBundle";
   if (amenityKind === "arcade_pass") return "purchaseArcadeAccess";
   if (amenityKind === "education_pass") return "purchaseEducationAccess";
@@ -61,7 +63,9 @@ export const buildScannerTxRecord = (input: {
     ...input.record,
     hostId: input.hostId,
     indexedAt,
-    op: input.op ?? amenityKindToScannerOp(input.record.amenityKind),
+    op:
+      input.op ??
+      amenityKindToScannerOp(input.record.amenityKind, input.record.saleKind),
     blockRev: input.blockRev,
     merkleRootHex: input.merkleRootHex,
   });

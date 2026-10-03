@@ -362,6 +362,206 @@ describe("session-store: executePurchase", () => {
     expect(wallet.balanceUsd).toBe(3);
     expect(wallet.powerUps).toBe(21);
   });
+
+  it("tracks owned assets after a primary purchase", async () => {
+    const store = new TestSessionStore();
+    await store.loadOrCreateSessionId();
+    await store.upsertShopItem(baseShopItem({ priceUsd: 5 }));
+    await store.getPlayerWallet("p1");
+    await store.executePurchase({
+      spaceId: "space-1",
+      amenityKind: "shop",
+      itemRef: { kind: "shop", id: "shop-1" },
+      playerId: "p1",
+      now: "2026-05-12T01:00:00.000Z",
+      recordId: "rec-1",
+    });
+    const owned = await store.listOwnedAssets({ playerId: "p1" });
+    expect(owned).toHaveLength(1);
+    expect(owned[0]?.ref).toEqual({
+      spaceId: "space-1",
+      amenityKind: "shop",
+      itemId: "shop-1",
+    });
+    expect(owned[0]?.item.sale.status).toBe("sold");
+  });
+});
+
+describe("session-store: transfer sale", () => {
+  it("lists, updates price, and cancels a transfer listing", async () => {
+    const store = new TestSessionStore();
+    await store.loadOrCreateSessionId();
+    await store.upsertShopItem(baseShopItem({ priceUsd: 5 }));
+    await store.setPlayerWalletBalance({ playerId: "seller", balanceUsd: 20 });
+    await store.executePurchase({
+      spaceId: "space-1",
+      amenityKind: "shop",
+      itemRef: { kind: "shop", id: "shop-1" },
+      playerId: "seller",
+      now: "2026-05-12T01:00:00.000Z",
+      recordId: "rec-1",
+    });
+
+    const listed = await store.createTransferListing({
+      spaceId: "space-1",
+      amenityKind: "shop",
+      itemRef: { kind: "shop", id: "shop-1" },
+      sellerPlayerId: "seller",
+      priceUsd: 8,
+      listingId: "listing-1",
+      now: "2026-05-12T02:00:00.000Z",
+    });
+    if (!listed.ok) throw new Error(listed.error);
+    expect(listed.item.sale.status).toBe("transfer_available");
+    expect(listed.item.sale.transferListing?.priceUsd).toBe(8);
+
+    const updated = await store.updateTransferListingPrice({
+      spaceId: "space-1",
+      amenityKind: "shop",
+      itemRef: { kind: "shop", id: "shop-1" },
+      sellerPlayerId: "seller",
+      priceUsd: 9.5,
+      now: "2026-05-12T02:30:00.000Z",
+    });
+    if (!updated.ok) throw new Error(updated.error);
+    expect(updated.item.sale.transferListing?.priceUsd).toBe(9.5);
+
+    const cancelled = await store.cancelTransferListing({
+      spaceId: "space-1",
+      amenityKind: "shop",
+      itemRef: { kind: "shop", id: "shop-1" },
+      sellerPlayerId: "seller",
+      now: "2026-05-12T03:00:00.000Z",
+    });
+    if (!cancelled.ok) throw new Error(cancelled.error);
+    expect(cancelled.item.sale.status).toBe("sold");
+    expect(cancelled.item.sale.transferListing).toBeUndefined();
+  });
+
+  it("rejects listing by a non-owner", async () => {
+    const store = new TestSessionStore();
+    await store.loadOrCreateSessionId();
+    await store.upsertShopItem(baseShopItem({ priceUsd: 5 }));
+    await store.setPlayerWalletBalance({ playerId: "seller", balanceUsd: 20 });
+    await store.executePurchase({
+      spaceId: "space-1",
+      amenityKind: "shop",
+      itemRef: { kind: "shop", id: "shop-1" },
+      playerId: "seller",
+      now: "2026-05-12T01:00:00.000Z",
+      recordId: "rec-1",
+    });
+    const result = await store.createTransferListing({
+      spaceId: "space-1",
+      amenityKind: "shop",
+      itemRef: { kind: "shop", id: "shop-1" },
+      sellerPlayerId: "intruder",
+      priceUsd: 8,
+      listingId: "listing-1",
+      now: "2026-05-12T02:00:00.000Z",
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toBe("NOT_OWNER");
+    }
+  });
+
+  it("settles a transfer purchase with burned fee and ownership move", async () => {
+    const store = new TestSessionStore();
+    await store.loadOrCreateSessionId();
+    await store.upsertShopItem(baseShopItem({ priceUsd: 5 }));
+    await store.setPlayerWalletBalance({ playerId: "seller", balanceUsd: 20 });
+    await store.setPlayerWalletBalance({ playerId: "buyer", balanceUsd: 50 });
+    await store.executePurchase({
+      spaceId: "space-1",
+      amenityKind: "shop",
+      itemRef: { kind: "shop", id: "shop-1" },
+      playerId: "seller",
+      now: "2026-05-12T01:00:00.000Z",
+      recordId: "rec-1",
+    });
+    const listed = await store.createTransferListing({
+      spaceId: "space-1",
+      amenityKind: "shop",
+      itemRef: { kind: "shop", id: "shop-1" },
+      sellerPlayerId: "seller",
+      priceUsd: 20,
+      listingId: "listing-1",
+      now: "2026-05-12T02:00:00.000Z",
+    });
+    if (!listed.ok) throw new Error(listed.error);
+
+    const sellerBefore = await store.getPlayerWallet("seller");
+    const result = await store.executeTransferPurchase({
+      spaceId: "space-1",
+      amenityKind: "shop",
+      itemRef: { kind: "shop", id: "shop-1" },
+      buyerPlayerId: "buyer",
+      now: "2026-05-12T03:00:00.000Z",
+      buyerRecordId: "xfer-buy",
+      sellerRecordId: "xfer-sell",
+    });
+    if (!result.ok) throw new Error(result.error);
+
+    expect(result.feeUsd).toBe(0.3);
+    expect(result.sellerCreditUsd).toBe(19.7);
+    expect(result.buyerWallet.balanceUsd).toBe(30);
+    expect(result.sellerWallet.balanceUsd).toBe(
+      sellerBefore.balanceUsd + 19.7
+    );
+    expect(result.buyerWallet.powerUps).toBe(
+      (await store.getPlayerWallet("buyer")).powerUps
+    );
+    expect(result.updatedItem.sale.status).toBe("sold");
+    expect(result.updatedItem.sale.soldToPlayerId).toBe("buyer");
+    expect(result.updatedItem.sale.transferListing).toBeUndefined();
+    expect(result.buyerRecord.saleKind).toBe("transfer");
+    expect(result.buyerRecord.feeUsd).toBe(0.3);
+    expect(result.buyerRecord.detail).toContain("Transfer sale");
+
+    const sellerOwned = await store.listOwnedAssets({ playerId: "seller" });
+    const buyerOwned = await store.listOwnedAssets({ playerId: "buyer" });
+    expect(sellerOwned).toHaveLength(0);
+    expect(buyerOwned).toHaveLength(1);
+    expect(buyerOwned[0]?.ref.itemId).toBe("shop-1");
+  });
+
+  it("rejects buyer purchasing their own listing", async () => {
+    const store = new TestSessionStore();
+    await store.loadOrCreateSessionId();
+    await store.upsertShopItem(baseShopItem({ priceUsd: 5 }));
+    await store.setPlayerWalletBalance({ playerId: "seller", balanceUsd: 40 });
+    await store.executePurchase({
+      spaceId: "space-1",
+      amenityKind: "shop",
+      itemRef: { kind: "shop", id: "shop-1" },
+      playerId: "seller",
+      now: "2026-05-12T01:00:00.000Z",
+      recordId: "rec-1",
+    });
+    await store.createTransferListing({
+      spaceId: "space-1",
+      amenityKind: "shop",
+      itemRef: { kind: "shop", id: "shop-1" },
+      sellerPlayerId: "seller",
+      priceUsd: 8,
+      listingId: "listing-1",
+      now: "2026-05-12T02:00:00.000Z",
+    });
+    const result = await store.executeTransferPurchase({
+      spaceId: "space-1",
+      amenityKind: "shop",
+      itemRef: { kind: "shop", id: "shop-1" },
+      buyerPlayerId: "seller",
+      now: "2026-05-12T03:00:00.000Z",
+      buyerRecordId: "xfer-buy",
+      sellerRecordId: "xfer-sell",
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toBe("CANNOT_BUY_OWN_LISTING");
+    }
+  });
 });
 
 describe("session-store: talk billing", () => {

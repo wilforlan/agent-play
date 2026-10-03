@@ -75,6 +75,7 @@ import {
   getWalletBundleById,
   buildAmenityPurchaseApuFields,
   buildApuWalletTransaction,
+  calculateTransferSaleFee,
   buildArcadePassPurchaseFields,
   buildEducationPassPurchaseFields,
   buildEducationTuitionPurchaseFields,
@@ -159,15 +160,24 @@ import type {
   BuyParkingTicketResult,
   BuyHouseResult,
   ExecutePurchaseResult,
+  ExecuteTransferPurchaseResult,
+  OwnedAssetEntry,
   PresenceLease,
   PersistSnapshotRev,
   PublishedSessionMetadata,
   SessionStore,
   SnapshotMutationFanoutItem,
   SpaceAmenityLogEntry,
+  TransferListingResult,
   WorldChatMessage,
   WorldFanoutOptions,
 } from "./session-store.js";
+import {
+  decodeOwnedAssetRef,
+  encodeOwnedAssetRef,
+  ownedAssetRefFromPurchase,
+  type AmenityPurchaseKind,
+} from "./owned-assets.js";
 import { publishSnapshotFanout } from "./world-redis-sync.js";
 
 const PURCHASES_MAX = 500;
@@ -391,6 +401,10 @@ function parsePeerTalkSessionStored(raw: string): PeerTalkSessionStored | null {
 
 function playerPurchasesKey(hostId: string, playerId: string): string {
   return `agent-play:${hostId}:player:${playerId}:purchases`;
+}
+
+function playerOwnedAssetsKey(hostId: string, playerId: string): string {
+  return `agent-play:${hostId}:player:${playerId}:owned-assets`;
 }
 
 export type RedisSessionStoreOptions = {
@@ -1636,18 +1650,28 @@ export class RedisSessionStore implements SessionStore {
         itemRef: input.itemRef,
         priceUsd: item.priceUsd,
         at: input.now,
+        saleKind: "primary",
         ...buildAmenityPurchaseApuFields({
           amenityKind: input.amenityKind,
           spaceId: input.spaceId,
           earnedPowerUps,
         }),
       };
+      const ownedKey = playerOwnedAssetsKey(this.hostId, input.playerId);
+      const ownedRef = encodeOwnedAssetRef(
+        ownedAssetRefFromPurchase({
+          spaceId: input.spaceId,
+          amenityKind: input.amenityKind,
+          itemRef: input.itemRef,
+        })
+      );
       const multi = this.redis.multi();
       multi.hset(itemKey, input.itemRef.id, JSON.stringify(updatedItem));
       multi.set(walletKey, JSON.stringify(updatedWallet));
       if (updatedOwnerWallet !== null && ownerWalletKey !== null) {
         multi.set(ownerWalletKey, JSON.stringify(updatedOwnerWallet));
       }
+      multi.sadd(ownedKey, ownedRef);
       multi.lpush(purchasesKeyName, JSON.stringify(record));
       multi.ltrim(purchasesKeyName, 0, PURCHASES_MAX - 1);
       const exec = await multi.exec();
@@ -1675,6 +1699,446 @@ export class RedisSessionStore implements SessionStore {
           record,
           wallet: updatedWallet,
           updatedItem,
+        };
+      }
+    }
+    return { ok: false, error: "ITEM_ALREADY_SOLD" };
+  }
+
+  private amenityItemHashKey(
+    spaceId: string,
+    amenityKind: AmenityPurchaseKind
+  ): string {
+    if (amenityKind === "shop") {
+      return spaceShopItemsHashKey(this.hostId, spaceId);
+    }
+    if (amenityKind === "supermarket") {
+      return spaceSupermarketItemsHashKey(this.hostId, spaceId);
+    }
+    return spaceCarWashCarsHashKey(this.hostId, spaceId);
+  }
+
+  private parseAmenityItem(
+    amenityKind: AmenityPurchaseKind,
+    raw: string
+  ): ShopItem | SupermarketItem | CarWashCar | null {
+    try {
+      const parsed = JSON.parse(raw) as unknown;
+      if (amenityKind === "shop") {
+        return ShopItemSchema.parse(parsed);
+      }
+      if (amenityKind === "supermarket") {
+        return SupermarketItemSchema.parse(parsed);
+      }
+      return CarWashCarSchema.parse(parsed);
+    } catch {
+      return null;
+    }
+  }
+
+  async listOwnedAssets(input: {
+    playerId: string;
+  }): Promise<OwnedAssetEntry[]> {
+    const key = playerOwnedAssetsKey(this.hostId, input.playerId);
+    const members = await this.redis.smembers(key);
+    const entries: OwnedAssetEntry[] = [];
+    for (const raw of members) {
+      const ref = decodeOwnedAssetRef(raw);
+      if (ref === null) {
+        continue;
+      }
+      const itemKey = this.amenityItemHashKey(ref.spaceId, ref.amenityKind);
+      const rawItem = await this.redis.hget(itemKey, ref.itemId);
+      if (rawItem === null) {
+        continue;
+      }
+      const item = this.parseAmenityItem(ref.amenityKind, rawItem);
+      if (item === null) {
+        continue;
+      }
+      if (item.sale.soldToPlayerId !== input.playerId) {
+        continue;
+      }
+      entries.push({ ref, item });
+    }
+    return entries;
+  }
+
+  async createTransferListing(input: {
+    spaceId: string;
+    amenityKind: "shop" | "supermarket" | "car_wash";
+    itemRef: { kind: "shop" | "supermarket" | "carwash"; id: string };
+    sellerPlayerId: string;
+    priceUsd: number;
+    listingId: string;
+    now: string;
+  }): Promise<TransferListingResult> {
+    if (!(Number.isFinite(input.priceUsd) && input.priceUsd > 0)) {
+      return { ok: false, error: "INVALID_PRICE" };
+    }
+    const expectedKind: typeof input.itemRef.kind =
+      input.amenityKind === "car_wash" ? "carwash" : input.amenityKind;
+    if (input.itemRef.kind !== expectedKind) {
+      return { ok: false, error: "AMENITY_KIND_MISMATCH" };
+    }
+    const itemKey = this.amenityItemHashKey(input.spaceId, input.amenityKind);
+    const maxAttempts = 5;
+    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+      await this.redis.watch(itemKey);
+      const rawItem = await this.redis.hget(itemKey, input.itemRef.id);
+      if (rawItem === null) {
+        await this.redis.unwatch();
+        return { ok: false, error: "ITEM_NOT_FOUND" };
+      }
+      const item = this.parseAmenityItem(input.amenityKind, rawItem);
+      if (item === null) {
+        await this.redis.unwatch();
+        return { ok: false, error: "ITEM_NOT_FOUND" };
+      }
+      if (item.sale.soldToPlayerId !== input.sellerPlayerId) {
+        await this.redis.unwatch();
+        return { ok: false, error: "NOT_OWNER" };
+      }
+      if (item.sale.status === "transfer_available") {
+        await this.redis.unwatch();
+        return { ok: false, error: "ALREADY_LISTED" };
+      }
+      if (item.sale.status !== "sold") {
+        await this.redis.unwatch();
+        return { ok: false, error: "INVALID_STATUS" };
+      }
+      const nextItem = {
+        ...item,
+        sale: {
+          status: "transfer_available" as const,
+          soldToPlayerId: item.sale.soldToPlayerId,
+          soldAt: item.sale.soldAt,
+          transferListing: {
+            listingId: input.listingId,
+            sellerPlayerId: input.sellerPlayerId,
+            priceUsd: input.priceUsd,
+            listedAt: input.now,
+            updatedAt: input.now,
+          },
+        },
+      };
+      const multi = this.redis.multi();
+      multi.hset(itemKey, input.itemRef.id, JSON.stringify(nextItem));
+      const exec = await multi.exec();
+      if (exec !== null) {
+        return { ok: true, item: nextItem };
+      }
+    }
+    return { ok: false, error: "INVALID_STATUS" };
+  }
+
+  async updateTransferListingPrice(input: {
+    spaceId: string;
+    amenityKind: "shop" | "supermarket" | "car_wash";
+    itemRef: { kind: "shop" | "supermarket" | "carwash"; id: string };
+    sellerPlayerId: string;
+    priceUsd: number;
+    now: string;
+  }): Promise<TransferListingResult> {
+    if (!(Number.isFinite(input.priceUsd) && input.priceUsd > 0)) {
+      return { ok: false, error: "INVALID_PRICE" };
+    }
+    const expectedKind: typeof input.itemRef.kind =
+      input.amenityKind === "car_wash" ? "carwash" : input.amenityKind;
+    if (input.itemRef.kind !== expectedKind) {
+      return { ok: false, error: "AMENITY_KIND_MISMATCH" };
+    }
+    const itemKey = this.amenityItemHashKey(input.spaceId, input.amenityKind);
+    const maxAttempts = 5;
+    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+      await this.redis.watch(itemKey);
+      const rawItem = await this.redis.hget(itemKey, input.itemRef.id);
+      if (rawItem === null) {
+        await this.redis.unwatch();
+        return { ok: false, error: "ITEM_NOT_FOUND" };
+      }
+      const item = this.parseAmenityItem(input.amenityKind, rawItem);
+      if (item === null) {
+        await this.redis.unwatch();
+        return { ok: false, error: "ITEM_NOT_FOUND" };
+      }
+      if (
+        item.sale.status !== "transfer_available" ||
+        item.sale.transferListing === undefined
+      ) {
+        await this.redis.unwatch();
+        return { ok: false, error: "INVALID_STATUS" };
+      }
+      if (item.sale.soldToPlayerId !== input.sellerPlayerId) {
+        await this.redis.unwatch();
+        return { ok: false, error: "NOT_OWNER" };
+      }
+      const nextItem = {
+        ...item,
+        sale: {
+          ...item.sale,
+          transferListing: {
+            ...item.sale.transferListing,
+            priceUsd: input.priceUsd,
+            updatedAt: input.now,
+          },
+        },
+      };
+      const multi = this.redis.multi();
+      multi.hset(itemKey, input.itemRef.id, JSON.stringify(nextItem));
+      const exec = await multi.exec();
+      if (exec !== null) {
+        return { ok: true, item: nextItem };
+      }
+    }
+    return { ok: false, error: "INVALID_STATUS" };
+  }
+
+  async cancelTransferListing(input: {
+    spaceId: string;
+    amenityKind: "shop" | "supermarket" | "car_wash";
+    itemRef: { kind: "shop" | "supermarket" | "carwash"; id: string };
+    sellerPlayerId: string;
+    now: string;
+  }): Promise<TransferListingResult> {
+    const expectedKind: typeof input.itemRef.kind =
+      input.amenityKind === "car_wash" ? "carwash" : input.amenityKind;
+    if (input.itemRef.kind !== expectedKind) {
+      return { ok: false, error: "AMENITY_KIND_MISMATCH" };
+    }
+    const itemKey = this.amenityItemHashKey(input.spaceId, input.amenityKind);
+    const maxAttempts = 5;
+    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+      await this.redis.watch(itemKey);
+      const rawItem = await this.redis.hget(itemKey, input.itemRef.id);
+      if (rawItem === null) {
+        await this.redis.unwatch();
+        return { ok: false, error: "ITEM_NOT_FOUND" };
+      }
+      const item = this.parseAmenityItem(input.amenityKind, rawItem);
+      if (item === null) {
+        await this.redis.unwatch();
+        return { ok: false, error: "ITEM_NOT_FOUND" };
+      }
+      if (item.sale.status !== "transfer_available") {
+        await this.redis.unwatch();
+        return { ok: false, error: "INVALID_STATUS" };
+      }
+      if (item.sale.soldToPlayerId !== input.sellerPlayerId) {
+        await this.redis.unwatch();
+        return { ok: false, error: "NOT_OWNER" };
+      }
+      const nextItem = {
+        ...item,
+        sale: {
+          status: "sold" as const,
+          soldToPlayerId: item.sale.soldToPlayerId,
+          soldAt: item.sale.soldAt,
+        },
+      };
+      const multi = this.redis.multi();
+      multi.hset(itemKey, input.itemRef.id, JSON.stringify(nextItem));
+      const exec = await multi.exec();
+      if (exec !== null) {
+        return { ok: true, item: nextItem };
+      }
+    }
+    return { ok: false, error: "INVALID_STATUS" };
+  }
+
+  async executeTransferPurchase(input: {
+    spaceId: string;
+    amenityKind: "shop" | "supermarket" | "car_wash";
+    itemRef: { kind: "shop" | "supermarket" | "carwash"; id: string };
+    buyerPlayerId: string;
+    now: string;
+    buyerRecordId: string;
+    sellerRecordId: string;
+  }): Promise<ExecuteTransferPurchaseResult> {
+    const expectedKind: typeof input.itemRef.kind =
+      input.amenityKind === "car_wash" ? "carwash" : input.amenityKind;
+    if (input.itemRef.kind !== expectedKind) {
+      return { ok: false, error: "AMENITY_KIND_MISMATCH" };
+    }
+    const itemKey = this.amenityItemHashKey(input.spaceId, input.amenityKind);
+    const buyerWalletKey = playerWalletKey(this.hostId, input.buyerPlayerId);
+    const buyerPurchasesKey = playerPurchasesKey(
+      this.hostId,
+      input.buyerPlayerId
+    );
+    const buyerOwnedKey = playerOwnedAssetsKey(
+      this.hostId,
+      input.buyerPlayerId
+    );
+    await this.getPlayerWallet(input.buyerPlayerId);
+
+    const maxAttempts = 5;
+    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+      const rawItemPeek = await this.redis.hget(itemKey, input.itemRef.id);
+      if (rawItemPeek === null) {
+        return { ok: false, error: "ITEM_NOT_FOUND" };
+      }
+      const peekItem = this.parseAmenityItem(input.amenityKind, rawItemPeek);
+      if (peekItem === null) {
+        return { ok: false, error: "ITEM_NOT_FOUND" };
+      }
+      if (
+        peekItem.sale.status !== "transfer_available" ||
+        peekItem.sale.transferListing === undefined
+      ) {
+        return { ok: false, error: "NOT_LISTED" };
+      }
+      const sellerId = peekItem.sale.transferListing.sellerPlayerId;
+      if (sellerId === input.buyerPlayerId) {
+        return { ok: false, error: "CANNOT_BUY_OWN_LISTING" };
+      }
+      await this.getPlayerWallet(sellerId);
+      const sellerWalletKey = playerWalletKey(this.hostId, sellerId);
+      const sellerPurchasesKey = playerPurchasesKey(this.hostId, sellerId);
+      const sellerOwnedKey = playerOwnedAssetsKey(this.hostId, sellerId);
+
+      await this.redis.watch(itemKey, buyerWalletKey, sellerWalletKey);
+      const rawItem = await this.redis.hget(itemKey, input.itemRef.id);
+      if (rawItem === null) {
+        await this.redis.unwatch();
+        return { ok: false, error: "ITEM_NOT_FOUND" };
+      }
+      const item = this.parseAmenityItem(input.amenityKind, rawItem);
+      if (item === null) {
+        await this.redis.unwatch();
+        return { ok: false, error: "ITEM_NOT_FOUND" };
+      }
+      if (
+        item.sale.status !== "transfer_available" ||
+        item.sale.transferListing === undefined
+      ) {
+        await this.redis.unwatch();
+        return { ok: false, error: "NOT_LISTED" };
+      }
+      const listing = item.sale.transferListing;
+      if (listing.sellerPlayerId !== sellerId) {
+        await this.redis.unwatch();
+        continue;
+      }
+      if (listing.sellerPlayerId === input.buyerPlayerId) {
+        await this.redis.unwatch();
+        return { ok: false, error: "CANNOT_BUY_OWN_LISTING" };
+      }
+      const priceUsd = listing.priceUsd;
+      const { feeUsd, sellerCreditUsd } = calculateTransferSaleFee({ priceUsd });
+
+      const rawBuyerWallet = await this.redis.get(buyerWalletKey);
+      const rawSellerWallet = await this.redis.get(sellerWalletKey);
+      if (rawBuyerWallet === null || rawSellerWallet === null) {
+        await this.redis.unwatch();
+        return { ok: false, error: "INSUFFICIENT_FUNDS" };
+      }
+      let buyerWallet: PlayerWallet;
+      let sellerWallet: PlayerWallet;
+      try {
+        buyerWallet = PlayerWalletSchema.parse(JSON.parse(rawBuyerWallet));
+        sellerWallet = PlayerWalletSchema.parse(JSON.parse(rawSellerWallet));
+      } catch {
+        await this.redis.unwatch();
+        return { ok: false, error: "INSUFFICIENT_FUNDS" };
+      }
+      if (buyerWallet.balanceUsd < priceUsd) {
+        await this.redis.unwatch();
+        return { ok: false, error: "INSUFFICIENT_FUNDS" };
+      }
+
+      const updatedItem = {
+        ...item,
+        sale: {
+          status: "sold" as const,
+          soldToPlayerId: input.buyerPlayerId,
+          soldAt: input.now,
+        },
+      };
+      const updatedBuyerWallet: PlayerWallet = {
+        ...buyerWallet,
+        balanceUsd: buyerWallet.balanceUsd - priceUsd,
+        updatedAt: input.now,
+      };
+      const updatedSellerWallet: PlayerWallet = {
+        ...sellerWallet,
+        balanceUsd: sellerWallet.balanceUsd + sellerCreditUsd,
+        updatedAt: input.now,
+      };
+      const ownedRef = encodeOwnedAssetRef(
+        ownedAssetRefFromPurchase({
+          spaceId: input.spaceId,
+          amenityKind: input.amenityKind,
+          itemRef: input.itemRef,
+        })
+      );
+      const buyerRecord: PurchaseRecord = {
+        id: input.buyerRecordId,
+        playerId: input.buyerPlayerId,
+        spaceId: input.spaceId,
+        amenityKind: input.amenityKind,
+        itemRef: input.itemRef,
+        priceUsd,
+        at: input.now,
+        feeUsd,
+        saleKind: "transfer",
+        counterpartyNodeId: sellerId,
+        detail: "Transfer sale",
+        token: "USD",
+      };
+      const sellerRecord: PurchaseRecord = {
+        id: input.sellerRecordId,
+        playerId: sellerId,
+        spaceId: input.spaceId,
+        amenityKind: input.amenityKind,
+        itemRef: input.itemRef,
+        priceUsd: sellerCreditUsd,
+        at: input.now,
+        feeUsd,
+        saleKind: "transfer",
+        counterpartyNodeId: input.buyerPlayerId,
+        detail: "Transfer sale proceeds",
+        creditSource: "transfer_sale",
+        token: "USD",
+      };
+
+      const multi = this.redis.multi();
+      multi.hset(itemKey, input.itemRef.id, JSON.stringify(updatedItem));
+      multi.set(buyerWalletKey, JSON.stringify(updatedBuyerWallet));
+      multi.set(sellerWalletKey, JSON.stringify(updatedSellerWallet));
+      multi.srem(sellerOwnedKey, ownedRef);
+      multi.sadd(buyerOwnedKey, ownedRef);
+      multi.lpush(buyerPurchasesKey, JSON.stringify(buyerRecord));
+      multi.ltrim(buyerPurchasesKey, 0, PURCHASES_MAX - 1);
+      multi.lpush(sellerPurchasesKey, JSON.stringify(sellerRecord));
+      multi.ltrim(sellerPurchasesKey, 0, PURCHASES_MAX - 1);
+      const exec = await multi.exec();
+      if (exec !== null) {
+        safeIndexPurchaseRecord({
+          redis: this.redis,
+          hostId: this.hostId,
+          record: buyerRecord,
+          op: "transferSale",
+        });
+        safeIndexWallet({
+          redis: this.redis,
+          hostId: this.hostId,
+          wallet: updatedBuyerWallet,
+        });
+        safeIndexWallet({
+          redis: this.redis,
+          hostId: this.hostId,
+          wallet: updatedSellerWallet,
+        });
+        return {
+          ok: true,
+          buyerRecord,
+          sellerRecord,
+          buyerWallet: updatedBuyerWallet,
+          sellerWallet: updatedSellerWallet,
+          updatedItem,
+          feeUsd,
+          sellerCreditUsd,
         };
       }
     }
