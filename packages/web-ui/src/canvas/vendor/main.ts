@@ -331,6 +331,10 @@ import {
   getEducationProgress,
   recordEducationLessonComplete,
 } from "./education-progress-client.js";
+import {
+  getJoeLessonChat,
+  sendJoeLessonMessage,
+} from "./education-joe-client.js";
 import { resolveFacultyProximityActions } from "./education-faculty-prompt.js";
 import {
   FACULTY_CLASSROOM_BOUNDS,
@@ -2614,12 +2618,46 @@ const startFacultyClassroomLesson = (): void => {
     )?.title ?? classroom.facultyId;
   const pathId = classroom.pathId;
   const facultyId = classroom.facultyId;
+  const pathTitle = path?.title ?? "Learning path";
   educationLessonPanel?.show({
     facultyLabel,
-    pathTitle: path?.title ?? "Learning path",
+    pathTitle,
     lessonTitle: lessonMeta.title,
     body,
     alreadyComplete: classroom.completedLessonIds.has(lessonId),
+    onLoadJoeChat: async () => {
+      const sid = getSid();
+      const playerId = getViewerWalletPlayerId();
+      if (sid === null || playerId === null) return [];
+      const thread = await getJoeLessonChat({
+        sid,
+        playerId,
+        facultyId,
+        pathId,
+        lessonId,
+      });
+      return thread.messages;
+    },
+    onSendJoeMessage: async (text) => {
+      const sid = getSid();
+      const playerId = getViewerWalletPlayerId();
+      if (sid === null || playerId === null) {
+        throw new Error("Sign in to chat with Joe.");
+      }
+      const thread = await sendJoeLessonMessage({
+        sid,
+        playerId,
+        facultyId,
+        pathId,
+        lessonId,
+        text,
+        lessonTitle: lessonMeta.title,
+        lessonBody: body,
+        pathTitle,
+        facultyLabel,
+      });
+      return thread.messages;
+    },
     onComplete: async (reflection) => {
       const sid = getSid();
       const playerId = getViewerWalletPlayerId();
