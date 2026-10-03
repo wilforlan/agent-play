@@ -1726,6 +1726,68 @@ export async function POST(req: NextRequest) {
         });
         return Response.json({ enrollments: result.enrollments });
       }
+      case "getEducationProgress": {
+        const p = body.payload as {
+          playerId?: unknown;
+          facultyId?: unknown;
+          pathId?: unknown;
+        };
+        if (
+          typeof p.playerId !== "string" ||
+          p.playerId.trim().length === 0 ||
+          typeof p.facultyId !== "string" ||
+          typeof p.pathId !== "string"
+        ) {
+          return Response.json({ error: "invalid payload" }, { status: 400 });
+        }
+        const facultyId = normalizeEducationFacultyId(p.facultyId);
+        if (facultyId === null || !isEducationPathId(p.pathId)) {
+          return Response.json({ error: "invalid payload" }, { status: 400 });
+        }
+        const result = await store.getEducationProgress({
+          playerId: p.playerId.trim(),
+          facultyId,
+          pathId: p.pathId,
+        });
+        return Response.json({ progress: result.progress });
+      }
+      case "recordEducationLessonComplete": {
+        const p = body.payload as {
+          playerId?: unknown;
+          facultyId?: unknown;
+          pathId?: unknown;
+          lessonId?: unknown;
+          reflection?: unknown;
+        };
+        if (
+          typeof p.playerId !== "string" ||
+          p.playerId.trim().length === 0 ||
+          typeof p.facultyId !== "string" ||
+          typeof p.pathId !== "string" ||
+          typeof p.lessonId !== "string" ||
+          p.lessonId.trim().length === 0
+        ) {
+          return Response.json({ error: "invalid payload" }, { status: 400 });
+        }
+        const facultyId = normalizeEducationFacultyId(p.facultyId);
+        if (facultyId === null || !isEducationPathId(p.pathId)) {
+          return Response.json({ error: "invalid payload" }, { status: 400 });
+        }
+        const now = new Date().toISOString();
+        const result = await store.recordEducationLessonComplete({
+          playerId: p.playerId.trim(),
+          facultyId,
+          pathId: p.pathId,
+          lessonId: p.lessonId.trim(),
+          now,
+          reflection:
+            typeof p.reflection === "string" ? p.reflection : undefined,
+        });
+        if (!result.ok) {
+          return Response.json({ error: result.error }, { status: 400 });
+        }
+        return Response.json({ progress: result.progress });
+      }
       case "getGameStats": {
         const p = body.payload as { playerId?: unknown };
         if (typeof p.playerId !== "string" || p.playerId.trim().length === 0) {
