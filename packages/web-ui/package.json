@@ -1,6 +1,6 @@
 {
   "name": "@agent-play/web-ui",
-  "version": "3.7.0",
+  "version": "3.7.1",
   "private": true,
   "type": "module",
   "scripts": {
@@ -21,7 +21,7 @@
     "@agent-play/intercom": "^3.3.7",
     "@agent-play/joe": "^0.1.0",
     "@agent-play/node-tools": "^3.2.3",
-    "@agent-play/sdk": "^3.4.9",
+    "@agent-play/sdk": "^3.5.1",
     "@openai/agents": "^0.8.5",
     "@portabletext/react": "^7.0.1",
     "@radix-ui/react-avatar": "^1.2.6",
