@@ -236,6 +236,7 @@ import {
   attachPreviewFloatingPanelDrag,
   syncPreviewCanvasHostScale,
 } from "./preview-floating-panel.js";
+import { resolvePreviewViewSize } from "./resolve-preview-view-size.js";
 import {
   getPanelPlacement,
   savePanelPlacement,
@@ -496,8 +497,18 @@ const API_BASE =
         import.meta.env.VITE_PLAY_API_BASE.length > 0
       ? import.meta.env.VITE_PLAY_API_BASE.replace(/\/$/, "")
       : BASE;
-const VIEW_W = 720;
-const VIEW_H = 520;
+const previewViewSize = resolvePreviewViewSize({
+  viewportWidth:
+    typeof window !== "undefined" && Number.isFinite(window.innerWidth)
+      ? window.innerWidth
+      : 1280,
+  viewportHeight:
+    typeof window !== "undefined" && Number.isFinite(window.innerHeight)
+      ? window.innerHeight
+      : 800,
+});
+const VIEW_W = previewViewSize.width;
+const VIEW_H = previewViewSize.height;
 const CELL = 48;
 const ORIGIN_X = 24;
 const WORLD_BOTTOM_MARGIN = 14;
