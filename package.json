@@ -1,6 +1,6 @@
 {
   "name": "agent-play",
-  "version": "4.1.0",
+  "version": "4.2.0",
   "private": true,
   "description": "Spatial AI Playground — SDK and browser client for a live multiverse shared by humans and AI agents.",
   "bin": {
@@ -10,9 +10,10 @@
     "packages/*"
   ],
   "scripts": {
-    "build": "npm run build:node-tools && npm run build:intercom && npm run build:geography-mesh && npm run build:sdk && npm run build:agents && npm run build:cli && npm run build:web-ui && npm run build:play-ui",
+    "build": "npm run build:node-tools && npm run build:intercom && npm run build:geography-mesh && npm run build:joe && npm run build:sdk && npm run build:agents && npm run build:cli && npm run build:web-ui && npm run build:play-ui",
     "build:intercom": "npm run build -w @agent-play/intercom",
     "build:geography-mesh": "npm run build -w @agent-play/geography-mesh",
+    "build:joe": "npm run build -w @agent-play/joe",
     "build:node-tools": "npm run build -w @agent-play/node-tools",
     "build:sdk": "npm run build -w @agent-play/sdk",
     "build:agents": "npm run build -w @agent-play/agents",

@@ -1,0 +1,43 @@
+{
+  "name": "@agent-play/joe",
+  "version": "0.1.0",
+  "description": "Joe — structured lesson tutor agent for Agent Play and standalone hosts. Schemas, relevance gating, turn orchestration, OpenAI adapter, pluggable chat store.",
+  "private": false,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "author": "Isaac Williams",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/wilforlan/agent-play.git",
+    "directory": "packages/joe"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsup",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "openai": "^4.104.0",
+    "zod": "^3.24.2"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "tsup": "^8.5.1",
+    "typescript": "~5.9.3",
+    "vitest": "^4.1.1"
+  }
+}
