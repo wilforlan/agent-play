@@ -425,6 +425,35 @@ export type SessionStore = {
         error: "INVALID_PATH" | "DAY_PASS_REQUIRED" | "NOT_ENROLLED";
       }
   >;
+  getJoeLessonChat(input: {
+    playerId: string;
+    facultyId: import("@agent-play/sdk").EducationFacultyId;
+    pathId: import("@agent-play/sdk").EducationPathId;
+    lessonId: string;
+  }): Promise<{ thread: import("@agent-play/joe").JoeThread }>;
+  sendJoeLessonMessage(input: {
+    playerId: string;
+    facultyId: import("@agent-play/sdk").EducationFacultyId;
+    pathId: import("@agent-play/sdk").EducationPathId;
+    lessonId: string;
+    text: string;
+    lessonTitle: string;
+    lessonBody: string;
+    pathTitle?: string;
+    facultyLabel?: string;
+    now: string;
+  }): Promise<
+    | { ok: true; thread: import("@agent-play/joe").JoeThread }
+    | {
+        ok: false;
+        error:
+          | "INVALID_PATH"
+          | "DAY_PASS_REQUIRED"
+          | "NOT_ENROLLED"
+          | "JOE_UNAVAILABLE"
+          | "EMPTY_MESSAGE";
+      }
+  >;
   getGameStats(input: { playerId: string; now: string }): Promise<GameStats>;
   applyGameOutcome(input: {
     playerId: string;

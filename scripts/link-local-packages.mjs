@@ -33,6 +33,7 @@ const DEFAULT_PACKAGES = ["node-tools", "intercom", "sdk"];
 const VALID_PACKAGE_DIRS = new Set([
   "node-tools",
   "intercom",
+  "joe",
   "sdk",
   "cli",
   "agents",
