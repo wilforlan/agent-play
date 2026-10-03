@@ -117,7 +117,7 @@ npm publish -w @agent-play/play-ui --access public
 
 ## GitHub Actions
 
-Workflow [`.github/workflows/publish-npm.yml`](../.github/workflows/publish-npm.yml) runs on pushes to **`main`**, on **`v*`** tags, and on **`workflow_dispatch`**. Configure the **`NPM_TOKEN`** repository secret (automation token from npmjs.com with publish scope). **`npm publish`** fails if that version already exists on the registry—bump versions locally (and commit) before a new release.
+Workflow [`.github/workflows/publish-npm.yml`](../.github/workflows/publish-npm.yml) runs on pushes to **`main`**, on **`v*`** tags, and on **`workflow_dispatch`**. Configure the **`NPM_TOKEN`** repository secret (preferred; classic **Automation** token, or a granular token with **Read and write** on every `@agent-play/*` package you publish). The workflow also accepts **`NODE_AUTH_TOKEN`** as a fallback secret name. A 404 on `PUT …/@agent-play%2fsdk` usually means the token cannot publish that package (npm hides permission failures as 404)—not that the package is missing. **`npm publish`** also fails if that version already exists on the registry—bump versions locally (and commit) before a new release.
 
 Behavior:
 

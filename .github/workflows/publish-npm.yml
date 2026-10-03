@@ -100,6 +100,21 @@ jobs:
         with:
           node-version: "20"
           registry-url: "https://registry.npmjs.org"
+          scope: "@agent-play"
+      - name: Configure npm auth
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NODE_AUTH_TOKEN_SECRET: ${{ secrets.NODE_AUTH_TOKEN }}
+        run: |
+          TOKEN="${NPM_TOKEN:-$NODE_AUTH_TOKEN_SECRET}"
+          if [ -z "$TOKEN" ]; then
+            echo "::error::Missing npm publish token. Set repository secret NPM_TOKEN (preferred) or NODE_AUTH_TOKEN."
+            exit 1
+          fi
+          echo "//registry.npmjs.org/:_authToken=${TOKEN}" > "$HOME/.npmrc"
+          echo "@agent-play:registry=https://registry.npmjs.org/" >> "$HOME/.npmrc"
+          echo "always-auth=true" >> "$HOME/.npmrc"
+          npm whoami --registry=https://registry.npmjs.org/
       - name: Install dependencies
         run: npm install
 
@@ -128,45 +143,39 @@ jobs:
       - name: Build and publish @agent-play/node-tools
         if: needs.changes.outputs.node_tools == 'true'
         run: |
-          npm publish -w @agent-play/node-tools --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          npm publish --access public
+        working-directory: packages/node-tools
 
       - name: Publish @agent-play/intercom
         if: needs.changes.outputs.intercom == 'true'
         run: |
-          npm publish -w @agent-play/intercom --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          npm publish --access public
+        working-directory: packages/intercom
 
       - name: Build and publish @agent-play/geography-mesh
         if: needs.changes.outputs.geography_mesh == 'true'
         run: |
           npm run build -w @agent-play/geography-mesh
-          npm publish -w @agent-play/geography-mesh --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          npm publish --access public
+        working-directory: packages/geography-mesh
 
       - name: Publish @agent-play/sdk
         if: needs.changes.outputs.sdk == 'true'
         run: |
           npm run build -w @agent-play/sdk
-          npm publish -w @agent-play/sdk --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          npm publish --access public
+        working-directory: packages/sdk
 
       - name: Build and publish @agent-play/cli
         if: needs.changes.outputs.cli == 'true'
         run: |
           npm run build -w @agent-play/cli
-          npm publish -w @agent-play/cli --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          npm publish --access public
+        working-directory: packages/cli
 
       - name: Build and publish @agent-play/play-ui
         if: needs.changes.outputs.play_ui == 'true'
         run: |
           npm run build -w @agent-play/play-ui
-          npm publish -w @agent-play/play-ui --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          npm publish --access public
+        working-directory: packages/play-ui
