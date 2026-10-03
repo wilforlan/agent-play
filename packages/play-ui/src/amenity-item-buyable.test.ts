@@ -88,6 +88,78 @@ describe("resolveNearestAmenityBuyable", () => {
     expect(b.tooltipModel.sale.status).toBe("available");
   });
 
+  it("uses transfer listing price and note for transfer_available items", () => {
+    const slot = shopSlot("shop-2");
+    const listed: typeof slot = {
+      ...slot,
+      item: {
+        ...slot.item,
+        priceUsd: 12,
+        sale: {
+          status: "transfer_available",
+          soldToPlayerId: "seller-1",
+          transferListing: {
+            listingId: "listing-1",
+            sellerPlayerId: "seller-1",
+            priceUsd: 40,
+            listedAt: "2026-06-01T00:00:00.000Z",
+            updatedAt: "2026-06-01T00:00:00.000Z",
+          },
+        },
+      },
+    };
+    const buyable = resolveNearestAmenityBuyable({
+      kind: "shop",
+      findShop: () => listed,
+      findSupermarket: () => null,
+      findCar: () => null,
+    });
+    expect(buyable?.tooltipModel.priceUsd).toBe(40);
+    expect(buyable?.tooltipModel.transferSaleNote).toContain("Transfer sale");
+  });
+
+  it("marks viewer-owned sold items as ownedByViewer with display name", () => {
+    const slot = shopSlot("shop-3");
+    const owned: typeof slot = {
+      ...slot,
+      item: {
+        ...slot.item,
+        sale: { status: "sold", soldToPlayerId: "viewer-9" },
+      },
+    };
+    const buyable = resolveNearestAmenityBuyable({
+      kind: "shop",
+      findShop: () => owned,
+      findSupermarket: () => null,
+      findCar: () => null,
+      viewerPlayerId: "viewer-9",
+      resolveOwnerDisplayName: (id) => (id === "viewer-9" ? "You" : id),
+    });
+    expect(buyable?.tooltipModel.ownedByViewer).toBe(true);
+    expect(buyable?.tooltipModel.ownerDisplayName).toBe("You");
+  });
+
+  it("includes owner display name for items owned by someone else", () => {
+    const slot = shopSlot("shop-4");
+    const sold: typeof slot = {
+      ...slot,
+      item: {
+        ...slot.item,
+        sale: { status: "sold", soldToPlayerId: "owner-a" },
+      },
+    };
+    const buyable = resolveNearestAmenityBuyable({
+      kind: "shop",
+      findShop: () => sold,
+      findSupermarket: () => null,
+      findCar: () => null,
+      viewerPlayerId: "viewer-9",
+      resolveOwnerDisplayName: (id) => (id === "owner-a" ? "Alex" : id),
+    });
+    expect(buyable?.tooltipModel.ownedByViewer).toBe(false);
+    expect(buyable?.tooltipModel.ownerDisplayName).toBe("Alex");
+  });
+
   it("returns a supermarket buyable", () => {
     const buyable = resolveNearestAmenityBuyable({
       kind: "supermarket",
