@@ -86,6 +86,8 @@ import {
   type EducationPathTier,
   type EducationTender,
   type EducationTuitionEnrollment,
+  type EducationLessonProgress,
+  educationProgressKey,
 } from "@agent-play/sdk";
 import {
   applyGameOutcomeToState,
@@ -166,6 +168,10 @@ export class TestSessionStore implements SessionStore {
   private readonly educationTuitionByPlayer = new Map<
     string,
     Map<string, EducationTuitionEnrollment>
+  >();
+  private readonly educationProgressByPlayer = new Map<
+    string,
+    Map<string, EducationLessonProgress>
   >();
   private apwPerApuRate = 0;
   private readonly geographyHumans = new Map<string, GeographyHumanState>();
@@ -1423,7 +1429,7 @@ export class TestSessionStore implements SessionStore {
     return {
       enrollment,
       apwPerApu,
-      quoteApw: quoteEducationTuitionApw({ tier: def.tier }),
+      quoteApw: quoteEducationTuitionApw({ tier: def.tier, apwPerApu }),
       apuCost: quoteEducationTuitionApu({ tier: def.tier, apwPerApu }),
       preferredTender: chooseEducationTender({
         powerUps: wallet.powerUps ?? 0,
@@ -1610,6 +1616,82 @@ export class TestSessionStore implements SessionStore {
       }
     }
     return { enrollments };
+  }
+
+  async getEducationProgress(input: {
+    playerId: string;
+    facultyId: EducationFacultyId;
+    pathId: EducationPathId;
+  }): Promise<{ progress: EducationLessonProgress[] }> {
+    const byKey = this.educationProgressByPlayer.get(input.playerId);
+    if (byKey === undefined) return { progress: [] };
+    return {
+      progress: [...byKey.values()].filter(
+        (row) =>
+          row.facultyId === input.facultyId && row.pathId === input.pathId
+      ),
+    };
+  }
+
+  async recordEducationLessonComplete(input: {
+    playerId: string;
+    facultyId: EducationFacultyId;
+    pathId: EducationPathId;
+    lessonId: string;
+    now: string;
+    reflection?: string;
+  }): Promise<
+    | { ok: true; progress: EducationLessonProgress }
+    | { ok: false; error: "INVALID_PATH" | "DAY_PASS_REQUIRED" | "NOT_ENROLLED" }
+  > {
+    if (!isEducationPathId(input.pathId)) {
+      return { ok: false, error: "INVALID_PATH" };
+    }
+    const def = getEducationPathDef(input.pathId);
+    if (def === undefined || def.facultyId !== input.facultyId) {
+      return { ok: false, error: "INVALID_PATH" };
+    }
+    const dayPass = await this.getEducationAccess({
+      playerId: input.playerId,
+      centerId: input.facultyId,
+      now: input.now,
+    });
+    if (dayPass.access === null) {
+      return { ok: false, error: "DAY_PASS_REQUIRED" };
+    }
+    const tuition = await this.getEducationTuition({
+      playerId: input.playerId,
+      facultyId: input.facultyId,
+      pathId: input.pathId,
+      now: input.now,
+    });
+    if (tuition.enrollment === null) {
+      return { ok: false, error: "NOT_ENROLLED" };
+    }
+    const byKey =
+      this.educationProgressByPlayer.get(input.playerId) ??
+      new Map<string, EducationLessonProgress>();
+    const mapKey = educationProgressKey({
+      facultyId: input.facultyId,
+      pathId: input.pathId,
+      lessonId: input.lessonId,
+    });
+    const existing = byKey.get(mapKey);
+    if (existing !== undefined) {
+      return { ok: true, progress: existing };
+    }
+    const progress: EducationLessonProgress = {
+      facultyId: input.facultyId,
+      pathId: input.pathId,
+      lessonId: input.lessonId,
+      completedAt: input.now,
+      ...(input.reflection !== undefined && input.reflection.length > 0
+        ? { reflection: input.reflection }
+        : {}),
+    };
+    byKey.set(mapKey, progress);
+    this.educationProgressByPlayer.set(input.playerId, byKey);
+    return { ok: true, progress };
   }
 
   async startTalkSession(input: {

@@ -401,6 +401,30 @@ export type SessionStore = {
   }): Promise<{
     enrollments: import("@agent-play/sdk").EducationTuitionEnrollment[];
   }>;
+  getEducationProgress(input: {
+    playerId: string;
+    facultyId: import("@agent-play/sdk").EducationFacultyId;
+    pathId: import("@agent-play/sdk").EducationPathId;
+  }): Promise<{
+    progress: import("@agent-play/sdk").EducationLessonProgress[];
+  }>;
+  recordEducationLessonComplete(input: {
+    playerId: string;
+    facultyId: import("@agent-play/sdk").EducationFacultyId;
+    pathId: import("@agent-play/sdk").EducationPathId;
+    lessonId: string;
+    now: string;
+    reflection?: string;
+  }): Promise<
+    | {
+        ok: true;
+        progress: import("@agent-play/sdk").EducationLessonProgress;
+      }
+    | {
+        ok: false;
+        error: "INVALID_PATH" | "DAY_PASS_REQUIRED" | "NOT_ENROLLED";
+      }
+  >;
   getGameStats(input: { playerId: string; now: string }): Promise<GameStats>;
   applyGameOutcome(input: {
     playerId: string;
