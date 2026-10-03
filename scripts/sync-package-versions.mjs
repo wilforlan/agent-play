@@ -11,6 +11,7 @@ const PACKAGE_PATHS = [
   "packages/node-tools/package.json",
   "packages/intercom/package.json",
   "packages/geography-mesh/package.json",
+  "packages/joe/package.json",
   "packages/sdk/package.json",
   "packages/cli/package.json",
   "packages/play-ui/package.json",
@@ -27,6 +28,8 @@ const WORKSPACE_TO_REL = {
   "@agent-play/geography-mesh": "packages/geography-mesh/package.json",
   "geography-mesh": "packages/geography-mesh/package.json",
   geographymesh: "packages/geography-mesh/package.json",
+  "@agent-play/joe": "packages/joe/package.json",
+  joe: "packages/joe/package.json",
   "@agent-play/sdk": "packages/sdk/package.json",
   sdk: "packages/sdk/package.json",
   "@agent-play/cli": "packages/cli/package.json",
@@ -166,7 +169,7 @@ function resolveWorkspace(id) {
     .filter((k) => !k.includes("@"))
     .sort();
   throw new Error(
-    `Unknown workspace "${id}". Use one of: ${known.join(", ")}, or @agent-play/geography-mesh, @agent-play/intercom, @agent-play/sdk, @agent-play/cli, @agent-play/play-ui, @agent-play/web-ui`
+    `Unknown workspace "${id}". Use one of: ${known.join(", ")}, or @agent-play/geography-mesh, @agent-play/intercom, @agent-play/joe, @agent-play/sdk, @agent-play/cli, @agent-play/play-ui, @agent-play/web-ui`
   );
 }
 
@@ -211,7 +214,7 @@ function printHelp(exitCode) {
   --check-semver  Exit 0 if every tracked package.json has a valid semver version; else exit 1.
 
 Without --workspace: set the same semver on the root package and:
-  @agent-play/node-tools, @agent-play/intercom, @agent-play/geography-mesh, @agent-play/sdk, @agent-play/cli, @agent-play/play-ui, @agent-play/web-ui
+  @agent-play/node-tools, @agent-play/intercom, @agent-play/geography-mesh, @agent-play/joe, @agent-play/sdk, @agent-play/cli, @agent-play/play-ui, @agent-play/web-ui
 
 With --workspace / -w: set the version only in that package.json (aliases: geography-mesh, sdk, cli, play-ui, web-ui, root, or @agent-play/...).
 

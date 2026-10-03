@@ -30,8 +30,8 @@ export const resolveFacultyProximityActions = (input: {
       canEnter: true,
       canChoosePath: true,
       canStartClass: true,
-      legend: `Near ${input.facultyLabel}. Class in session · A: open lesson cards inside`,
-      prompt: "P: enter classroom",
+      legend: `Near ${input.facultyLabel}. Class in session · P/A: enter classroom`,
+      prompt: "P: enter classroom\nA: enter classroom",
     };
   }
   if (!input.hasEnrollment) {
@@ -39,15 +39,15 @@ export const resolveFacultyProximityActions = (input: {
       canEnter: true,
       canChoosePath: true,
       canStartClass: false,
-      legend: `Near ${input.facultyLabel}. P: enter · A: choose path · C: start class (needs fees)`,
-      prompt: "P: enter\nA: choose path\nC: needs school fees",
+      legend: `Near ${input.facultyLabel}. P: browse · A: choose path · C: needs school fees`,
+      prompt: "P: browse classroom\nA: choose path\nC: needs school fees",
     };
   }
   return {
     canEnter: true,
     canChoosePath: true,
     canStartClass: true,
-    legend: `Near ${input.facultyLabel}. P: enter · A: paths · C: start class`,
-    prompt: "P: enter classroom\nA: choose path\nC: start class",
+    legend: `Near ${input.facultyLabel}. P/A: enter class · C: enter class`,
+    prompt: "P: enter class\nA: enter class\nC: enter class",
   };
 };

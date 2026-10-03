@@ -38,9 +38,10 @@
 
 | Package | Areas |
 |---------|--------|
+| `@agent-play/joe` | Lesson teacher schemas, relevance gating, `runJoeTurn`, OpenAI adapter, pluggable chat store |
 | `@agent-play/sdk` | Faculty/path schemas; tuition catalog; scanner op; purchase amenity kinds; remap helpers; browser exports |
-| `@agent-play/play-ui` | Campus specs rename; proximity state machine; interior stage; panels; content pack; `main.ts` wiring |
-| `@agent-play/web-ui` | Session store interface + redis + test-double; RPC cases; scanner indexer; vendor copy |
+| `@agent-play/play-ui` | Campus specs rename; proximity state machine; interior stage; panels; Joe chat UX; content pack; `main.ts` wiring |
+| `@agent-play/web-ui` | Session store interface + redis + test-double; Joe RPC; scanner indexer; vendor copy |
 
 ---
 
@@ -187,21 +188,31 @@ Client modules: `education-tuition-client.ts` (parallel to education-access-clie
 |---------|------------|--------------|-----------------|
 | no | — | — | Day entry 5 APU (existing) |
 | yes | no | no | `P: enter · A: choose path · C: start class (needs fees)` |
-| yes | yes | no | `P: enter · A: paths · C: start class` |
-| yes | yes | yes | `Near lesson · A: open` (inside) / overworld may show enter |
+| yes | yes | no | `P: class · A: class · C: class` (enter enrolled classroom) |
+| yes | yes | yes | Outline HUD + `A: outline · C: choose · P: start` near lesson |
+
+Dev school fees: set `AGENT_PLAY_EDUCATION_DEV_FEES=1` for 5/7/10 APU by tier (prod stays 450/675/900 APW$). Progress persists in Redis via `getEducationProgress` / `recordEducationLessonComplete` (ungraded reflection).
+
+**Joe lesson teacher** (`@agent-play/joe`):
+
+- Redis key `agent-play:{hostId}:player:{playerId}:education-joe-chat` → map by `facultyId:pathId:lessonId`
+- RPC `getJoeLessonChat` / `sendJoeLessonMessage` (day pass + tuition required; OpenAI via `OPENAI_API_KEY`, optional `JOE_MODEL`)
+- Lesson panel split: markdown reader + robotic Joe chat dock (structured concept/example/probe/checkpoint replies; relevance target ≥ 0.8)
 
 ### 5.2 Key handlers (`main.ts`)
 
 Overworld, nearest faculty, day pass active, no modal:
 
-- **P** → `enterFacultyClassroom({ facultyId, mode: "browse" })`  
-- **A** → open path panel → on select open tuition panel → purchase  
-- **C** → if enrolled: `enterFacultyClassroom({ facultyId, mode: "class", pathId })`; else open path/tuition guidance  
+- **P** → if enrolled: class mode; else browse mode  
+- **A** → if enrolled: class mode; else path/tuition picker  
+- **C** → `startFacultyClass` (class mode when enrolled)  
 
-Inside stage:
+Inside class mode:
 
-- **A** near lesson card (class mode) → lesson panel  
-- **A** near path section (browse) → path panel for that path  
+- **A** → show course outline / progress HUD  
+- **C** near lesson → choose/select lesson (outline highlight)  
+- **P** → start selected or nearest lesson → reader + Joe chat + optional reflection → mark complete (no grading)  
+- Browse mode **A** near path scroll → tuition/enroll  
 - Exit door / Esc → leave stage  
 
 ### 5.3 Pure helpers (test without Pixi)

@@ -123,13 +123,26 @@ export type CreatePreviewProximityTouchControlsOptions = {
   getFacultyClassActivatable?: () => boolean;
   /**
    * When inside a faculty classroom near a learning-path scroll or lesson
-   * card, returns the target label for the `A` button.
+   * card, returns the target label for the proximity pad.
    */
   getFacultyClassroomProximityLabel?: () => string | null | undefined;
   /**
-   * Verb shown on `A` near a classroom target (`"Enroll"` / `"Open"`).
+   * Verb shown on `A` near a classroom target (`"Enroll"` / `"Outline"`).
+   * Falls back to `getFacultyClassroomProximityVerb` when unset.
+   */
+  getFacultyClassroomAssistVerb?: () => string | null | undefined;
+  /**
+   * Legacy alias for `getFacultyClassroomAssistVerb`.
    */
   getFacultyClassroomProximityVerb?: () => string | null | undefined;
+  /**
+   * Verb shown on `C` near a classroom lesson (`"Choose"`).
+   */
+  getFacultyClassroomChatVerb?: () => string | null | undefined;
+  /**
+   * Verb shown on `P` near a classroom lesson (`"Start"`).
+   */
+  getFacultyClassroomPushVerb?: () => string | null | undefined;
   onAssist: () => void;
   onChat: () => void;
   onPushToTalk: () => void;
@@ -360,29 +373,68 @@ export function createPreviewProximityTouchControls(
         `${houseInteriorPurchaseLabel ?? "Buy"} house`
       );
     } else if (nearFacultyClassroom) {
-      const verb = options.getFacultyClassroomProximityVerb?.() ?? "Open";
+      const assistVerb =
+        options.getFacultyClassroomAssistVerb?.() ??
+        options.getFacultyClassroomProximityVerb?.() ??
+        "Open";
+      const chatVerb = options.getFacultyClassroomChatVerb?.() ?? null;
+      const pushVerb = options.getFacultyClassroomPushVerb?.() ?? null;
+      const hasChat =
+        typeof chatVerb === "string" && chatVerb.trim().length > 0;
+      const hasPush =
+        typeof pushVerb === "string" && pushVerb.trim().length > 0;
       btnAssist.disabled = false;
-      subA.textContent = verb;
+      subA.textContent = assistVerb;
       btnAssist.classList.add("preview-proximity-touch-pad__key--proximity-active");
       btnAssist.classList.remove("preview-proximity-touch-pad__key--proximity-hint");
       btnAssist.setAttribute(
         "aria-label",
-        `${verb} ${classroomLabel ?? "learning path"}`
+        `${assistVerb} ${classroomLabel ?? "learning path"}`
       );
-      btnChat.disabled = true;
-      subC.textContent = "Chat";
-      btnChat.classList.remove(
-        "preview-proximity-touch-pad__key--proximity-active",
-        "preview-proximity-touch-pad__key--proximity-hint"
-      );
-      btnChat.removeAttribute("aria-label");
-      btnPushToTalk.disabled = true;
-      subP.textContent = "Push";
-      btnPushToTalk.classList.remove(
-        "preview-proximity-touch-pad__key--proximity-active",
-        "preview-proximity-touch-pad__key--proximity-hint"
-      );
-      btnPushToTalk.removeAttribute("aria-label");
+      if (hasChat) {
+        btnChat.disabled = false;
+        subC.textContent = chatVerb;
+        btnChat.classList.add(
+          "preview-proximity-touch-pad__key--proximity-active"
+        );
+        btnChat.classList.remove(
+          "preview-proximity-touch-pad__key--proximity-hint"
+        );
+        btnChat.setAttribute(
+          "aria-label",
+          `${chatVerb} ${classroomLabel ?? "lesson"}`
+        );
+      } else {
+        btnChat.disabled = true;
+        subC.textContent = "Chat";
+        btnChat.classList.remove(
+          "preview-proximity-touch-pad__key--proximity-active",
+          "preview-proximity-touch-pad__key--proximity-hint"
+        );
+        btnChat.removeAttribute("aria-label");
+      }
+      if (hasPush) {
+        btnPushToTalk.disabled = false;
+        subP.textContent = pushVerb;
+        btnPushToTalk.classList.add(
+          "preview-proximity-touch-pad__key--proximity-active"
+        );
+        btnPushToTalk.classList.remove(
+          "preview-proximity-touch-pad__key--proximity-hint"
+        );
+        btnPushToTalk.setAttribute(
+          "aria-label",
+          `${pushVerb} ${classroomLabel ?? "lesson"}`
+        );
+      } else {
+        btnPushToTalk.disabled = true;
+        subP.textContent = "Push";
+        btnPushToTalk.classList.remove(
+          "preview-proximity-touch-pad__key--proximity-active",
+          "preview-proximity-touch-pad__key--proximity-hint"
+        );
+        btnPushToTalk.removeAttribute("aria-label");
+      }
     } else if (nearPeerTalk && peerTalkLabel === "End") {
       btnAssist.disabled = true;
       subA.textContent = "Assist";

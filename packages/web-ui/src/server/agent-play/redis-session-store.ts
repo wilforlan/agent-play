@@ -18,6 +18,15 @@
  */
 import { randomUUID } from "node:crypto";
 import type Redis from "ioredis";
+import {
+  JoeMessageSchema,
+  JoeThreadSchema,
+  createOpenAiJoeModel,
+  joeThreadKey,
+  runJoeTurn,
+  type JoeModel,
+  type JoeThread,
+} from "@agent-play/joe";
 import type {
   CarWashCar,
   PlayerWallet,
@@ -94,6 +103,8 @@ import {
   ArcadeAccessPassSchema,
   EducationAccessPassSchema,
   EducationTuitionEnrollmentSchema,
+  EducationLessonProgressSchema,
+  educationProgressKey,
   ANALYTICS_EVENT_NAMES,
   type ArcadeAccessPass,
   type ArcadeAccessPlan,
@@ -101,6 +112,7 @@ import {
   type EducationAccessPass,
   type EducationCenterId,
   type EducationFacultyId,
+  type EducationLessonProgress,
   type EducationPathId,
   type EducationPathTier,
   type EducationTender,
@@ -267,6 +279,14 @@ function playerEducationAccessKey(hostId: string, playerId: string): string {
 
 function playerEducationTuitionKey(hostId: string, playerId: string): string {
   return `agent-play:${hostId}:player:${playerId}:education-tuition`;
+}
+
+function playerEducationProgressKey(hostId: string, playerId: string): string {
+  return `agent-play:${hostId}:player:${playerId}:education-progress`;
+}
+
+function playerEducationJoeChatKey(hostId: string, playerId: string): string {
+  return `agent-play:${hostId}:player:${playerId}:education-joe-chat`;
 }
 
 function playerGameStateKey(hostId: string, playerId: string): string {
@@ -2358,7 +2378,7 @@ export class RedisSessionStore implements SessionStore {
     return {
       enrollment,
       apwPerApu,
-      quoteApw: quoteEducationTuitionApw({ tier: def.tier }),
+      quoteApw: quoteEducationTuitionApw({ tier: def.tier, apwPerApu }),
       apuCost: quoteEducationTuitionApu({ tier: def.tier, apwPerApu }),
       preferredTender: chooseEducationTender({
         powerUps: wallet.powerUps ?? 0,
@@ -2581,6 +2601,276 @@ export class RedisSessionStore implements SessionStore {
       }
     }
     return { enrollments };
+  }
+
+  private async readEducationProgressMap(
+    playerId: string
+  ): Promise<Map<string, EducationLessonProgress>> {
+    const key = playerEducationProgressKey(this.hostId, playerId);
+    const raw = await this.redis.get(key);
+    const out = new Map<string, EducationLessonProgress>();
+    if (raw === null || raw.length === 0) return out;
+    try {
+      const parsed: unknown = JSON.parse(raw);
+      if (typeof parsed !== "object" || parsed === null) return out;
+      for (const [mapKey, value] of Object.entries(
+        parsed as Record<string, unknown>
+      )) {
+        const progress = EducationLessonProgressSchema.safeParse(value);
+        if (progress.success) {
+          out.set(mapKey, progress.data);
+        }
+      }
+    } catch {
+      return out;
+    }
+    return out;
+  }
+
+  async getEducationProgress(input: {
+    playerId: string;
+    facultyId: EducationFacultyId;
+    pathId: EducationPathId;
+  }): Promise<{ progress: EducationLessonProgress[] }> {
+    const map = await this.readEducationProgressMap(input.playerId);
+    const prefix = `${input.facultyId}:${input.pathId}:`;
+    const progress = [...map.values()].filter(
+      (row) =>
+        row.facultyId === input.facultyId && row.pathId === input.pathId
+    );
+    void prefix;
+    return { progress };
+  }
+
+  async recordEducationLessonComplete(input: {
+    playerId: string;
+    facultyId: EducationFacultyId;
+    pathId: EducationPathId;
+    lessonId: string;
+    now: string;
+    reflection?: string;
+  }): Promise<
+    | { ok: true; progress: EducationLessonProgress }
+    | { ok: false; error: "INVALID_PATH" | "DAY_PASS_REQUIRED" | "NOT_ENROLLED" }
+  > {
+    if (!isEducationPathId(input.pathId)) {
+      return { ok: false, error: "INVALID_PATH" };
+    }
+    const def = getEducationPathDef(input.pathId);
+    if (def === undefined || def.facultyId !== input.facultyId) {
+      return { ok: false, error: "INVALID_PATH" };
+    }
+    const dayPass = await this.getEducationAccess({
+      playerId: input.playerId,
+      centerId: input.facultyId,
+      now: input.now,
+    });
+    if (dayPass.access === null) {
+      return { ok: false, error: "DAY_PASS_REQUIRED" };
+    }
+    const tuition = await this.getEducationTuition({
+      playerId: input.playerId,
+      facultyId: input.facultyId,
+      pathId: input.pathId,
+      now: input.now,
+    });
+    if (tuition.enrollment === null) {
+      return { ok: false, error: "NOT_ENROLLED" };
+    }
+    const key = playerEducationProgressKey(this.hostId, input.playerId);
+    const map = await this.readEducationProgressMap(input.playerId);
+    const mapKey = educationProgressKey({
+      facultyId: input.facultyId,
+      pathId: input.pathId,
+      lessonId: input.lessonId,
+    });
+    const existing = map.get(mapKey);
+    if (existing !== undefined) {
+      return { ok: true, progress: existing };
+    }
+    const progress = EducationLessonProgressSchema.parse({
+      facultyId: input.facultyId,
+      pathId: input.pathId,
+      lessonId: input.lessonId,
+      completedAt: input.now,
+      ...(input.reflection !== undefined && input.reflection.length > 0
+        ? { reflection: input.reflection }
+        : {}),
+    });
+    map.set(mapKey, progress);
+    const payload: Record<string, EducationLessonProgress> = {};
+    for (const [k, value] of map.entries()) {
+      payload[k] = value;
+    }
+    await this.redis.set(key, JSON.stringify(payload));
+    return { ok: true, progress };
+  }
+
+  private async readEducationJoeChatMap(
+    playerId: string
+  ): Promise<Map<string, JoeThread>> {
+    const key = playerEducationJoeChatKey(this.hostId, playerId);
+    const raw = await this.redis.get(key);
+    const out = new Map<string, JoeThread>();
+    if (raw === null || raw.length === 0) return out;
+    try {
+      const parsed: unknown = JSON.parse(raw);
+      if (typeof parsed !== "object" || parsed === null) return out;
+      for (const [mapKey, value] of Object.entries(
+        parsed as Record<string, unknown>
+      )) {
+        const thread = JoeThreadSchema.safeParse(value);
+        if (thread.success) {
+          out.set(mapKey, thread.data);
+        }
+      }
+    } catch {
+      return out;
+    }
+    return out;
+  }
+
+  private resolveJoeModel(): JoeModel | null {
+    const apiKey = process.env.OPENAI_API_KEY?.trim();
+    if (apiKey === undefined || apiKey.length === 0) return null;
+    const model = process.env.JOE_MODEL?.trim();
+    return createOpenAiJoeModel({
+      apiKey,
+      ...(model !== undefined && model.length > 0 ? { model } : {}),
+    });
+  }
+
+  async getJoeLessonChat(input: {
+    playerId: string;
+    facultyId: EducationFacultyId;
+    pathId: EducationPathId;
+    lessonId: string;
+  }): Promise<{ thread: JoeThread }> {
+    const map = await this.readEducationJoeChatMap(input.playerId);
+    const key = joeThreadKey(input);
+    const thread =
+      map.get(key) ??
+      JoeThreadSchema.parse({
+        facultyId: input.facultyId,
+        pathId: input.pathId,
+        lessonId: input.lessonId,
+        messages: [],
+      });
+    return { thread };
+  }
+
+  async sendJoeLessonMessage(input: {
+    playerId: string;
+    facultyId: EducationFacultyId;
+    pathId: EducationPathId;
+    lessonId: string;
+    text: string;
+    lessonTitle: string;
+    lessonBody: string;
+    pathTitle?: string;
+    facultyLabel?: string;
+    now: string;
+  }): Promise<
+    | { ok: true; thread: JoeThread }
+    | {
+        ok: false;
+        error:
+          | "INVALID_PATH"
+          | "DAY_PASS_REQUIRED"
+          | "NOT_ENROLLED"
+          | "JOE_UNAVAILABLE"
+          | "EMPTY_MESSAGE";
+      }
+  > {
+    const trimmed = input.text.trim();
+    if (trimmed.length === 0) {
+      return { ok: false, error: "EMPTY_MESSAGE" };
+    }
+    if (!isEducationPathId(input.pathId)) {
+      return { ok: false, error: "INVALID_PATH" };
+    }
+    const def = getEducationPathDef(input.pathId);
+    if (def === undefined || def.facultyId !== input.facultyId) {
+      return { ok: false, error: "INVALID_PATH" };
+    }
+    const dayPass = await this.getEducationAccess({
+      playerId: input.playerId,
+      centerId: input.facultyId,
+      now: input.now,
+    });
+    if (dayPass.access === null) {
+      return { ok: false, error: "DAY_PASS_REQUIRED" };
+    }
+    const tuition = await this.getEducationTuition({
+      playerId: input.playerId,
+      facultyId: input.facultyId,
+      pathId: input.pathId,
+      now: input.now,
+    });
+    if (tuition.enrollment === null) {
+      return { ok: false, error: "NOT_ENROLLED" };
+    }
+    const model = this.resolveJoeModel();
+    if (model === null) {
+      return { ok: false, error: "JOE_UNAVAILABLE" };
+    }
+    const redisKey = playerEducationJoeChatKey(this.hostId, input.playerId);
+    const map = await this.readEducationJoeChatMap(input.playerId);
+    const mapKey = joeThreadKey(input);
+    const current =
+      map.get(mapKey) ??
+      JoeThreadSchema.parse({
+        facultyId: input.facultyId,
+        pathId: input.pathId,
+        lessonId: input.lessonId,
+        messages: [],
+      });
+    const studentMessage = JoeMessageSchema.parse({
+      id: `student_${input.now}`,
+      role: "student",
+      text: trimmed,
+      createdAt: input.now,
+    });
+    const withStudent = JoeThreadSchema.parse({
+      ...current,
+      messages: [...current.messages, studentMessage],
+    });
+    let joeMessage;
+    try {
+      const joeResult = await runJoeTurn({
+        lesson: {
+          facultyId: input.facultyId,
+          pathId: input.pathId,
+          lessonId: input.lessonId,
+          lessonTitle: input.lessonTitle,
+          lessonBody: input.lessonBody,
+          ...(input.pathTitle !== undefined
+            ? { pathTitle: input.pathTitle }
+            : {}),
+          ...(input.facultyLabel !== undefined
+            ? { facultyLabel: input.facultyLabel }
+            : {}),
+        },
+        history: current.messages,
+        studentText: trimmed,
+        model,
+        now: input.now,
+      });
+      joeMessage = joeResult.message;
+    } catch {
+      return { ok: false, error: "JOE_UNAVAILABLE" };
+    }
+    const thread = JoeThreadSchema.parse({
+      ...withStudent,
+      messages: [...withStudent.messages, joeMessage],
+    });
+    map.set(mapKey, thread);
+    const payload: Record<string, JoeThread> = {};
+    for (const [k, value] of map.entries()) {
+      payload[k] = value;
+    }
+    await this.redis.set(redisKey, JSON.stringify(payload));
+    return { ok: true, thread };
   }
 
   private async loadGamePlayerState(

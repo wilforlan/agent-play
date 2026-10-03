@@ -4,7 +4,7 @@
  *
  * Publish agent-play packages to npm in dependency order:
  *   @agent-play/node-tools → @agent-play/intercom → @agent-play/geography-mesh
- *      → @agent-play/sdk → @agent-play/cli → @agent-play/play-ui
+ *      → @agent-play/joe → @agent-play/sdk → @agent-play/cli → @agent-play/play-ui
  *
  * Safe-by-default:
  *   - Refuses to run if the git working tree is dirty (override with --allow-dirty).
@@ -18,8 +18,8 @@
  *
  * Options:
  *   --packages <list>    Comma-separated subset of the publishable set:
- *                        node-tools,intercom,geography-mesh,sdk,cli,play-ui
- *                        Default: all six, in dependency order.
+ *                        node-tools,intercom,geography-mesh,joe,sdk,cli,play-ui
+ *                        Default: all seven, in dependency order.
  *   --tag <tag>          Pass --tag to npm publish (default: latest).
  *   --otp <code>         Pass --otp to npm publish for 2FA accounts.
  *   --dry-run            Pass --dry-run to npm publish; also skips the
@@ -46,6 +46,7 @@ const PUBLISHABLE_ORDER = [
   "node-tools",
   "intercom",
   "geography-mesh",
+  "joe",
   "sdk",
   "cli",
   "play-ui",

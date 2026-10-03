@@ -60,6 +60,7 @@ import {
   buildEducationTuitionEnrollment,
   chooseArcadeTender,
   chooseEducationTender,
+  coalesceApwPerApu,
   educationCenterDayPassApuCost,
   getEducationPathDef,
   isArcadeAccessActive,
@@ -86,7 +87,17 @@ import {
   type EducationPathTier,
   type EducationTender,
   type EducationTuitionEnrollment,
+  type EducationLessonProgress,
+  educationProgressKey,
 } from "@agent-play/sdk";
+import {
+  JoeMessageSchema,
+  JoeThreadSchema,
+  joeThreadKey,
+  runJoeTurn,
+  type JoeModel,
+  type JoeThread,
+} from "@agent-play/joe";
 import {
   applyGameOutcomeToState,
   createInitialGamePlayerState,
@@ -167,6 +178,15 @@ export class TestSessionStore implements SessionStore {
     string,
     Map<string, EducationTuitionEnrollment>
   >();
+  private readonly educationProgressByPlayer = new Map<
+    string,
+    Map<string, EducationLessonProgress>
+  >();
+  private readonly educationJoeChatByPlayer = new Map<
+    string,
+    Map<string, JoeThread>
+  >();
+  private joeModel: JoeModel | null = null;
   private apwPerApuRate = 0;
   private readonly geographyHumans = new Map<string, GeographyHumanState>();
   private readonly geographyMembers = new Map<string, GeographyMember>();
@@ -1069,6 +1089,10 @@ export class TestSessionStore implements SessionStore {
       Number.isFinite(rate) && rate > 0 ? rate : 0;
   }
 
+  private resolveApwPerApuRate(): number {
+    return coalesceApwPerApu({ rate: this.apwPerApuRate });
+  }
+
   async getArcadeAccess(input: {
     playerId: string;
     now: string;
@@ -1084,7 +1108,7 @@ export class TestSessionStore implements SessionStore {
     const access = isArcadeAccessActive(stored, new Date(input.now))
       ? stored
       : null;
-    const apwPerApu = this.apwPerApuRate;
+    const apwPerApu = this.resolveApwPerApuRate();
     return {
       access,
       apwPerApu,
@@ -1153,7 +1177,7 @@ export class TestSessionStore implements SessionStore {
     }
 
     const wallet = await this.getPlayerWallet(input.playerId);
-    const apwPerApu = this.apwPerApuRate;
+    const apwPerApu = this.resolveApwPerApuRate();
     const settled = resolveArcadeTenderForPurchase({
       plan: input.plan,
       powerUps: wallet.powerUps ?? 0,
@@ -1239,7 +1263,7 @@ export class TestSessionStore implements SessionStore {
     const access = isEducationAccessActive(stored, new Date(input.now))
       ? stored
       : null;
-    const apwPerApu = this.apwPerApuRate;
+    const apwPerApu = this.resolveApwPerApuRate();
     const apuCost = educationCenterDayPassApuCost();
     return {
       access,
@@ -1320,7 +1344,7 @@ export class TestSessionStore implements SessionStore {
     }
 
     const wallet = await this.getPlayerWallet(input.playerId);
-    const apwPerApu = this.apwPerApuRate;
+    const apwPerApu = this.resolveApwPerApuRate();
     const settled = resolveEducationTenderForPurchase({
       powerUps: wallet.powerUps ?? 0,
       balanceUsd: wallet.balanceUsd,
@@ -1419,11 +1443,11 @@ export class TestSessionStore implements SessionStore {
     const enrollment = isEducationTuitionActive(stored, new Date(input.now))
       ? stored
       : null;
-    const apwPerApu = this.apwPerApuRate;
+    const apwPerApu = this.resolveApwPerApuRate();
     return {
       enrollment,
       apwPerApu,
-      quoteApw: quoteEducationTuitionApw({ tier: def.tier }),
+      quoteApw: quoteEducationTuitionApw({ tier: def.tier, apwPerApu }),
       apuCost: quoteEducationTuitionApu({ tier: def.tier, apwPerApu }),
       preferredTender: chooseEducationTender({
         powerUps: wallet.powerUps ?? 0,
@@ -1519,7 +1543,7 @@ export class TestSessionStore implements SessionStore {
     }
 
     const wallet = await this.getPlayerWallet(input.playerId);
-    const apwPerApu = this.apwPerApuRate;
+    const apwPerApu = this.resolveApwPerApuRate();
     const settled = resolveEducationTuitionTender({
       tier: def.tier,
       powerUps: wallet.powerUps ?? 0,
@@ -1610,6 +1634,209 @@ export class TestSessionStore implements SessionStore {
       }
     }
     return { enrollments };
+  }
+
+  async getEducationProgress(input: {
+    playerId: string;
+    facultyId: EducationFacultyId;
+    pathId: EducationPathId;
+  }): Promise<{ progress: EducationLessonProgress[] }> {
+    const byKey = this.educationProgressByPlayer.get(input.playerId);
+    if (byKey === undefined) return { progress: [] };
+    return {
+      progress: [...byKey.values()].filter(
+        (row) =>
+          row.facultyId === input.facultyId && row.pathId === input.pathId
+      ),
+    };
+  }
+
+  async recordEducationLessonComplete(input: {
+    playerId: string;
+    facultyId: EducationFacultyId;
+    pathId: EducationPathId;
+    lessonId: string;
+    now: string;
+    reflection?: string;
+  }): Promise<
+    | { ok: true; progress: EducationLessonProgress }
+    | { ok: false; error: "INVALID_PATH" | "DAY_PASS_REQUIRED" | "NOT_ENROLLED" }
+  > {
+    if (!isEducationPathId(input.pathId)) {
+      return { ok: false, error: "INVALID_PATH" };
+    }
+    const def = getEducationPathDef(input.pathId);
+    if (def === undefined || def.facultyId !== input.facultyId) {
+      return { ok: false, error: "INVALID_PATH" };
+    }
+    const dayPass = await this.getEducationAccess({
+      playerId: input.playerId,
+      centerId: input.facultyId,
+      now: input.now,
+    });
+    if (dayPass.access === null) {
+      return { ok: false, error: "DAY_PASS_REQUIRED" };
+    }
+    const tuition = await this.getEducationTuition({
+      playerId: input.playerId,
+      facultyId: input.facultyId,
+      pathId: input.pathId,
+      now: input.now,
+    });
+    if (tuition.enrollment === null) {
+      return { ok: false, error: "NOT_ENROLLED" };
+    }
+    const byKey =
+      this.educationProgressByPlayer.get(input.playerId) ??
+      new Map<string, EducationLessonProgress>();
+    const mapKey = educationProgressKey({
+      facultyId: input.facultyId,
+      pathId: input.pathId,
+      lessonId: input.lessonId,
+    });
+    const existing = byKey.get(mapKey);
+    if (existing !== undefined) {
+      return { ok: true, progress: existing };
+    }
+    const progress: EducationLessonProgress = {
+      facultyId: input.facultyId,
+      pathId: input.pathId,
+      lessonId: input.lessonId,
+      completedAt: input.now,
+      ...(input.reflection !== undefined && input.reflection.length > 0
+        ? { reflection: input.reflection }
+        : {}),
+    };
+    byKey.set(mapKey, progress);
+    this.educationProgressByPlayer.set(input.playerId, byKey);
+    return { ok: true, progress };
+  }
+
+  setJoeModel(model: JoeModel | null): void {
+    this.joeModel = model;
+  }
+
+  async getJoeLessonChat(input: {
+    playerId: string;
+    facultyId: EducationFacultyId;
+    pathId: EducationPathId;
+    lessonId: string;
+  }): Promise<{ thread: JoeThread }> {
+    const byKey = this.educationJoeChatByPlayer.get(input.playerId);
+    const key = joeThreadKey(input);
+    const thread =
+      byKey?.get(key) ??
+      JoeThreadSchema.parse({
+        facultyId: input.facultyId,
+        pathId: input.pathId,
+        lessonId: input.lessonId,
+        messages: [],
+      });
+    return { thread };
+  }
+
+  async sendJoeLessonMessage(input: {
+    playerId: string;
+    facultyId: EducationFacultyId;
+    pathId: EducationPathId;
+    lessonId: string;
+    text: string;
+    lessonTitle: string;
+    lessonBody: string;
+    pathTitle?: string;
+    facultyLabel?: string;
+    now: string;
+  }): Promise<
+    | { ok: true; thread: JoeThread }
+    | {
+        ok: false;
+        error:
+          | "INVALID_PATH"
+          | "DAY_PASS_REQUIRED"
+          | "NOT_ENROLLED"
+          | "JOE_UNAVAILABLE"
+          | "EMPTY_MESSAGE";
+      }
+  > {
+    const trimmed = input.text.trim();
+    if (trimmed.length === 0) {
+      return { ok: false, error: "EMPTY_MESSAGE" };
+    }
+    if (!isEducationPathId(input.pathId)) {
+      return { ok: false, error: "INVALID_PATH" };
+    }
+    const def = getEducationPathDef(input.pathId);
+    if (def === undefined || def.facultyId !== input.facultyId) {
+      return { ok: false, error: "INVALID_PATH" };
+    }
+    const dayPass = await this.getEducationAccess({
+      playerId: input.playerId,
+      centerId: input.facultyId,
+      now: input.now,
+    });
+    if (dayPass.access === null) {
+      return { ok: false, error: "DAY_PASS_REQUIRED" };
+    }
+    const tuition = await this.getEducationTuition({
+      playerId: input.playerId,
+      facultyId: input.facultyId,
+      pathId: input.pathId,
+      now: input.now,
+    });
+    if (tuition.enrollment === null) {
+      return { ok: false, error: "NOT_ENROLLED" };
+    }
+    if (this.joeModel === null) {
+      return { ok: false, error: "JOE_UNAVAILABLE" };
+    }
+    const key = joeThreadKey(input);
+    const byKey =
+      this.educationJoeChatByPlayer.get(input.playerId) ??
+      new Map<string, JoeThread>();
+    const current =
+      byKey.get(key) ??
+      JoeThreadSchema.parse({
+        facultyId: input.facultyId,
+        pathId: input.pathId,
+        lessonId: input.lessonId,
+        messages: [],
+      });
+    const studentMessage = JoeMessageSchema.parse({
+      id: `student_${input.now}`,
+      role: "student",
+      text: trimmed,
+      createdAt: input.now,
+    });
+    const withStudent = JoeThreadSchema.parse({
+      ...current,
+      messages: [...current.messages, studentMessage],
+    });
+    const joeResult = await runJoeTurn({
+      lesson: {
+        facultyId: input.facultyId,
+        pathId: input.pathId,
+        lessonId: input.lessonId,
+        lessonTitle: input.lessonTitle,
+        lessonBody: input.lessonBody,
+        ...(input.pathTitle !== undefined
+          ? { pathTitle: input.pathTitle }
+          : {}),
+        ...(input.facultyLabel !== undefined
+          ? { facultyLabel: input.facultyLabel }
+          : {}),
+      },
+      history: current.messages,
+      studentText: trimmed,
+      model: this.joeModel,
+      now: input.now,
+    });
+    const thread = JoeThreadSchema.parse({
+      ...withStudent,
+      messages: [...withStudent.messages, joeResult.message],
+    });
+    byKey.set(key, thread);
+    this.educationJoeChatByPlayer.set(input.playerId, byKey);
+    return { ok: true, thread };
   }
 
   async startTalkSession(input: {

@@ -18,7 +18,21 @@ export const EDUCATION_TUITION_APW_BY_TIER = {
   advanced: 900,
 } as const;
 
+export const EDUCATION_TUITION_DEV_APU_BY_TIER = {
+  foundation: 5,
+  intermediate: 7,
+  advanced: 10,
+} as const;
+
 export type EducationPathTier = keyof typeof EDUCATION_TUITION_APW_BY_TIER;
+
+export type EducationTuitionEnv = Readonly<
+  Record<string, string | undefined>
+>;
+
+export const isEducationDevFeesEnabled = (
+  env: EducationTuitionEnv = typeof process !== "undefined" ? process.env : {}
+): boolean => env.AGENT_PLAY_EDUCATION_DEV_FEES === "1";
 
 export const EducationPathTierSchema = z.enum([
   "foundation",
@@ -189,19 +203,35 @@ export const listEducationPathsForFaculty = (
 ): readonly EducationPathDef[] =>
   EDUCATION_PATH_DEFS.filter((p) => p.facultyId === facultyId);
 
-export const quoteEducationTuitionApw = (input: {
-  tier: EducationPathTier;
-}): number => EDUCATION_TUITION_APW_BY_TIER[input.tier];
-
 export const quoteEducationTuitionApu = (input: {
   tier: EducationPathTier;
   apwPerApu: number;
+  env?: EducationTuitionEnv;
 }): number => {
+  if (isEducationDevFeesEnabled(input.env)) {
+    return EDUCATION_TUITION_DEV_APU_BY_TIER[input.tier];
+  }
   if (!Number.isFinite(input.apwPerApu) || input.apwPerApu <= 0) {
     return 0;
   }
-  const apw = quoteEducationTuitionApw({ tier: input.tier });
+  const apw = EDUCATION_TUITION_APW_BY_TIER[input.tier];
   return Math.ceil(apw / input.apwPerApu);
+};
+
+export const quoteEducationTuitionApw = (input: {
+  tier: EducationPathTier;
+  apwPerApu?: number;
+  env?: EducationTuitionEnv;
+}): number => {
+  if (isEducationDevFeesEnabled(input.env)) {
+    const apu = EDUCATION_TUITION_DEV_APU_BY_TIER[input.tier];
+    const rate = input.apwPerApu ?? 0;
+    if (!Number.isFinite(rate) || rate <= 0) {
+      return 0;
+    }
+    return Math.round(apu * rate * 1e8) / 1e8;
+  }
+  return EDUCATION_TUITION_APW_BY_TIER[input.tier];
 };
 
 export const resolveEducationTuitionTender = (input: {
@@ -209,15 +239,21 @@ export const resolveEducationTuitionTender = (input: {
   powerUps: number;
   balanceUsd: number;
   apwPerApu: number;
+  env?: EducationTuitionEnv;
 }): {
   tender: EducationTender;
   apuCost: number;
   apwCharged: number;
 } | null => {
-  const apwCharged = quoteEducationTuitionApw({ tier: input.tier });
+  const apwCharged = quoteEducationTuitionApw({
+    tier: input.tier,
+    apwPerApu: input.apwPerApu,
+    ...(input.env !== undefined ? { env: input.env } : {}),
+  });
   const apuCost = quoteEducationTuitionApu({
     tier: input.tier,
     apwPerApu: input.apwPerApu,
+    ...(input.env !== undefined ? { env: input.env } : {}),
   });
   const preferred = chooseArcadeTender(input);
   const canPayApu = apuCost > 0 && input.powerUps >= apuCost;

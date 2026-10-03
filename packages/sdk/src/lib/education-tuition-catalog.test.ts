@@ -2,8 +2,10 @@ import { describe, expect, it } from "vitest";
 import {
   EDUCATION_TUITION_APW_BY_TIER,
   EDUCATION_TUITION_DAYS,
+  EDUCATION_TUITION_DEV_APU_BY_TIER,
   buildEducationTuitionEnrollment,
   getEducationPathDef,
+  isEducationDevFeesEnabled,
   isEducationPathId,
   isEducationTuitionActive,
   listEducationPathsForFaculty,
@@ -41,6 +43,35 @@ describe("education tuition catalog", () => {
   it("quotes APU from live APW$ rate", () => {
     expect(
       quoteEducationTuitionApu({ tier: "foundation", apwPerApu: 0.1 })
+    ).toBe(4500);
+  });
+
+  it("uses 5/7/10 APU when AGENT_PLAY_EDUCATION_DEV_FEES=1", () => {
+    const env = { AGENT_PLAY_EDUCATION_DEV_FEES: "1" };
+    expect(isEducationDevFeesEnabled(env)).toBe(true);
+    expect(EDUCATION_TUITION_DEV_APU_BY_TIER.foundation).toBe(5);
+    expect(EDUCATION_TUITION_DEV_APU_BY_TIER.intermediate).toBe(7);
+    expect(EDUCATION_TUITION_DEV_APU_BY_TIER.advanced).toBe(10);
+    expect(
+      quoteEducationTuitionApu({ tier: "foundation", apwPerApu: 0.1, env })
+    ).toBe(5);
+    expect(
+      quoteEducationTuitionApu({ tier: "advanced", apwPerApu: 0.1, env })
+    ).toBe(10);
+    expect(
+      quoteEducationTuitionApw({ tier: "foundation", apwPerApu: 0.1, env })
+    ).toBe(0.5);
+    expect(
+      quoteEducationTuitionApw({ tier: "advanced", apwPerApu: 0.1, env })
+    ).toBe(1);
+  });
+
+  it("keeps production prices when the dev-fees flag is off", () => {
+    const env = { AGENT_PLAY_EDUCATION_DEV_FEES: "0" };
+    expect(isEducationDevFeesEnabled(env)).toBe(false);
+    expect(quoteEducationTuitionApw({ tier: "foundation", env })).toBe(450);
+    expect(
+      quoteEducationTuitionApu({ tier: "foundation", apwPerApu: 0.1, env })
     ).toBe(4500);
   });
 
@@ -87,5 +118,19 @@ describe("education tuition catalog", () => {
     });
     expect(resolved?.tender).toBe("apw");
     expect(resolved?.apwCharged).toBe(675);
+  });
+
+  it("resolves dual-tender payment under dev fees", () => {
+    const env = { AGENT_PLAY_EDUCATION_DEV_FEES: "1" };
+    const resolved = resolveEducationTuitionTender({
+      tier: "foundation",
+      powerUps: 5,
+      balanceUsd: 0,
+      apwPerApu: 0.1,
+      env,
+    });
+    expect(resolved?.tender).toBe("apu");
+    expect(resolved?.apuCost).toBe(5);
+    expect(resolved?.apwCharged).toBe(0.5);
   });
 });
