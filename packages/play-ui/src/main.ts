@@ -80,6 +80,12 @@ import {
   buildPurchaseItemKey,
   fetchPurchases,
 } from "./wallet-purchases-client.js";
+import {
+  cancelTransferListingRequest,
+  createTransferListingRequest,
+  fetchOwnedAssets,
+  updateTransferListingPriceRequest,
+} from "./wallet-owned-assets-client.js";
 import { redeemWalletBundle } from "./wallet-bundle-client.js";
 import { deepLogObject, deepLogText, deepLogTree } from "./browser-deep-logs.js";
 import { isFiniteAgentHome } from "./agent-snapshot-position.js";
@@ -1839,7 +1845,10 @@ async function refreshWalletInventoryPanel(): Promise<void> {
   }
   walletInventoryPanel.setLoading();
   try {
-    const result = await fetchPurchases({ sid, playerId });
+    const [result, owned] = await Promise.all([
+      fetchPurchases({ sid, playerId }),
+      fetchOwnedAssets({ sid, playerId }),
+    ]);
     walletBalanceCached = result.wallet.balanceUsd;
     walletHud?.setBalance(result.wallet.balanceUsd);
     walletHud?.setPowerUps(result.wallet.powerUps);
@@ -1848,6 +1857,7 @@ async function refreshWalletInventoryPanel(): Promise<void> {
       powerUps: result.wallet.powerUps,
       purchases: result.purchases,
       items: result.items,
+      assets: owned.assets,
       activeParking: listActiveParkingForNode(playerId),
       parkingCapacityHint: buildParkingCapacityHint(
         listActiveParkingForNode(playerId)
@@ -3338,6 +3348,7 @@ async function enterAmenityFromYardPad(
         })
       : { shopItems: [], supermarketItems: [], carWashCars: [] };
 
+  const viewerPlayerId = getViewerWalletPlayerId();
   let handle:
     | AmenityShopStageHandle
     | AmenitySupermarketStageHandle
@@ -3346,16 +3357,19 @@ async function enterAmenityFromYardPad(
     handle = buildAmenityShopStage({
       cellScale,
       items: resolvedContent.shopItems,
+      viewerPlayerId,
     });
   } else if (kind === "supermarket") {
     handle = buildAmenitySupermarketStage({
       cellScale,
       items: resolvedContent.supermarketItems,
+      viewerPlayerId,
     });
   } else {
     handle = buildAmenityCarWashStage({
       cellScale,
       cars: resolvedContent.carWashCars,
+      viewerPlayerId,
     });
   }
   // The amenity stages return `root` typed as the minimal `StageRoot`
@@ -4434,14 +4448,20 @@ function refreshActiveAmenityFromSnapshot(): void {
     spaceId: activeYardSpaceId,
     kind: stage.kind,
   });
+  const viewerPlayerId = getViewerWalletPlayerId();
   if (stage.kind === "shop") {
-    (stage.handle as AmenityShopStageHandle).refresh(content.shopItems);
+    (stage.handle as AmenityShopStageHandle).refresh(content.shopItems, {
+      viewerPlayerId,
+    });
   } else if (stage.kind === "supermarket") {
     (stage.handle as AmenitySupermarketStageHandle).refresh(
-      content.supermarketItems
+      content.supermarketItems,
+      { viewerPlayerId }
     );
   } else {
-    (stage.handle as AmenityCarWashStageHandle).refresh(content.carWashCars);
+    (stage.handle as AmenityCarWashStageHandle).refresh(content.carWashCars, {
+      viewerPlayerId,
+    });
   }
   // If the tooltip is open and the underlying item changed (e.g. sold via
   // fanout), re-render with the latest model.
@@ -4480,6 +4500,11 @@ function computeNearestAmenityBuyable(
             amenityPlayerState.pos
           )
         : null,
+    viewerPlayerId: getViewerWalletPlayerId(),
+    resolveOwnerDisplayName: (playerId) => {
+      if (playerId === getViewerWalletPlayerId()) return "You";
+      return playerDisplayName(playerId);
+    },
   });
 }
 
@@ -4531,7 +4556,12 @@ function cycleAmenityItemAction(
     showAmenityItemTooltip(stage, buyable);
     return;
   }
-  if (buyable.tooltipModel.sale.status !== "available") return;
+  if (
+    buyable.tooltipModel.sale.status === "sold" ||
+    buyable.tooltipModel.ownedByViewer === true
+  ) {
+    return;
+  }
   if (tooltip.isBusy()) return;
   void buyAmenityItem(stage, buyable);
 }
@@ -4808,6 +4838,9 @@ async function buyAmenityItem(
 ): Promise<void> {
   const tooltip = amenityItemTooltip;
   if (tooltip === null) return;
+  if (buyable.tooltipModel.ownedByViewer === true) {
+    return;
+  }
   const sid = getSid();
   const playerId = getViewerWalletPlayerId();
   if (sid === null || playerId === null) {
@@ -6242,10 +6275,13 @@ function onFrame(): void {
       activeAmenityStage.nearestBuyable !== null
     ) {
       const buyable = activeAmenityStage.nearestBuyable;
+      const ownedByViewer = buyable.tooltipModel.ownedByViewer === true;
       const sold = buyable.tooltipModel.sale.status === "sold";
-      proximityLegendEl.textContent = sold
-        ? `Near ${buyable.tooltipModel.name} (SOLD). P: view`
-        : `Near ${buyable.tooltipModel.name}. P: buy ($${buyable.tooltipModel.priceUsd.toFixed(2)})`;
+      proximityLegendEl.textContent = ownedByViewer
+        ? `Near ${buyable.tooltipModel.name} (yours). P: view`
+        : sold
+          ? `Near ${buyable.tooltipModel.name} (SOLD). P: view`
+          : `Near ${buyable.tooltipModel.name}. P: buy ($${buyable.tooltipModel.priceUsd.toFixed(2)})`;
     } else if (lastProximityPartnerId !== null) {
       proximityLegendEl.textContent = `Near ${playerDisplayName(lastProximityPartnerId)}. A: for assist · C: for chat · P: push to talk · Z: for zone · Y: for yield`;
     } else if (lastYardAmenityPadTarget !== null) {
@@ -6440,6 +6476,7 @@ function onFrame(): void {
   if (getPreviewViewSettings().debugMode) {
     debugPanelUpdate?.();
   }
+  sessionInteractionPanel?.syncGeography();
 }
 
 export function bootstrap(): void {
@@ -6524,6 +6561,7 @@ export function bootstrap(): void {
           ) {
             void syncWorldGeographyEnabled(partial.worldGeographyEnabled);
           }
+          sessionInteractionPanel?.syncGeography();
         },
       },
     });
@@ -6646,12 +6684,30 @@ export function bootstrap(): void {
         maybeStartArrivalQuestAfterOnboarding();
         sessionInteractionPanel?.refresh();
       },
-      onClosePanel: () => {
-        mobileSidePanelControls?.closePanels();
-      },
       onReveal: () => {
         expandHumanAgentInteractionPanel?.();
         mobileSidePanelControls?.openRightPanel();
+      },
+      geographyDebug: {
+        getSettings: () => ({
+          worldGeographyEnabled:
+            getPreviewViewSettings().worldGeographyEnabled,
+          meshStatusDetail: geographyMeshStatusDetail,
+          meshTruncated: geographyMeshTruncated,
+          meshMemberCount: geographyMeshMemberCount,
+        }),
+        setSettings: (partial) => {
+          const prev = getPreviewViewSettings().worldGeographyEnabled;
+          setPreviewViewSettings(partial);
+          if (
+            partial.worldGeographyEnabled !== undefined &&
+            partial.worldGeographyEnabled !== prev
+          ) {
+            void syncWorldGeographyEnabled(partial.worldGeographyEnabled);
+          }
+          debugPanelUpdate?.();
+          sessionInteractionPanel?.syncGeography();
+        },
       },
     });
 
@@ -6819,6 +6875,53 @@ export function bootstrap(): void {
         await redeemWalletBundle({ sid, playerId, bundleId });
         await refreshWalletInventoryPanel();
       },
+      onCreateTransferListing: async (input) => {
+        const sid = getSid();
+        const playerId = getViewerWalletPlayerId();
+        if (sid === null || playerId === null) {
+          throw new Error("Sign in to list assets.");
+        }
+        await createTransferListingRequest({
+          sid,
+          playerId,
+          spaceId: input.spaceId,
+          amenityKind: input.amenityKind,
+          itemId: input.itemId,
+          priceUsd: input.priceUsd,
+        });
+        await refreshWalletInventoryPanel();
+      },
+      onUpdateTransferListingPrice: async (input) => {
+        const sid = getSid();
+        const playerId = getViewerWalletPlayerId();
+        if (sid === null || playerId === null) {
+          throw new Error("Sign in to update listings.");
+        }
+        await updateTransferListingPriceRequest({
+          sid,
+          playerId,
+          spaceId: input.spaceId,
+          amenityKind: input.amenityKind,
+          itemId: input.itemId,
+          priceUsd: input.priceUsd,
+        });
+        await refreshWalletInventoryPanel();
+      },
+      onCancelTransferListing: async (input) => {
+        const sid = getSid();
+        const playerId = getViewerWalletPlayerId();
+        if (sid === null || playerId === null) {
+          throw new Error("Sign in to cancel listings.");
+        }
+        await cancelTransferListingRequest({
+          sid,
+          playerId,
+          spaceId: input.spaceId,
+          amenityKind: input.amenityKind,
+          itemId: input.itemId,
+        });
+        await refreshWalletInventoryPanel();
+      },
     });
     gameResultPanel = createGameResultPanel({ parent: document.body });
     arcadeAccessPanel = createArcadeAccessPanel({ parent: document.body });
@@ -6880,7 +6983,13 @@ export function bootstrap(): void {
         if (stage === null) return null;
         const buyable = stage.nearestBuyable;
         if (buyable === null) return null;
-        return buyable.tooltipModel.sale.status === "sold" ? "View" : "Buy";
+        if (
+          buyable.tooltipModel.sale.status === "sold" ||
+          buyable.tooltipModel.ownedByViewer === true
+        ) {
+          return "View";
+        }
+        return "Buy";
       },
       getHouseInteriorPurchaseLabel: () => {
         const stage = activeHouseStage;

@@ -23,7 +23,6 @@ import {
 import { RealtimeAgent, RealtimeSession } from "@openai/agents/realtime";
 import { TALK_TICK_SECONDS } from "@agent-play/sdk/browser";
 import { reportPresentationEvent } from "./presentation-analytics.js";
-import { createPlayPadKeysHelpSection } from "./preview-play-pad-keys.js";
 import { getPreviewViewSettings } from "./preview-view-settings.js";
 import type { WalletHudHandle } from "./wallet-hud.js";
 import { createChatComposer } from "./chat-composer.js";
@@ -83,37 +82,40 @@ function ensureStyles(): void {
   flex-shrink: 0;
 }
 .preview-session-interaction__title { font-size: 12px; font-weight: 700; margin: 0; flex: 1; min-width: 0; }
-.preview-session-interaction__close {
-  flex: 0 0 auto;
-  width: 44px;
-  height: 44px;
-  min-width: 44px;
-  min-height: 44px;
-  margin: 0;
-  padding: 0;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 10px;
-  border: 1px solid rgba(148, 163, 184, 0.45);
-  background: rgba(30, 41, 59, 0.95);
+.preview-session-interaction__geography {
+  margin-bottom: 10px;
+  padding: 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  background: rgba(15, 23, 42, 0.55);
+  display: grid;
+  gap: 8px;
+}
+.preview-session-interaction__geography-title {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #94a3b8;
+}
+.preview-session-interaction__geography-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 11px;
+  line-height: 1.35;
   color: #cbd5e1;
   cursor: pointer;
-  box-sizing: border-box;
 }
-.preview-session-interaction__close:hover {
-  background: rgba(51, 65, 85, 0.95);
-  border-color: rgba(129, 140, 248, 0.55);
-  color: #f1f5f9;
+.preview-session-interaction__geography-row input {
+  flex-shrink: 0;
+  margin-top: 2px;
 }
-.preview-session-interaction__close:focus-visible {
-  outline: 2px solid rgba(129, 140, 248, 0.85);
-  outline-offset: 2px;
-}
-.preview-session-interaction__close-icon {
-  width: 20px;
-  height: 20px;
-  display: block;
+.preview-session-interaction__geography-status {
+  margin: 0;
+  font-size: 11px;
+  color: #94a3b8;
+  min-height: 1.2em;
 }
 .preview-session-interaction__target { font-size: 12px; color: #cbd5e1; margin-bottom: 8px; }
 .preview-session-interaction__modes { display: flex; gap: 8px; margin-bottom: 8px; }
@@ -738,6 +740,13 @@ function escapeAssistPlainText(s: string): string {
     .replace(/>/g, "&gt;");
 }
 
+type GeographyDebugPick = {
+  worldGeographyEnabled: boolean;
+  meshStatusDetail?: string;
+  meshTruncated?: boolean;
+  meshMemberCount?: number;
+};
+
 export function createPreviewSessionInteractionPanel(options: {
   getSid: () => string | null;
   apiBase: string;
@@ -745,8 +754,11 @@ export function createPreviewSessionInteractionPanel(options: {
   getWalletHud?: () => WalletHudHandle | null;
   onServerWalletAppliedToHud?: () => void;
   onHumanNodeLifecycle?: (action: "replace" | "setup") => void | Promise<void>;
-  onClosePanel?: () => void;
   onReveal?: () => void;
+  geographyDebug?: {
+    getSettings: () => GeographyDebugPick;
+    setSettings: (partial: Partial<GeographyDebugPick>) => void;
+  };
 }): {
   element: HTMLElement;
   setAgents: (agents: readonly SessionInteractionAgent[]) => void;
@@ -758,6 +770,7 @@ export function createPreviewSessionInteractionPanel(options: {
   focusChatInput: () => void;
   scrollToBottom: () => void;
   refresh: () => void;
+  syncGeography: () => void;
   applyIntercomEvent: (raw: unknown) => void;
 } {
   ensureStyles();
@@ -768,27 +781,8 @@ export function createPreviewSessionInteractionPanel(options: {
   header.className = "preview-session-interaction__header";
   const title = document.createElement("div");
   title.className = "preview-session-interaction__title";
-  title.textContent = "Human Agent Interaction";
-  const closeBtn = document.createElement("button");
-  closeBtn.type = "button";
-  closeBtn.className = "preview-session-interaction__close";
-  closeBtn.setAttribute("aria-label", "Close panel");
-  const closeIcon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-  closeIcon.setAttribute("class", "preview-session-interaction__close-icon");
-  closeIcon.setAttribute("viewBox", "0 0 24 24");
-  closeIcon.setAttribute("aria-hidden", "true");
-  const closePath = document.createElementNS("http://www.w3.org/2000/svg", "path");
-  closePath.setAttribute("d", "M18 6L6 18M6 6l12 12");
-  closePath.setAttribute("fill", "none");
-  closePath.setAttribute("stroke", "currentColor");
-  closePath.setAttribute("stroke-width", "2");
-  closePath.setAttribute("stroke-linecap", "round");
-  closeIcon.appendChild(closePath);
-  closeBtn.appendChild(closeIcon);
-  closeBtn.addEventListener("click", () => {
-    options.onClosePanel?.();
-  });
-  header.append(title, closeBtn);
+  title.textContent = "Interaction Panel";
+  header.append(title);
 
   const nodeInfo = document.createElement("div");
   nodeInfo.className = "preview-session-interaction__node-info";
@@ -830,7 +824,62 @@ export function createPreviewSessionInteractionPanel(options: {
     nodeActionsRow
   );
 
-  const playPadHelp = createPlayPadKeysHelpSection();
+  let geographyInput: HTMLInputElement | null = null;
+  let geographyStatusEl: HTMLParagraphElement | null = null;
+  let geographySection: HTMLElement | null = null;
+  if (options.geographyDebug !== undefined) {
+    geographySection = document.createElement("div");
+    geographySection.className = "preview-session-interaction__geography";
+    const geoTitle = document.createElement("div");
+    geoTitle.className = "preview-session-interaction__geography-title";
+    geoTitle.textContent = "World geography";
+    const rowGeo = document.createElement("label");
+    rowGeo.className = "preview-session-interaction__geography-row";
+    geographyInput = document.createElement("input");
+    geographyInput.type = "checkbox";
+    geographyInput.addEventListener("change", () => {
+      if (geographyInput !== null) {
+        options.geographyDebug?.setSettings({
+          worldGeographyEnabled: geographyInput.checked,
+        });
+      }
+    });
+    const geoLabel = document.createElement("span");
+    geoLabel.textContent =
+      "Enable world geography: view other players in your world";
+    rowGeo.append(geographyInput, geoLabel);
+    geographyStatusEl = document.createElement("p");
+    geographyStatusEl.className =
+      "preview-session-interaction__geography-status";
+    geographyStatusEl.textContent = "";
+    geographySection.append(geoTitle, rowGeo, geographyStatusEl);
+  }
+
+  const syncGeographyUi = (): void => {
+    if (
+      options.geographyDebug === undefined ||
+      geographyInput === null ||
+      geographyStatusEl === null
+    ) {
+      return;
+    }
+    const gs = options.geographyDebug.getSettings();
+    geographyInput.checked = gs.worldGeographyEnabled;
+    const parts: string[] = [];
+    if (gs.meshMemberCount !== undefined && gs.meshMemberCount > 0) {
+      parts.push(`members ${String(gs.meshMemberCount)}/100`);
+    }
+    if (gs.meshTruncated === true) {
+      parts.push("showing nearest 16");
+    }
+    if (
+      typeof gs.meshStatusDetail === "string" &&
+      gs.meshStatusDetail.length > 0
+    ) {
+      parts.push(gs.meshStatusDetail);
+    }
+    geographyStatusEl.textContent = parts.join(" · ");
+  };
 
   const renderNodeInfo = (): void => {
     const creds = readHumanCredentials();
@@ -926,17 +975,12 @@ export function createPreviewSessionInteractionPanel(options: {
   errorPanel.append(errorHeadline, errorDismiss, errorDebug);
   const result = document.createElement("div");
   result.className = "preview-session-interaction__result";
-  root.append(
-    header,
-    nodeInfo,
-    playPadHelp,
-    target,
-    modes,
-    progress,
-    body,
-    errorPanel,
-    result
-  );
+  root.append(header, nodeInfo);
+  if (geographySection !== null) {
+    root.append(geographySection);
+  }
+  root.append(target, modes, progress, body, errorPanel, result);
+  syncGeographyUi();
 
   let mode: Mode = "assist";
   let activeAgentId: string | null = null;
@@ -2398,7 +2442,11 @@ export function createPreviewSessionInteractionPanel(options: {
       scrollToBottom();
     },
     refresh: () => {
+      syncGeographyUi();
       render();
+    },
+    syncGeography: () => {
+      syncGeographyUi();
     },
     preparePushToTalkConnection: async (agentId) => {
       const agent = agentsById.get(agentId);

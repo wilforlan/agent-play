@@ -60,30 +60,68 @@ describe("createPreviewSessionInteractionPanel", () => {
     sessionStorage.removeItem(CREDENTIALS_KEY);
   });
 
-  it("renders a collapsible Play Pad keyboard help section", () => {
+  it("titles the panel Interaction Panel without a close control or Play Pad help", () => {
     const panel = createPreviewSessionInteractionPanel({
       getSid: () => "sid-1",
       apiBase: "/api/agent-play",
       getMainNodeId: () => "main-node-1",
     });
     document.body.append(panel.element);
-    const help = panel.element.querySelector(
-      ".preview-session-interaction__play-pad-help"
+    expect(
+      panel.element.querySelector(".preview-session-interaction__title")
+        ?.textContent
+    ).toBe("Interaction Panel");
+    expect(
+      panel.element.querySelector(".preview-session-interaction__close")
+    ).toBeNull();
+    expect(
+      panel.element.querySelector(".preview-session-interaction__play-pad-help")
+    ).toBeNull();
+    expect(panel.element.textContent).not.toContain(
+      "Play Pad keyboard controls"
     );
-    expect(help).not.toBeNull();
+  });
+
+  it("toggles world geography through geographyDebug like the debug panel", () => {
+    const setSettings = vi.fn();
+    const panel = createPreviewSessionInteractionPanel({
+      getSid: () => "sid-1",
+      apiBase: "/api/agent-play",
+      getMainNodeId: () => "main-node-1",
+      geographyDebug: {
+        getSettings: () => ({
+          worldGeographyEnabled: false,
+          meshStatusDetail: "mesh ready",
+          meshMemberCount: 3,
+        }),
+        setSettings,
+      },
+    });
+    document.body.append(panel.element);
+    expect(panel.element.textContent).toContain("World geography");
+    expect(panel.element.textContent).toContain(
+      "Enable world geography: view other players in your world"
+    );
+    const checkbox = panel.element.querySelector<HTMLInputElement>(
+      ".preview-session-interaction__geography input[type='checkbox']"
+    );
+    if (checkbox === null) {
+      throw new Error("expected geography checkbox");
+    }
+    expect(checkbox.checked).toBe(false);
     expect(
-      help?.querySelector(".preview-session-interaction__play-pad-help-summary")
-        ?.textContent
-    ).toContain("Play Pad keyboard controls");
+      panel.element.querySelector(
+        ".preview-session-interaction__geography-status"
+      )?.textContent
+    ).toContain("members 3/100");
     expect(
-      help?.querySelectorAll(".preview-session-interaction__play-pad-help-row")
-        .length
-    ).toBeGreaterThan(0);
-    expect(help?.textContent).toContain("Shift+Ctrl+N");
-    expect(
-      help?.querySelector(".preview-session-interaction__play-pad-help-note")
-        ?.textContent
-    ).toMatch(/Shift\+Ctrl/);
+      panel.element.querySelector(
+        ".preview-session-interaction__geography-status"
+      )?.textContent
+    ).toContain("mesh ready");
+    checkbox.checked = true;
+    checkbox.dispatchEvent(new Event("change", { bubbles: true }));
+    expect(setSettings).toHaveBeenCalledWith({ worldGeographyEnabled: true });
   });
 
   it("opens the human agent interaction panel and smooth-scrolls to the bottom on agent actions", async () => {
