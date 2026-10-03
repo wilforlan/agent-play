@@ -29,6 +29,7 @@ import {
   PurchaseRecordSchema,
   PeerCallRecordSchema,
   arePeersWithinCallProximity,
+  calculateTransferSaleFee,
   canCarAcquireParkingSpot,
   canNodeAcquireParkingSpot,
   computeParkingExpiresAt,
@@ -91,6 +92,13 @@ import {
   educationProgressKey,
 } from "@agent-play/sdk";
 import {
+  decodeOwnedAssetRef,
+  encodeOwnedAssetRef,
+  ownedAssetRefFromPurchase,
+  type AmenityPurchaseKind,
+  type OwnedAssetRef,
+} from "./owned-assets.js";
+import {
   JoeMessageSchema,
   JoeThreadSchema,
   joeThreadKey,
@@ -124,12 +132,15 @@ import type {
   BuyParkingTicketResult,
   BuyHouseResult,
   ExecutePurchaseResult,
+  ExecuteTransferPurchaseResult,
+  OwnedAssetEntry,
   PresenceLease,
   PersistSnapshotRev,
   PublishedSessionMetadata,
   SessionStore,
   SnapshotMutationFanoutItem,
   SpaceAmenityLogEntry,
+  TransferListingResult,
   WorldChatMessage,
   WorldFanoutOptions,
 } from "./session-store.js";
@@ -169,6 +180,7 @@ export class TestSessionStore implements SessionStore {
   private houseStreet: HouseStreetContent = createEmptyHouseStreetContent();
   private readonly playerWallets = new Map<string, PlayerWallet>();
   private readonly playerPurchases = new Map<string, PurchaseRecord[]>();
+  private readonly playerOwnedAssets = new Map<string, Set<string>>();
   private readonly arcadeAccessByPlayer = new Map<string, ArcadeAccessPass>();
   private readonly educationAccessByPlayer = new Map<
     string,
@@ -990,18 +1002,337 @@ export class TestSessionStore implements SessionStore {
       itemRef: input.itemRef,
       priceUsd: item.priceUsd,
       at: input.now,
+      saleKind: "primary",
       ...buildAmenityPurchaseApuFields({
         amenityKind: input.amenityKind,
         spaceId: input.spaceId,
         earnedPowerUps,
       }),
     };
+    this.addOwnedAsset(
+      input.playerId,
+      ownedAssetRefFromPurchase({
+        spaceId: input.spaceId,
+        amenityKind: input.amenityKind,
+        itemRef: input.itemRef,
+      })
+    );
     await this.appendPurchaseRecord(record);
     return {
       ok: true,
       record,
       wallet: nextWallet,
       updatedItem: nextItem,
+    };
+  }
+
+  private addOwnedAsset(playerId: string, ref: OwnedAssetRef): void {
+    const set = this.playerOwnedAssets.get(playerId) ?? new Set<string>();
+    set.add(encodeOwnedAssetRef(ref));
+    this.playerOwnedAssets.set(playerId, set);
+  }
+
+  private removeOwnedAsset(playerId: string, ref: OwnedAssetRef): void {
+    const set = this.playerOwnedAssets.get(playerId);
+    if (set === undefined) {
+      return;
+    }
+    set.delete(encodeOwnedAssetRef(ref));
+  }
+
+  private resolveAmenityItem(input: {
+    spaceId: string;
+    amenityKind: AmenityPurchaseKind;
+    itemRef: { kind: "shop" | "supermarket" | "carwash"; id: string };
+  }):
+    | { ok: true; item: ShopItem | SupermarketItem | CarWashCar }
+    | { ok: false; error: "ITEM_NOT_FOUND" | "AMENITY_KIND_MISMATCH" } {
+    const expectedKind: typeof input.itemRef.kind =
+      input.amenityKind === "car_wash" ? "carwash" : input.amenityKind;
+    if (input.itemRef.kind !== expectedKind) {
+      return { ok: false, error: "AMENITY_KIND_MISMATCH" };
+    }
+    let item: ShopItem | SupermarketItem | CarWashCar | undefined;
+    if (input.itemRef.kind === "shop") {
+      item = this.shopItems.get(input.spaceId)?.get(input.itemRef.id);
+    } else if (input.itemRef.kind === "supermarket") {
+      item = this.supermarketItems.get(input.spaceId)?.get(input.itemRef.id);
+    } else {
+      item = this.carWashCars.get(input.spaceId)?.get(input.itemRef.id);
+    }
+    if (item === undefined) {
+      return { ok: false, error: "ITEM_NOT_FOUND" };
+    }
+    return { ok: true, item };
+  }
+
+  private writeAmenityItem(
+    item: ShopItem | SupermarketItem | CarWashCar,
+    amenityKind: AmenityPurchaseKind
+  ): void {
+    if (amenityKind === "shop") {
+      const bucket = this.shopItems.get(item.spaceId) ?? new Map();
+      bucket.set(item.id, item as ShopItem);
+      this.shopItems.set(item.spaceId, bucket);
+      return;
+    }
+    if (amenityKind === "supermarket") {
+      const bucket = this.supermarketItems.get(item.spaceId) ?? new Map();
+      bucket.set(item.id, item as SupermarketItem);
+      this.supermarketItems.set(item.spaceId, bucket);
+      return;
+    }
+    const bucket = this.carWashCars.get(item.spaceId) ?? new Map();
+    bucket.set(item.id, item as CarWashCar);
+    this.carWashCars.set(item.spaceId, bucket);
+  }
+
+  async listOwnedAssets(input: {
+    playerId: string;
+  }): Promise<OwnedAssetEntry[]> {
+    const encoded = this.playerOwnedAssets.get(input.playerId);
+    if (encoded === undefined || encoded.size === 0) {
+      return [];
+    }
+    const entries: OwnedAssetEntry[] = [];
+    for (const raw of encoded) {
+      const ref = decodeOwnedAssetRef(raw);
+      if (ref === null) {
+        continue;
+      }
+      const resolved = this.resolveAmenityItem({
+        spaceId: ref.spaceId,
+        amenityKind: ref.amenityKind,
+        itemRef: {
+          kind: ref.amenityKind === "car_wash" ? "carwash" : ref.amenityKind,
+          id: ref.itemId,
+        },
+      });
+      if (!resolved.ok) {
+        continue;
+      }
+      if (resolved.item.sale.soldToPlayerId !== input.playerId) {
+        continue;
+      }
+      entries.push({ ref, item: resolved.item });
+    }
+    return entries;
+  }
+
+  async createTransferListing(input: {
+    spaceId: string;
+    amenityKind: "shop" | "supermarket" | "car_wash";
+    itemRef: { kind: "shop" | "supermarket" | "carwash"; id: string };
+    sellerPlayerId: string;
+    priceUsd: number;
+    listingId: string;
+    now: string;
+  }): Promise<TransferListingResult> {
+    if (!(Number.isFinite(input.priceUsd) && input.priceUsd > 0)) {
+      return { ok: false, error: "INVALID_PRICE" };
+    }
+    const resolved = this.resolveAmenityItem(input);
+    if (!resolved.ok) {
+      return resolved;
+    }
+    const item = resolved.item;
+    if (item.sale.soldToPlayerId !== input.sellerPlayerId) {
+      return { ok: false, error: "NOT_OWNER" };
+    }
+    if (item.sale.status === "transfer_available") {
+      return { ok: false, error: "ALREADY_LISTED" };
+    }
+    if (item.sale.status !== "sold") {
+      return { ok: false, error: "INVALID_STATUS" };
+    }
+    const nextItem = {
+      ...item,
+      sale: {
+        status: "transfer_available" as const,
+        soldToPlayerId: item.sale.soldToPlayerId,
+        soldAt: item.sale.soldAt,
+        transferListing: {
+          listingId: input.listingId,
+          sellerPlayerId: input.sellerPlayerId,
+          priceUsd: input.priceUsd,
+          listedAt: input.now,
+          updatedAt: input.now,
+        },
+      },
+    };
+    this.writeAmenityItem(nextItem, input.amenityKind);
+    return { ok: true, item: nextItem };
+  }
+
+  async updateTransferListingPrice(input: {
+    spaceId: string;
+    amenityKind: "shop" | "supermarket" | "car_wash";
+    itemRef: { kind: "shop" | "supermarket" | "carwash"; id: string };
+    sellerPlayerId: string;
+    priceUsd: number;
+    now: string;
+  }): Promise<TransferListingResult> {
+    if (!(Number.isFinite(input.priceUsd) && input.priceUsd > 0)) {
+      return { ok: false, error: "INVALID_PRICE" };
+    }
+    const resolved = this.resolveAmenityItem(input);
+    if (!resolved.ok) {
+      return resolved;
+    }
+    const item = resolved.item;
+    if (item.sale.status !== "transfer_available" || !item.sale.transferListing) {
+      return { ok: false, error: "INVALID_STATUS" };
+    }
+    if (item.sale.soldToPlayerId !== input.sellerPlayerId) {
+      return { ok: false, error: "NOT_OWNER" };
+    }
+    const nextItem = {
+      ...item,
+      sale: {
+        ...item.sale,
+        transferListing: {
+          ...item.sale.transferListing,
+          priceUsd: input.priceUsd,
+          updatedAt: input.now,
+        },
+      },
+    };
+    this.writeAmenityItem(nextItem, input.amenityKind);
+    return { ok: true, item: nextItem };
+  }
+
+  async cancelTransferListing(input: {
+    spaceId: string;
+    amenityKind: "shop" | "supermarket" | "car_wash";
+    itemRef: { kind: "shop" | "supermarket" | "carwash"; id: string };
+    sellerPlayerId: string;
+    now: string;
+  }): Promise<TransferListingResult> {
+    const resolved = this.resolveAmenityItem(input);
+    if (!resolved.ok) {
+      return resolved;
+    }
+    const item = resolved.item;
+    if (item.sale.status !== "transfer_available") {
+      return { ok: false, error: "INVALID_STATUS" };
+    }
+    if (item.sale.soldToPlayerId !== input.sellerPlayerId) {
+      return { ok: false, error: "NOT_OWNER" };
+    }
+    const nextItem = {
+      ...item,
+      sale: {
+        status: "sold" as const,
+        soldToPlayerId: item.sale.soldToPlayerId,
+        soldAt: item.sale.soldAt,
+      },
+    };
+    this.writeAmenityItem(nextItem, input.amenityKind);
+    return { ok: true, item: nextItem };
+  }
+
+  async executeTransferPurchase(input: {
+    spaceId: string;
+    amenityKind: "shop" | "supermarket" | "car_wash";
+    itemRef: { kind: "shop" | "supermarket" | "carwash"; id: string };
+    buyerPlayerId: string;
+    now: string;
+    buyerRecordId: string;
+    sellerRecordId: string;
+  }): Promise<ExecuteTransferPurchaseResult> {
+    const resolved = this.resolveAmenityItem(input);
+    if (!resolved.ok) {
+      return resolved;
+    }
+    const item = resolved.item;
+    if (item.sale.status !== "transfer_available" || !item.sale.transferListing) {
+      return { ok: false, error: "NOT_LISTED" };
+    }
+    const listing = item.sale.transferListing;
+    const sellerId = listing.sellerPlayerId;
+    if (sellerId === input.buyerPlayerId) {
+      return { ok: false, error: "CANNOT_BUY_OWN_LISTING" };
+    }
+    const priceUsd = listing.priceUsd;
+    const { feeUsd, sellerCreditUsd } = calculateTransferSaleFee({ priceUsd });
+    const buyerWallet = await this.getPlayerWallet(input.buyerPlayerId);
+    if (buyerWallet.balanceUsd < priceUsd) {
+      return { ok: false, error: "INSUFFICIENT_FUNDS" };
+    }
+    const sellerWallet = await this.getPlayerWallet(sellerId);
+    const nextBuyerWallet: PlayerWallet = {
+      ...buyerWallet,
+      balanceUsd: buyerWallet.balanceUsd - priceUsd,
+      updatedAt: input.now,
+    };
+    const nextSellerWallet: PlayerWallet = {
+      ...sellerWallet,
+      balanceUsd: sellerWallet.balanceUsd + sellerCreditUsd,
+      updatedAt: input.now,
+    };
+    const nextItem = {
+      ...item,
+      sale: {
+        status: "sold" as const,
+        soldToPlayerId: input.buyerPlayerId,
+        soldAt: input.now,
+      },
+    };
+    this.writeAmenityItem(nextItem, input.amenityKind);
+    this.playerWallets.set(input.buyerPlayerId, nextBuyerWallet);
+    this.playerWallets.set(sellerId, nextSellerWallet);
+    mirrorWalletBalance(this.scannerMirror, nextBuyerWallet);
+    mirrorWalletBalance(this.scannerMirror, nextSellerWallet);
+
+    const assetRef = ownedAssetRefFromPurchase({
+      spaceId: input.spaceId,
+      amenityKind: input.amenityKind,
+      itemRef: input.itemRef,
+    });
+    this.removeOwnedAsset(sellerId, assetRef);
+    this.addOwnedAsset(input.buyerPlayerId, assetRef);
+
+    const buyerRecord: PurchaseRecord = {
+      id: input.buyerRecordId,
+      playerId: input.buyerPlayerId,
+      spaceId: input.spaceId,
+      amenityKind: input.amenityKind,
+      itemRef: input.itemRef,
+      priceUsd,
+      at: input.now,
+      feeUsd,
+      saleKind: "transfer",
+      counterpartyNodeId: sellerId,
+      detail: "Transfer sale",
+      token: "USD",
+    };
+    const sellerRecord: PurchaseRecord = {
+      id: input.sellerRecordId,
+      playerId: sellerId,
+      spaceId: input.spaceId,
+      amenityKind: input.amenityKind,
+      itemRef: input.itemRef,
+      priceUsd: sellerCreditUsd,
+      at: input.now,
+      feeUsd,
+      saleKind: "transfer",
+      counterpartyNodeId: input.buyerPlayerId,
+      detail: "Transfer sale proceeds",
+      creditSource: "transfer_sale",
+      token: "USD",
+    };
+    await this.appendPurchaseRecord(buyerRecord);
+    await this.appendPurchaseRecord(sellerRecord);
+    mirrorPurchaseRecord(this.scannerMirror, buyerRecord);
+    return {
+      ok: true,
+      buyerRecord,
+      sellerRecord,
+      buyerWallet: nextBuyerWallet,
+      sellerWallet: nextSellerWallet,
+      updatedItem: nextItem,
+      feeUsd,
+      sellerCreditUsd,
     };
   }
 

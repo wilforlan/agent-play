@@ -30,13 +30,14 @@ describe("item-tooltip", () => {
     expect(onBuy).toHaveBeenCalledOnce();
   });
 
-  it("renders the SOLD pill and the buyer line when the item is sold", () => {
+  it("renders the SOLD pill and the owner line when the item is sold", () => {
     const tooltip = createItemTooltip({ parent: newParent() });
     tooltip.show({
       model: {
         name: "Coffee",
         priceUsd: 5,
         sale: { status: "sold", soldToPlayerId: "player-7" },
+        ownerDisplayName: "Alex",
       },
       onBuy: () => {},
     });
@@ -46,7 +47,51 @@ describe("item-tooltip", () => {
     expect(
       tooltip.root.querySelector(".preview-item-tooltip__buy")
     ).toBeNull();
-    expect(tooltip.root.textContent).toContain("player-7");
+    expect(tooltip.root.textContent).toContain("Owned by Alex");
+  });
+
+  it("shows Mine and You already own this when the viewer owns the item", () => {
+    const tooltip = createItemTooltip({ parent: newParent() });
+    tooltip.show({
+      model: {
+        name: "Coffee",
+        priceUsd: 5,
+        sale: { status: "sold", soldToPlayerId: "viewer-1" },
+        ownerDisplayName: "You",
+        ownedByViewer: true,
+      },
+      onBuy: () => {},
+    });
+    expect(
+      tooltip.root.querySelector(".preview-item-tooltip__mine")
+    ).toBeTruthy();
+    expect(tooltip.root.textContent).toContain("You already own this");
+    expect(
+      tooltip.root.querySelector(".preview-item-tooltip__buy")
+    ).toBeNull();
+    expect(
+      tooltip.root.querySelector(".preview-item-tooltip__sold")
+    ).toBeNull();
+  });
+
+  it("renders a green available tag and transfer sale note for listings", () => {
+    const tooltip = createItemTooltip({ parent: newParent() });
+    tooltip.show({
+      model: {
+        name: "Mustang",
+        priceUsd: 250,
+        sale: { status: "transfer_available", soldToPlayerId: "seller-1" },
+        transferSaleNote: "Transfer sale · previous owner listing",
+      },
+      onBuy: () => {},
+    });
+    expect(
+      tooltip.root.querySelector(".preview-item-tooltip__available")
+    ).toBeTruthy();
+    expect(tooltip.root.textContent).toContain("Transfer sale");
+    expect(
+      tooltip.root.querySelector(".preview-item-tooltip__buy")?.textContent
+    ).toContain("250");
   });
 
   it("hide() removes the open modifier", () => {

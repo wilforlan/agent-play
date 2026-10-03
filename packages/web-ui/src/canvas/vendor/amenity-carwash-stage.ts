@@ -19,6 +19,7 @@ import {
   type AmenityStageBounds,
 } from "./amenity-stage-base.js";
 import type { StageHandle } from "./stage-controller.js";
+import { amenityOwnershipFlags } from "./amenity-ownership.js";
 
 /**
  * Walkable bounds for the car-wash lot.
@@ -47,7 +48,17 @@ export type CarWashCarSnapshot = {
   readonly year: number;
   readonly priceUsd: number;
   readonly colorHex: string;
-  readonly sale: { status: "available" | "sold"; soldToPlayerId?: string };
+  readonly sale: {
+    status: "available" | "sold" | "transfer_available";
+    soldToPlayerId?: string;
+    transferListing?: {
+      listingId: string;
+      sellerPlayerId: string;
+      priceUsd: number;
+      listedAt: string;
+      updatedAt: string;
+    };
+  };
 };
 
 /**
@@ -160,7 +171,10 @@ const buildSlotStripes = (cellScale: number): Container => {
  * @public
  */
 export type AmenityCarWashStageHandle = StageHandle & {
-  refresh(cars: ReadonlyArray<CarWashCarSnapshot>): void;
+  refresh(
+    cars: ReadonlyArray<CarWashCarSnapshot>,
+    options?: { viewerPlayerId?: string | null }
+  ): void;
   getSlots(): ReadonlyArray<CarWashSlot>;
   findNearbyCar(playerWorld: {
     x: number;
@@ -178,6 +192,7 @@ export type AmenityCarWashStageHandle = StageHandle & {
 export const buildAmenityCarWashStage = (input: {
   cellScale: number;
   cars: ReadonlyArray<CarWashCarSnapshot>;
+  viewerPlayerId?: string | null;
 }): AmenityCarWashStageHandle => {
   const root = new Container();
   root.addChild(buildCarWashBackdrop(input.cellScale));
@@ -188,15 +203,24 @@ export const buildAmenityCarWashStage = (input: {
 
   let slots: CarWashSlot[] = [];
 
-  const refresh = (next: ReadonlyArray<CarWashCarSnapshot>): void => {
+  const refresh = (
+    next: ReadonlyArray<CarWashCarSnapshot>,
+    options?: { viewerPlayerId?: string | null }
+  ): void => {
     carsLayer.removeChildren();
     slots = layoutCarWashSlots(next);
+    const viewerPlayerId = options?.viewerPlayerId ?? null;
     for (const slot of slots) {
       if (slot.car === null) continue;
+      const ownership = amenityOwnershipFlags({
+        sale: slot.car.sale,
+        viewerPlayerId,
+      });
       const sprite = buildCarSprite({
         colorHex: slot.car.colorHex,
         model: slot.car.model,
-        sold: slot.car.sale.status === "sold",
+        sold: ownership.sold,
+        mine: ownership.mine,
       });
       sprite.position.set(
         slot.x * input.cellScale,
@@ -206,7 +230,7 @@ export const buildAmenityCarWashStage = (input: {
     }
   };
 
-  refresh(input.cars);
+  refresh(input.cars, { viewerPlayerId: input.viewerPlayerId ?? null });
   const exitDoorAnchor = mountExitDoor({ root, cellScale: input.cellScale });
 
   return {

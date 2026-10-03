@@ -302,6 +302,198 @@ describe("createWalletInventoryPanel", () => {
     expect(parent.textContent).toContain("No wallet activity yet");
   });
 
+  it("Assets tab shows Sell for owned sold items as cards", () => {
+    const parent = newParent();
+    const onCreateTransferListing = vi.fn(async () => undefined);
+    const panel = createWalletInventoryPanel({
+      parent,
+      onRefresh: () => {},
+      onCreateTransferListing,
+    });
+    panel.open();
+    panel.setData({
+      balanceUsd: 10,
+      powerUps: 0,
+      purchases: [],
+      items: {},
+      assets: [
+        {
+          ref: {
+            spaceId: "space-1",
+            amenityKind: "shop",
+            itemId: "shop-1",
+          },
+          item: {
+            id: "shop-1",
+            name: "Guide",
+            type: "book",
+            priceUsd: 12,
+            sale: { status: "sold", soldToPlayerId: "u" },
+          },
+        },
+      ],
+    });
+    const assetsTab = Array.from(
+      parent.querySelectorAll<HTMLButtonElement>(".preview-wallet-inventory__tab")
+    ).find((btn) => btn.textContent === "Assets");
+    assetsTab?.click();
+    expect(parent.querySelector(".preview-wallet-inventory__asset-grid")).not.toBeNull();
+    expect(parent.querySelector(".preview-wallet-inventory__asset-card")).not.toBeNull();
+    expect(parent.querySelector(".preview-wallet-inventory__asset-sprite")).not.toBeNull();
+    expect(parent.textContent).toContain("Guide");
+    expect(parent.textContent).toContain("Sell");
+    const styleText =
+      document.getElementById("preview-wallet-inventory-styles")?.textContent ??
+      "";
+    expect(styleText).toMatch(
+      /\.preview-wallet-inventory__tabs \{[\s\S]*?margin-bottom:\s*16px/
+    );
+  });
+
+  it("Sell opens a price step instead of window.prompt", async () => {
+    const parent = newParent();
+    const onCreateTransferListing = vi.fn(async () => undefined);
+    Object.defineProperty(window, "prompt", {
+      configurable: true,
+      value: vi.fn(() => {
+        throw new Error("window.prompt must not be used");
+      }),
+    });
+    const panel = createWalletInventoryPanel({
+      parent,
+      onRefresh: () => {},
+      onCreateTransferListing,
+    });
+    panel.open();
+    panel.setData({
+      balanceUsd: 10,
+      powerUps: 0,
+      purchases: [],
+      items: {},
+      assets: [
+        {
+          ref: {
+            spaceId: "space-1",
+            amenityKind: "car_wash",
+            itemId: "car-1",
+          },
+          item: {
+            id: "car-1",
+            name: "Mustang",
+            model: "GT",
+            colorHex: "#ff0000",
+            priceUsd: 100,
+            sale: { status: "sold", soldToPlayerId: "u" },
+          },
+        },
+      ],
+    });
+    Array.from(
+      parent.querySelectorAll<HTMLButtonElement>(".preview-wallet-inventory__tab")
+    )
+      .find((btn) => btn.textContent === "Assets")
+      ?.click();
+    parent
+      .querySelector<HTMLButtonElement>(".preview-wallet-inventory__asset-btn")
+      ?.click();
+    expect(parent.textContent).toContain("Set sale price");
+    const input = parent.querySelector<HTMLInputElement>(
+      ".preview-wallet-inventory__price-input"
+    );
+    expect(input).not.toBeNull();
+    if (input !== null) {
+      input.value = "45";
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    }
+    parent
+      .querySelectorAll<HTMLButtonElement>(".preview-wallet-inventory__asset-btn")
+      .forEach((btn) => {
+        if (btn.textContent === "List for sale") {
+          btn.click();
+        }
+      });
+    await vi.waitFor(() => {
+      expect(onCreateTransferListing).toHaveBeenCalledWith({
+        spaceId: "space-1",
+        amenityKind: "car_wash",
+        itemId: "car-1",
+        priceUsd: 45,
+      });
+    });
+  });
+
+  it("Cancel sale opens a confirmation step", async () => {
+    const parent = newParent();
+    const onCancelTransferListing = vi.fn(async () => undefined);
+    const panel = createWalletInventoryPanel({
+      parent,
+      onRefresh: () => {},
+      onCancelTransferListing,
+    });
+    panel.open();
+    panel.setData({
+      balanceUsd: 10,
+      powerUps: 0,
+      purchases: [],
+      items: {},
+      assets: [
+        {
+          ref: {
+            spaceId: "space-1",
+            amenityKind: "shop",
+            itemId: "shop-1",
+          },
+          item: {
+            id: "shop-1",
+            name: "Guide",
+            type: "book",
+            priceUsd: 12,
+            sale: {
+              status: "transfer_available",
+              soldToPlayerId: "u",
+              transferListing: {
+                listingId: "listing-1",
+                sellerPlayerId: "u",
+                priceUsd: 20,
+                listedAt: "2026-06-01T00:00:00.000Z",
+                updatedAt: "2026-06-01T00:00:00.000Z",
+              },
+            },
+          },
+        },
+      ],
+    });
+    Array.from(
+      parent.querySelectorAll<HTMLButtonElement>(".preview-wallet-inventory__tab")
+    )
+      .find((btn) => btn.textContent === "Assets")
+      ?.click();
+    expect(parent.textContent).toContain("Cancel sale");
+    parent
+      .querySelectorAll<HTMLButtonElement>(".preview-wallet-inventory__asset-btn")
+      .forEach((btn) => {
+        if (btn.textContent === "Cancel sale") {
+          btn.click();
+        }
+      });
+    expect(parent.textContent).toContain("Cancel this sale?");
+    expect(onCancelTransferListing).not.toHaveBeenCalled();
+    parent
+      .querySelectorAll<HTMLButtonElement>(".preview-wallet-inventory__asset-btn")
+      .forEach((btn) => {
+        if (btn.textContent === "Confirm cancel") {
+          btn.click();
+        }
+      });
+    await vi.waitFor(() => {
+      expect(onCancelTransferListing).toHaveBeenCalledWith({
+        spaceId: "space-1",
+        amenityKind: "shop",
+        itemId: "shop-1",
+      });
+    });
+  });
+
   it("wraps long transaction detail text in list and detail views", () => {
     const parent = newParent();
     const panel = createWalletInventoryPanel({

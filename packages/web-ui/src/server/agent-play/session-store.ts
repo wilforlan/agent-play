@@ -281,6 +281,42 @@ export type SessionStore = {
     recordId: string;
     spaceOwnerWalletPlayerId?: string;
   }): Promise<ExecutePurchaseResult>;
+  listOwnedAssets(input: {
+    playerId: string;
+  }): Promise<OwnedAssetEntry[]>;
+  createTransferListing(input: {
+    spaceId: string;
+    amenityKind: "shop" | "supermarket" | "car_wash";
+    itemRef: { kind: "shop" | "supermarket" | "carwash"; id: string };
+    sellerPlayerId: string;
+    priceUsd: number;
+    listingId: string;
+    now: string;
+  }): Promise<TransferListingResult>;
+  updateTransferListingPrice(input: {
+    spaceId: string;
+    amenityKind: "shop" | "supermarket" | "car_wash";
+    itemRef: { kind: "shop" | "supermarket" | "carwash"; id: string };
+    sellerPlayerId: string;
+    priceUsd: number;
+    now: string;
+  }): Promise<TransferListingResult>;
+  cancelTransferListing(input: {
+    spaceId: string;
+    amenityKind: "shop" | "supermarket" | "car_wash";
+    itemRef: { kind: "shop" | "supermarket" | "carwash"; id: string };
+    sellerPlayerId: string;
+    now: string;
+  }): Promise<TransferListingResult>;
+  executeTransferPurchase(input: {
+    spaceId: string;
+    amenityKind: "shop" | "supermarket" | "car_wash";
+    itemRef: { kind: "shop" | "supermarket" | "carwash"; id: string };
+    buyerPlayerId: string;
+    now: string;
+    buyerRecordId: string;
+    sellerRecordId: string;
+  }): Promise<ExecuteTransferPurchaseResult>;
   addPowerUps(input: {
     playerId: string;
     amount: number;
@@ -630,6 +666,49 @@ export type ExecutePurchaseResult =
         | "INSUFFICIENT_FUNDS"
         | "ITEM_NOT_FOUND"
         | "AMENITY_KIND_MISMATCH";
+    };
+
+export type OwnedAssetEntry = {
+  ref: import("./owned-assets.js").OwnedAssetRef;
+  item: ShopItem | SupermarketItem | CarWashCar;
+};
+
+export type TransferListingResult =
+  | {
+      ok: true;
+      item: ShopItem | SupermarketItem | CarWashCar;
+    }
+  | {
+      ok: false;
+      error:
+        | "ITEM_NOT_FOUND"
+        | "AMENITY_KIND_MISMATCH"
+        | "NOT_OWNER"
+        | "INVALID_STATUS"
+        | "INVALID_PRICE"
+        | "ALREADY_LISTED";
+    };
+
+export type ExecuteTransferPurchaseResult =
+  | {
+      ok: true;
+      buyerRecord: PurchaseRecord;
+      sellerRecord: PurchaseRecord;
+      buyerWallet: PlayerWallet;
+      sellerWallet: PlayerWallet;
+      updatedItem: ShopItem | SupermarketItem | CarWashCar;
+      feeUsd: number;
+      sellerCreditUsd: number;
+    }
+  | {
+      ok: false;
+      error:
+        | "ITEM_NOT_FOUND"
+        | "AMENITY_KIND_MISMATCH"
+        | "ITEM_ALREADY_SOLD"
+        | "NOT_LISTED"
+        | "INSUFFICIENT_FUNDS"
+        | "CANNOT_BUY_OWN_LISTING";
     };
 
 export type BuyParkingTicketResult =

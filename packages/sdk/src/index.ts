@@ -169,10 +169,13 @@ export {
   SaleStateSchema,
   ShopItemSchema,
   SupermarketItemSchema,
+  TransferListingSchema,
   createInitialPlayerWallet,
   createInitialAgentRewardWallet,
   desaturateColor,
+  getEffectiveSalePriceUsd,
   isItemAvailableForPurchase,
+  isTransferSaleListing,
   type CarWashCar,
   type PlayerWallet,
   type PurchaseRecord,
@@ -180,7 +183,13 @@ export {
   type ShopItem,
   type SpaceContentItem,
   type SupermarketItem,
+  type TransferListing,
 } from "./lib/space-content-model.js";
+export {
+  TRANSFER_SALE_FEE_BPS,
+  TRANSFER_SALE_FEE_CAP_USD,
+  calculateTransferSaleFee,
+} from "./lib/transfer-sale-fee.js";
 export {
   ParkingDurationTierSchema,
   ParkingSpotSchema,

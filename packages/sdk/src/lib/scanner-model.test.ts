@@ -68,6 +68,28 @@ describe("scanner-model", () => {
     expect(row.amenityKind).toBe("education_tuition");
   });
 
+  it("parses transferSale scanner op with burned feeUsd", () => {
+    const row = ScannerTxRecordSchema.parse({
+      id: "xfer-1",
+      playerId: "buyer-1",
+      spaceId: "space-1",
+      amenityKind: "car_wash",
+      itemRef: { kind: "carwash", id: "car-1" },
+      priceUsd: 1000,
+      at: "2026-06-01T00:00:00.000Z",
+      feeUsd: 15,
+      saleKind: "transfer",
+      counterpartyNodeId: "seller-1",
+      detail: "Transfer sale",
+      hostId: "default",
+      indexedAt: "2026-06-01T00:00:01.000Z",
+      op: "transferSale",
+    });
+    expect(row.op).toBe("transferSale");
+    expect(row.feeUsd).toBe(15);
+    expect(row.saleKind).toBe("transfer");
+  });
+
   it("parses a scanner tx record with explorer metadata", () => {
     const row = ScannerTxRecordSchema.parse({
       id: "tx-1",

@@ -66,10 +66,23 @@ function buildStoreMock() {
     upsertShopItem: vi.fn(async () => undefined),
     upsertSupermarketItem: vi.fn(async () => undefined),
     upsertCarWashCar: vi.fn(async () => undefined),
+    listShopItems: vi.fn(async () => [
+      {
+        id: "shop-1",
+        spaceId: "space-1",
+        type: "book",
+        name: "x",
+        description: "y",
+        priceUsd: 5,
+        createdAt: "2026-05-12T00:00:00.000Z",
+        sale: { status: "available" },
+      },
+    ]),
     listSupermarketItems: vi.fn(async () => []),
     listCarWashCars: vi.fn(async () => []),
     appendSpaceAmenityLog: vi.fn(async () => undefined),
     executePurchase: vi.fn(),
+    executeTransferPurchase: vi.fn(),
     publishWorldFanout: vi.fn(async () => undefined),
     persistSnapshotReturningRev: vi.fn(async () => ({
       rev: 2,

@@ -4,7 +4,7 @@
  *
  * Floating DOM tooltip used by every amenity stage. Renders the focused
  * item's name, description, price, and either a `Buy` button (when
- * `sale.status === 'available'`) or a disabled `SOLD` pill (when the item
+ * available / transfer-listed) or a disabled `SOLD` pill (when the item
  * has been sold).
  *
  * The tooltip is intentionally framework-free DOM: it is positioned by the
@@ -20,11 +20,22 @@
  *
  * @public
  */
+export type ItemTooltipSale = {
+  readonly status: "available" | "sold" | "transfer_available";
+  readonly soldToPlayerId?: string;
+};
+
 export type ItemTooltipModel = {
   readonly name: string;
   readonly description?: string;
   readonly priceUsd: number;
-  readonly sale: { status: "available" | "sold"; soldToPlayerId?: string };
+  readonly sale: ItemTooltipSale;
+  /** Shown for secondary-market listings. */
+  readonly transferSaleNote?: string;
+  /** Friendly owner label when the item has an owner. */
+  readonly ownerDisplayName?: string;
+  /** True when the current viewer already owns this item. */
+  readonly ownedByViewer?: boolean;
 };
 
 /**
@@ -139,6 +150,41 @@ const ensureStyles = (): void => {
   letter-spacing: 2px;
   text-align: center;
 }
+.${TOOLTIP_CLASS}__mine {
+  display: block;
+  width: 100%;
+  padding: 8px 12px;
+  border-radius: 999px;
+  background: #16a34a;
+  color: #fff;
+  font-weight: 800;
+  letter-spacing: 2px;
+  text-align: center;
+}
+.${TOOLTIP_CLASS}__owned {
+  font-size: 12px;
+  color: #166534;
+  margin-top: 8px;
+  font-weight: 600;
+  text-align: center;
+}
+.${TOOLTIP_CLASS}__available {
+  display: inline-block;
+  margin-bottom: 8px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: #86efac;
+  color: #14532d;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  font-size: 11px;
+  text-transform: uppercase;
+}
+.${TOOLTIP_CLASS}__transfer-note {
+  font-size: 11px;
+  color: #166534;
+  margin-bottom: 8px;
+}
 .${TOOLTIP_CLASS}__buyer { font-size: 11px; color: #64748b; margin-top: 6px; }
 .${TOOLTIP_CLASS}__error { color: #b91c1c; font-size: 11px; margin-top: 6px; }
 `;
@@ -147,6 +193,22 @@ const ensureStyles = (): void => {
 
 const formatUsd = (price: number): string =>
   `$${(Math.round(price * 100) / 100).toFixed(2)}`;
+
+const resolveOwnerLabel = (model: ItemTooltipModel): string | null => {
+  if (
+    typeof model.ownerDisplayName === "string" &&
+    model.ownerDisplayName.trim().length > 0
+  ) {
+    return model.ownerDisplayName.trim();
+  }
+  if (
+    typeof model.sale.soldToPlayerId === "string" &&
+    model.sale.soldToPlayerId.trim().length > 0
+  ) {
+    return model.sale.soldToPlayerId.trim();
+  }
+  return null;
+};
 
 /**
  * Mount the tooltip inside the supplied parent.
@@ -185,7 +247,7 @@ export const createItemTooltip = (options: {
 
     const price = document.createElement("div");
     price.className = `${TOOLTIP_CLASS}__price`;
-    if (model.sale.status === "sold") {
+    if (model.sale.status === "sold" || model.ownedByViewer === true) {
       price.textContent = `Sold (${formatUsd(model.priceUsd)})`;
       price.style.color = "#94a3b8";
     } else {
@@ -193,21 +255,52 @@ export const createItemTooltip = (options: {
     }
     root.appendChild(price);
 
+    const ownerLabel = resolveOwnerLabel(model);
+
+    if (model.ownedByViewer === true) {
+      const mine = document.createElement("div");
+      mine.className = `${TOOLTIP_CLASS}__mine`;
+      mine.textContent = "MINE";
+      root.appendChild(mine);
+      const owned = document.createElement("div");
+      owned.className = `${TOOLTIP_CLASS}__owned`;
+      owned.textContent = "You already own this";
+      root.appendChild(owned);
+      return;
+    }
+
     if (model.sale.status === "sold") {
       const pill = document.createElement("div");
       pill.className = `${TOOLTIP_CLASS}__sold`;
       pill.textContent = "SOLD";
       root.appendChild(pill);
-      if (
-        typeof model.sale.soldToPlayerId === "string" &&
-        model.sale.soldToPlayerId.length > 0
-      ) {
+      if (ownerLabel !== null) {
         const buyer = document.createElement("div");
         buyer.className = `${TOOLTIP_CLASS}__buyer`;
-        buyer.textContent = `Bought by ${model.sale.soldToPlayerId}`;
+        buyer.textContent = `Owned by ${ownerLabel}`;
         root.appendChild(buyer);
       }
     } else {
+      const available = document.createElement("div");
+      available.className = `${TOOLTIP_CLASS}__available`;
+      available.textContent = "available";
+      root.appendChild(available);
+      if (
+        model.sale.status === "transfer_available" &&
+        typeof model.transferSaleNote === "string" &&
+        model.transferSaleNote.length > 0
+      ) {
+        const note = document.createElement("div");
+        note.className = `${TOOLTIP_CLASS}__transfer-note`;
+        note.textContent = model.transferSaleNote;
+        root.appendChild(note);
+      }
+      if (ownerLabel !== null) {
+        const owner = document.createElement("div");
+        owner.className = `${TOOLTIP_CLASS}__buyer`;
+        owner.textContent = `Listed by ${ownerLabel}`;
+        root.appendChild(owner);
+      }
       const buy = document.createElement("button");
       buy.className = `${TOOLTIP_CLASS}__buy`;
       buy.type = "button";

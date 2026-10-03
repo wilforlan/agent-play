@@ -10,7 +10,9 @@ import {
   createInitialPlayerWallet,
   createInitialAgentRewardWallet,
   desaturateColor,
+  getEffectiveSalePriceUsd,
   isItemAvailableForPurchase,
+  isTransferSaleListing,
 } from "./space-content-model.js";
 
 describe("space-content-model: SaleStateSchema", () => {
@@ -32,6 +34,23 @@ describe("space-content-model: SaleStateSchema", () => {
   it("rejects unknown statuses", () => {
     const result = SaleStateSchema.safeParse({ status: "pending" });
     expect(result.success).toBe(false);
+  });
+
+  it("accepts transfer_available with a listing block", () => {
+    const parsed = SaleStateSchema.parse({
+      status: "transfer_available",
+      soldToPlayerId: "player-1",
+      soldAt: "2026-05-12T00:00:00.000Z",
+      transferListing: {
+        listingId: "listing-1",
+        sellerPlayerId: "player-1",
+        priceUsd: 250,
+        listedAt: "2026-06-01T00:00:00.000Z",
+        updatedAt: "2026-06-01T00:00:00.000Z",
+      },
+    });
+    expect(parsed.status).toBe("transfer_available");
+    expect(parsed.transferListing?.priceUsd).toBe(250);
   });
 });
 
@@ -265,6 +284,24 @@ describe("space-content-model: PurchaseRecordSchema", () => {
     expect(parsed.itemRef.kind).toBe("shop");
   });
 
+  it("accepts a transfer sale purchase with feeUsd and saleKind", () => {
+    const parsed = PurchaseRecordSchema.parse({
+      id: "xfer-1",
+      playerId: "buyer-1",
+      spaceId: "s1",
+      amenityKind: "car_wash",
+      itemRef: { kind: "carwash", id: "car-1" },
+      priceUsd: 1000,
+      at: "2026-06-01T00:00:00.000Z",
+      feeUsd: 15,
+      saleKind: "transfer",
+      counterpartyNodeId: "seller-1",
+      detail: "Transfer sale",
+    });
+    expect(parsed.saleKind).toBe("transfer");
+    expect(parsed.feeUsd).toBe(15);
+  });
+
   it("accepts a talk-time billing audit row with optional detail", () => {
     const parsed = PurchaseRecordSchema.parse({
       id: "talk-1",
@@ -483,6 +520,48 @@ describe("space-content-model: isItemAvailableForPurchase", () => {
       },
     });
     expect(isItemAvailableForPurchase(item)).toBe(false);
+  });
+
+  it("returns true when sale.status is transfer_available", () => {
+    const item = ShopItemSchema.parse({
+      id: "i",
+      spaceId: "s",
+      type: "book",
+      name: "n",
+      description: "d",
+      priceUsd: 1,
+      createdAt: "2026-05-12T00:00:00.000Z",
+      sale: {
+        status: "transfer_available",
+        soldToPlayerId: "p1",
+        soldAt: "2026-05-12T00:00:00.000Z",
+        transferListing: {
+          listingId: "listing-1",
+          sellerPlayerId: "p1",
+          priceUsd: 12,
+          listedAt: "2026-06-01T00:00:00.000Z",
+          updatedAt: "2026-06-01T00:00:00.000Z",
+        },
+      },
+    });
+    expect(isItemAvailableForPurchase(item)).toBe(true);
+    expect(isTransferSaleListing(item)).toBe(true);
+    expect(getEffectiveSalePriceUsd(item)).toBe(12);
+  });
+
+  it("uses catalog price for primary available items", () => {
+    const item = ShopItemSchema.parse({
+      id: "i",
+      spaceId: "s",
+      type: "book",
+      name: "n",
+      description: "d",
+      priceUsd: 9.5,
+      createdAt: "2026-05-12T00:00:00.000Z",
+      sale: { status: "available" },
+    });
+    expect(isTransferSaleListing(item)).toBe(false);
+    expect(getEffectiveSalePriceUsd(item)).toBe(9.5);
   });
 });
 

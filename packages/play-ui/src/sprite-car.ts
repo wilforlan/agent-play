@@ -19,7 +19,7 @@
 
 import { Container, Graphics, Text } from "pixi.js";
 import { desaturateColor } from "@agent-play/sdk/browser";
-import { buildSoldBadge } from "./sprite-sold-overlay.js";
+import { buildMineBadge, buildSoldBadge } from "./sprite-sold-overlay.js";
 
 const FALLBACK_COLOR = 0xcc0000;
 const HEX_PATTERN = /^#?[0-9a-fA-F]{6}$/;
@@ -52,6 +52,7 @@ export type BuildCarSpriteOptions = {
   colorHex: string;
   model: string;
   sold: boolean;
+  mine?: boolean;
   scale?: number;
 };
 
@@ -163,7 +164,11 @@ export const buildCarSprite = (options: BuildCarSpriteOptions): Container => {
   plateText.position.set(-CAR_WIDTH / 2 + 28, 8);
   root.addChild(plateText);
 
-  if (options.sold) {
+  if (options.mine === true) {
+    const badge = buildMineBadge({ width: CAR_WIDTH, height: CAR_HEIGHT });
+    badge.position.set(-CAR_WIDTH / 2, -CAR_HEIGHT / 2);
+    root.addChild(badge);
+  } else if (options.sold) {
     const badge = buildSoldBadge({ width: CAR_WIDTH, height: CAR_HEIGHT });
     badge.position.set(-CAR_WIDTH / 2, -CAR_HEIGHT / 2);
     root.addChild(badge);

@@ -46,12 +46,60 @@ const EMPTY: ResolvedAmenityContent = {
 
 const SHOP_TYPES = new Set(["book", "music", "coffee"]);
 
-function isSaleState(
+type AmenitySaleSnapshot = ShopItemSnapshot["sale"];
+
+function parseTransferListing(
   v: unknown
-): v is { status: "available" | "sold"; soldToPlayerId?: string } {
+): AmenitySaleSnapshot["transferListing"] {
+  if (typeof v !== "object" || v === null) {
+    return undefined;
+  }
+  const listing = v as Record<string, unknown>;
+  if (
+    typeof listing.listingId !== "string" ||
+    typeof listing.sellerPlayerId !== "string" ||
+    typeof listing.priceUsd !== "number" ||
+    typeof listing.listedAt !== "string" ||
+    typeof listing.updatedAt !== "string"
+  ) {
+    return undefined;
+  }
+  return {
+    listingId: listing.listingId,
+    sellerPlayerId: listing.sellerPlayerId,
+    priceUsd: listing.priceUsd,
+    listedAt: listing.listedAt,
+    updatedAt: listing.updatedAt,
+  };
+}
+
+function isSaleState(v: unknown): v is AmenitySaleSnapshot {
   if (typeof v !== "object" || v === null) return false;
   const status = (v as { status?: unknown }).status;
-  return status === "available" || status === "sold";
+  return (
+    status === "available" ||
+    status === "sold" ||
+    status === "transfer_available"
+  );
+}
+
+function toSaleState(v: AmenitySaleSnapshot): AmenitySaleSnapshot {
+  const soldToPlayerId =
+    typeof v.soldToPlayerId === "string" ? v.soldToPlayerId : undefined;
+  if (v.status !== "transfer_available") {
+    return {
+      status: v.status,
+      ...(soldToPlayerId !== undefined ? { soldToPlayerId } : {}),
+    };
+  }
+  const transferListing = parseTransferListing(
+    (v as { transferListing?: unknown }).transferListing
+  );
+  return {
+    status: "transfer_available",
+    ...(soldToPlayerId !== undefined ? { soldToPlayerId } : {}),
+    ...(transferListing !== undefined ? { transferListing } : {}),
+  };
 }
 
 function toShopItem(raw: unknown): ShopItemSnapshot | null {
@@ -72,7 +120,7 @@ function toShopItem(raw: unknown): ShopItemSnapshot | null {
     type: r.type as ShopItemSnapshot["type"],
     name: r.name,
     priceUsd: r.priceUsd,
-    sale: r.sale,
+    sale: toSaleState(r.sale),
   };
 }
 
@@ -100,7 +148,7 @@ function toSupermarketItem(raw: unknown): SupermarketItemSnapshot | null {
     column: r.column as SupermarketItemSnapshot["column"],
     name: r.name,
     priceUsd: r.priceUsd,
-    sale: r.sale,
+    sale: toSaleState(r.sale),
   };
 }
 
@@ -130,7 +178,7 @@ function toCarWashCar(raw: unknown): CarWashCarSnapshot | null {
     year: r.year,
     priceUsd: r.priceUsd,
     colorHex: r.colorHex,
-    sale: r.sale,
+    sale: toSaleState(r.sale),
   };
 }
 

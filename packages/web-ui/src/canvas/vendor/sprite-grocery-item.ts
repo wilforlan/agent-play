@@ -17,7 +17,7 @@
 
 import { Container, Graphics, Text } from "pixi.js";
 import { desaturateColor } from "@agent-play/sdk/browser";
-import { buildSoldBadge } from "./sprite-sold-overlay.js";
+import { buildMineBadge, buildSoldBadge } from "./sprite-sold-overlay.js";
 
 /**
  * Supermarket row index (1 = Fruits, 2 = Mens, 3 = Womens, 4 = Kids).
@@ -240,6 +240,7 @@ const drawVariant = (
 export type BuildGroceryItemSpriteOptions = {
   variant: GrocerySpriteVariant;
   sold: boolean;
+  mine?: boolean;
   label: string;
 };
 
@@ -286,7 +287,14 @@ export const buildGroceryItemSprite = (
   label.position.set(0, ITEM_HEIGHT / 2 - 4);
   root.addChild(label);
 
-  if (options.sold) {
+  if (options.mine === true) {
+    const badge = buildMineBadge({
+      width: ITEM_WIDTH,
+      height: ITEM_HEIGHT,
+    });
+    badge.position.set(-ITEM_WIDTH / 2, -ITEM_HEIGHT / 2);
+    root.addChild(badge);
+  } else if (options.sold) {
     const badge = buildSoldBadge({
       width: ITEM_WIDTH,
       height: ITEM_HEIGHT,
